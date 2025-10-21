@@ -1,4 +1,9 @@
-function Navbar() {
+
+type NavbarProps = {
+  isLoggedIn: boolean;
+};
+
+export default function Navbar({ isLoggedIn }: NavbarProps) {
   return (
     <>
       <div
@@ -44,7 +49,7 @@ function Navbar() {
               Team
             </a>
             <a href="/signin" className="button-yellow mobile-nav w-button">
-              Sign In
+              {isLoggedIn ? "Sign Out" : "Sign In"}
             </a>
           </nav>
           <div
@@ -52,7 +57,7 @@ function Navbar() {
             className="navbar2_button-wrapper"
           >
             <a href="/signin" className="button-yellow desktop-nav w-button">
-              Sign In
+              {isLoggedIn ? "Sign Out" : "Sign In"}
             </a>
             <div
               className="navbar2_menu-button w-nav-button"
@@ -83,5 +88,3 @@ function Navbar() {
     </>
   );
 }
-
-export default Navbar;

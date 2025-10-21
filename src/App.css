@@ -4655,12 +4655,14 @@ figcaption {
   background-image: radial-gradient(circle, #000000f5 57%, #fff0);
   background-color: var(--almost-black);
   flex-flow: column;
-  justify-content: center;
-  align-items: stretch;
+  justify-content: flex-start;
+  align-items: center;
   height: 100%;
   min-height: 100vh;
   display: flex;
   position: relative;
+  padding-top: 4rem;
+  box-sizing: border-box;
 }
 
 .main-content.no-shadow {

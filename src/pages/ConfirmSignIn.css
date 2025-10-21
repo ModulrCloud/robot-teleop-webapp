@@ -1,0 +1,68 @@
+.confirm-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(30, 30, 30, 0.85);
+  padding: 2rem 2.5rem;
+  border-radius: 1rem;
+  box-shadow: 0 2px 16px #0008;
+  /* max-width: 350px; */
+  width: 500px;
+  margin: 2rem auto;
+}
+
+.confirm-container h2 {
+  margin-bottom: 2rem;
+  color: #fff;
+}
+
+.passcode-inputs {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-bottom: 2rem;
+}
+
+.passcode-box {
+  width: 3rem;
+  height: 3rem;
+  font-size: 2rem;
+  text-align: center;
+  border-radius: 0.5rem;
+  border: 2px solid #77797d;
+  background: #18191a;
+  color: #fff;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-shadow: 0 1px 6px #0005;
+}
+
+.passcode-box:focus {
+  border-color: #ffd600;
+  box-shadow: 0 0 0 2px #ffd60055;
+}
+
+.signin-email {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid #444;
+  background: #18191a;
+  color: #fff;
+  margin-bottom: 1.5rem;
+  font-size: 1rem;
+  outline: none;
+}
+
+.signin-otp-btn {
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  border: none;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.95rem;
+  font-family: var(--quantico);
+  cursor: pointer;
+  box-shadow: 0 1px 6px #0005;
+  transition: background 0.2s;
+}

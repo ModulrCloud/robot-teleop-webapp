@@ -1,0 +1,28 @@
+.endsession-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(30, 30, 30, 0.85);
+  padding: 2rem 2.5rem;
+  border-radius: 1rem;
+  box-shadow: 0 2px 16px #0008;
+  /* max-width: 350px; */
+  width: 400px;
+  margin: 2rem auto;
+}
+
+.padtop {
+    padding-top: 20px;
+}
+
+.endsession-container h2 {
+    text-align: center;
+    padding-bottom: 20px;
+}
+
+.start-again-button {
+  padding: 0.75rem 1.5rem;
+  margin-top: 2rem;
+  min-width: 200px;
+  text-align: center;
+}

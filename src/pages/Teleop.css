@@ -1,0 +1,30 @@
+.endsession-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 1vh;
+  }
+  
+  .endsession-button {
+    padding: 0.75rem 1.5rem;
+    margin-top: 1rem;
+    min-width: 200px;
+    text-align: center;
+  }
+
+.teleop-layout {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 2rem;
+}
+
+.teleop-video {
+  flex: 1 1 auto;
+}
+
+.teleop-controls {
+  flex: 0 0 auto;
+}
+  

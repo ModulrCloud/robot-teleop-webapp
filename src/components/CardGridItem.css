@@ -1,0 +1,33 @@
+.card-grid-card {
+  background: linear-gradient(90deg, #232a3a 60%, #1e2a47 100%);
+  border-radius: 1rem;
+  box-shadow: 0 2px 16px #0005;
+  color: #fff;
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  outline: none;
+  border: 2px solid transparent; /* Add this line */
+}
+
+.card-grid-card:hover {
+  transform: translateY(-4px) scale(1.03);
+  box-shadow: 0 6px 24px #0007;
+  border: 2px solid var(--yellow);
+}
+
+.selected {
+  transform: translateY(-4px) scale(1.03);
+  box-shadow: 0 6px 24px #0007;
+  border: 2px solid var(--yellow);
+}
+
+.card-grid-image img {
+  width: 128px;
+  height: 128px;
+  object-fit: contain;
+  margin-bottom: 1rem;
+}

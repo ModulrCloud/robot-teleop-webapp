@@ -1,0 +1,9 @@
+#session-button {
+  position: absolute;
+  right: 0;
+  bottom: -80px;
+  margin: 2rem;
+  min-width: 180px;
+  opacity: 1;
+  pointer-events: auto;
+}
