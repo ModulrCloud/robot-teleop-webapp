@@ -1,13 +1,13 @@
-import { useState } from "react";
 import './SignIn.css';
 import { Button } from "react-bootstrap";
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faGoogle } from '@fortawesome/free-brands-svg-icons';
 import { signInWithRedirect } from 'aws-amplify/auth';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function SignIn() {
-  const [email, setEmail] = useState("");
-
-  const onSubmitEmail = async () => {
-    console.log(`You tried to sign in with email: ${email}`);
+  usePageTitle();
+  const signInWithGoogle = async () => {
     await signInWithRedirect({
       provider: 'Google'
     });
@@ -16,15 +16,9 @@ export default function SignIn() {
   return (
     <div className="signin-container">
       <h2>Sign In</h2>
-      <input
-        type="email"
-        className="signin-email"
-        placeholder="Email address"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
-      <Button onClick={onSubmitEmail} className="signin-otp-btn button-yellow" type="button">
-        Send One Time Passcode
+      <Button onClick={signInWithGoogle} className="signin-google-btn">
+        <FontAwesomeIcon icon={faGoogle} size="1x" id="google-icon" />{''}
+        Sign in With Google
       </Button>
     </div>
   );

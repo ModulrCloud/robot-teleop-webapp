@@ -23,4 +23,5 @@ export const auth = defineAuth({
       ],
     },
   },
+  groups: ["ADMINS", "PARTNERS", "CLIENTS"]
 });

@@ -40,3 +40,18 @@
   box-shadow: 0 1px 6px #0005;
   transition: background 0.2s;
 }
+
+.signin-google-btn {
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  color: #fff;
+  background: var(--almost-black);
+  outline: 1px solid #fff;
+  cursor: pointer;
+  font-family: var(--quantico);
+  transition: all .3s;
+}
+
+#google-icon {
+  padding-right: 1rem;
+}

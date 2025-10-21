@@ -1,0 +1,51 @@
+.setup-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(30, 30, 30, 0.85);
+  padding: 2rem 2.5rem;
+  border-radius: 1rem;
+  box-shadow: 0 2px 16px #0008;
+  width: 50%;
+  margin: 2rem auto;
+  row-gap: 10px;
+}
+
+.group-select .inline {
+  display: flex;
+  flex-direction: row;
+  padding: 0.5rem;
+}
+
+.group-select {
+  /* padding: 0.5rem 1.25rem; */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.group-select label {
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+
+}
+
+.group-select select {
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  color: #000;
+  font-size: 16px;
+  width: 8rem;
+  text-align: center;
+}
+
+.group-select button {
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  color: #fff;
+  background: var(--almost-black);
+  outline: 1px solid #fff;
+  cursor: pointer;
+  font-family: var(--quantico);
+  transition: all .3s;
+}

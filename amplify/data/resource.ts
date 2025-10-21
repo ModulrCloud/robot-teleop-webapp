@@ -1,4 +1,10 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
+import { setUserGroup } from "../functions/set-user-group/resource";
+
+const LambdaResult = a.customType({
+  statusCode: a.integer(),
+  body: a.string(),
+});
 
 /*== STEP 1 ===============================================================
 The section below creates a Todo database table with a "content" field. Try
@@ -7,11 +13,20 @@ specifies that any user authenticated via an API key can "create", "read",
 "update", and "delete" any "Todo" records.
 =========================================================================*/
 const schema = a.schema({
-  Todo: a
+  Partner: a
     .model({
-      content: a.string(),
+      name: a.string(),
     })
-    .authorization((allow) => [allow.publicApiKey()]),
+    .authorization((allow) => [allow.authenticated()]),
+  
+  setUserGroup: a
+    .query()
+    .arguments({
+      group: a.string(),
+    })
+    .returns(LambdaResult)
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(setUserGroup)),
 });
 
 export type Schema = ClientSchema<typeof schema>;
@@ -19,11 +34,7 @@ export type Schema = ClientSchema<typeof schema>;
 export const data = defineData({
   schema,
   authorizationModes: {
-    defaultAuthorizationMode: "apiKey",
-    // API Key is used for a.allow.public() rules
-    apiKeyAuthorizationMode: {
-      expiresInDays: 30,
-    },
+    defaultAuthorizationMode: "userPool",
   },
 });
 

@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
-import { getCurrentUser, fetchUserAttributes, signOut as amplifySignOut } from "aws-amplify/auth";
+import { getCurrentUser, fetchUserAttributes, signOut as amplifySignOut, fetchAuthSession } from "aws-amplify/auth";
 import { Hub } from "aws-amplify/utils";
+
+enum AuthGroup {
+  "ADMINS",
+  "PARTNERS",
+  "CLIENTS",
+}
 
 interface AuthStatus {
   isLoggedIn: boolean;
@@ -9,6 +15,7 @@ interface AuthStatus {
     name?: string | null;
     email?: string | null;
     displayName?: string | null;
+    group?: AuthGroup | null;
   } | null;
   loading: boolean;
   signOut(): Promise<void>; 
@@ -31,6 +38,18 @@ async function signOut() {
   });
 }
 
+function highestPriorityGroup(groups: any | undefined): AuthGroup | null {
+  if (!groups) {
+    return null;
+  }
+  for (let key in AuthGroup) {
+    if (groups.includes(key)) {
+      return key as unknown as AuthGroup;
+    }
+  }
+  return null;
+}
+
 /**
  * Hook that tracks Amplify auth status in real time.
  */
@@ -46,6 +65,9 @@ export function useAuthStatus(): AuthStatus {
       try {
         const currentUser = await getCurrentUser();
         const attrs = await fetchUserAttributes();
+        const session = await fetchAuthSession();
+        const groups = session.tokens?.accessToken?.payload['cognito:groups'];
+        const group = highestPriorityGroup(groups);
 
         if (mounted) {
           setIsLoggedIn(true);
@@ -54,6 +76,7 @@ export function useAuthStatus(): AuthStatus {
             name: attrs.name ?? null,
             email: attrs.email ?? null,
             displayName: attrs.name ?? attrs.email,
+            group,
           });
         }
       } catch {
@@ -68,7 +91,7 @@ export function useAuthStatus(): AuthStatus {
 
     loadUser();
 
-    // 🔄 Subscribe to sign-in/sign-out events
+    // Subscribe to sign-in/sign-out events
     const unsubscribe = Hub.listen("auth", ({ payload }) => {
       const { event } = payload;
       if (event === "signedIn") loadUser();
