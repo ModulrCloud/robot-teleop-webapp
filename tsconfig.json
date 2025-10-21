@@ -1,5 +1,6 @@
 {
   "files": [],
+  "include": ["src", "declarations.d.ts"],
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }
