@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@aws-amplify/ui-react": "^6.13.0",
     "@transitive-sdk/utils-web": "^0.14.4",
     "aws-amplify": "^6.15.7",
     "react": "^19.1.1",

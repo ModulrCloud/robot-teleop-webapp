@@ -1,9 +1,22 @@
+import { Button } from "react-bootstrap";
+import { useAuthStatus } from "./hooks/useAuthStatus";
+import { useNavigate } from "react-router-dom";
 
 type NavbarProps = {
-  isLoggedIn: boolean;
 };
 
-export default function Navbar({ isLoggedIn }: NavbarProps) {
+export default function Navbar(_props: NavbarProps) {
+
+  const { isLoggedIn, signOut } = useAuthStatus();
+  const navigate = useNavigate();
+  
+  const handleSignInOut = async () => {
+    if (isLoggedIn) {
+      await signOut();
+    } else {
+      navigate("/signin");
+    }
+  };
   return (
     <>
       <div
@@ -48,17 +61,17 @@ export default function Navbar({ isLoggedIn }: NavbarProps) {
             <a href="/team" className="navbar2_link w-nav-link">
               Team
             </a>
-            <a href="/signin" className="button-yellow mobile-nav w-button">
+            <Button onClick={handleSignInOut} className="button-yellow mobile-nav w-button">
               {isLoggedIn ? "Sign Out" : "Sign In"}
-            </a>
+            </Button>
           </nav>
           <div
             id="w-node-b61d2364-40b5-e1d9-13b6-00f11fb66607-1fb665f8"
             className="navbar2_button-wrapper"
           >
-            <a href="/signin" className="button-yellow desktop-nav w-button">
+            <Button onClick={handleSignInOut} className="button-yellow desktop-nav w-button">
               {isLoggedIn ? "Sign Out" : "Sign In"}
-            </a>
+            </Button>
             <div
               className="navbar2_menu-button w-nav-button"
               style={{ WebkitUserSelect: "text" }}

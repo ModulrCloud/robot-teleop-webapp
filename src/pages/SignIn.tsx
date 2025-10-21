@@ -1,9 +1,18 @@
 import { useState } from "react";
 import './SignIn.css';
 import { Button } from "react-bootstrap";
+import { signInWithRedirect } from 'aws-amplify/auth';
 
 export default function SignIn() {
   const [email, setEmail] = useState("");
+
+  const onSubmitEmail = async () => {
+    console.log(`You tried to sign in with email: ${email}`);
+    await signInWithRedirect({
+      provider: 'Google'
+    });
+  }
+
   return (
     <div className="signin-container">
       <h2>Sign In</h2>
@@ -14,7 +23,7 @@ export default function SignIn() {
         value={email}
         onChange={(e) => setEmail(e.target.value)}
       />
-      <Button href="/confirm" className="signin-otp-btn button-yellow" type="button">
+      <Button onClick={onSubmitEmail} className="signin-otp-btn button-yellow" type="button">
         Send One Time Passcode
       </Button>
     </div>
