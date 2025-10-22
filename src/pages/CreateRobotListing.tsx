@@ -84,19 +84,19 @@ export const CreateRobotListing = () => {
 
         <div className="inline">
           <label htmlFor="robot-name">Robot Name:</label>
-          <input id="robot-name" type="text" name="robotName" onChange={handleInputChange}></input>
+          <input id="robot-name" type="text" name='robotName' onChange={handleInputChange}></input>
         </div>
 
         <div className="inline">
           <label htmlFor="robot-model">Robot Model:</label>
-          <select id="robot-model" value={robotListing.model.toLowerCase()} onChange={handleInputChange}>
+          <select id="robot-model" name='model' value={robotListing.model.toLowerCase()} onChange={handleInputChange}>
             {ROBOT_MODELS.map(model => <option key={model} value={model.toLowerCase()}>{model}</option>)}
           </select>
         </div>
 
         <div>
           <label htmlFor="robot-description">Robot Description (optional):</label>
-          <textarea name="description" onChange={handleInputChange}></textarea>
+          <textarea name='description' onChange={handleInputChange}></textarea>
         </div>
         <button type="submit">Confirm Robot Listing</button>
       </form>

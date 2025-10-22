@@ -35,7 +35,7 @@ async function signOut() {
   });
 }
 
-function highestPriorityGroup(groups: any | undefined): AuthGroup | null {
+function highestPriorityGroup(groups: string[] | undefined): AuthGroup | null {
   if (!groups) {
     return null;
   }
@@ -65,7 +65,7 @@ export function useAuthStatus(): AuthStatus {
         const attrs = await fetchUserAttributes();
         const session = await fetchAuthSession();
         const groups = session.tokens?.accessToken?.payload['cognito:groups'];
-        const group = highestPriorityGroup(groups);
+        const group = highestPriorityGroup(groups as string[] | undefined);
 
         if (mounted) {
           setIsLoggedIn(true);
@@ -92,8 +92,9 @@ export function useAuthStatus(): AuthStatus {
     // Subscribe to sign-in/sign-out events
     const unsubscribe = Hub.listen("auth", ({ payload }) => {
       const { event } = payload;
-      if (event === "signedIn") loadUser();
-      else if (event === "signedOut" || event === "tokenRefresh_failure") {
+      if (event === "signedIn" || event === "tokenRefresh") {
+        loadUser();
+      } else if (event === "signedOut" || event === "tokenRefresh_failure") {
         setIsLoggedIn(false);
         setUser(null);
       }
