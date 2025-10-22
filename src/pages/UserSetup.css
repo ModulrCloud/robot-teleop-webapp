@@ -18,7 +18,6 @@
 }
 
 .group-select {
-  /* padding: 0.5rem 1.25rem; */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -27,7 +26,6 @@
 .group-select label {
   padding: 0.5rem 1.25rem;
   border-radius: 0.5rem;
-
 }
 
 .group-select select {

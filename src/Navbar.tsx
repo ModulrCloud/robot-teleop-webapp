@@ -7,7 +7,7 @@ type NavbarProps = {
 
 export default function Navbar(_props: NavbarProps) {
 
-  const { isLoggedIn, signOut } = useAuthStatus();
+  const { isLoggedIn, signOut, user } = useAuthStatus();
   const navigate = useNavigate();
   
   const handleSignInOut = async () => {
@@ -17,6 +17,7 @@ export default function Navbar(_props: NavbarProps) {
       navigate("/signin");
     }
   };
+
   return (
     <>
       <div
@@ -61,6 +62,14 @@ export default function Navbar(_props: NavbarProps) {
             <a href="/team" className="navbar2_link w-nav-link">
               Team
             </a>
+            {
+              user?.group === "PARTNERS" ?
+              <a href="/create-robot-listing" className="navbar2_link w-nav-link">
+                List Robot
+              </a>
+              : null
+            }
+            
             <Button onClick={handleSignInOut} className="button-yellow mobile-nav w-button">
               {isLoggedIn ? "Sign Out" : "Sign In"}
             </Button>

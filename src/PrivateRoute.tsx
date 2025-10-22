@@ -1,8 +1,7 @@
 import { JSX, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStatus } from "./hooks/useAuthStatus";
-import { faCircleNotch } from '@fortawesome/free-solid-svg-icons';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { LoadingWheel } from "./components/LoadingWheel";
 
 interface PrivateRouteProps {
   children: JSX.Element;
@@ -31,7 +30,7 @@ export function PrivateRoute({ children }: PrivateRouteProps) {
     }
   }, [isLoggedIn, loading, navigate, location]);
 
-  if (loading) return <FontAwesomeIcon icon={faCircleNotch} />;
+  if (loading) return <LoadingWheel />;
 
   return isLoggedIn ? children : null;
 }

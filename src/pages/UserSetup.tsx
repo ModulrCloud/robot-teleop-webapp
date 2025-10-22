@@ -1,16 +1,15 @@
-import { Amplify } from "aws-amplify";
 import { generateClient } from "aws-amplify/api";
 import type { Schema } from "../../amplify/data/resource";
 import { useState } from "react";
 import { useAuthStatus } from "../hooks/useAuthStatus";
-import { fetchAuthSession, getCurrentUser } from "@aws-amplify/auth";
+import { fetchAuthSession } from "@aws-amplify/auth";
 import './UserSetup.css';
 
-import outputs from "../../amplify_outputs.json";
 import { usePageTitle } from "../hooks/usePageTitle";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCircleNotch } from "@fortawesome/free-solid-svg-icons";
 import { useLocation, useNavigate } from "react-router-dom";
+import { LoadingWheel } from "../components/LoadingWheel";
+import { Amplify } from 'aws-amplify';
+import outputs from '../../amplify_outputs.json';
 
 Amplify.configure(outputs);
 const client = generateClient<Schema>();
@@ -34,7 +33,7 @@ export function UserSetup(_props: PrivateRouteProps) {
     event.preventDefault();
     setSettingGroup(true);
     console.log(`Trying to set user group to ${userGroup}!`);
-    const resp = await client.queries.setUserGroup({
+    const resp = await client.mutations.setUserGroupLambda({
       group: userGroup,
     }, {
       authMode: "userPool",
@@ -60,7 +59,7 @@ export function UserSetup(_props: PrivateRouteProps) {
   }
 
   const buttonFormElement = settingGroup ?
-    <FontAwesomeIcon icon={faCircleNotch} /> :
+    <LoadingWheel /> :
     <button type="submit">Confirm Selection</button>
   ;
 

@@ -2,11 +2,8 @@ import { useEffect, useState } from "react";
 import { getCurrentUser, fetchUserAttributes, signOut as amplifySignOut, fetchAuthSession } from "aws-amplify/auth";
 import { Hub } from "aws-amplify/utils";
 
-enum AuthGroup {
-  "ADMINS",
-  "PARTNERS",
-  "CLIENTS",
-}
+type AuthGroup = "ADMINS" | "PARTNERS" | "CLIENTS";
+const VALID_GROUPS: string[] = ["ADMINS", "PARTNERS", "CLIENTS"];
 
 interface AuthStatus {
   isLoggedIn: boolean;
@@ -42,9 +39,10 @@ function highestPriorityGroup(groups: any | undefined): AuthGroup | null {
   if (!groups) {
     return null;
   }
-  for (let key in AuthGroup) {
+
+  for (const key of VALID_GROUPS) {
     if (groups.includes(key)) {
-      return key as unknown as AuthGroup;
+      return key as AuthGroup;
     }
   }
   return null;
