@@ -6,6 +6,7 @@ import { signInWithRedirect } from 'aws-amplify/auth';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useAuthStatus } from '../hooks/useAuthStatus';
 import { useNavigate } from 'react-router-dom';
+import { LoadingWheel } from '../components/LoadingWheel';
 
 export default function SignIn() {
   usePageTitle();
@@ -19,7 +20,11 @@ export default function SignIn() {
   };
 
   if (loading) {
-    return <div className="signin-container"><p>Loading...</p></div>;
+    return (
+      <div className="signin-container">
+        <LoadingWheel />
+      </div>
+    );
   }
 
   if (isLoggedIn) {
