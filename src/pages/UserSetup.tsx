@@ -1,16 +1,15 @@
-import { Amplify } from "aws-amplify";
 import { generateClient } from "aws-amplify/api";
 import type { Schema } from "../../amplify/data/resource";
 import { useState } from "react";
 import { useAuthStatus } from "../hooks/useAuthStatus";
-import { fetchAuthSession, getCurrentUser } from "@aws-amplify/auth";
+import { fetchAuthSession } from "@aws-amplify/auth";
 import './UserSetup.css';
 
-import outputs from "../../amplify_outputs.json";
 import { usePageTitle } from "../hooks/usePageTitle";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCircleNotch } from "@fortawesome/free-solid-svg-icons";
 import { useLocation, useNavigate } from "react-router-dom";
+import { LoadingWheel } from "../components/LoadingWheel";
+import { Amplify } from 'aws-amplify';
+import outputs from '../../amplify_outputs.json';
 
 Amplify.configure(outputs);
 const client = generateClient<Schema>();
@@ -24,17 +23,17 @@ export function UserSetup(_props: PrivateRouteProps) {
   const location = useLocation();
   
   const [userGroup, setUserGroup] = useState<string>("client");
-
   const [settingGroup, setSettingGroup] = useState<boolean>(false);
 
   const handleOptionChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     setUserGroup(event.target.value);
   };
+
   const onConfirmUserGroup = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSettingGroup(true);
     console.log(`Trying to set user group to ${userGroup}!`);
-    const resp = await client.queries.setUserGroup({
+    const resp = await client.mutations.setUserGroupLambda({
       group: userGroup,
     }, {
       authMode: "userPool",
@@ -55,19 +54,23 @@ export function UserSetup(_props: PrivateRouteProps) {
     }
   }
 
+  // If user already has a group, just show a message
   if (user?.group) {
-    return <p>Your user group is {user?.group}.</p>;
+    return (
+      <div className="setup-container">
+        <h2>User Configuration</h2>
+        <p>Your user group is <strong>{user.group}</strong>.</p>
+      </div>
+    );
   }
 
   const buttonFormElement = settingGroup ?
-    <FontAwesomeIcon icon={faCircleNotch} /> :
-    <button type="submit">Confirm Selection</button>
-  ;
+    <LoadingWheel /> :
+    <button type="submit">Confirm Selection</button>;
 
   return (
     <div className="setup-container">
       <h2>User Configuration</h2>
-
       <p>You don't have a user group! Let's change that.</p>
 
       {/* <p>

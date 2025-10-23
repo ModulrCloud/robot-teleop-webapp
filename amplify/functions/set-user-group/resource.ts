@@ -1,3 +1,3 @@
 import { defineFunction } from "@aws-amplify/backend";
 
-export const setUserGroup = defineFunction({});
+export const setUserGroupLambda = defineFunction({});

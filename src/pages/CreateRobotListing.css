@@ -1,0 +1,68 @@
+.create-robot-listing-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(30, 30, 30, 0.85);
+  padding: 2rem 2.5rem;
+  border-radius: 1rem;
+  box-shadow: 0 2px 16px #0008;
+  width: 70%;
+  margin: 2rem auto;
+  row-gap: 20px;
+}
+
+.create-robot-listing-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  row-gap: 1rem;
+}
+
+.create-robot-listing-form button {
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  color: #fff;
+  background: var(--almost-black);
+  outline: 1px solid #fff;
+  cursor: pointer;
+  font-family: var(--quantico);
+  transition: all .3s;
+}
+
+.create-robot-listing-form .inline {
+  display: flex;
+  flex-direction: row;
+}
+
+.create-robot-listing-form label {
+  padding-right: 1rem;
+}
+
+.create-robot-listing-form input {
+  padding-right: 1rem;
+  color: black;
+}
+
+.create-robot-listing-form textarea {
+  color: black;
+  width: 100%;
+}
+
+.create-robot-listing-form select {
+  padding: 0.5rem 1.25rem;
+  border-radius: 0.5rem;
+  color: #000;
+  font-size: 16px;
+  width: 8rem;
+  text-align: center;
+}
+
+.success {
+  color: rgb(37, 224, 37);
+  font-weight: bold;
+}
+
+.error {
+  color: rgb(246, 57, 57);
+  font-weight: bold;
+}

@@ -10,7 +10,7 @@ const GROUP_NAME_MAP: Record<string, string> = {
 };
 const ALLOWED_GROUPS = Array.from(Object.keys(GROUP_NAME_MAP));
 
-export const handler: Schema["setUserGroup"]["functionHandler"] = async (event) => {
+export const handler: Schema["setUserGroupLambda"]["functionHandler"] = async (event) => {
   console.log("Request event:", event);
   
   const { group } = event.arguments;

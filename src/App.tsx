@@ -19,8 +19,13 @@ import outputs from '../amplify_outputs.json';
 import '@aws-amplify/ui-react/styles.css';
 import { Amplify } from 'aws-amplify';
 import { useAuthStatus } from "./hooks/useAuthStatus";
+import type { Schema } from "../amplify/data/resource";
+import { generateClient } from "aws-amplify/api";
+import { useEffect } from "react";
+import { CreateRobotListing } from "./pages/CreateRobotListing";
 
 Amplify.configure(outputs);
+const client = generateClient<Schema>();
 
 function App() {
   // const [count, setCount] = useState(0)
@@ -31,9 +36,40 @@ function App() {
   //   deviceId: 'husarion',
   // });
 
-  const { user } = useAuthStatus();
+  const { isLoggedIn, user } = useAuthStatus();
   const name = user?.displayName;
   const group = user?.group;
+
+  // TODO: remove all of fake partner creation once the full user signup flow
+  // is built
+  const maybeCreateFakePartner = async () => {
+    if (!isLoggedIn) {
+      return;
+    }
+    
+    // If signed in, check if FakePartner exists
+    const existingPartnerList = await client.models.Partner.list({
+      filter: {
+        name: { eq: "FakePartner" }
+      },
+    });
+
+    if (existingPartnerList.data.length > 0) {
+      console.log("FakePartner already exists!");
+      return;
+    }
+
+    // Create fake partner with current signed in ID
+    const createResp = await client.models.Partner.create({
+      name: "FakePartner",
+      description: "FakeDescription for FakePartner",
+      cognitoUsername: user?.username,
+    });
+    console.log("FakePartner created with response:", createResp);
+  };
+  useEffect(() => {
+    maybeCreateFakePartner();
+  }, [isLoggedIn, client, user]);
 
   return (
     <Router>
@@ -51,6 +87,12 @@ function App() {
           <Route path='/user-setup' element={
             <PrivateRoute>
               <UserSetup />
+            </PrivateRoute>
+          }
+          />
+          <Route path='/create-robot-listing' element={
+            <PrivateRoute>
+              <CreateRobotListing />
             </PrivateRoute>
           }
           />
