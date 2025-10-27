@@ -62,11 +62,13 @@ const schema = a.schema({
   // Table containing client details
   Client: a.model({
     id: a.id(),
+    cognitoUsername: a.string().authorization(allow => [allow.owner()]),
     publicKey: a.string(),
     averageRating: a.float(),
     reliabilityScore: a.float(),
     tags: a.hasMany('ClientTag', 'clientId'),
   })
+  .secondaryIndexes(index => [index("cognitoUsername").name("cognitoUsernameIndex")])
   .authorization((allow) => [
     allow.authenticated().to(['read']),
     allow.owner(),

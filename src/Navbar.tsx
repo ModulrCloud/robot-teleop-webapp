@@ -69,6 +69,13 @@ export default function Navbar(_props: NavbarProps) {
               </a>
               : null
             }
+            {
+              isLoggedIn ?
+              <a href="/profile" className="navbar2_link w-nav-link">
+                Profile
+              </a>
+              : null
+            }
             
             <Button onClick={handleSignInOut} className="button-yellow mobile-nav w-button">
               {isLoggedIn ? "Sign Out" : "Sign In"}
