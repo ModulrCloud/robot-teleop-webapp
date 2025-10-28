@@ -1,57 +1,140 @@
-.signin-container {
+.signin-wrapper {
   display: flex;
-  flex-direction: column;
+  justify-content: center;
   align-items: center;
-  background: rgba(30, 30, 30, 0.85);
-  padding: 2rem 2.5rem;
-  border-radius: 1rem;
-  box-shadow: 0 2px 16px #0008;
-  /* max-width: 350px; */
-  width: 400px;
-  margin: 2rem auto;
+  min-height: 70vh;
+  padding: 2rem;
 }
 
-.signin-container h2 {
-  margin-bottom: 2rem;
-  color: #fff;
-}
-
-.signin-email {
+.signin-container {
+  background: rgba(30, 30, 30, 0.95);
+  padding: 3rem 2.5rem;
+  border-radius: 1.5rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  max-width: 700px;
   width: 100%;
-  padding: 0.75rem 1rem;
-  border-radius: 0.5rem;
-  border: 1px solid #444;
-  background: #18191a;
-  color: #fff;
-  margin-bottom: 1.5rem;
-  font-size: 1rem;
-  outline: none;
+  animation: fadeIn 0.5s ease-in;
 }
 
-.signin-otp-btn {
-  padding: 0.5rem 1.25rem;
-  border-radius: 0.5rem;
-  border: none;
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.signin-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.signin-header h1 {
   color: #fff;
-  font-weight: 600;
-  font-size: 0.95rem;
-  font-family: var(--quantico);
-  cursor: pointer;
-  box-shadow: 0 1px 6px #0005;
-  transition: background 0.2s;
+  margin-bottom: 0.5rem;
+  font-size: 2.5rem;
+  font-weight: 700;
+}
+
+.signin-tagline {
+  color: #aaa;
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.signin-features {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 2.5rem;
+}
+
+.feature-card {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1.5rem;
+  border-radius: 1rem;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.feature-icon {
+  font-size: 2.5rem;
+  color: #ffcc00;
+  margin-bottom: 1rem;
+}
+
+.feature-card h3 {
+  color: #fff;
+  margin: 0.5rem 0;
+  font-size: 1.2rem;
+}
+
+.feature-card p {
+  color: #bbb;
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.signin-action {
+  text-align: center;
+}
+
+.signin-prompt {
+  color: #fff;
+  font-size: 1.1rem;
+  margin-bottom: 1.5rem;
+  font-weight: 500;
 }
 
 .signin-google-btn {
-  padding: 0.5rem 1.25rem;
-  border-radius: 0.5rem;
+  padding: 1rem 2.5rem;
+  border-radius: 0.75rem;
   color: #fff;
-  background: var(--almost-black);
-  outline: 1px solid #fff;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  outline: none;
   cursor: pointer;
   font-family: var(--quantico);
-  transition: all .3s;
+  font-size: 1.1rem;
+  font-weight: 600;
+  transition: all 0.3s;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
-#google-icon {
-  padding-right: 1rem;
+.signin-google-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+}
+
+.google-icon {
+  font-size: 1.3rem;
+}
+
+.signin-note {
+  color: #888;
+  font-size: 0.85rem;
+  margin-top: 1rem;
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .signin-features {
+    grid-template-columns: 1fr;
+  }
+  
+  .signin-container {
+    padding: 2rem 1.5rem;
+  }
+  
+  .signin-header h1 {
+    font-size: 2rem;
+  }
 }
