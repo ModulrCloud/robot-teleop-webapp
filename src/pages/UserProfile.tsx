@@ -9,6 +9,7 @@ import { Amplify } from 'aws-amplify';
 import outputs from '../../amplify_outputs.json';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faUser, faEdit, faSave, faTimes } from '@fortawesome/free-solid-svg-icons';
+import { formatGroupName } from "../utils/formatters";
 
 Amplify.configure(outputs);
 const client = generateClient<Schema>();
@@ -165,7 +166,7 @@ export function UserProfile() {
 
   if (loading) {
     return (
-      <div className="profile-container">
+      <div className="loading-wrapper">
         <LoadingWheel />
       </div>
     );
@@ -180,7 +181,7 @@ export function UserProfile() {
           </div>
           <div className="profile-header-info">
             <h1>{user?.displayName || user?.email}</h1>
-            <span className="profile-badge">{user?.group}</span>
+            <span className="profile-badge">{formatGroupName(user?.group)}</span>
           </div>
         </div>
 
@@ -196,7 +197,7 @@ export function UserProfile() {
             </div>
             <div className="info-item">
               <label>Account Type</label>
-              <p>{user?.group}</p>
+              <p>{formatGroupName(user?.group)}</p>
             </div>
             <div className="info-item">
               <label>Username</label>

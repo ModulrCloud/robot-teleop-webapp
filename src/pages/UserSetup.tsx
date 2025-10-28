@@ -12,6 +12,7 @@ import { Amplify } from 'aws-amplify';
 import outputs from '../../amplify_outputs.json';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faRobot, faGamepad, faCheckCircle } from '@fortawesome/free-solid-svg-icons';
+import { formatGroupName } from "../utils/formatters";
 
 Amplify.configure(outputs);
 const client = generateClient<Schema>();
@@ -123,7 +124,7 @@ export function UserSetup(_props: PrivateRouteProps) {
           <div className="success-state">
             <FontAwesomeIcon icon={faCheckCircle} className="success-icon" />
             <h2>Account Ready!</h2>
-            <p>Your account type: <strong>{user.group}</strong></p>
+            <p>Your account type: <strong>{formatGroupName(user.group)}</strong></p>
             <button onClick={() => navigate('/')} className="btn-primary">
               Go to Dashboard
             </button>
@@ -235,7 +236,9 @@ export function UserSetup(_props: PrivateRouteProps) {
 
           <div className="form-actions">
             {settingGroup ? (
-              <LoadingWheel />
+              <div className="loading-wrapper">
+                <LoadingWheel />
+              </div>
             ) : (
               <button type="submit" className="btn-primary btn-large">
                 {isPartner ? "Create Partner Account" : "Create Client Account"}

@@ -6,6 +6,12 @@
   padding: 2rem;
 }
 
+.loading-wrapper {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
 .setup-container {
   background: rgba(30, 30, 30, 0.95);
   padding: 3rem 2.5rem;
