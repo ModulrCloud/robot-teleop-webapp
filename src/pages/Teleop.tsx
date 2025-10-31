@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Joystick, { type JoystickChange } from "../components/Joystick";
 import { LoadingWheel } from "../components/LoadingWheel";
@@ -9,6 +9,7 @@ export default function Teleop() {
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const lastSendTimeRef = useRef<number>(0);
+  const sessionStartTimeRef = useRef<number>(Date.now());
   const sendIntervalMs = 100; // 10 Hz
 
   const wsUrl = import.meta.env.VITE_WS_URL || 'ws://192.168.132.19:8765';
@@ -20,6 +21,7 @@ export default function Teleop() {
   });
 
   useEffect(() => {
+    sessionStartTimeRef.current = Date.now();
     connect();
     return () => {
       stopRobot();
@@ -51,7 +53,9 @@ export default function Teleop() {
   const handleEndSession = () => {
     stopRobot();
     disconnect();
-    navigate('/endsession');
+    
+    const duration = Math.floor((Date.now() - sessionStartTimeRef.current) / 1000);
+    navigate('/endsession', { state: { duration } });
   };
 
   return (

@@ -1,7 +1,7 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import CardGrid from "../components/CardGrid";
 import { type CardGridItemProps } from "../components/CardGridItem";
-import { Button } from "react-bootstrap";
 import "./RobotSelect.css";
 
 const robots: CardGridItemProps[] = [
@@ -13,9 +13,16 @@ const robots: CardGridItemProps[] = [
 export default function RobotSelect() {
   const [selected, setSelected] = useState<CardGridItemProps[]>([]);
   const hasSelected = selected.length > 0;
+  const navigate = useNavigate();
+
+  const handleNext = () => {
+    if (hasSelected) {
+      navigate('/services');
+    }
+  };
 
   return (
-    <div style={{ position: "relative" }}>
+    <div className="robot-select-container">
       <h2>Select Robot</h2>
       <CardGrid
         items={robots.map(robot => ({
@@ -26,18 +33,13 @@ export default function RobotSelect() {
         selected={selected}
         setSelected={setSelected}
       />
-      <Button
-        className="button-yellow"
-        id="services-button"
-        href="/services"
-        style={{
-          opacity: hasSelected ? 1 : 0.5,
-          pointerEvents: hasSelected ? "auto" : "none",
-        }}
+      <button
+        className="next-services-button"
+        onClick={handleNext}
         disabled={!hasSelected}
       >
         Next: Services
-      </Button>
+      </button>
     </div>
   );
 }
