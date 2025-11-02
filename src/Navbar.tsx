@@ -54,7 +54,7 @@ export default function Navbar(_props: NavbarProps) {
               Home
             </a>
             <a href="/technology-overview" className="navbar2_link w-nav-link">
-              Technology Overview
+              Technology
             </a>
             <a href="/roadmap" className="navbar2_link w-nav-link">
               Roadmap
@@ -62,6 +62,13 @@ export default function Navbar(_props: NavbarProps) {
             <a href="/team" className="navbar2_link w-nav-link">
               Team
             </a>
+            {
+              isLoggedIn ?
+              <a href="/robots" className="navbar2_link w-nav-link">
+                Robots
+              </a>
+              : null
+            }
             {
               user?.group === "PARTNERS" ?
               <a href="/create-robot-listing" className="navbar2_link w-nav-link">

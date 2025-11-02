@@ -77,15 +77,56 @@
   width: 100%;
   min-height: calc(100vh - 80px);
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  padding: 1.5rem;
+  padding: 1rem;
   box-sizing: border-box;
+}
+
+/* Top Bar */
+.teleop-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.connection-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.info-label {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+}
+
+.info-value {
+  color: #ffc107;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.session-timer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 20px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.95rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* Status Badge */
 .teleop-status-badge {
-  position: absolute;
-  top: 1.5rem;
-  right: 1.5rem;
   padding: 0.5rem 1rem;
   border-radius: 20px;
   font-size: 0.9rem;
@@ -93,7 +134,6 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  z-index: 10;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
@@ -132,47 +172,50 @@
 
 /* Error Alert */
 .teleop-error-alert {
-  position: absolute;
-  top: 5rem;
-  left: 50%;
-  transform: translateX(-50%);
   background: rgba(220, 53, 69, 0.95);
   color: #fff;
-  padding: 1rem 1.5rem;
-  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1.5rem;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  z-index: 9;
-  min-width: 400px;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .error-content {
   flex: 1;
 }
 
+.error-details {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  opacity: 0.9;
+  font-family: monospace;
+}
+
 .retry-btn {
   background: rgba(255, 255, 255, 0.95);
   color: #dc3545;
   border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   transition: all 0.2s;
   white-space: nowrap;
 }
 
 .retry-btn:hover {
   background: #fff;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .retry-btn:active {
@@ -182,10 +225,10 @@
 /* Main Control Panel */
 .teleop-panel {
   display: grid;
-  grid-template-columns: 1fr 340px;
-  gap: 1.5rem;
-  height: calc(100vh - 120px);
-  max-width: 1600px;
+  grid-template-columns: 1fr 360px;
+  gap: 1rem;
+  height: calc(100vh - 180px);
+  max-width: 1800px;
   margin: 0 auto;
 }
 
@@ -198,6 +241,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  border: 2px solid rgba(255, 255, 255, 0.05);
 }
 
 .video-wrapper {
@@ -217,25 +261,43 @@
 
 .video-placeholder {
   position: absolute;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 1.3rem;
+  inset: 0;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  justify-content: center;
+}
+
+.placeholder-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1.1rem;
   user-select: none;
+}
+
+.placeholder-content svg {
+  opacity: 0.5;
 }
 
 /* Controls Panel */
 .teleop-controls-panel {
   background: rgba(255, 255, 255, 0.05);
   border-radius: 12px;
-  padding: 2rem;
+  padding: 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.controls-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .controls-header h3 {
@@ -246,6 +308,23 @@
   text-align: center;
 }
 
+.joystick-indicator {
+  text-align: center;
+  padding: 0.4rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.5);
+  transition: all 0.2s;
+}
+
+.joystick-indicator.active {
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
+  border: 1px solid rgba(255, 193, 7, 0.3);
+}
+
 .joystick-wrapper {
   flex: 1;
   display: flex;
@@ -254,9 +333,31 @@
   padding: 1rem 0;
 }
 
+.control-hints {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  padding: 1rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.hint-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.hint-icon {
+  font-size: 1.2rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
 .end-session-btn {
   width: 100%;
-  padding: 0.9rem;
+  padding: 1rem;
   font-size: 1.05rem;
   font-weight: 600;
   border-radius: 8px;
@@ -272,28 +373,32 @@
   box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
 }
 
-.end-session-btn:hover {
+.end-session-btn:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 4px 16px rgba(220, 53, 69, 0.5);
   background: linear-gradient(135deg, #e04555 0%, #d02939 100%);
 }
 
-.end-session-btn:active {
+.end-session-btn:active:not(:disabled) {
   transform: translateY(0);
   box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
 }
 
+.end-session-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Responsive Design */
-@media (max-width: 1024px) {
+@media (max-width: 1200px) {
   .teleop-panel {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr auto;
     height: auto;
-    min-height: calc(100vh - 120px);
   }
 
   .teleop-controls-panel {
-    max-width: 500px;
+    max-width: 600px;
     margin: 0 auto;
     width: 100%;
   }
@@ -301,16 +406,21 @@
   .teleop-video-container {
     min-height: 400px;
   }
-
-  .teleop-error-alert {
-    min-width: auto;
-    max-width: 90%;
-  }
 }
 
 @media (max-width: 768px) {
   .teleop-container {
-    padding: 1rem;
+    padding: 0.75rem;
+  }
+
+  .teleop-top-bar {
+    font-size: 0.85rem;
+  }
+
+  .session-timer,
+  .connection-info {
+    font-size: 0.8rem;
+    padding: 0.4rem 0.8rem;
   }
 
   .teleop-status-badge {
@@ -318,30 +428,22 @@
     padding: 0.4rem 0.8rem;
   }
 
-  .teleop-panel {
-    gap: 1rem;
-  }
-
-  .teleop-controls-panel {
-    padding: 1.5rem;
-  }
-
   .controls-header h3 {
     font-size: 1.1rem;
   }
 
-  .joystick-wrapper {
-    padding: 0.5rem 0;
-  }
-
   .teleop-error-alert {
     flex-direction: column;
-    align-items: stretch;
-    gap: 0.75rem;
+    gap: 1rem;
   }
 
   .retry-btn {
+    width: 100%;
     justify-content: center;
+  }
+
+  .control-hints {
+    grid-template-columns: 1fr;
   }
 }
   
