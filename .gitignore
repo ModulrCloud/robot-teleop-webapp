@@ -28,5 +28,3 @@ dist-ssr
 # Amplify-specific files
 amplify_outputs.json
 .amplify
-.venv
-*.pyc
