@@ -246,13 +246,13 @@ export default function Teleop() {
                 <div 
                   className="speed-bar forward" 
                   style={{ 
-                    left: currentSpeed.forward < 0 ? `${(currentSpeed.forward + 1) * 50}%` : '50%',
-                    width: `${Math.abs(currentSpeed.forward) * 50}%`,
+                    left: currentSpeed.forward < 0 ? `${50 + (currentSpeed.forward / 0.5) * 50}%` : '50%',
+                    width: `${Math.abs(currentSpeed.forward / 0.5) * 50}%`,
                     backgroundColor: currentSpeed.forward > 0 ? '#28a745' : currentSpeed.forward < 0 ? '#dc3545' : '#666'
                   }}
                 />
               </div>
-              <div className="speed-value">{((currentSpeed.forward + 1) * 50).toFixed(0)}%</div>
+              <div className="speed-value">{((currentSpeed.forward / 0.5) * 100).toFixed(0)}%</div>
             </div>
             <div className="speed-meter">
               <div className="speed-label">Turn</div>
@@ -261,13 +261,13 @@ export default function Teleop() {
                 <div 
                   className="speed-bar turn" 
                   style={{ 
-                    left: currentSpeed.turn > 0 ? `${(-currentSpeed.turn + 1) * 50}%` : '50%',
-                    width: `${Math.abs(currentSpeed.turn) * 50}%`,
+                    left: currentSpeed.turn < 0 ? `${50 + (currentSpeed.turn / 1.0) * 50}%` : '50%',
+                    width: `${Math.abs(currentSpeed.turn / 1.0) * 50}%`,
                     backgroundColor: currentSpeed.turn < 0 ? '#ffc107' : currentSpeed.turn > 0 ? '#17a2b8' : '#666'
                   }}
                 />
               </div>
-              <div className="speed-value">{((-currentSpeed.turn + 1) * 50).toFixed(0)}%</div>
+              <div className="speed-value">{((-currentSpeed.turn / 1.0) * 100).toFixed(0)}%</div>
             </div>
           </div>
           
