@@ -261,7 +261,7 @@ export default function Teleop() {
                 <div 
                   className="speed-bar turn" 
                   style={{ 
-                    left: currentSpeed.turn < 0 ? `${50 + (currentSpeed.turn / 1.0) * 50}%` : '50%',
+                    left: -currentSpeed.turn < 0 ? `${50 + (-currentSpeed.turn / 1.0) * 50}%` : '50%',
                     width: `${Math.abs(currentSpeed.turn / 1.0) * 50}%`,
                     backgroundColor: currentSpeed.turn < 0 ? '#ffc107' : currentSpeed.turn > 0 ? '#17a2b8' : '#666'
                   }}
