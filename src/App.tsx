@@ -9,6 +9,7 @@ import RobotSelect from "./pages/RobotSelect";
 import ServiceSelect from "./pages/ServiceSelect";
 import SignIn from "./pages/SignIn";
 import Teleop from "./pages/Teleop";
+import EndSession from "./pages/EndSession";
 import { PrivateRoute } from "./PrivateRoute";
 import { UserSetup } from "./pages/UserSetup";
 import { Home } from "./pages/Home";
@@ -68,6 +69,12 @@ function App() {
           <Route path='/teleop' element={
             <PrivateRoute>
               <Teleop />
+            </PrivateRoute>
+          }
+          />
+          <Route path='/endsession' element={
+            <PrivateRoute>
+              <EndSession />
             </PrivateRoute>
           }
           />

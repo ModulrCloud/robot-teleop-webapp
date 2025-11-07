@@ -1,33 +1,334 @@
-import { Button } from "react-bootstrap";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Joystick, { type JoystickChange } from "../components/Joystick";
+import { LoadingWheel } from "../components/LoadingWheel";
+import { useWebRTC } from "../hooks/useWebRTC";
+import { useGamepad } from "../hooks/useGamepad";
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { 
+  faClock,
+  faRotate,
+  faVideo,
+  faCircleExclamation,
+  faArrowsUpDownLeftRight,
+  faGamepad,
+  faRightFromBracket
+} from '@fortawesome/free-solid-svg-icons';
 import "./Teleop.css";
 
 export default function Teleop() {
-  const handleJoystickChange = (_: JoystickChange) => {
-    // TODO: wire to robot control
-  }
+  const navigate = useNavigate();
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const lastSendTimeRef = useRef<number>(0);
+  const sessionStartTimeRef = useRef<number | null>(null);
+  const [sessionTime, setSessionTime] = useState(0);
+  const [isJoystickActive, setIsJoystickActive] = useState(false);
+  const [currentSpeed, setCurrentSpeed] = useState({ forward: 0, turn: 0 });
+  const [controlMode, setControlMode] = useState<'joystick' | 'gamepad'>('joystick');
+  const [gamepadDetected, setGamepadDetected] = useState(false);
+  const sendIntervalMs = 100; // 10 Hz
+
+  // TODO: Read from deployment config (environment/AWS Parameter Store)
+  const wsUrl = import.meta.env.VITE_WS_URL || 'ws://192.168.132.19:8765';
+  // TODO: Read from database based on selected robot
+  const robotId = import.meta.env.VITE_ROBOT_ID || 'robot1';
+
+  const { status, connect, disconnect, sendCommand, stopRobot } = useWebRTC({
+    wsUrl,
+    robotId,
+  });
+
+  useEffect(() => {
+    if (status.connected && sessionStartTimeRef.current === null) {
+      sessionStartTimeRef.current = Date.now();
+    }
+  }, [status.connected]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (sessionStartTimeRef.current !== null) {
+        setSessionTime(Math.floor((Date.now() - sessionStartTimeRef.current) / 1000));
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const checkGamepad = () => {
+      const gamepads = navigator.getGamepads();
+      const hasGamepad = Array.from(gamepads).some(g => g !== null);
+      setGamepadDetected(hasGamepad);
+    };
+
+    const interval = setInterval(checkGamepad, 1000);
+    window.addEventListener('gamepadconnected', checkGamepad);
+    window.addEventListener('gamepaddisconnected', checkGamepad);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('gamepadconnected', checkGamepad);
+      window.removeEventListener('gamepaddisconnected', checkGamepad);
+    };
+  }, [controlMode]);
+
+  useGamepad(
+    (input) => {
+      const forward = input.forward * 0.5;
+      const turn = input.turn * -1.0;
+      setCurrentSpeed({ forward, turn });
+      setIsJoystickActive(forward !== 0 || turn !== 0);
+      
+      if (!status.connected || controlMode !== 'gamepad') return;
+      const now = Date.now();
+      if (now - lastSendTimeRef.current < sendIntervalMs) return;
+      lastSendTimeRef.current = now;
+      sendCommand(forward, turn);
+    },
+    controlMode === 'gamepad'
+  );
+
+  useEffect(() => {
+    connect();
+    return () => {
+      stopRobot();
+      disconnect();
+    };
+  }, [connect, disconnect, stopRobot]);
+
+  useEffect(() => {
+    if (videoRef.current && status.videoStream) {
+      videoRef.current.srcObject = status.videoStream;
+    }
+  }, [status.videoStream]);
+
+  const handleJoystickChange = (change: JoystickChange) => {
+    if (!status.connected || controlMode !== 'joystick') return;
+    
+    setIsJoystickActive(true);
+    const now = Date.now();
+    if (now - lastSendTimeRef.current < sendIntervalMs) return;
+    lastSendTimeRef.current = now;
+
+    const forward = change.y * 0.5;
+    const turn = change.x * -1.0;
+    setCurrentSpeed({ forward, turn });
+    sendCommand(forward, turn);
+  };
+
+  const handleJoystickEnd = () => {
+    setIsJoystickActive(false);
+    setCurrentSpeed({ forward: 0, turn: 0 });
+    if (status.connected) stopRobot();
+  };
+
+  const handleEndSession = () => {
+    stopRobot();
+    disconnect();
+    const duration = sessionStartTimeRef.current !== null 
+      ? Math.floor((Date.now() - sessionStartTimeRef.current) / 1000)
+      : 0;
+    navigate('/endsession', { state: { duration } });
+  };
+
+  const formatTime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
 
   return (
-    <div style={{ position: "relative" }}>
-      <h2>Control Your Robot</h2>
-      <div className="teleop-layout">
-        <div className="teleop-video">
-          <iframe width="560" height="315" src="https://www.youtube.com/embed/MbOy-0mxhaI?si=C5lar3DmAjgbpkL1&controls=0&autoplay=1" title="YouTube video player" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen></iframe>
+    <div className="teleop-container">
+      <div className="teleop-top-bar">
+        <div className="connection-info">
+          <span className="info-label">Robot:</span>
+          <span className="info-value">{robotId}</span>
         </div>
-        <div className="teleop-controls">
-          <Joystick onChange={handleJoystickChange} />
+        
+        <div className="session-timer">
+          <FontAwesomeIcon icon={faClock} />
+          {formatTime(sessionTime)}
+        </div>
+
+        <div className={`teleop-status-badge ${status.connected ? 'connected' : status.connecting ? 'connecting' : 'disconnected'}`}>
+          {status.connecting && <><LoadingWheel /> Connecting...</>}
+          {status.connected && <><span className="status-dot"></span> Connected</>}
+          {status.error && <><span className="status-dot error"></span> Disconnected</>}
         </div>
       </div>
 
-      <div className="endsession-wrapper">
-        <Button
-          className="button-yellow endsession-button"
-          id="end-button"
-          href="/endsession"
-        >
-          End Session
-        </Button>
+      {status.error && (
+        <div className="teleop-error-alert">
+          <div className="error-content">
+            <strong>Connection Error:</strong> {status.error}
+            <div className="error-details">Check that WebSocket server is running at: {wsUrl}</div>
+          </div>
+          <button onClick={connect} className="retry-btn">
+            <FontAwesomeIcon icon={faRotate} />
+            Retry Connection
+          </button>
+        </div>
+      )}
 
+      <div className="teleop-panel">
+        <div className="teleop-video-container">
+          <div className="video-wrapper">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="teleop-video"
+            />
+            {!status.videoStream && (
+              <div className="video-placeholder">
+                {status.connecting ? (
+                  <div className="placeholder-content">
+                    <LoadingWheel />
+                    <span>Establishing connection...</span>
+                  </div>
+                ) : status.connected ? (
+                  <div className="placeholder-content">
+                    <FontAwesomeIcon icon={faVideo} size="3x" />
+                    <span>Waiting for video stream...</span>
+                  </div>
+                ) : (
+                  <div className="placeholder-content">
+                    <FontAwesomeIcon icon={faCircleExclamation} size="3x" />
+                    <span>Camera offline</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="teleop-controls-panel">
+          <div className="controls-header">
+            <h3>Movement Control</h3>
+            
+            <div className="control-mode-selector">
+              <button
+                className={`mode-btn ${controlMode === 'joystick' ? 'active' : ''}`}
+                onClick={() => setControlMode('joystick')}
+              >
+                <FontAwesomeIcon icon={faArrowsUpDownLeftRight} />
+                Joystick
+              </button>
+              <button
+                className={`mode-btn ${controlMode === 'gamepad' ? 'active' : ''}`}
+                onClick={() => setControlMode('gamepad')}
+              >
+                <FontAwesomeIcon icon={faGamepad} />
+                Gamepad
+              </button>
+            </div>
+          </div>
+
+          <div className="control-status">
+            <div className="status-row">
+              <span className="status-label">Mode:</span>
+              <span className="status-value">{controlMode === 'joystick' ? 'Virtual Joystick' : 'Gamepad'}</span>
+            </div>
+            <div className="status-row">
+              <span className="status-label">Status:</span>
+              <span className={`status-value ${isJoystickActive ? 'active-status' : ''}`}>
+                {isJoystickActive ? 'Moving' : 'Idle'}
+              </span>
+            </div>
+          </div>
+
+          <div className="speed-indicators">
+            <div className="speed-meter">
+              <div className="speed-label">Forward</div>
+              <div className="speed-bar-container">
+                <div className="speed-bar-center-line" />
+                <div 
+                  className="speed-bar forward" 
+                  style={{ 
+                    left: currentSpeed.forward < 0 ? `${50 + (currentSpeed.forward / 0.5) * 50}%` : '50%',
+                    width: `${Math.abs(currentSpeed.forward / 0.5) * 50}%`,
+                    backgroundColor: currentSpeed.forward > 0 ? '#28a745' : currentSpeed.forward < 0 ? '#dc3545' : '#666'
+                  }}
+                />
+              </div>
+              <div className="speed-value">{((currentSpeed.forward / 0.5) * 100).toFixed(0)}%</div>
+            </div>
+            <div className="speed-meter">
+              <div className="speed-label">Turn</div>
+              <div className="speed-bar-container">
+                <div className="speed-bar-center-line" />
+                <div 
+                  className="speed-bar turn" 
+                  style={{ 
+                    left: -currentSpeed.turn < 0 ? `${50 + (-currentSpeed.turn / 1.0) * 50}%` : '50%',
+                    width: `${Math.abs(currentSpeed.turn / 1.0) * 50}%`,
+                    backgroundColor: currentSpeed.turn < 0 ? '#ffc107' : currentSpeed.turn > 0 ? '#17a2b8' : '#666'
+                  }}
+                />
+              </div>
+              <div className="speed-value">{((-currentSpeed.turn / 1.0) * 100).toFixed(0)}%</div>
+            </div>
+          </div>
+          
+          {controlMode === 'joystick' ? (
+            <div className="joystick-wrapper">
+              <Joystick 
+                onChange={handleJoystickChange} 
+                onEnd={handleJoystickEnd}
+                size={220}
+                knobSize={90}
+              />
+            </div>
+          ) : (
+            <div className="gamepad-wrapper">
+              {gamepadDetected ? (
+                <div className="joystick-display-wrapper">
+                  <div className="joystick-display" style={{ width: 220, height: 220 }}>
+                    <div className="joystick-ring" />
+                    <div
+                      className="joystick-knob"
+                      style={{
+                        width: 90,
+                        height: 90,
+                        transform: `translate(calc(-50% + ${-currentSpeed.turn / 0.5 * 65}px), calc(-50% + ${currentSpeed.forward / 0.5 * -65}px))`,
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="gamepad-visual">
+                  <FontAwesomeIcon icon={faGamepad} className="gamepad-icon" size="6x" />
+                  <div className="gamepad-status not-detected-status">
+                    <FontAwesomeIcon icon={faCircleExclamation} className="status-warn" />
+                    <span>No Gamepad Detected</span>
+                    <div className="gamepad-hint">Connect a controller to use</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="control-hints">
+            <div className="hint-item">
+              <span className="hint-icon">↑↓</span>
+              <span>Forward/Backward</span>
+            </div>
+            <div className="hint-item">
+              <span className="hint-icon">←→</span>
+              <span>Turn Left/Right</span>
+            </div>
+          </div>
+
+          <button 
+            onClick={handleEndSession} 
+            className="end-session-btn"
+            disabled={status.connecting}
+          >
+            <FontAwesomeIcon icon={faRightFromBracket} />
+            End Session
+          </button>
+        </div>
       </div>
     </div>
   );

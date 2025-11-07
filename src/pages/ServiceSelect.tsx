@@ -1,7 +1,7 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import CardGrid from "../components/CardGrid";
 import { type CardGridItemProps } from "../components/CardGridItem";
-import { Button } from "react-bootstrap";
 import "./ServiceSelect.css";
 
 const services: CardGridItemProps[] = [
@@ -12,9 +12,14 @@ const services: CardGridItemProps[] = [
 
 export default function ServiceSelect() {
   const [selected, setSelected] = useState<CardGridItemProps[]>([]);
+  const navigate = useNavigate();
+
+  const handleStartSession = () => {
+    navigate('/teleop');
+  };
 
   return (
-    <div style={{ position: "relative" }}>
+    <div className="service-select-container">
       <h2>Select Services (Optional)</h2>
       <CardGrid
         items={services.map(service => ({
@@ -25,13 +30,12 @@ export default function ServiceSelect() {
         selected={selected}
         setSelected={setSelected}
       />
-      <Button
-        className="button-yellow"
-        id="session-button"
-        href="/teleop"
+      <button
+        className="start-session-button"
+        onClick={handleStartSession}
       >
         Next: Start Session
-      </Button>
+      </button>
     </div>
   );
 }
