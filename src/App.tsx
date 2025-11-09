@@ -27,9 +27,7 @@ function App() {
 
   return (
     <Router>
-      <div className="page-wrapper">
-        <Navbar />
-      </div>
+      <Navbar />
       <main className="main-content">
         <Routes>
           <Route path='/' element={<Home />} />
