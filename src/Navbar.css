@@ -29,6 +29,31 @@
   width: auto;
 }
 
+/* External Link */
+.navbar-external-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  margin-left: 0.5rem;
+  padding-left: 1rem;
+}
+
+.navbar-external-link:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.navbar-external-link svg {
+  width: 14px;
+  height: 14px;
+}
+
 /* Navigation Links */
 .navbar-links {
   display: flex;

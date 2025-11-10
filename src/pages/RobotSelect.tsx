@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import CardGrid from "../components/CardGrid";
 import { type CardGridItemProps } from "../components/CardGridItem";
+import { usePageTitle } from "../hooks/usePageTitle";
 import "./RobotSelect.css";
 
 const robots: CardGridItemProps[] = [
@@ -11,6 +12,7 @@ const robots: CardGridItemProps[] = [
 ];
 
 export default function RobotSelect() {
+  usePageTitle();
   const [selected, setSelected] = useState<CardGridItemProps[]>([]);
   const hasSelected = selected.length > 0;
   const navigate = useNavigate();

@@ -1,7 +1,9 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import "./EndSession.css";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 export default function EndSession() {
+  usePageTitle();
   const location = useLocation();
   const navigate = useNavigate();
   const duration = (location.state as { duration?: number })?.duration || 0;

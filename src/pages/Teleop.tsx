@@ -15,8 +15,10 @@ import {
   faRightFromBracket
 } from '@fortawesome/free-solid-svg-icons';
 import "./Teleop.css";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 export default function Teleop() {
+  usePageTitle();
   const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const lastSendTimeRef = useRef<number>(0);

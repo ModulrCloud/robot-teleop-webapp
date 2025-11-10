@@ -10,7 +10,7 @@ export function usePageTitle() {
 
     switch (location.pathname) {
       case "/":
-        title = "Home";
+        title = "Dashboard";
         break;
       case "/signin":
         title = "Sign In";
@@ -18,17 +18,36 @@ export function usePageTitle() {
       case "/user-setup":
         title = "User Setup";
         break;
+      case "/profile":
+        title = "Profile";
+        break;
+      case "/settings":
+        title = "Settings";
+        break;
       case "/robots":
-        title = "Robots";
+        title = "Select Robot";
         break;
       case "/services":
-        title = "Services";
+        title = "Select Services";
         break;
       case "/teleop":
         title = "Teleoperation Session";
         break;
-      // add other routes here
+      case "/endsession":
+        title = "Session Complete";
+        break;
+      case "/sessions":
+        title = "Session History";
+        break;
+      case "/create-robot-listing":
+        title = "List Robot";
+        break;
       default:
+        title = location.pathname
+          .split("/")
+          .filter(Boolean)
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(" ");
         break;
     }
 

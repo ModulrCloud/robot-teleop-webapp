@@ -9,9 +9,11 @@ import {
   faUser,
   faChevronDown,
   faRightFromBracket,
-  faCog
+  faCog,
+  faGlobe
 } from '@fortawesome/free-solid-svg-icons';
 import "./Navbar.css";
+import { formatGroupName } from "./utils/formatters";
 
 export default function Navbar() {
   const { isLoggedIn, signOut, user } = useAuthStatus();
@@ -43,6 +45,17 @@ export default function Navbar() {
         <Link to="/" className="navbar-logo">
           <img src="/logo-large.png" alt="Modulr" />
         </Link>
+
+        <a 
+          href="https://www.modulr.cloud" 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="navbar-external-link"
+          title="Visit Modulr Website"
+        >
+          <FontAwesomeIcon icon={faGlobe} />
+          <span>Website</span>
+        </a>
 
         {isLoggedIn && (
           <div className="navbar-links">
@@ -104,7 +117,7 @@ export default function Navbar() {
                         <div className="dropdown-name">{user?.email?.split('@')[0]}</div>
                         <div className="dropdown-email">{user?.email}</div>
                         {user?.group && (
-                          <div className="dropdown-role">{user.group}</div>
+                          <div className="dropdown-role">{formatGroupName(user.group)}</div>
                         )}
                       </div>
                     </div>
