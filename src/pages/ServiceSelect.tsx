@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import CardGrid from "../components/CardGrid";
 import { type CardGridItemProps } from "../components/CardGridItem";
+import { usePageTitle } from "../hooks/usePageTitle";
 import "./ServiceSelect.css";
 
 const services: CardGridItemProps[] = [
@@ -11,6 +12,7 @@ const services: CardGridItemProps[] = [
 ];
 
 export default function ServiceSelect() {
+  usePageTitle();
   const [selected, setSelected] = useState<CardGridItemProps[]>([]);
   const navigate = useNavigate();
 
