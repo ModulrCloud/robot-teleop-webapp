@@ -30,7 +30,11 @@ function App() {
       <Navbar />
       <main className="main-content">
         <Routes>
-          <Route path='/' element={<Dashboard />} />
+          <Route path='/' element={
+            <PrivateRoute>
+              <Dashboard />
+            </PrivateRoute>
+          } />
           <Route path='/signin' element={<SignIn />} />
 
           {/* Authenticated Routes */}
