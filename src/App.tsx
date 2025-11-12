@@ -12,7 +12,7 @@ import Teleop from "./pages/Teleop";
 import EndSession from "./pages/EndSession";
 import { PrivateRoute } from "./PrivateRoute";
 import { UserSetup } from "./pages/UserSetup";
-import { Home } from "./pages/Home";
+import { Dashboard } from "./pages/Dashboard";
 import { CreateRobotListing } from "./pages/CreateRobotListing";
 import { UserProfile } from "./pages/UserProfile";
 
@@ -30,7 +30,11 @@ function App() {
       <Navbar />
       <main className="main-content">
         <Routes>
-          <Route path='/' element={<Home />} />
+          <Route path='/' element={
+            <PrivateRoute>
+              <Dashboard />
+            </PrivateRoute>
+          } />
           <Route path='/signin' element={<SignIn />} />
 
           {/* Authenticated Routes */}
