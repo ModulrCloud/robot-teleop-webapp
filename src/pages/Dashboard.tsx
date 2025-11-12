@@ -93,11 +93,15 @@ export const Dashboard = () => {
           </p>
         </div>
         <div className="system-status-card">
-          <div className="status-indicator">
+          <UnderConstruction 
+            mode="banner" 
+            message="System status monitoring coming soon"
+          />
+          <div className="status-indicator" style={{ opacity: 0.5 }}>
             <div className={`status-dot ${allSystemsOperational ? 'online' : 'offline'}`}></div>
-            <span>{allSystemsOperational ? 'All Systems Operational' : 'System Issues Detected'}</span>
+            <span>Mock Data - Not Live</span>
           </div>
-          <div className="status-details">
+          <div className="status-details" style={{ opacity: 0.5 }}>
             <div className="status-item">
               <span>WebRTC</span>
               <FontAwesomeIcon 
