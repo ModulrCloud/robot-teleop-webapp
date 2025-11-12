@@ -4,6 +4,7 @@ import CardGrid from "../components/CardGrid";
 import { type CardGridItemProps } from "../components/CardGridItem";
 import { usePageTitle } from "../hooks/usePageTitle";
 import "./ServiceSelect.css";
+import { UnderConstruction } from "../components/UnderConstruction";
 
 const services: CardGridItemProps[] = [
   { id: 1, title: "Lap Time Verification", description: "Modulr", imageUrl: "/stopwatch.png" },
@@ -22,6 +23,10 @@ export default function ServiceSelect() {
 
   return (
     <div className="service-select-container">
+      <UnderConstruction 
+        mode="banner" 
+        message="Service Selection"
+      />
       <h2>Select Services (Optional)</h2>
       <CardGrid
         items={services.map(service => ({

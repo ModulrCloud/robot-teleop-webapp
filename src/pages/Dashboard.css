@@ -35,6 +35,20 @@
   min-width: 280px;
 }
 
+.system-status-card .under-construction-banner {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+}
+
+.system-status-card .banner-content strong {
+  font-size: 0.8rem;
+}
+
+.system-status-card .banner-content span {
+  font-size: 0.8rem;
+}
+
 .status-indicator {
   display: flex;
   align-items: center;

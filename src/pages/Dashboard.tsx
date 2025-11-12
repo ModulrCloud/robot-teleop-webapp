@@ -16,6 +16,7 @@ import {
   faArrowRight
 } from '@fortawesome/free-solid-svg-icons';
 import "./Dashboard.css";
+import { UnderConstruction } from "../components/UnderConstruction";
 
 interface DashboardStats {
   totalSessions: number;
@@ -92,11 +93,15 @@ export const Dashboard = () => {
           </p>
         </div>
         <div className="system-status-card">
-          <div className="status-indicator">
+          <UnderConstruction 
+            mode="banner" 
+            message="System status monitoring coming soon"
+          />
+          <div className="status-indicator" style={{ opacity: 0.5 }}>
             <div className={`status-dot ${allSystemsOperational ? 'online' : 'offline'}`}></div>
-            <span>{allSystemsOperational ? 'All Systems Operational' : 'System Issues Detected'}</span>
+            <span>Mock Data - Not Live</span>
           </div>
-          <div className="status-details">
+          <div className="status-details" style={{ opacity: 0.5 }}>
             <div className="status-item">
               <span>WebRTC</span>
               <FontAwesomeIcon 
@@ -171,6 +176,10 @@ export const Dashboard = () => {
 
       <div className="dashboard-section">
         <h2 className="section-title">Your Stats</h2>
+        <UnderConstruction 
+          mode="banner" 
+          message="Real-time stats coming soon! Data will be available once session tracking is implemented."
+        />
         <div className="stats-grid">
           <div className="stat-card">
             <div className="stat-icon">
