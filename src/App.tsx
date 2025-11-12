@@ -15,6 +15,7 @@ import { UserSetup } from "./pages/UserSetup";
 import { Dashboard } from "./pages/Dashboard";
 import { CreateRobotListing } from "./pages/CreateRobotListing";
 import { UserProfile } from "./pages/UserProfile";
+import { SessionHistory } from "./pages/SessionHistory";
 
 // Amplify configuration
 import outputs from '../amplify_outputs.json';
@@ -77,6 +78,12 @@ function App() {
           <Route path='/endsession' element={
             <PrivateRoute>
               <EndSession />
+            </PrivateRoute>
+          }
+          />
+          <Route path='/sessions' element={
+            <PrivateRoute>
+              <SessionHistory />
             </PrivateRoute>
           }
           />

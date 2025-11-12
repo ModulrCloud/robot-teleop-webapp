@@ -1,0 +1,124 @@
+/* Banner Mode - Inline */
+.under-construction-banner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 193, 7, 0.15),
+    rgba(255, 152, 0, 0.1)
+  );
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-left: 4px solid #ffc107;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+}
+
+.banner-icon {
+  font-size: 1.5rem;
+  color: #ffc107;
+  animation: tilt 2s infinite ease-in-out;
+}
+
+@keyframes tilt {
+  0%,
+  100% {
+    transform: rotate(-5deg);
+  }
+  50% {
+    transform: rotate(5deg);
+  }
+}
+
+.banner-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.banner-content strong {
+  color: #ffc107;
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.banner-content span {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.9rem;
+}
+
+/* Page Mode - Full Page */
+.under-construction-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 2rem;
+}
+
+.construction-content {
+  text-align: center;
+  max-width: 500px;
+}
+
+.construction-icon-large {
+  font-size: 6rem;
+  color: #ffc107;
+  margin-bottom: 2rem;
+  animation: tilt 2s infinite ease-in-out;
+}
+
+.construction-content h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 1rem 0;
+}
+
+.construction-content p {
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0 0 2rem 0;
+  line-height: 1.6;
+}
+
+.construction-details {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.2);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+}
+
+.construction-details svg {
+  color: #ffc107;
+  font-size: 1.1rem;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .under-construction-banner {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .construction-icon-large {
+    font-size: 4rem;
+  }
+
+  .construction-content h1 {
+    font-size: 1.75rem;
+  }
+
+  .construction-content p {
+    font-size: 1rem;
+  }
+}

@@ -16,6 +16,7 @@ import {
   faArrowRight
 } from '@fortawesome/free-solid-svg-icons';
 import "./Dashboard.css";
+import { UnderConstruction } from "../components/UnderConstruction";
 
 interface DashboardStats {
   totalSessions: number;
@@ -171,6 +172,10 @@ export const Dashboard = () => {
 
       <div className="dashboard-section">
         <h2 className="section-title">Your Stats</h2>
+        <UnderConstruction 
+          mode="banner" 
+          message="Real-time stats coming soon! Data will be available once session tracking is implemented."
+        />
         <div className="stats-grid">
           <div className="stat-card">
             <div className="stat-icon">
