@@ -1,30 +1,574 @@
-.endsession-wrapper {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 1vh;
-  }
-  
-  .endsession-button {
-    padding: 0.75rem 1.5rem;
-    margin-top: 1rem;
-    min-width: 200px;
-    text-align: center;
-  }
+body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 50%, #16213e 100%);
+  min-height: 100vh;
+}
 
-.teleop-layout {
+html {
+  background: linear-gradient(135deg, #0f0f1e 0%, #1a1a2e 50%, #16213e 100%);
+  min-height: 100%;
+}
+
+.teleop-container {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  background: transparent;
+  padding: 1rem 1.5rem;
+  box-sizing: border-box;
+  margin-top: -2rem;
+}
+
+.teleop-top-bar {
   display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 2rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-top: 1rem;
+}
+
+.connection-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.2rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 193, 7, 0.2);
+  backdrop-filter: blur(10px);
+}
+
+.info-label {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.info-value {
+  color: #ffc107;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.5px;
+}
+
+.session-timer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.2rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 24px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.95rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.teleop-status-badge {
+  padding: 0.6rem 1.2rem;
+  border-radius: 24px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+.teleop-status-badge.connecting {
+  background: rgba(255, 193, 7, 0.15);
+  border-color: rgba(255, 193, 7, 0.4);
+  color: #ffc107;
+}
+
+.teleop-status-badge.connected {
+  background: rgba(40, 167, 69, 0.15);
+  border-color: rgba(40, 167, 69, 0.4);
+  color: #28a745;
+}
+
+.teleop-status-badge.disconnected {
+  background: rgba(220, 53, 69, 0.15);
+  border-color: rgba(220, 53, 69, 0.4);
+  color: #dc3545;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 2s infinite;
+}
+
+.status-dot.error {
+  animation: none;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.teleop-error-alert {
+  background: rgba(220, 53, 69, 0.15);
+  border: 1px solid rgba(220, 53, 69, 0.4);
+  color: #fff;
+  padding: 1rem 1.5rem;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  box-shadow: 0 4px 24px rgba(220, 53, 69, 0.2);
+  margin-bottom: 1rem;
+  backdrop-filter: blur(10px);
+}
+
+.error-content {
+  flex: 1;
+}
+
+.error-details {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  opacity: 0.9;
+  font-family: monospace;
+}
+
+.retry-btn {
+  background: #ffc107;
+  color: #000;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+}
+
+.retry-btn:hover {
+  background: #ffca28;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 193, 7, 0.5);
+}
+
+.retry-btn:active {
+  transform: translateY(0);
+}
+
+.teleop-panel {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 1.5rem;
+  min-height: calc(100vh - 180px);
+  max-width: 1800px;
+  margin: 0 auto;
+}
+
+.teleop-video-container {
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+}
+
+.video-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .teleop-video {
-  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
-.teleop-controls {
-  flex: 0 0 auto;
+.video-placeholder {
+  position: absolute;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1.3rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  user-select: none;
+}
+
+.placeholder-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 1.1rem;
+  user-select: none;
+}
+
+.placeholder-content svg {
+  opacity: 0.3;
+}
+
+.teleop-controls-panel {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.controls-header {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.controls-header h3 {
+  margin: 0;
+  color: #fff;
+  font-size: 1.3rem;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+
+.control-mode-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.mode-btn {
+  padding: 0.75rem 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.6);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  position: relative;
+}
+
+.mode-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 193, 7, 0.3);
+}
+
+.mode-btn.active {
+  background: rgba(255, 193, 7, 0.15);
+  border-color: #ffc107;
+  color: #ffc107;
+  box-shadow: 0 4px 16px rgba(255, 193, 7, 0.2);
+}
+
+.not-detected {
+  position: absolute;
+  bottom: -1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.7rem;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.control-status {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.4rem 0;
+}
+
+.status-label {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+}
+
+.status-value {
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.status-value.active-status {
+  color: #ffc107;
+}
+
+.speed-indicators {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.speed-meter {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.speed-label {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8rem;
+  min-width: 60px;
+  font-weight: 500;
+}
+
+.speed-bar-container {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.speed-bar-center-line {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: rgba(255, 255, 255, 0.3);
+  z-index: 1;
+}
+
+.speed-bar {
+  position: absolute;
+  height: 100%;
+  border-radius: 6px;
+  transition: all 0.05s ease-out;
+}
+
+.speed-value {
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  min-width: 40px;
+  text-align: right;
+}
+
+.joystick-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 0;
+  min-height: 280px;
+}
+
+.joystick-display-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1.5rem 0;
+}
+
+.joystick-display {
+  position: relative;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 193, 7, 0.03) 0%, transparent 70%);
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.gamepad-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem 0;
+  min-height: 280px;
+}
+
+.gamepad-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.gamepad-icon {
+  width: 100px;
+  height: 100px;
+  color: rgba(255, 193, 7, 0.15);
+  filter: drop-shadow(0 4px 16px rgba(255, 193, 7, 0.1));
+}
+
+.gamepad-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.gamepad-status.detected {
+  color: #28a745;
+}
+
+.gamepad-status.not-detected-status {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.gamepad-status span {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.gamepad-hint {
+  font-size: 0.8rem;
+  opacity: 0.7;
+  margin-top: 0.25rem;
+}
+
+.status-check,
+.status-warn {
+  opacity: 0.8;
+}
+
+.control-hints {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  padding: 0.75rem 0 0.5rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hint-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+}
+
+.hint-icon {
+  font-size: 1.1rem;
+  color: rgba(255, 193, 7, 0.6);
+}
+
+.end-session-btn {
+  width: 100%;
+  padding: 0.9rem;
+  font-size: 1rem;
+  font-weight: 700;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 16px rgba(220, 53, 69, 0.3);
+  letter-spacing: 0.5px;
+}
+
+.end-session-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(220, 53, 69, 0.5);
+  background: linear-gradient(135deg, #e04555 0%, #d02939 100%);
+}
+
+.end-session-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 4px 16px rgba(220, 53, 69, 0.3);
+}
+
+.end-session-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 1200px) {
+  .teleop-panel {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+    min-height: auto;
+  }
+
+  .teleop-controls-panel {
+    max-width: 600px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .teleop-video-container {
+    min-height: 400px;
+  }
+}
+
+@media (max-width: 768px) {
+  .teleop-container {
+    padding: 0.75rem;
+    margin-top: -1.5rem;
+  }
+
+  .teleop-top-bar {
+    font-size: 0.85rem;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .session-timer,
+  .connection-info,
+  .teleop-status-badge {
+    justify-content: center;
+  }
+
+  .controls-header h3 {
+    font-size: 1.1rem;
+  }
+
+  .control-hints {
+    grid-template-columns: 1fr;
+  }
 }
   

@@ -1,119 +1,195 @@
-import { Button } from "react-bootstrap";
+import { useState, useRef, useEffect } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { useAuthStatus } from "./hooks/useAuthStatus";
-import { useNavigate } from "react-router-dom";
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+  faHome,
+  faRobot,
+  faClockRotateLeft,
+  faUser,
+  faChevronDown,
+  faRightFromBracket,
+  faCog,
+  faGlobe
+} from '@fortawesome/free-solid-svg-icons';
+import "./Navbar.css";
+import { formatGroupName } from "./utils/formatters";
 
-type NavbarProps = {
-};
-
-export default function Navbar(_props: NavbarProps) {
-
+export default function Navbar() {
   const { isLoggedIn, signOut, user } = useAuthStatus();
-  const navigate = useNavigate();
-  
-  const handleSignInOut = async () => {
-    if (isLoggedIn) {
-      await signOut();
-    } else {
-      navigate("/signin");
-    }
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const location = useLocation();
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSignOut = async () => {
+    await signOut();
+    setShowUserMenu(false);
   };
 
+  const isActive = (path: string) => location.pathname === path;
+
   return (
-    <>
-      <div
-        data-animation="default"
-        className="navbar2_component w-nav"
-        data-easing2="ease"
-        fs-scrolldisable-element="smart-nav"
-        data-easing="ease"
-        data-collapse="medium"
-        data-w-id="b61d2364-40b5-e1d9-13b6-00f11fb665f8"
-        role="banner"
-        data-duration="400"
-      >
-        <div className="navbar2_container-2">
-          <a
-            href="/"
-            aria-current="page"
-            className="navbar2_logo-link w-nav-brand w--current"
-            aria-label="home"
-          >
-            <img
-              loading="lazy"
-              src="/logo-large.png"
-              alt=""
-              className="navbar2_logo"
-            />
-          </a>
-          <nav
-            role="navigation"
-            className="navbar2_menu w-nav-menu"
-            id="w-node-b61d2364-40b5-e1d9-13b6-00f11fb665fc-1fb665f8"
-          >
-            <a href="/" aria-current="page" className="navbar2_link w-nav-link">
-              Home
-            </a>
-            <a href="/technology-overview" className="navbar2_link w-nav-link">
-              Technology Overview
-            </a>
-            <a href="/roadmap" className="navbar2_link w-nav-link">
-              Roadmap
-            </a>
-            <a href="/team" className="navbar2_link w-nav-link">
-              Team
-            </a>
-            {
-              user?.group === "PARTNERS" ?
-              <a href="/create-robot-listing" className="navbar2_link w-nav-link">
-                List Robot
-              </a>
-              : null
-            }
-            {
-              isLoggedIn ?
-              <a href="/profile" className="navbar2_link w-nav-link">
-                Profile
-              </a>
-              : null
-            }
-            
-            <Button onClick={handleSignInOut} className="button-yellow mobile-nav w-button">
-              {isLoggedIn ? "Sign Out" : "Sign In"}
-            </Button>
-          </nav>
-          <div
-            id="w-node-b61d2364-40b5-e1d9-13b6-00f11fb66607-1fb665f8"
-            className="navbar2_button-wrapper"
-          >
-            <Button onClick={handleSignInOut} className="button-yellow desktop-nav w-button">
-              {isLoggedIn ? "Sign Out" : "Sign In"}
-            </Button>
-            <div
-              className="navbar2_menu-button w-nav-button"
-              style={{ WebkitUserSelect: "text" }}
-              aria-label="menu"
-              role="button"
-              tabIndex={0}
-              aria-controls="w-nav-overlay-0"
-              aria-haspopup="menu"
-              aria-expanded="false"
+    <nav className="app-navbar">
+      <div className="navbar-container">
+        <Link to="/" className="navbar-logo">
+          <img src="/logo-large.png" alt="Modulr" />
+        </Link>
+
+        <a 
+          href="https://www.modulr.cloud" 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="navbar-external-link"
+          title="Visit Modulr Website"
+        >
+          <FontAwesomeIcon icon={faGlobe} />
+          <span>Website</span>
+        </a>
+
+        {isLoggedIn && (
+          <div className="navbar-links">
+            <Link 
+              to="/" 
+              className={`nav-link ${isActive('/') ? 'active' : ''}`}
             >
-              <div className="menu-icon2">
-                <div className="menu-icon2_line-top"></div>
-                <div className="menu-icon2_line-middle">
-                  <div className="menu-icon2_line-middle-inner"></div>
-                </div>
-                <div className="menu-icon2_line-bottom"></div>
-              </div>
-            </div>
+              <FontAwesomeIcon icon={faHome} />
+              <span>Dashboard</span>
+            </Link>
+            <Link 
+              to="/robots" 
+              className={`nav-link ${isActive('/robots') ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faRobot} />
+              <span>Robots</span>
+            </Link>
+            <Link 
+              to="/sessions" 
+              className={`nav-link ${isActive('/sessions') ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faClockRotateLeft} />
+              <span>Sessions</span>
+            </Link>
+            {user?.group === "PARTNERS" && (
+              <Link 
+                to="/create-robot-listing" 
+                className={`nav-link ${isActive('/create-robot-listing') ? 'active' : ''}`}
+              >
+                <FontAwesomeIcon icon={faRobot} />
+                <span>List Robot</span>
+              </Link>
+            )}
           </div>
+        )}
+
+        <div className="navbar-actions">
+          {isLoggedIn ? (
+            <div className="user-menu-wrapper" ref={menuRef}>
+              <button 
+                className="user-menu-button"
+                onClick={() => setShowUserMenu(!showUserMenu)}
+              >
+                <div className="user-avatar">
+                  {user?.email?.[0].toUpperCase() || 'U'}
+                </div>
+                <span className="user-name">{user?.email?.split('@')[0] || 'User'}</span>
+                <FontAwesomeIcon icon={faChevronDown} className="dropdown-icon" />
+              </button>
+
+              {showUserMenu && (
+                <div className="user-dropdown">
+                  <div className="dropdown-header">
+                    <div className="dropdown-user-info">
+                      <div className="dropdown-avatar">
+                        {user?.email?.[0].toUpperCase() || 'U'}
+                      </div>
+                      <div>
+                        <div className="dropdown-name">{user?.email?.split('@')[0]}</div>
+                        <div className="dropdown-email">{user?.email}</div>
+                        {user?.group && (
+                          <div className="dropdown-role">{formatGroupName(user.group)}</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="dropdown-divider"></div>
+                  <Link to="/profile" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
+                    <FontAwesomeIcon icon={faUser} />
+                    <span>Profile</span>
+                  </Link>
+                  <Link to="/settings" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
+                    <FontAwesomeIcon icon={faCog} />
+                    <span>Settings</span>
+                  </Link>
+                  <div className="dropdown-divider"></div>
+                  <button className="dropdown-item danger" onClick={handleSignOut}>
+                    <FontAwesomeIcon icon={faRightFromBracket} />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link to="/signin" className="sign-in-button">
+              Sign In
+            </Link>
+          )}
+
+          {isLoggedIn && (
+            <button 
+              className="mobile-menu-toggle"
+              onClick={() => setShowMobileMenu(!showMobileMenu)}
+            >
+              <div className={`hamburger ${showMobileMenu ? 'active' : ''}`}>
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+            </button>
+          )}
         </div>
-        <div
-          className="w-nav-overlay"
-          data-wf-ignore=""
-          id="w-nav-overlay-0"
-        ></div>
       </div>
-    </>
+
+      {isLoggedIn && showMobileMenu && (
+        <div className="mobile-menu">
+          <Link to="/" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
+            <FontAwesomeIcon icon={faHome} />
+            <span>Dashboard</span>
+          </Link>
+          <Link to="/robots" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
+            <FontAwesomeIcon icon={faRobot} />
+            <span>Robots</span>
+          </Link>
+          <Link to="/sessions" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
+            <FontAwesomeIcon icon={faClockRotateLeft} />
+            <span>Sessions</span>
+          </Link>
+          {user?.group === "PARTNERS" && (
+            <Link to="/create-robot-listing" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
+              <FontAwesomeIcon icon={faRobot} />
+              <span>List Robot</span>
+            </Link>
+          )}
+          <Link to="/profile" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
+            <FontAwesomeIcon icon={faUser} />
+            <span>Profile</span>
+          </Link>
+          <button className="mobile-nav-link danger" onClick={handleSignOut}>
+            <FontAwesomeIcon icon={faRightFromBracket} />
+            <span>Sign Out</span>
+          </button>
+        </div>
+      )}
+    </nav>
   );
 }

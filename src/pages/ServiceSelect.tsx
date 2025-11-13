@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import CardGrid from "../components/CardGrid";
 import { type CardGridItemProps } from "../components/CardGridItem";
-import { Button } from "react-bootstrap";
+import { usePageTitle } from "../hooks/usePageTitle";
 import "./ServiceSelect.css";
+import { UnderConstruction } from "../components/UnderConstruction";
 
 const services: CardGridItemProps[] = [
   { id: 1, title: "Lap Time Verification", description: "Modulr", imageUrl: "/stopwatch.png" },
@@ -11,10 +13,20 @@ const services: CardGridItemProps[] = [
 ];
 
 export default function ServiceSelect() {
+  usePageTitle();
   const [selected, setSelected] = useState<CardGridItemProps[]>([]);
+  const navigate = useNavigate();
+
+  const handleStartSession = () => {
+    navigate('/teleop');
+  };
 
   return (
-    <div style={{ position: "relative" }}>
+    <div className="service-select-container">
+      <UnderConstruction 
+        mode="banner" 
+        message="Service Selection"
+      />
       <h2>Select Services (Optional)</h2>
       <CardGrid
         items={services.map(service => ({
@@ -25,13 +37,12 @@ export default function ServiceSelect() {
         selected={selected}
         setSelected={setSelected}
       />
-      <Button
-        className="button-yellow"
-        id="session-button"
-        href="/teleop"
+      <button
+        className="start-session-button"
+        onClick={handleStartSession}
       >
         Next: Start Session
-      </Button>
+      </button>
     </div>
   );
 }

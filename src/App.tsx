@@ -9,11 +9,14 @@ import RobotSelect from "./pages/RobotSelect";
 import ServiceSelect from "./pages/ServiceSelect";
 import SignIn from "./pages/SignIn";
 import Teleop from "./pages/Teleop";
+import EndSession from "./pages/EndSession";
 import { PrivateRoute } from "./PrivateRoute";
 import { UserSetup } from "./pages/UserSetup";
-import { Home } from "./pages/Home";
+import { Dashboard } from "./pages/Dashboard";
 import { CreateRobotListing } from "./pages/CreateRobotListing";
 import { UserProfile } from "./pages/UserProfile";
+import { SessionHistory } from "./pages/SessionHistory";
+import { AppLayout } from "./components/AppLayout";
 
 // Amplify configuration
 import outputs from '../amplify_outputs.json';
@@ -26,53 +29,69 @@ function App() {
 
   return (
     <Router>
-      <div className="page-wrapper">
-        <Navbar />
-      </div>
-      <main className="main-content">
-        <Routes>
-          <Route path='/' element={<Home />} />
-          <Route path='/signin' element={<SignIn />} />
+      <Navbar />
+      <AppLayout>
+        <main className="main-content">
+          <Routes>
+            <Route path='/' element={
+              <PrivateRoute>
+                <Dashboard />
+              </PrivateRoute>
+            } />
+            <Route path='/signin' element={<SignIn />} />
 
-          {/* Authenticated Routes */}
-          <Route path='/user-setup' element={
-            <PrivateRoute>
-              <UserSetup />
-            </PrivateRoute>
-          }
-          />
-          <Route path='/profile' element={
-            <PrivateRoute>
-              <UserProfile />
-            </PrivateRoute>
-          }
-          />
-          <Route path='/create-robot-listing' element={
-            <PrivateRoute>
-              <CreateRobotListing />
-            </PrivateRoute>
-          }
-          />
-          <Route path='/robots' element={
-            <PrivateRoute>
-              <RobotSelect />
-            </PrivateRoute>
-          }
-          />
-          <Route path='/services' element={
-            <PrivateRoute>
-              <ServiceSelect />
-            </PrivateRoute>
-          }
-          />
-          <Route path='/teleop' element={
-            <PrivateRoute>
-              <Teleop />
-            </PrivateRoute>
-          }
-          />
-        </Routes>
-      </main>
+            {/* Authenticated Routes */}
+            <Route path='/user-setup' element={
+              <PrivateRoute>
+                <UserSetup />
+              </PrivateRoute>
+            }
+            />
+            <Route path='/profile' element={
+              <PrivateRoute>
+                <UserProfile />
+              </PrivateRoute>
+            }
+            />
+            <Route path='/create-robot-listing' element={
+              <PrivateRoute>
+                <CreateRobotListing />
+              </PrivateRoute>
+            }
+            />
+            <Route path='/robots' element={
+              <PrivateRoute>
+                <RobotSelect />
+              </PrivateRoute>
+            }
+            />
+            <Route path='/services' element={
+              <PrivateRoute>
+                <ServiceSelect />
+              </PrivateRoute>
+            }
+            />
+            <Route path='/teleop' element={
+              <PrivateRoute>
+                <Teleop />
+              </PrivateRoute>
+            }
+            />
+            <Route path='/endsession' element={
+              <PrivateRoute>
+                <EndSession />
+              </PrivateRoute>
+            }
+            />
+            <Route path='/sessions' element={
+              <PrivateRoute>
+                <SessionHistory />
+              </PrivateRoute>
+            }
+            />
+          </Routes>
+        </main>
+      </AppLayout>
     </Router>
   );
 }

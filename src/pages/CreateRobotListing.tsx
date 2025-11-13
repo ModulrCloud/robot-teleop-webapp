@@ -5,6 +5,7 @@ import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
 import { Amplify } from 'aws-amplify';
 import outputs from '../../amplify_outputs.json';
+import { usePageTitle } from "../hooks/usePageTitle";
 
 const ROBOT_MODELS = [
   "Rover",
@@ -23,6 +24,7 @@ Amplify.configure(outputs);
 const client = generateClient<Schema>();
 
 export const CreateRobotListing = () => {
+  usePageTitle();
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [success, setSuccess] = useState<boolean | undefined>();
 
