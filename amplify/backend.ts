@@ -14,7 +14,7 @@ import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 
 // === ADDED: WebSocket API (alpha)
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
-import { LambdaWebSocketIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
+import {WebSocketLambdaIntegration as LambdaWebSocketIntegration} from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/
@@ -48,19 +48,22 @@ const robotPresenceTable = new Table(backend.stack, 'RobotPresenceTable', {
 // === ADDED: WebSocket API + stage (all routes -> signaling lambda)
 const wsApi = new WebSocketApi(backend.stack, 'SignalingApi', {
   connectRouteOptions: {
-    integration: new LambdaWebSocketIntegration({
-      handler: backend.signaling.resources.lambda,
-    }),
+    integration: new LambdaWebSocketIntegration(
+      'ConnectIntegration',                    // <-- id
+      backend.signaling.resources.lambda,      // <-- handler
+    ),
   },
   disconnectRouteOptions: {
-    integration: new LambdaWebSocketIntegration({
-      handler: backend.signaling.resources.lambda,
-    }),
+    integration: new LambdaWebSocketIntegration(
+      'DisconnectIntegration',
+      backend.signaling.resources.lambda,
+    ),
   },
   defaultRouteOptions: {
-    integration: new LambdaWebSocketIntegration({
-      handler: backend.signaling.resources.lambda,
-    }),
+    integration: new LambdaWebSocketIntegration(
+      'DefaultIntegration',
+      backend.signaling.resources.lambda,
+    ),
   },
 });
 
