@@ -35,6 +35,9 @@ type InboundMessage = Partial<{
     payload: Record<string, unknown>;
 }>;
 
+// Raw wire shape (browser or robot could send anythign so we normalize here)
+type RawMessage = any;
+
 // ---------------------------------
 // Helpers
 // ---------------------------------
@@ -61,6 +64,73 @@ function decodeJwtNoVerify(token: string | null | undefined): {sub?: string; gro
     } catch {
         return null;
     }
+}
+
+// Normalize message to this implementation
+function normalizeMessage(raw: RawMessage): InboundMessage {
+  if (!raw || typeof raw !== 'object') return {};
+
+  let type: MessageType | undefined;
+    if (typeof raw.type === 'string') {
+    const t = raw.type.toLowerCase();
+    if (t === 'candidate') {
+      type = 'ice-candidate'; // map legacy name to our internal name
+    } else if (
+      t === 'offer' ||
+      t === 'answer' ||
+      t === 'register' ||
+      t === 'takeover' ||
+      t === 'ice-candidate'
+    ) {
+      type = t as MessageType;
+    }
+  }
+
+  // ---- robotId ----
+  // Preferred: explicit 'robotId' (Robot.id / UUID).
+  // Fallback: Mike's 'to' field if present.
+  let robotId: string | undefined;
+  if (typeof raw.robotId === 'string' && raw.robotId.trim().length > 0) {
+    robotId = raw.robotId.trim();
+  } else if (typeof raw.to === 'string' && raw.to.trim().length > 0) {
+    robotId = raw.to.trim();
+  }
+
+  // ---- payload ----
+  // Preferred: 'payload' object.
+  // Also fold in 'sdp' and 'candidate' if present (Mike's WebRTC messages).
+  let payload: Record<string, unknown> | undefined;
+  if (raw.payload && typeof raw.payload === 'object') {
+    payload = { ...raw.payload };
+  }
+
+  if (raw.sdp) {
+    payload = payload ?? {};
+    payload.sdp = raw.sdp;
+  }
+  if (raw.candidate) {
+    payload = payload ?? {};
+    payload.candidate = raw.candidate;
+  }
+
+  // ---- target / clientConnectionId ----
+  const target =
+    typeof raw.target === 'string'
+      ? (raw.target.toLowerCase() as Target)
+      : undefined;
+
+  const clientConnectionId =
+    typeof raw.clientConnectionId === 'string'
+      ? raw.clientConnectionId.trim()
+      : undefined;
+
+  return {
+    type,
+    robotId,
+    target,
+    clientConnectionId,
+    payload,
+  };
 }
 
 // Send a JSON messgae to a specific Websocket connection via Management API
@@ -329,42 +399,46 @@ async function handleSignal(
 // Lambda entry point
 // ---------------------------------
 
-export async function handler(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-    const route = event.requestContext.routeKey;
+export async function handler(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  const route = event.requestContext.routeKey;
 
-    // System routes
-    if (route === '$connect') return onConnect(event);
-    if (route === '$disconnect') return onDisconnect(event);
+  // System routes
+  if (route === '$connect') return onConnect(event);
+  if (route === '$disconnect') return onDisconnect(event);
 
-    // All other events come through $default
-    const token = event.queryStringParameters?.token ?? null;
-    const claims = decodeJwtNoVerify(token);
-    if (!claims?.sub) {
-        return { statusCode: 401, body: 'Unauthorized' };
-    }
+  // All other events come through $default
+  const token = event.queryStringParameters?.token ?? null;
+  const claims = decodeJwtNoVerify(token);
+  if (!claims?.sub) {
+    return { statusCode: 401, body: 'Unauthorized' };
+  }
 
-    // Parse the inbound JSON message
-    let msg: InboundMessage = {};
-    try {
-        msg = JSON.parse(event.body ?? '{}');
-    } catch {
-        return { statusCode: 400, body: 'Invalid JSON'};
-    }
+  // Parse raw JSON
+  let raw: RawMessage = {};
+  try {
+    raw = JSON.parse(event.body ?? '{}');
+  } catch {
+    return { statusCode: 400, body: 'Invalid JSON' };
+  }
 
-    const type = (msg.type || '').toString().trim().toLowerCase();
+  // Normalize to our canonical shape
+  const msg = normalizeMessage(raw);
+  const type = (msg.type || '').toString().trim().toLowerCase();
 
-    //Dispatch by message type
-    if (type === 'register') {
-        return handleRegister(claims, event, msg);
-    }
-    
-    if (type === 'takeover') {
-        return handleTakeover(claims, msg);
-    }
+  // Dispatch by message type
+  if (type === 'register') {
+    return handleRegister(claims, event, msg);
+  }
 
-    if (type === 'offer' || type === 'answer' || type === 'ice-candidate') {
-        return handleSignal(claims, event, msg);
-    }
+  if (type === 'takeover') {
+    return handleTakeover(claims, msg);
+  }
 
-    return { statusCode: 400, body: 'Unknown message type'};
+  if (type === 'offer' || type === 'answer' || type === 'ice-candidate') {
+    return handleSignal(claims, event, msg);
+  }
+
+  return { statusCode: 400, body: 'Unknown message type' };
 }
