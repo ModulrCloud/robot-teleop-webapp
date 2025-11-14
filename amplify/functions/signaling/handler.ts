@@ -18,7 +18,7 @@ const mgmt = new ApiGatewayManagementApiClient({ endpoint: WS_MGMT_ENDPOINT});
 // Types
 // ---------------------------------
 
-type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover';
+type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate';
 type Target = 'robot' | 'client';
 
 type Claims = {
