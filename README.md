@@ -22,6 +22,10 @@ npx ampx configure profile
 npx ampx sandbox secret set GOOGLE_CLIENT_ID
 npx ampx sandbox secret set GOOGLE_CLIENT_SECRET
 
+#You can verify the secret by using these commands (optional)
+npx ampx sandbox secret get GOOGLE_CLIENT_ID
+npx ampx sandbox secret get GOOGLE_CLIENT_SECRET
+
 # 3. Install backend SDKs for signaling
 npm install @aws-sdk/client-dynamodb @aws-sdk/client-apigatewaymanagementapi
 npm install -D @types/aws-lambda
