@@ -17,6 +17,7 @@ import { CreateRobotListing } from "./pages/CreateRobotListing";
 import { UserProfile } from "./pages/UserProfile";
 import { SessionHistory } from "./pages/SessionHistory";
 import { AppLayout } from "./components/AppLayout";
+import { Settings } from "./pages/Settings";
 
 // Amplify configuration
 import outputs from '../amplify_outputs.json';
@@ -88,6 +89,12 @@ function App() {
                 <SessionHistory />
               </PrivateRoute>
             }
+            />
+            <Route path='/settings' element={
+              <PrivateRoute>
+                <Settings />
+              </PrivateRoute>
+            } 
             />
           </Routes>
         </main>
