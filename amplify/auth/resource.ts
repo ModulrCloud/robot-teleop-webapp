@@ -15,11 +15,13 @@ export const auth = defineAuth({
       },
       callbackUrls: [
         'http://localhost:5173/',
-        // 'https://mywebsite.com/profile'
+        'https://main.d6wm66gzzoyhi.amplifyapp.com/',
+        'https://app.modulr.cloud/',
       ],
       logoutUrls: [
         'http://localhost:5173/',
-        // 'https://mywebsite.com'
+        'https://main.d6wm66gzzoyhi.amplifyapp.com/',
+        'https://app.modulr.cloud/',
       ],
     },
   },
