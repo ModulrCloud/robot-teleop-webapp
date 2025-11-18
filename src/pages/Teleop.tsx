@@ -12,7 +12,9 @@ import {
   faCircleExclamation,
   faArrowsUpDownLeftRight,
   faGamepad,
-  faRightFromBracket
+  faRightFromBracket,
+  faCheckCircle,
+  faLock
 } from '@fortawesome/free-solid-svg-icons';
 import "./Teleop.css";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -158,6 +160,24 @@ export default function Teleop() {
           {status.error && <><span className="status-dot error"></span> Disconnected</>}
         </div>
       </div>
+
+      {status.connected && (
+        <div className="security-indicator-banner">
+          <div className="security-badge">
+            <FontAwesomeIcon icon={faLock} />
+            <div className="security-info">
+              <strong>Secure Connection</strong>
+              <span>Your teleoperation session is encrypted end-to-end</span>
+            </div>
+          </div>
+          {wsUrl.startsWith('wss://') && (
+            <div className="encryption-details">
+              <FontAwesomeIcon icon={faCheckCircle} />
+              <span>WSS Encrypted</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {status.error && (
         <div className="teleop-error-alert">

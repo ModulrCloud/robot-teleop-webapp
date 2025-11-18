@@ -527,6 +527,96 @@ html {
   cursor: not-allowed;
 }
 
+/* Security Indicator Banner */
+.security-indicator-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem 1.5rem;
+  margin: 0 2rem;
+  margin-top: -0.5rem;
+  margin-bottom: 1rem;
+  background: linear-gradient(135deg, rgba(40, 167, 69, 0.15), rgba(34, 139, 34, 0.1));
+  border: 1px solid rgba(40, 167, 69, 0.3);
+  border-radius: 12px;
+  animation: securityFadeIn 0.4s ease;
+}
+
+@keyframes securityFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.security-badge {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.security-badge > svg {
+  font-size: 1.5rem;
+  color: #28a745;
+  filter: drop-shadow(0 2px 8px rgba(40, 167, 69, 0.3));
+}
+
+.security-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.security-info strong {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #28a745;
+  letter-spacing: 0.3px;
+}
+
+.security-info span {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.encryption-details {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(40, 167, 69, 0.15);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #28a745;
+}
+
+.encryption-details svg {
+  font-size: 1rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .security-indicator-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    margin: 0 1rem;
+    margin-top: -0.5rem;
+    margin-bottom: 1rem;
+    padding: 1rem;
+  }
+
+  .encryption-details {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 @media (max-width: 1200px) {
   .teleop-panel {
     grid-template-columns: 1fr;
