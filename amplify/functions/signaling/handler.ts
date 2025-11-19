@@ -74,7 +74,7 @@ function normalizeMessage(raw: RawMessage): InboundMessage {
     if (typeof raw.type === 'string') {
     const t = raw.type.toLowerCase();
     if (t === 'candidate') {
-      type = 'ice-candidate'; // map legacy name to our internal name
+      type = 'ice-candidate'; // map legacy name to internal name
     } else if (
       t === 'offer' ||
       t === 'answer' ||
