@@ -120,16 +120,6 @@ export function useWebRTC(options: WebRTCOptions) {
         const channel = pc.createDataChannel('control');
         channel.onopen = async () => {
           rosBridgeRef.current = new WebRTCRosBridge(channel);
-          
-          // Subscribe to camera topic
-          if (rosBridgeRef.current) {
-            await rosBridgeRef.current.send({
-              op: 'subscribe',
-              id: 'chatter',
-              topic: '/camera/image_raw',
-              type: 'sensor_msgs/Image',
-            });
-          }
         };
 
         pc.addTransceiver('video', { direction: 'recvonly' });
@@ -173,18 +163,11 @@ export function useWebRTC(options: WebRTCOptions) {
     if (!rosBridgeRef.current) return;
 
     rosBridgeRef.current.send({
-      op: 'publish',
-      topic: '/cmd_vel',
-      msg: {
-        header: {
-          stamp: { sec: 0, nanosec: 0 },
-          frame_id: 'base_link',
-        },
-        twist: {
-          linear: { x: linearX, y: 0, z: 0 },
-          angular: { x: 0, y: 0, z: angularZ },
-        },
-      },
+      type: "MovementCommand",
+      params: {
+        "forward": linearX,
+        "turn": angularZ,
+      }
     });
   }, []);
 
