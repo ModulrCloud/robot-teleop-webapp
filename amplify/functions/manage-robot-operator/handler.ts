@@ -18,8 +18,8 @@ export const handler: Schema["manageRobotOperatorLambda"]["functionHandler"] = a
     throw new Error("Unauthorised: must be logged in with Cognito");
   }
 
-  const robotOperatorTableName = process.env.ROBOT_OPERATOR_TABLE_NAME!;
-  const robotPresenceTableName = process.env.ROBOT_PRESENCE_TABLE_NAME!;
+  const robotOperatorTableName = process.env.ROBOT_OPERATOR_TABLE!;
+  const robotPresenceTableName = process.env.ROBOT_PRESENCE_TABLE!;
   const robotTableName = process.env.ROBOT_TABLE_NAME!;
   const partnerTableName = process.env.PARTNER_TABLE_NAME!;
 
@@ -28,6 +28,7 @@ export const handler: Schema["manageRobotOperatorLambda"]["functionHandler"] = a
   }
 
   const requesterUsername = identity.username; // Cognito username
+  const requesterSub = (identity as any).sub || requesterUsername; // Use sub if available, fallback to username
   
   // The ownerUserId in ROBOT_PRESENCE_TABLE is the Cognito sub (user ID), not username
   // We need to verify the requester is the owner by checking their sub
@@ -53,7 +54,7 @@ export const handler: Schema["manageRobotOperatorLambda"]["functionHandler"] = a
   // This is a limitation - ideally we'd have identity.sub available
   // For now, we'll allow if the username matches (this may need adjustment based on your setup)
   // TODO: Get sub from Cognito or ensure identity includes sub field
-  const isOwner = ownerUserId === requesterUsername || ownerUserId === (identity as any).sub;
+  const isOwner = ownerUserId === requesterSub || ownerUserId === requesterUsername;
   
   // TODO: Check if user is admin via Cognito groups from identity
   if (!isOwner) {

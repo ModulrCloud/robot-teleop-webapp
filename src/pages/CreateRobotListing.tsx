@@ -55,17 +55,33 @@ export const CreateRobotListing = () => {
     setIsLoading(true);
     setSuccess(undefined);
 
-    const robot = await client.mutations.setRobotLambda(robotListing);
+    console.log('🤖 Creating robot with data:', robotListing);
 
-    if (robot.errors) {
-      setSuccess(false);
-    } else {
-      setSuccess(true);
-      setRobotListing({
-        robotName: "",
-        description: "",
-        model: ROBOT_MODELS[0].value,
+    try {
+      const robot = await client.mutations.setRobotLambda(robotListing);
+
+      console.log('📊 Robot creation response:', {
+        hasData: !!robot.data,
+        hasErrors: !!robot.errors,
+        data: robot.data,
+        errors: robot.errors,
       });
+
+      if (robot.errors) {
+        console.error('❌ Errors creating robot:', robot.errors);
+        setSuccess(false);
+      } else {
+        console.log('✅ Robot created successfully:', robot.data);
+        setSuccess(true);
+        setRobotListing({
+          robotName: "",
+          description: "",
+          model: ROBOT_MODELS[0].value,
+        });
+      }
+    } catch (error) {
+      console.error('❌ Exception creating robot:', error);
+      setSuccess(false);
     }
 
     setIsLoading(false);

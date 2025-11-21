@@ -43,23 +43,72 @@ export default function RobotSelect() {
         // Use Amplify v6 models API to list robots
         const response = await client.models.Robot.list();
         
-        if (response.errors) {
-          setError('Failed to load robots');
-          console.error('Error loading robots:', response.errors);
-          return;
+        // Log the raw response to see what's in the database
+        console.log('📊 Raw database response:', {
+          hasData: !!response.data,
+          dataLength: response.data?.length || 0,
+          hasErrors: !!response.errors,
+          errorsLength: response.errors?.length || 0,
+        });
+        
+        // Log each robot's actual fields to see what's missing
+        if (response.data && response.data.length > 0) {
+          console.log('🤖 Robots in database (showing all fields):');
+          response.data.forEach((robot: any, index: number) => {
+            if (robot === null || robot === undefined) {
+              console.log(`  Robot ${index + 1}: ❌ NULL (GraphQL returned null for this item)`);
+              return;
+            }
+            console.log(`  Robot ${index + 1}:`, {
+              id: robot.id || '❌ MISSING',
+              robotId: robot.robotId || '❌ MISSING',
+              name: robot.name || '❌ MISSING',
+              description: robot.description || '❌ MISSING',
+              model: robot.model || '❌ MISSING',
+              partnerId: robot.partnerId || '❌ MISSING',
+              createdAt: robot.createdAt || '❌ MISSING',
+              updatedAt: robot.updatedAt || '❌ MISSING',
+              allFields: robot, // Show all fields
+            });
+          });
+        }
+        
+        let robotItems: CardGridItemProps[] = [];
+        
+        // Log errors but don't block - we'll still try to use valid robots from response.data
+        if (response.errors && response.errors.length > 0) {
+          console.warn('⚠️ Some robots have errors (will be filtered out):', response.errors.length);
+          // Log detailed error information for debugging
+          response.errors.forEach((err: any, index: number) => {
+            console.error(`Error ${index + 1}:`, {
+              message: err.message,
+              errorType: err.errorType,
+              errorInfo: err.errorInfo,
+              path: err.path,
+            });
+          });
         }
 
         // Transform robots from database to CardGridItemProps
-        let robotItems: CardGridItemProps[] = (response.data || []).map((robot) => ({
-          id: robot.robotId || robot.id, // Use robotId (string) for connection, fallback to id
-          title: robot.name,
-          description: robot.description,
-          imageUrl: getRobotImage(robot.model),
-        }));
+        // Filter out null robots (GraphQL returns null for items with errors)
+        // This allows us to show valid robots even if some have errors
+        if (response.data && response.data.length > 0) {
+          robotItems = (response.data || [])
+            .filter((robot) => robot !== null && robot !== undefined) // Filter out null robots
+            .map((robot) => ({
+              id: robot.robotId || robot.id, // Use robotId (string) for connection, fallback to id
+              title: robot.name,
+              description: robot.description,
+              imageUrl: getRobotImage(robot.model),
+            }));
+          
+          console.log(`✅ Successfully loaded ${robotItems.length} valid robot(s) from database`);
+        }
 
         // For local development/testing: Add default robot1 if no robots found
         // This allows testing even when user is a Client account
         if (robotItems.length === 0 && (import.meta.env.DEV || import.meta.env.VITE_WS_URL)) {
+          console.log('No robots found, adding default test robot for dev mode');
           robotItems = [
             {
               id: 'robot1',
@@ -72,8 +121,21 @@ export default function RobotSelect() {
 
         setRobots(robotItems);
       } catch (err) {
-        setError('Failed to load robots');
-        console.error('Error loading robots:', err);
+        console.error('Exception loading robots:', err);
+        // In dev mode, still show default robot even if there's an exception
+        if (import.meta.env.DEV || import.meta.env.VITE_WS_URL) {
+          console.warn('Exception occurred, but adding default test robot for dev mode');
+          setRobots([
+            {
+              id: 'robot1',
+              title: 'Test Robot (Local)',
+              description: 'Default test robot for local development',
+              imageUrl: '/rover.webp',
+            },
+          ]);
+        } else {
+          setError(`Failed to load robots: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
       } finally {
         setIsLoading(false);
       }

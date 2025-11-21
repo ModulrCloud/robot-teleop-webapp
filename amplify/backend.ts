@@ -11,6 +11,7 @@ import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
 import { WebSocketLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
 import { RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { Function as CdkFunction } from 'aws-cdk-lib/aws-lambda';
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
@@ -37,17 +38,18 @@ const manageRobotOperatorFunction = backend.manageRobotOperator.resources.lambda
 // Signaling Function Resources
 // ============================================
 
-// Create a custom stack for signaling resources
-const signalingStack = backend.createStack('SignalingResources');
+// Use the data stack to avoid circular dependencies
+// The signaling function is in the data stack, so we put resources there too
+const dataStack = Stack.of(backend.data.resources.graphqlApi);
 
 // Create DynamoDB tables for signaling
-const connTable = new Table(signalingStack, 'ConnectionsTable', {
+const connTable = new Table(dataStack, 'ConnectionsTable', {
   partitionKey: { name: 'connectionId', type: AttributeType.STRING },
   billingMode: BillingMode.PAY_PER_REQUEST,
   removalPolicy: RemovalPolicy.DESTROY, // For sandbox/dev
 });
 
-const robotPresenceTable = new Table(signalingStack, 'RobotPresenceTable', {
+const robotPresenceTable = new Table(dataStack, 'RobotPresenceTable', {
   partitionKey: { name: 'robotId', type: AttributeType.STRING },
   billingMode: BillingMode.PAY_PER_REQUEST,
   removalPolicy: RemovalPolicy.DESTROY, // For sandbox/dev
@@ -55,7 +57,7 @@ const robotPresenceTable = new Table(signalingStack, 'RobotPresenceTable', {
 
 // Revoked tokens table - stores tokens that have been revoked
 // Uses TTL to automatically clean up expired tokens
-const revokedTokensTable = new Table(signalingStack, 'RevokedTokensTable', {
+const revokedTokensTable = new Table(dataStack, 'RevokedTokensTable', {
   partitionKey: { name: 'tokenId', type: AttributeType.STRING },
   billingMode: BillingMode.PAY_PER_REQUEST,
   removalPolicy: RemovalPolicy.DESTROY, // For sandbox/dev
@@ -63,7 +65,7 @@ const revokedTokensTable = new Table(signalingStack, 'RevokedTokensTable', {
 });
 
 // Robot operator delegation table - tracks which users can operate which robots
-const robotOperatorTable = new Table(signalingStack, 'RobotOperatorTable', {
+const robotOperatorTable = new Table(dataStack, 'RobotOperatorTable', {
   partitionKey: { name: 'id', type: AttributeType.STRING },
   billingMode: BillingMode.PAY_PER_REQUEST,
   removalPolicy: RemovalPolicy.DESTROY, // For sandbox/dev
@@ -80,7 +82,7 @@ robotOperatorTable.addGlobalSecondaryIndex({
 });
 
 // Create WebSocket API Gateway
-const wsApi = new WebSocketApi(signalingStack, 'SignalingWebSocketApi', {
+const wsApi = new WebSocketApi(dataStack, 'SignalingWebSocketApi', {
   connectRouteOptions: {
     integration: new WebSocketLambdaIntegration('ConnectIntegration', signalingFunction),
   },
@@ -92,7 +94,7 @@ const wsApi = new WebSocketApi(signalingStack, 'SignalingWebSocketApi', {
   },
 });
 
-const wsStage = new WebSocketStage(signalingStack, 'SignalingWebSocketStage', {
+const wsStage = new WebSocketStage(dataStack, 'SignalingWebSocketStage', {
   webSocketApi: wsApi,
   stageName: 'prod',
   autoDeploy: true,
@@ -102,18 +104,19 @@ const wsStage = new WebSocketStage(signalingStack, 'SignalingWebSocketStage', {
 wsApi.grantManageConnections(signalingFunction);
 
 // Signaling Lambda environment variables
-signalingFunction.addEnvironment('CONN_TABLE', connTable.tableName);
-signalingFunction.addEnvironment('ROBOT_PRESENCE_TABLE', robotPresenceTable.tableName);
-signalingFunction.addEnvironment('REVOKED_TOKENS_TABLE', revokedTokensTable.tableName);
-signalingFunction.addEnvironment('ROBOT_OPERATOR_TABLE', robotOperatorTable.tableName);
-signalingFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+// Cast to CDK Function to access addEnvironment method
+const signalingCdkFunction = signalingFunction as CdkFunction;
+signalingCdkFunction.addEnvironment('CONN_TABLE', connTable.tableName);
+signalingCdkFunction.addEnvironment('ROBOT_PRESENCE_TABLE', robotPresenceTable.tableName);
+signalingCdkFunction.addEnvironment('REVOKED_TOKENS_TABLE', revokedTokensTable.tableName);
+signalingCdkFunction.addEnvironment('ROBOT_OPERATOR_TABLE', robotOperatorTable.tableName);
+signalingCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 // Construct WebSocket management endpoint URL
 // Format: https://{api-id}.execute-api.{region}.amazonaws.com/{stage}
-const stack = Stack.of(signalingStack);
-signalingFunction.addEnvironment('WS_MGMT_ENDPOINT', 
-  `https://${wsApi.apiId}.execute-api.${stack.region}.amazonaws.com/${wsStage.stageName}`
+signalingCdkFunction.addEnvironment('WS_MGMT_ENDPOINT', 
+  `https://${wsApi.apiId}.execute-api.${dataStack.region}.amazonaws.com/${wsStage.stageName}`
 );
-signalingFunction.addEnvironment('AWS_REGION', stack.region);
+// Note: AWS_REGION is automatically provided by Lambda runtime, don't set it manually
 
 // Grant DynamoDB permissions to signaling function
 connTable.grantReadWriteData(signalingFunction);
@@ -125,11 +128,12 @@ robotOperatorTable.grantReadData(signalingFunction); // Read-only for checking d
 revokedTokensTable.grantWriteData(revokeTokenLambdaFunction);
 
 // Revoke token Lambda environment variables
-revokeTokenLambdaFunction.addEnvironment('REVOKED_TOKENS_TABLE', revokedTokensTable.tableName);
+const revokeTokenCdkFunction = revokeTokenLambdaFunction as CdkFunction;
+revokeTokenCdkFunction.addEnvironment('REVOKED_TOKENS_TABLE', revokedTokensTable.tableName);
 
 // Add WebSocket URL to outputs for frontend access
 // Format: wss://{api-id}.execute-api.{region}.amazonaws.com/{stage}
-const wsUrl = `wss://${wsApi.apiId}.execute-api.${stack.region}.amazonaws.com/${wsStage.stageName}`;
+const wsUrl = `wss://${wsApi.apiId}.execute-api.${dataStack.region}.amazonaws.com/${wsStage.stageName}`;
 backend.addOutput({
   custom: {
     signaling: {
@@ -148,10 +152,12 @@ backend.setRobotLambda.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName
 backend.setRobotLambda.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
 
 // Manage robot operator Lambda environment variables
-manageRobotOperatorFunction.addEnvironment('ROBOT_OPERATOR_TABLE_NAME', robotOperatorTable.tableName);
-manageRobotOperatorFunction.addEnvironment('ROBOT_PRESENCE_TABLE_NAME', robotPresenceTable.tableName);
-manageRobotOperatorFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
-manageRobotOperatorFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+const manageRobotOperatorCdkFunction = manageRobotOperatorFunction as CdkFunction;
+manageRobotOperatorCdkFunction.addEnvironment('ROBOT_OPERATOR_TABLE', robotOperatorTable.tableName);
+manageRobotOperatorCdkFunction.addEnvironment('ROBOT_PRESENCE_TABLE', robotPresenceTable.tableName);
+manageRobotOperatorCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+manageRobotOperatorCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+manageRobotOperatorCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 
 // Grant DynamoDB permissions to manage robot operator function
 robotOperatorTable.grantReadWriteData(manageRobotOperatorFunction);
