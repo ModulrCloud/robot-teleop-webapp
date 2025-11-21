@@ -3,8 +3,6 @@ import './CreateRobotListing.css';
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
-import { Amplify } from 'aws-amplify';
-import outputs from '../../amplify_outputs.json';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
@@ -31,7 +29,6 @@ type RobotListing = {
   model: string;
 };
 
-Amplify.configure(outputs);
 const client = generateClient<Schema>();
 
 export const CreateRobotListing = () => {

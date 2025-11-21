@@ -5,13 +5,10 @@ import { useAuthStatus } from "../hooks/useAuthStatus";
 import './UserProfile.css';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { LoadingWheel } from "../components/LoadingWheel";
-import { Amplify } from 'aws-amplify';
-import outputs from '../../amplify_outputs.json';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faUser, faEdit, faSave, faTimes } from '@fortawesome/free-solid-svg-icons';
 import { formatGroupName } from "../utils/formatters";
 
-Amplify.configure(outputs);
 const client = generateClient<Schema>();
 
 interface PartnerData {
