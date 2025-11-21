@@ -237,18 +237,49 @@ async function runTests() {
     });
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    // Step 8: Summary
-    console.log('\n📊 Test Summary');
+    // Step 8: Verify packet forwarding
+    console.log('\n📊 Test Summary & Verification');
     console.log('=====================================');
-    console.log(`Robot messages received: ${robot.getReceivedMessages().length}`);
-    console.log(`Client 1 messages received: ${client1.getReceivedMessages().length}`);
-    console.log(`Client 2 messages received: ${client2.getReceivedMessages().length}`);
     
-    console.log('\n✅ Test completed. Check the logs above to verify:');
-    console.log('  1. Robot successfully registered');
-    console.log('  2. Messages were forwarded between connections');
-    console.log('  3. Authorization checks worked correctly');
-    console.log('\n💡 Tip: Check CloudWatch logs for [PACKET_FORWARD] entries to verify routing');
+    const robotMessages = robot.getReceivedMessages();
+    const client1Messages = client1.getReceivedMessages();
+    const client2Messages = client2.getReceivedMessages();
+    
+    console.log(`Robot messages received: ${robotMessages.length}`);
+    robotMessages.forEach((msg, i) => {
+      console.log(`  ${i + 1}. ${msg.message.type} from ${msg.message.from || 'unknown'}`);
+    });
+    
+    console.log(`\nClient 1 messages received: ${client1Messages.length}`);
+    client1Messages.forEach((msg, i) => {
+      console.log(`  ${i + 1}. ${msg.message.type} from ${msg.message.from || 'unknown'}`);
+    });
+    
+    console.log(`\nClient 2 messages received: ${client2Messages.length}`);
+    client2Messages.forEach((msg, i) => {
+      console.log(`  ${i + 1}. ${msg.message.type} from ${msg.message.from || 'unknown'}`);
+    });
+    
+    // Verify packet forwarding
+    console.log('\n🔍 Packet Forwarding Verification:');
+    const robotReceivedOffer = robotMessages.some(m => m.message.type === 'offer');
+    const client1ReceivedAnswer = client1Messages.some(m => m.message.type === 'answer');
+    
+    if (robotReceivedOffer) {
+      console.log('  ✅ Robot received offer from client (forwarding works!)');
+    } else {
+      console.log('  ⚠️  Robot did not receive offer - check routing');
+    }
+    
+    if (client1ReceivedAnswer) {
+      console.log('  ✅ Client 1 received answer from robot (forwarding works!)');
+    } else {
+      console.log('  ⚠️  Client 1 did not receive answer - check routing');
+    }
+    
+    console.log('\n✅ Test completed!');
+    console.log('\n💡 For detailed routing info, check CloudWatch logs for [PACKET_FORWARD] entries');
+    console.log('   These show: source → target connection IDs, message types, and robot IDs');
 
   } catch (error) {
     console.error('\n❌ Test failed:', error);

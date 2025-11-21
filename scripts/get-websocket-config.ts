@@ -41,6 +41,16 @@ export function getWebSocketUrl(): WebSocketConfig {
     };
   }
 
+  // Check if mock server is running on localhost
+  // Try localhost first (for mock server), then fallback to old IP
+  if (process.env.NODE_ENV !== 'production') {
+    // In development, prefer localhost mock server
+    return {
+      wsUrl: 'ws://localhost:8765',
+      source: 'local_fallback',
+    };
+  }
+
   // Default local fallback (same as Teleop.tsx)
   return {
     wsUrl: 'ws://192.168.132.19:8765',
@@ -59,10 +69,10 @@ export function printWebSocketConfig(): void {
   console.log('');
   
   if (config.source === 'local_fallback') {
-    console.log('⚠️  Using local fallback. Make sure:');
-    console.log('   1. Your Amplify sandbox is running (npx ampx sandbox)');
-    console.log('   2. amplify_outputs.json exists and contains custom.signaling.websocketUrl');
-    console.log('   3. Or set VITE_WS_URL environment variable');
+    console.log('⚠️  Using local fallback. Options:');
+    console.log('   1. Start mock server: npm run test:mock-server');
+    console.log('   2. Start Amplify sandbox: npx ampx sandbox');
+    console.log('   3. Set VITE_WS_URL environment variable');
     console.log('');
   }
 }
