@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Joystick, { type JoystickChange } from "../components/Joystick";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { useWebRTC } from "../hooks/useWebRTC";
@@ -39,8 +39,10 @@ export default function Teleop() {
     ? outputs.custom.signaling.websocketUrl 
     : (import.meta.env.VITE_WS_URL || 'ws://192.168.132.19:8765');
   
-  // TODO: Read from database based on selected robot
-  const robotId = import.meta.env.VITE_ROBOT_ID || 'robot1';
+  // Get robotId from URL params (set by RobotSelect page)
+  // Falls back to environment variable or default for development
+  const [searchParams] = useSearchParams();
+  const robotId = searchParams.get('robotId') || import.meta.env.VITE_ROBOT_ID || 'robot1';
 
   const { status, connect, disconnect, sendCommand, stopRobot } = useWebRTC({
     wsUrl,
