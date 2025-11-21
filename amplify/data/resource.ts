@@ -2,6 +2,7 @@ import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 import { setUserGroupLambda } from "../functions/set-user-group/resource";
 import { setRobotLambda } from "../functions/set-robot/resource";
 import { revokeTokenLambda } from "../functions/revoke-token/resource";
+import { manageRobotOperator } from "../functions/manage-robot-operator/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -82,11 +83,29 @@ const schema = a.schema({
     model: a.string(),
     robotId: a.string(),
     partnerId: a.id().required(),
-    partner: a.belongsTo('Partner', 'partnerId')
+    partner: a.belongsTo('Partner', 'partnerId'),
   })
   .authorization((allow) => [
     allow.owner().to(["update", "delete"]),
     allow.authenticated().to(["read"]),
+  ]),
+
+  // Delegation table: Partners can assign operators to their robots
+  RobotOperator: a.model({
+    id: a.id(),
+    robotId: a.string().required(), // The robotId string (not Robot.id) - used for lookup
+    operatorUserId: a.string().required(), // Cognito user ID (sub) of the delegated operator
+    operatorUsername: a.string(), // Username for display purposes
+    assignedBy: a.string().required(), // Cognito user ID who assigned this delegation
+    assignedAt: a.string().required(), // ISO timestamp
+  })
+  .secondaryIndexes(index => [
+    index("robotId").name("robotIdIndex"),
+    index("operatorUserId").name("operatorUserIdIndex"),
+  ])
+  .authorization((allow) => [
+    allow.authenticated().to(["read"]),
+    allow.owner(), // Only the partner who owns the robot can manage operators
   ]),
 
   setUserGroupLambda: a
@@ -116,7 +135,19 @@ const schema = a.schema({
     })
     .returns(LambdaResult)
     .authorization(allow => [allow.authenticated()])
-    .handler(a.handler.function(revokeTokenLambda))
+    .handler(a.handler.function(revokeTokenLambda)),
+
+  manageRobotOperatorLambda: a
+    .mutation()
+    .arguments({
+      robotId: a.string().required(),
+      operatorUserId: a.string().required(),
+      operatorUsername: a.string(),
+      action: a.string().required(), // 'add' or 'remove'
+    })
+    .returns(LambdaResult)
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(manageRobotOperator))
 });
 
 export type Schema = ClientSchema<typeof schema>;

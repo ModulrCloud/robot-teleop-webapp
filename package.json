@@ -47,7 +47,10 @@
     "globals": "^16.4.0",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.44.0",
+    "tsx": "^4.19.2",
     "vite": "^7.1.7",
-    "vitest": "^4.0.13"
+    "vitest": "^4.0.13",
+    "ws": "^8.18.0",
+    "@types/ws": "^8.5.13"
   }
 }

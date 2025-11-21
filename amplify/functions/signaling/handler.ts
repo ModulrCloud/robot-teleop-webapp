@@ -4,6 +4,7 @@ import {
     PutItemCommand,
     DeleteItemCommand,
     GetItemCommand,
+    QueryCommand,
 } from '@aws-sdk/client-dynamodb';
 import { createHash } from 'crypto';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
@@ -12,6 +13,7 @@ import { jwtVerify, createRemoteJWKSet } from 'jose';
 const CONN_TABLE = process.env.CONN_TABLE!;
 const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
 const REVOKED_TOKENS_TABLE = process.env.REVOKED_TOKENS_TABLE!;
+const ROBOT_OPERATOR_TABLE = process.env.ROBOT_OPERATOR_TABLE!;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!; // HTTPS management API
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
@@ -219,7 +221,7 @@ async function findRobotConn(robotId: string): Promise<string | null> {
     return res.Item?.connectionId?.S ?? null;
 }
 
-// If caller is the robot owner or in an admin group return True
+// If caller is the robot owner, a delegated operator, or in an admin group return True
 async function isOwnerOrAdmin(robotId: string, claims: { sub?: string; groups?: string[] }) : Promise<boolean> {
     const res = await db.send(
         new GetItemCommand({
@@ -229,7 +231,43 @@ async function isOwnerOrAdmin(robotId: string, claims: { sub?: string; groups?: 
     );
     const owner = res.Item?.ownerUserId?.S;
     const isAdmin = (claims.groups ?? []).some((g) => g === 'ADMINS' || g === 'admin');
-    return isAdmin || (!!owner && owner === claims.sub);
+    
+    // Check if user is owner
+    if (!!owner && owner === claims.sub) {
+        return true;
+    }
+    
+    // Check if user is admin
+    if (isAdmin) {
+        return true;
+    }
+    
+    // Check if user is a delegated operator
+    if (claims.sub && ROBOT_OPERATOR_TABLE) {
+        try {
+            const operatorCheck = await db.send(
+                new QueryCommand({
+                    TableName: ROBOT_OPERATOR_TABLE,
+                    IndexName: "robotIdIndex",
+                    KeyConditionExpression: "robotId = :robotId",
+                    FilterExpression: "operatorUserId = :operatorUserId",
+                    ExpressionAttributeValues: {
+                        ":robotId": { S: robotId },
+                        ":operatorUserId": { S: claims.sub },
+                    },
+                    Limit: 1,
+                })
+            );
+            if (operatorCheck.Items && operatorCheck.Items.length > 0) {
+                return true; // User is a delegated operator
+            }
+        } catch (error) {
+            console.warn('Failed to check robot operator delegation:', error);
+            // Fail closed - if we can't check delegation, deny access
+        }
+    }
+    
+    return false;
 }
 
 // Helper to determine if user is an admin
@@ -377,7 +415,9 @@ async function handleTakeover(
   const caller = claims.sub ?? '';
   const admin = isAdmin(claims.groups);
 
-  if (!admin && caller !== owner) {
+  // Check if caller is owner, admin, or delegated operator
+  const isAuthorized = await isOwnerOrAdmin(robotId, claims);
+  if (!isAuthorized) {
     return { statusCode: 403, body: 'forbidden' };
   }
 
@@ -432,6 +472,7 @@ async function handleSignal(
   }
 
   // Forward
+  const sourceConnId = event.requestContext.connectionId!;
   const outbound = {
     type,
     robotId,
@@ -439,15 +480,33 @@ async function handleSignal(
     payload: msg.payload ?? {},
   };
 
+  // Log packet forwarding for verification
+  console.log('[PACKET_FORWARD]', {
+    timestamp: new Date().toISOString(),
+    sourceConnectionId: sourceConnId,
+    targetConnectionId: targetConn,
+    messageType: type,
+    robotId: robotId,
+    fromUserId: claims.sub,
+    target: target,
+  });
+
   try {
     await mgmt.send(new PostToConnectionCommand({
       ConnectionId: targetConn!,
       Data: Buffer.from(JSON.stringify(outbound), 'utf-8'),
     }));
+    console.log('[PACKET_FORWARD_SUCCESS]', {
+      targetConnectionId: targetConn,
+      messageType: type,
+    });
   } catch (err) {
     // If the conn is gone, the caller will see a 200 from us but message won't deliver.
-    // That’s fine; $disconnect cleanup should remove stale items.
-    console.warn('forward error', err);
+    // That's fine; $disconnect cleanup should remove stale items.
+    console.warn('[PACKET_FORWARD_ERROR]', {
+      targetConnectionId: targetConn,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   return { statusCode: 200, body: '' };
