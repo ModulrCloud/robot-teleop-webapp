@@ -3,7 +3,12 @@ import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { setUserGroupLambda } from './functions/set-user-group/resource';
 import { setRobotLambda } from './functions/set-robot/resource';
+import { signaling } from './functions/signaling/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
+import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
+import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
+import { WebSocketLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
+import { RemovalPolicy, Stack } from 'aws-cdk-lib';
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
@@ -13,12 +18,74 @@ const backend = defineBackend({
   data,
   setUserGroupLambda,
   setRobotLambda,
+  signaling,
 });
 
 const userPool = backend.auth.resources.userPool;
 const tables = backend.data.resources.tables;
 const setUserGroupLambdaFunction = backend.setUserGroupLambda.resources.lambda;
 const setRobotLambdaFunction = backend.setRobotLambda.resources.lambda;
+const signalingFunction = backend.signaling.resources.lambda;
+
+// ============================================
+// Signaling Function Resources
+// ============================================
+
+// Create a custom stack for signaling resources
+const signalingStack = backend.createStack('SignalingResources');
+
+// Create DynamoDB tables for signaling
+const connTable = new Table(signalingStack, 'ConnectionsTable', {
+  partitionKey: { name: 'connectionId', type: AttributeType.STRING },
+  billingMode: BillingMode.PAY_PER_REQUEST,
+  removalPolicy: RemovalPolicy.DESTROY, // For sandbox/dev
+});
+
+const robotPresenceTable = new Table(signalingStack, 'RobotPresenceTable', {
+  partitionKey: { name: 'robotId', type: AttributeType.STRING },
+  billingMode: BillingMode.PAY_PER_REQUEST,
+  removalPolicy: RemovalPolicy.DESTROY, // For sandbox/dev
+});
+
+// Create WebSocket API Gateway
+const wsApi = new WebSocketApi(signalingStack, 'SignalingWebSocketApi', {
+  connectRouteOptions: {
+    integration: new WebSocketLambdaIntegration('ConnectIntegration', signalingFunction),
+  },
+  disconnectRouteOptions: {
+    integration: new WebSocketLambdaIntegration('DisconnectIntegration', signalingFunction),
+  },
+  defaultRouteOptions: {
+    integration: new WebSocketLambdaIntegration('DefaultIntegration', signalingFunction),
+  },
+});
+
+const wsStage = new WebSocketStage(signalingStack, 'SignalingWebSocketStage', {
+  webSocketApi: wsApi,
+  stageName: 'prod',
+  autoDeploy: true,
+});
+
+// Grant WebSocket API permission to invoke Lambda
+wsApi.grantManageConnections(signalingFunction);
+
+// Signaling Lambda environment variables
+signalingFunction.addEnvironment('CONN_TABLE', connTable.tableName);
+signalingFunction.addEnvironment('ROBOT_PRESENCE_TABLE', robotPresenceTable.tableName);
+// Construct WebSocket management endpoint URL
+// Format: https://{api-id}.execute-api.{region}.amazonaws.com/{stage}
+const stack = Stack.of(signalingStack);
+signalingFunction.addEnvironment('WS_MGMT_ENDPOINT', 
+  `https://${wsApi.apiId}.execute-api.${stack.region}.amazonaws.com/${wsStage.stageName}`
+);
+
+// Grant DynamoDB permissions to signaling function
+connTable.grantReadWriteData(signalingFunction);
+robotPresenceTable.grantReadWriteData(signalingFunction);
+
+// ============================================
+// Existing Lambda Configuration
+// ============================================
 
 // Lambda environment variables
 backend.setUserGroupLambda.addEnvironment('USER_POOL_ID', userPool.userPoolId);
