@@ -9,22 +9,17 @@ This guide explains how to test the WebSocket signaling server locally, includin
    npx ampx sandbox
    ```
 
-2. **Get WebSocket URL**: After sandbox starts, check `amplify_outputs.json`:
-   ```json
-   {
-     "custom": {
-       "signaling": {
-         "websocketUrl": "wss://abc123.execute-api.us-east-1.amazonaws.com/prod"
-       }
-     }
-   }
-   ```
-
-3. **Get JWT Token**: 
+2. **Get JWT Token**: 
    - Sign in to your app in the browser
    - Open DevTools → Application → Local Storage
    - Look for a key containing `CognitoIdentityServiceProvider` and `idToken`
    - Copy the token value (it's a long string starting with `eyJ...`)
+   - Or run `npm run test:get-token` for detailed instructions
+
+**Note**: The WebSocket URL is **automatically detected** from:
+- `amplify_outputs.json` (if sandbox is running) ✅ **Recommended**
+- `VITE_WS_URL` environment variable
+- Local fallback (`ws://192.168.132.19:8765`)
 
 ## Running the Test Script
 
@@ -34,13 +29,32 @@ The test script simulates multiple WebSocket connections to verify:
 - ✅ Message forwarding between connections
 - ✅ Authorization/delegation checks
 
-### Basic Usage
+### Simple Usage (Auto-detect URL)
 
 ```bash
-npx tsx scripts/test-websocket-local.ts <wsUrl> <token> [robotId]
+# Just provide the token - URL is auto-detected!
+npm run test:websocket <your-token> [robotId]
 ```
 
-### Example
+### Examples
+
+```bash
+# Auto-detect URL, use default robotId
+npm run test:websocket eyJraWQiOiJcL1VzZXJQb29sXC8...
+
+# Auto-detect URL, specify robotId
+npm run test:websocket eyJraWQiOiJcL1VzZXJQb29sXC8... robot1
+
+# Check what URL will be used
+npm run test:ws-config
+
+# Get help with finding your token
+npm run test:get-token
+```
+
+### Legacy Usage (Manual URL)
+
+If you need to manually specify the URL (for testing different endpoints):
 
 ```bash
 npx tsx scripts/test-websocket-local.ts \

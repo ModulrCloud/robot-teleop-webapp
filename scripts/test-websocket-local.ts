@@ -8,24 +8,62 @@
  * - Delegation/authorization checks
  * 
  * Usage:
- *   1. Start your Amplify sandbox: `npx ampx sandbox`
- *   2. Get the WebSocket URL from amplify_outputs.json (custom.signaling.websocketUrl)
- *   3. Get a valid JWT token (you can extract from browser DevTools after signing in)
- *   4. Run: npx tsx scripts/test-websocket-local.ts <wsUrl> <token> <robotId>
+ *   npx tsx scripts/test-websocket-local.ts [token] [robotId]
  * 
- * Example:
+ * The WebSocket URL is automatically detected from:
+ *   1. amplify_outputs.json (custom.signaling.websocketUrl) - if sandbox is running
+ *   2. VITE_WS_URL environment variable
+ *   3. Local fallback (ws://192.168.132.19:8765)
+ * 
+ * Examples:
+ *   # Auto-detect URL, provide token
+ *   npx tsx scripts/test-websocket-local.ts eyJraWQ... robot1
+ * 
+ *   # Auto-detect URL and use default robotId
+ *   npx tsx scripts/test-websocket-local.ts eyJraWQ...
+ * 
+ *   # Manual override (legacy support)
  *   npx tsx scripts/test-websocket-local.ts wss://abc123.execute-api.us-east-1.amazonaws.com/prod eyJraWQ... robot1
  */
 
 import WebSocket from 'ws';
+import { getWebSocketUrl, printWebSocketConfig } from './get-websocket-config';
 
-const WS_URL = process.argv[2];
-const TOKEN = process.argv[3];
-const ROBOT_ID = process.argv[4] || 'robot1';
+// Parse arguments - support both new (auto-detect) and legacy (manual) formats
+let WS_URL: string;
+let TOKEN: string;
+let ROBOT_ID: string;
 
-if (!WS_URL || !TOKEN) {
-  console.error('Usage: npx tsx scripts/test-websocket-local.ts <wsUrl> <token> [robotId]');
-  console.error('Example: npx tsx scripts/test-websocket-local.ts wss://abc123.execute-api.us-east-1.amazonaws.com/prod eyJraWQ... robot1');
+// Check if first arg looks like a URL (starts with ws:// or wss://)
+if (process.argv[2]?.startsWith('ws://') || process.argv[2]?.startsWith('wss://')) {
+  // Legacy format: <wsUrl> <token> [robotId]
+  WS_URL = process.argv[2];
+  TOKEN = process.argv[3];
+  ROBOT_ID = process.argv[4] || 'robot1';
+} else {
+  // New format: auto-detect URL, <token> [robotId]
+  const config = getWebSocketUrl();
+  WS_URL = config.wsUrl;
+  TOKEN = process.argv[2];
+  ROBOT_ID = process.argv[3] || 'robot1';
+}
+
+if (!TOKEN) {
+  console.error('❌ Error: JWT token is required');
+  console.error('');
+  console.error('Usage: npx tsx scripts/test-websocket-local.ts [token] [robotId]');
+  console.error('');
+  console.error('The WebSocket URL is automatically detected. You only need to provide:');
+  console.error('  - token: JWT token from browser (DevTools → Application → Local Storage)');
+  console.error('  - robotId: (optional) Robot ID to test with (default: robot1)');
+  console.error('');
+  console.error('To get your JWT token:');
+  console.error('  1. Sign in to your app in the browser');
+  console.error('  2. Open DevTools → Application → Local Storage');
+  console.error('  3. Look for a key containing "CognitoIdentityServiceProvider" and "idToken"');
+  console.error('  4. Copy the token value (starts with eyJ...)');
+  console.error('');
+  printWebSocketConfig();
   process.exit(1);
 }
 
@@ -127,6 +165,11 @@ class WebSocketTester {
 async function runTests() {
   console.log('🧪 Starting WebSocket Local Testing');
   console.log('=====================================\n');
+  
+  // Print configuration
+  printWebSocketConfig();
+  console.log(`🤖 Robot ID: ${ROBOT_ID}`);
+  console.log(`🔑 Token: ${TOKEN.substring(0, 20)}...${TOKEN.substring(TOKEN.length - 10)}\n`);
 
   // Create test clients
   const robot = new WebSocketTester('ROBOT');
