@@ -112,7 +112,8 @@ beforeEach(() => {
       
       if (tableName === 'LocalRevokedTokens' || tableName === process.env.REVOKED_TOKENS_TABLE) {
         // This is a blacklist check - return empty (not revoked)
-        return {}; // No Item = not revoked
+        // The check happens before other operations, so we need to handle it first
+        return Promise.resolve({}); // No Item = not revoked
       }
     }
     // For all other commands, we need to check if there are queued responses
@@ -140,13 +141,16 @@ describe('$connect', () => {
     } as any);
 
     expect(resp.statusCode).toBe(200);
-    expect(ddbSend).toHaveBeenCalled();
-    expect(ddbSend.mock.calls[0][0]).toBeInstanceOf(PutItemCommand);
+    expect(ddbSend).toHaveBeenCalledTimes(2); // Blacklist check + PutItemCommand
+    expect(ddbSend.mock.calls[0][0]).toBeInstanceOf(GetItemCommand); // Blacklist check
+    expect(ddbSend.mock.calls[1][0]).toBeInstanceOf(PutItemCommand); // Connection storage
   });
 });
 
 describe('register', () => {
   it('claims robot presence for owner', async () => {
+    // Blacklist check happens first
+    ddbSend.mockResolvedValueOnce({}); // Blacklist check - not revoked
     ddbSend.mockResolvedValueOnce({}); // PutItemCommand
 
     const token = mkToken({ sub: 'owner-1' });
@@ -157,14 +161,16 @@ describe('register', () => {
     } as any);
 
     expect(resp.statusCode).toBe(200);
-    expect(ddbSend).toHaveBeenCalled();
-    expect(ddbSend.mock.calls[0][0]).toBeInstanceOf(PutItemCommand);
+    expect(ddbSend).toHaveBeenCalledTimes(2); // Blacklist check + PutItemCommand
+    expect(ddbSend.mock.calls[0][0]).toBeInstanceOf(GetItemCommand); // Blacklist check
+    expect(ddbSend.mock.calls[1][0]).toBeInstanceOf(PutItemCommand); // Robot presence
   });
 });
 
 describe('offer forwarding', () => {
   it('looks up robot conn and posts to it', async () => {
-    // 1) Blacklist check (handled by default mock - returns empty = not revoked)
+    // 1) Blacklist check happens first
+    ddbSend.mockResolvedValueOnce({}); // Blacklist check - not revoked
     // 2) GetItem to find robot connection
     ddbSend.mockResolvedValueOnce({
       Item: { connectionId: { S: 'R-1' } },
@@ -236,6 +242,8 @@ describe('auth & validation errors', () => {
   });
 
   it('400 on invalid target', async () => {
+    // Blacklist check happens first
+    ddbSend.mockResolvedValueOnce({}); // Blacklist check - not revoked
     // Simulate robot registered so the test flows to target validation
     ddbSend.mockResolvedValueOnce({ Item: { connectionId: { S: 'R-X' } } });
 
@@ -272,6 +280,8 @@ describe('auth & validation errors', () => {
 
 describe('robot offline & ICE', () => {
   it('404 when robot offline (no presence row)', async () => {
+    // Blacklist check happens first
+    ddbSend.mockResolvedValueOnce({}); // Blacklist check - not revoked
     // GetItem returns no Item
     ddbSend.mockResolvedValueOnce({ Item: undefined });
 
@@ -292,6 +302,8 @@ describe('robot offline & ICE', () => {
   });
 
   it('forwards ice-candidate to robot like offer/answer', async () => {
+    // Blacklist check happens first
+    ddbSend.mockResolvedValueOnce({}); // Blacklist check - not revoked
     // Robot presence lookup
     ddbSend.mockResolvedValueOnce({ Item: { connectionId: { S: 'R-ice' } } });
     apigwSend.mockResolvedValueOnce({});
@@ -316,6 +328,8 @@ describe('robot offline & ICE', () => {
 
 describe('takeover', () => {
   it('403 for non-owner non-admin', async () => {
+    // Blacklist check happens first
+    ddbSend.mockResolvedValueOnce({}); // Blacklist check - not revoked
     // Presence row showing owner-A
     ddbSend.mockResolvedValueOnce({
       Item: { ownerUserId: { S: 'owner-A' }, connectionId: { S: 'R-TA' } },
@@ -333,6 +347,8 @@ describe('takeover', () => {
   });
 
   it('admin can takeover and message robot', async () => {
+    // Blacklist check happens first
+    ddbSend.mockResolvedValueOnce({}); // Blacklist check - not revoked
     // Presence row with some owner & a connectionId
     ddbSend.mockResolvedValueOnce({
       Item: { ownerUserId: { S: 'owner-X' }, connectionId: { S: 'R-TADM' } },
@@ -366,6 +382,8 @@ describe('additional edge cases', () => {
     expect(apigwSend).not.toHaveBeenCalled();
   });
     it('returns 404 on takeover when robot is offline', async () => {
+    // Blacklist check happens first
+    ddbSend.mockResolvedValueOnce({}); // Blacklist check - not revoked
     // First DynamoDB GetItem returns empty (no presence row)
     ddbSend.mockResolvedValueOnce({});
 
@@ -385,7 +403,9 @@ describe('additional edge cases', () => {
     expect(apigwSend).not.toHaveBeenCalled();
   });
   it('forwards offer to specific client when target=client', async () => {
-    // No DynamoDB access expected for target=client path
+    // Blacklist check happens first
+    ddbSend.mockResolvedValueOnce({}); // Blacklist check - not revoked
+    // No DynamoDB access expected for target=client path (after blacklist check)
     const token = mkToken({ sub: 'user-1' });
 
     apigwSend.mockResolvedValueOnce({}); // PostToConnection success
@@ -421,7 +441,9 @@ describe('additional edge cases', () => {
   it('still returns 200 when PostToConnection fails (e.g. GoneException)', async () => {
     const token = mkToken({ sub: 'owner-1' });
 
-    // 1) DB lookup for robot presence
+    // 1) Blacklist check happens first
+    ddbSend.mockResolvedValueOnce({}); // Blacklist check - not revoked
+    // 2) DB lookup for robot presence
     ddbSend.mockResolvedValueOnce({
       Item: { connectionId: { S: 'R-1' } },
     });
@@ -443,7 +465,7 @@ describe('additional edge cases', () => {
 
     // We swallow the error, log it, and still return 200
     expect(resp.statusCode).toBe(200);
-    expect(ddbSend).toHaveBeenCalledTimes(1);
+    expect(ddbSend).toHaveBeenCalledTimes(2); // Blacklist check + robot presence lookup
     expect(apigwSend).toHaveBeenCalledTimes(1);
   });
 });
