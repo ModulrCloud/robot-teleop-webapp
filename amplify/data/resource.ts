@@ -1,6 +1,7 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 import { setUserGroupLambda } from "../functions/set-user-group/resource";
 import { setRobotLambda } from "../functions/set-robot/resource";
+import { revokeTokenLambda } from "../functions/revoke-token/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -106,7 +107,16 @@ const schema = a.schema({
     })
     .returns(a.string())
     .authorization(allow => [allow.group('PARTNERS'), allow.group('ADMINS')])
-    .handler(a.handler.function(setRobotLambda))
+    .handler(a.handler.function(setRobotLambda)),
+
+  revokeTokenLambda: a
+    .mutation()
+    .arguments({
+      token: a.string().required(),
+    })
+    .returns(LambdaResult)
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(revokeTokenLambda))
 });
 
 export type Schema = ClientSchema<typeof schema>;

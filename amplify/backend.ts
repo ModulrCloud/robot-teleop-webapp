@@ -4,6 +4,7 @@ import { data } from './data/resource';
 import { setUserGroupLambda } from './functions/set-user-group/resource';
 import { setRobotLambda } from './functions/set-robot/resource';
 import { signaling } from './functions/signaling/resource';
+import { revokeTokenLambda } from './functions/revoke-token/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -19,6 +20,7 @@ const backend = defineBackend({
   setUserGroupLambda,
   setRobotLambda,
   signaling,
+  revokeTokenLambda,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -26,6 +28,7 @@ const tables = backend.data.resources.tables;
 const setUserGroupLambdaFunction = backend.setUserGroupLambda.resources.lambda;
 const setRobotLambdaFunction = backend.setRobotLambda.resources.lambda;
 const signalingFunction = backend.signaling.resources.lambda;
+const revokeTokenLambdaFunction = backend.revokeTokenLambda.resources.lambda;
 
 // ============================================
 // Signaling Function Resources
@@ -45,6 +48,15 @@ const robotPresenceTable = new Table(signalingStack, 'RobotPresenceTable', {
   partitionKey: { name: 'robotId', type: AttributeType.STRING },
   billingMode: BillingMode.PAY_PER_REQUEST,
   removalPolicy: RemovalPolicy.DESTROY, // For sandbox/dev
+});
+
+// Revoked tokens table - stores tokens that have been revoked
+// Uses TTL to automatically clean up expired tokens
+const revokedTokensTable = new Table(signalingStack, 'RevokedTokensTable', {
+  partitionKey: { name: 'tokenId', type: AttributeType.STRING },
+  billingMode: BillingMode.PAY_PER_REQUEST,
+  removalPolicy: RemovalPolicy.DESTROY, // For sandbox/dev
+  timeToLiveAttribute: 'ttl', // Automatically delete after TTL expires
 });
 
 // Create WebSocket API Gateway
@@ -72,6 +84,7 @@ wsApi.grantManageConnections(signalingFunction);
 // Signaling Lambda environment variables
 signalingFunction.addEnvironment('CONN_TABLE', connTable.tableName);
 signalingFunction.addEnvironment('ROBOT_PRESENCE_TABLE', robotPresenceTable.tableName);
+signalingFunction.addEnvironment('REVOKED_TOKENS_TABLE', revokedTokensTable.tableName);
 signalingFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 // Construct WebSocket management endpoint URL
 // Format: https://{api-id}.execute-api.{region}.amazonaws.com/{stage}
@@ -84,6 +97,13 @@ signalingFunction.addEnvironment('AWS_REGION', stack.region);
 // Grant DynamoDB permissions to signaling function
 connTable.grantReadWriteData(signalingFunction);
 robotPresenceTable.grantReadWriteData(signalingFunction);
+revokedTokensTable.grantReadData(signalingFunction); // Read-only for checking blacklist
+
+// Grant DynamoDB permissions to revoke token function
+revokedTokensTable.grantWriteData(revokeTokenLambdaFunction);
+
+// Revoke token Lambda environment variables
+revokeTokenLambdaFunction.addEnvironment('REVOKED_TOKENS_TABLE', revokedTokensTable.tableName);
 
 // Add WebSocket URL to outputs for frontend access
 // Format: wss://{api-id}.execute-api.{region}.amazonaws.com/{stage}

@@ -5,11 +5,13 @@ import {
     DeleteItemCommand,
     GetItemCommand,
 } from '@aws-sdk/client-dynamodb';
+import { createHash } from 'crypto';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
 
 const CONN_TABLE = process.env.CONN_TABLE!;
 const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
+const REVOKED_TOKENS_TABLE = process.env.REVOKED_TOKENS_TABLE!;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!; // HTTPS management API
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
@@ -52,12 +54,43 @@ type RawMessage = any;
 const nowMs = () => Date.now();
 
 /**
+ * Checks if a token is in the revocation blacklist.
+ * Returns true if token is revoked, false otherwise.
+ */
+async function isTokenRevoked(token: string): Promise<boolean> {
+    try {
+        const tokenHash = createHash('sha256').update(token).digest('hex');
+        const result = await db.send(
+            new GetItemCommand({
+                TableName: REVOKED_TOKENS_TABLE,
+                Key: { tokenId: { S: tokenHash } },
+            })
+        );
+        // Token is revoked if it exists in blacklist
+        // Handle case where result might be undefined or Item might be undefined
+        return !!(result && result.Item);
+    } catch (error) {
+        // If we can't check blacklist, log error but don't block (fail open for availability)
+        console.warn('Failed to check token blacklist', error);
+        return false; // Fail open - allow token if we can't check blacklist
+    }
+}
+
+/**
  * Verifies and decodes a Cognito JWT token.
  * Validates signature, expiration, issuer, and audience.
- * Returns null if token is invalid or expired.
+ * Also checks if token has been revoked.
+ * Returns null if token is invalid, expired, or revoked.
  */
 async function verifyCognitoJWT(token: string | null | undefined): Promise<{sub?: string; groups?: string[]; aud?: string} | null> {
     if (!token) return null;
+    
+    // First check if token is revoked (before expensive signature verification)
+    const revoked = await isTokenRevoked(token);
+    if (revoked) {
+        console.warn('Token is revoked', { hasToken: !!token });
+        return null;
+    }
     
     try {
         // Verify the JWT signature and decode the payload

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { getCurrentUser, fetchUserAttributes, signOut as amplifySignOut, fetchAuthSession } from "aws-amplify/auth";
 import { Hub } from "aws-amplify/utils";
+import { generateClient } from "aws-amplify/api";
+import type { Schema } from "../../amplify/data/resource";
 
 type AuthGroup = "ADMINS" | "PARTNERS" | "CLIENTS";
 const VALID_GROUPS: string[] = ["ADMINS", "PARTNERS", "CLIENTS"];
@@ -23,6 +25,27 @@ async function signOut() {
     "CognitoIdentityServiceProvider",
     "amplify-signin-with-hostedUI",
   ];
+  
+  try {
+    // Get current token before signing out so we can revoke it
+    const session = await fetchAuthSession();
+    const idToken = session.tokens?.idToken?.toString();
+    
+    // Revoke the token before signing out
+    if (idToken) {
+      try {
+        const client = generateClient<Schema>();
+        await client.mutations.revokeTokenLambda({ token: idToken });
+        // console.log("Token revoked successfully");
+      } catch (revokeError) {
+        // Log but don't block sign-out if revocation fails
+        console.warn("Failed to revoke token (continuing with sign-out):", revokeError);
+      }
+    }
+  } catch (error) {
+    // If we can't get the token, continue with sign-out anyway
+    console.warn("Could not get token for revocation (continuing with sign-out):", error);
+  }
   
   // Debug logging (commented out - uncomment for debugging)
   // console.log("Signing out of backend...");

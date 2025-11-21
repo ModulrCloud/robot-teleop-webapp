@@ -16,6 +16,7 @@ const { ddbSend, apigwSend } = vi.hoisted(() => {
 // ---------- Mock env before importing the module ----------
 process.env.CONN_TABLE = 'LocalConnections';
 process.env.ROBOT_PRESENCE_TABLE = 'LocalPresence';
+process.env.REVOKED_TOKENS_TABLE = 'LocalRevokedTokens';
 process.env.WS_MGMT_ENDPOINT = 'https://example.com/_aws/ws';
 process.env.USER_POOL_ID = 'us-east-1_TestPool123';
 process.env.AWS_REGION = 'us-east-1';
@@ -97,6 +98,28 @@ beforeEach(() => {
       protectedHeader: { alg: 'RS256' },
     };
   });
+  
+  // Default mock: handle blacklist checks automatically
+  // The blacklist check happens FIRST in verifyCognitoJWT, so we handle it here
+  // Tests can use mockResolvedValueOnce for subsequent calls
+  ddbSend.mockImplementation(async (command: any) => {
+    // Check if this is a blacklist check by inspecting the command
+    if (command instanceof GetItemCommand) {
+      // Try to get table name from command - it might be in different places
+      const tableName = (command as any).input?.TableName 
+        || (command as any).TableName
+        || (command.input && command.input.TableName);
+      
+      if (tableName === 'LocalRevokedTokens' || tableName === process.env.REVOKED_TOKENS_TABLE) {
+        // This is a blacklist check - return empty (not revoked)
+        return {}; // No Item = not revoked
+      }
+    }
+    // For all other commands, we need to check if there are queued responses
+    // Since mockImplementation takes precedence, we'll return empty and let tests override
+    // Tests should use mockResolvedValueOnce AFTER the blacklist check
+    return {};
+  });
 });
 
 // ===================================================================
@@ -105,6 +128,9 @@ beforeEach(() => {
 
 describe('$connect', () => {
   it('stores a connection row', async () => {
+    // First call: blacklist check (returns empty = not revoked)
+    // Second call: PutItemCommand for connection
+    ddbSend.mockResolvedValueOnce({}); // Blacklist check - not revoked
     ddbSend.mockResolvedValueOnce({}); // PutItemCommand
     const token = mkToken({ sub: 'u1', 'cognito:groups': ['ADMINS'] });
 
@@ -138,11 +164,12 @@ describe('register', () => {
 
 describe('offer forwarding', () => {
   it('looks up robot conn and posts to it', async () => {
-    // 1) GetItem to find robot connection
+    // 1) Blacklist check (handled by default mock - returns empty = not revoked)
+    // 2) GetItem to find robot connection
     ddbSend.mockResolvedValueOnce({
       Item: { connectionId: { S: 'R-1' } },
     });
-    // 2) PostToConnection
+    // 3) PostToConnection
     apigwSend.mockResolvedValueOnce({});
 
     const token = mkToken({ sub: 'owner-1' });
