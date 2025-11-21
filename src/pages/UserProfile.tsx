@@ -7,7 +7,7 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faUser, faEdit, faSave, faTimes } from '@fortawesome/free-solid-svg-icons';
-import { formatGroupName } from "../utils/formatters";
+import { formatGroupName, capitalizeName } from "../utils/formatters";
 
 const client = generateClient<Schema>();
 
@@ -177,7 +177,7 @@ export function UserProfile() {
             <FontAwesomeIcon icon={faUser} />
           </div>
           <div className="profile-header-info">
-            <h1>{user?.displayName || user?.email}</h1>
+            <h1>{capitalizeName(user?.displayName) || capitalizeName(user?.email?.split('@')[0]) || user?.email}</h1>
             <span className="profile-badge">{formatGroupName(user?.group)}</span>
           </div>
         </div>
@@ -198,7 +198,7 @@ export function UserProfile() {
             </div>
             <div className="info-item">
               <label>Username</label>
-              <p>{user?.username}</p>
+              <p>{capitalizeName(user?.username)}</p>
             </div>
           </div>
         </div>

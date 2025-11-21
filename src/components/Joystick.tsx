@@ -45,32 +45,14 @@ export default function Joystick({ size = 220, knobSize = 90, onChange, onEnd }:
     onChange?.({ x: normX, y: normY })
   }, [onChange, radius, knobRadius])
 
-  useEffect(() => {
-    const handlePointerMove = (e: PointerEvent) => {
-      if (e.pressure === 0) return
-      updateFromEvent(e.clientX, e.clientY)
-    }
-    const handlePointerUp = () => {
-      setKnobPos({ x: 0, y: 0 })
-      onChange?.({ x: 0, y: 0 })
-      onEnd?.()
-      window.removeEventListener("pointermove", handlePointerMove)
-      window.removeEventListener("pointerup", handlePointerUp)
-      window.removeEventListener("pointercancel", handlePointerUp)
-    }
-
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove)
-      window.removeEventListener("pointerup", handlePointerUp)
-      window.removeEventListener("pointercancel", handlePointerUp)
-    }
-  }, [onChange, onEnd, updateFromEvent])
-
   const handlePointerDown = (e: React.PointerEvent) => {
     ;(e.target as Element).setPointerCapture?.(e.pointerId)
     updateFromEvent(e.clientX, e.clientY)
 
-    const move = (ev: PointerEvent) => updateFromEvent(ev.clientX, ev.clientY)
+    const move = (ev: PointerEvent) => {
+      // Don't filter by pressure - mice have pressure === 0, but we still want to track them
+      updateFromEvent(ev.clientX, ev.clientY)
+    }
     const up = () => {
       setKnobPos({ x: 0, y: 0 })
       onChange?.({ x: 0, y: 0 })
