@@ -17,6 +17,8 @@ const { ddbSend, apigwSend } = vi.hoisted(() => {
 process.env.CONN_TABLE = 'LocalConnections';
 process.env.ROBOT_PRESENCE_TABLE = 'LocalPresence';
 process.env.WS_MGMT_ENDPOINT = 'https://example.com/_aws/ws';
+process.env.USER_POOL_ID = 'us-east-1_TestPool123';
+process.env.AWS_REGION = 'us-east-1';
 
 // ---------- Mock AWS SDK v3 clients ----------
 vi.mock('@aws-sdk/client-dynamodb', async () => {
@@ -34,6 +36,22 @@ vi.mock('@aws-sdk/client-apigatewaymanagementapi', async () => {
     send = apigwSend;
   }
   return { ...actual, ApiGatewayManagementApiClient: MockApiGwMgmtClient };
+});
+
+// ---------- Mock JWT verification (jose library) ----------
+const { jwtVerifyMock } = vi.hoisted(() => {
+  return {
+    jwtVerifyMock: vi.fn(),
+  };
+});
+
+vi.mock('jose', async () => {
+  const actual = await vi.importActual<any>('jose');
+  return {
+    ...actual,
+    jwtVerify: jwtVerifyMock,
+    createRemoteJWKSet: vi.fn(() => ({} as any)), // Mock JWKS
+  };
 });
 
 // ---------- Import after mocks are set up ----------
@@ -56,6 +74,29 @@ function mkToken(payload: Record<string, unknown>) {
 beforeEach(() => {
   ddbSend.mockReset();
   apigwSend.mockReset();
+  jwtVerifyMock.mockReset();
+  
+  // Default mock: verify token and return payload based on token content
+  jwtVerifyMock.mockImplementation(async (token: string) => {
+    // Extract payload from token (same logic as old decodeJwtNoVerify for tests)
+    const parts = token.split('.');
+    if (parts.length !== 3) throw new Error('Invalid token');
+    const payloadB64 = parts[1];
+    const pad = '='.repeat((4 - (payloadB64.length % 4)) % 4);
+    const json = Buffer.from(payloadB64 + pad, 'base64url').toString('utf-8');
+    const payload = JSON.parse(json);
+    
+    // Return in jose format
+    return {
+      payload: {
+        sub: payload.sub,
+        'cognito:groups': payload['cognito:groups'] || [],
+        aud: payload.aud,
+        exp: payload.exp || Math.floor(Date.now() / 1000) + 3600, // Default 1 hour from now
+      },
+      protectedHeader: { alg: 'RS256' },
+    };
+  });
 });
 
 // ===================================================================

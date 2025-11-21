@@ -18,6 +18,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import "./Teleop.css";
 import { usePageTitle } from "../hooks/usePageTitle";
+import outputs from '../../amplify_outputs.json';
 
 export default function Teleop() {
   usePageTitle();
@@ -32,8 +33,12 @@ export default function Teleop() {
   const [gamepadDetected, setGamepadDetected] = useState(false);
   const sendIntervalMs = 100; // 10 Hz
 
-  // TODO: Read from deployment config (environment/AWS Parameter Store)
-  const wsUrl = import.meta.env.VITE_WS_URL || 'ws://192.168.132.19:8765';
+  // Read WebSocket URL from amplify_outputs.json (AWS signaling server)
+  // Falls back to local WebSocket for development
+  const wsUrl = outputs?.custom?.signaling?.websocketUrl 
+    ? outputs.custom.signaling.websocketUrl 
+    : (import.meta.env.VITE_WS_URL || 'ws://192.168.132.19:8765');
+  
   // TODO: Read from database based on selected robot
   const robotId = import.meta.env.VITE_ROBOT_ID || 'robot1';
 

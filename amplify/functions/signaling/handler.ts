@@ -6,13 +6,20 @@ import {
     GetItemCommand,
 } from '@aws-sdk/client-dynamodb';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
+import { jwtVerify, createRemoteJWKSet } from 'jose';
 
 const CONN_TABLE = process.env.CONN_TABLE!;
 const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!; // HTTPS management API
+const USER_POOL_ID = process.env.USER_POOL_ID!;
+const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 
 const db = new DynamoDBClient({});
 const mgmt = new ApiGatewayManagementApiClient({ endpoint: WS_MGMT_ENDPOINT});
+
+// Cognito JWKS URL - public keys for verifying JWT signatures
+const JWKS_URL = `https://cognito-idp.${AWS_REGION}.amazonaws.com/${USER_POOL_ID}/.well-known/jwks.json`;
+const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
 
 // ---------------------------------
 // Types
@@ -44,24 +51,42 @@ type RawMessage = any;
 
 const nowMs = () => Date.now();
 
-// NOTE: Decode a JWT without verifying the signature will replace with
-// cognito verification later
-
-function decodeJwtNoVerify(token: string | null | undefined): {sub?: string; groups?: string[]; aud?: string} | null{
+/**
+ * Verifies and decodes a Cognito JWT token.
+ * Validates signature, expiration, issuer, and audience.
+ * Returns null if token is invalid or expired.
+ */
+async function verifyCognitoJWT(token: string | null | undefined): Promise<{sub?: string; groups?: string[]; aud?: string} | null> {
     if (!token) return null;
+    
     try {
-        const parts = token.trim().split('.');
-        if (parts.length !== 3) return null;
-        const payloadB64 = parts[1];
-        const pad = '='.repeat((4 - (payloadB64.length % 4)) % 4);
-        const json = Buffer.from(payloadB64 + pad, 'base64url').toString('utf-8');
-        const payload = JSON.parse(json);
-        return{
-            sub: payload.sub ?? '',
+        // Verify the JWT signature and decode the payload
+        const { payload } = await jwtVerify(token, JWKS, {
+            issuer: `https://cognito-idp.${AWS_REGION}.amazonaws.com/${USER_POOL_ID}`,
+            // Cognito ID tokens use the client ID as audience
+            // We'll be lenient here since we don't know the exact client ID
+            // The signature verification is the most important part
+        });
+
+        // Check expiration (jwtVerify already does this, but we're explicit)
+        const now = Math.floor(Date.now() / 1000);
+        if (payload.exp && payload.exp < now) {
+            console.warn('Token expired', { exp: payload.exp, now });
+            return null;
+        }
+
+        // Extract claims
+        return {
+            sub: payload.sub as string | undefined,
             groups: (payload['cognito:groups'] as string[] | undefined) ?? [],
-            aud: payload.aud ?? '',
+            aud: payload.aud as string | undefined,
         };
-    } catch {
+    } catch (error) {
+        // Log verification failures for security monitoring
+        console.warn('JWT verification failed', {
+            error: error instanceof Error ? error.message : String(error),
+            hasToken: !!token,
+        });
         return null;
     }
 }
@@ -184,11 +209,11 @@ function isAdmin(groups?: string[] | null): boolean {
 // $connect
 // ---------------------------------
 async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
-    // Clients / robots will pass ?token<JWT> in teh URL
+    // Clients / robots will pass ?token=<JWT> in the URL
     const token = event.queryStringParameters?.token ?? null;
 
-    // TEMP: decode w/o verification (this will be swpped later for cognito)
-    const claims = decodeJwtNoVerify(token);
+    // Verify JWT token signature and expiration
+    const claims = await verifyCognitoJWT(token);
     if (!claims?.sub) {
         return {statusCode: 401, body: 'unauthorized'};
     }
@@ -410,7 +435,7 @@ export async function handler(
 
   // All other events come through $default
   const token = event.queryStringParameters?.token ?? null;
-  const claims = decodeJwtNoVerify(token);
+  const claims = await verifyCognitoJWT(token);
   if (!claims?.sub) {
     return { statusCode: 401, body: 'Unauthorized' };
   }

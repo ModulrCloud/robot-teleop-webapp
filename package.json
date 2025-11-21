@@ -16,6 +16,7 @@
     "@aws-sdk/client-apigatewaymanagementapi": "^3.914.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.913.0",
     "@aws-sdk/client-dynamodb": "^3.914.0",
+    "jose": "^5.9.6",
     "@fortawesome/fontawesome-svg-core": "^7.1.0",
     "@fortawesome/free-brands-svg-icons": "^7.1.0",
     "@fortawesome/free-solid-svg-icons": "^7.1.0",
