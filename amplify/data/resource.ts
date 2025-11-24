@@ -3,6 +3,7 @@ import { setUserGroupLambda } from "../functions/set-user-group/resource";
 import { setRobotLambda } from "../functions/set-robot/resource";
 import { revokeTokenLambda } from "../functions/revoke-token/resource";
 import { manageRobotOperator } from "../functions/manage-robot-operator/resource";
+import { deleteRobotLambda } from "../functions/delete-robot/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -147,7 +148,16 @@ const schema = a.schema({
     })
     .returns(LambdaResult)
     .authorization(allow => [allow.authenticated()])
-    .handler(a.handler.function(manageRobotOperator))
+    .handler(a.handler.function(manageRobotOperator)),
+
+  deleteRobotLambda: a
+    .mutation()
+    .arguments({
+      robotId: a.string().required(), // Robot ID (UUID) to delete
+    })
+    .returns(LambdaResult)
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (owner/admin check)
+    .handler(a.handler.function(deleteRobotLambda))
 });
 
 export type Schema = ClientSchema<typeof schema>;

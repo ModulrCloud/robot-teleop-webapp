@@ -6,6 +6,7 @@ import { setRobotLambda } from './functions/set-robot/resource';
 import { signaling } from './functions/signaling/resource';
 import { revokeTokenLambda } from './functions/revoke-token/resource';
 import { manageRobotOperator } from './functions/manage-robot-operator/resource';
+import { deleteRobotLambda } from './functions/delete-robot/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -24,6 +25,7 @@ const backend = defineBackend({
   signaling,
   revokeTokenLambda,
   manageRobotOperator,
+  deleteRobotLambda,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -33,6 +35,7 @@ const setRobotLambdaFunction = backend.setRobotLambda.resources.lambda;
 const signalingFunction = backend.signaling.resources.lambda;
 const revokeTokenLambdaFunction = backend.revokeTokenLambda.resources.lambda;
 const manageRobotOperatorFunction = backend.manageRobotOperator.resources.lambda;
+const deleteRobotLambdaFunction = backend.deleteRobotLambda.resources.lambda;
 
 // ============================================
 // Signaling Function Resources
@@ -151,6 +154,10 @@ backend.setUserGroupLambda.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 backend.setRobotLambda.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 backend.setRobotLambda.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
 
+// Delete robot Lambda environment variables
+backend.deleteRobotLambda.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+backend.deleteRobotLambda.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+
 // Manage robot operator Lambda environment variables
 const manageRobotOperatorCdkFunction = manageRobotOperatorFunction as CdkFunction;
 manageRobotOperatorCdkFunction.addEnvironment('ROBOT_OPERATOR_TABLE', robotOperatorTable.tableName);
@@ -175,3 +182,14 @@ setRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
     ]
 }));
 tables.Robot.grantWriteData(setRobotLambdaFunction);
+
+// Grant DynamoDB permissions to delete robot function
+tables.Robot.grantReadWriteData(deleteRobotLambdaFunction);
+tables.Partner.grantReadData(deleteRobotLambdaFunction);
+// Grant permission to query the cognitoUsernameIndex (needed for ownership verification)
+deleteRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query", "dynamodb:GetItem", "dynamodb:Scan"],
+  resources: [
+    `${tables.Partner.tableArn}/index/cognitoUsernameIndex`
+  ]
+}));
