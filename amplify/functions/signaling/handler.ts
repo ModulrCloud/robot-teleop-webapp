@@ -5,6 +5,7 @@ import {
     DeleteItemCommand,
     GetItemCommand,
     QueryCommand,
+    ScanCommand,
 } from '@aws-sdk/client-dynamodb';
 import { createHash } from 'crypto';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
@@ -14,6 +15,7 @@ const CONN_TABLE = process.env.CONN_TABLE!;
 const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
 const REVOKED_TOKENS_TABLE = process.env.REVOKED_TOKENS_TABLE!;
 const ROBOT_OPERATOR_TABLE = process.env.ROBOT_OPERATOR_TABLE!;
+const ROBOT_TABLE_NAME = process.env.ROBOT_TABLE_NAME!;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!; // HTTPS management API
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
@@ -36,6 +38,8 @@ type Claims = {
     sub?: string;
     groups?: string[];
     aud?: string;
+    email?: string;
+    'cognito:username'?: string;
 };
 
 type InboundMessage = Partial<{
@@ -84,7 +88,7 @@ async function isTokenRevoked(token: string): Promise<boolean> {
  * Also checks if token has been revoked.
  * Returns null if token is invalid, expired, or revoked.
  */
-async function verifyCognitoJWT(token: string | null | undefined): Promise<{sub?: string; groups?: string[]; aud?: string} | null> {
+async function verifyCognitoJWT(token: string | null | undefined): Promise<Claims | null> {
     if (!token) return null;
     
     // First check if token is revoked (before expensive signature verification)
@@ -115,6 +119,8 @@ async function verifyCognitoJWT(token: string | null | undefined): Promise<{sub?
             sub: payload.sub as string | undefined,
             groups: (payload['cognito:groups'] as string[] | undefined) ?? [],
             aud: payload.aud as string | undefined,
+            email: payload.email as string | undefined,
+            'cognito:username': payload['cognito:username'] as string | undefined,
         };
     } catch (error) {
         // Log verification failures for security monitoring
@@ -270,6 +276,84 @@ async function isOwnerOrAdmin(robotId: string, claims: { sub?: string; groups?: 
     return false;
 }
 
+/**
+ * Checks if a user can access a robot based on the ACL.
+ * Returns true if:
+ * - Robot has no ACL (null/empty) → open access
+ * - User is owner, admin, or delegate → always allowed
+ * - User's email/username is in the ACL
+ */
+async function canAccessRobot(robotId: string, claims: Claims, userEmailOrUsername?: string): Promise<boolean> {
+    // Owner, admin, and delegates are always allowed
+    const isAuthorized = await isOwnerOrAdmin(robotId, claims);
+    if (isAuthorized) {
+        return true;
+    }
+
+    // Get the robot from the Robot table to check ACL
+    if (!ROBOT_TABLE_NAME) {
+        console.warn('ROBOT_TABLE_NAME not set, cannot check ACL - allowing access');
+        return true; // Fail open if we can't check
+    }
+
+    try {
+        // Find the robot by robotId (string) in the Robot table
+        // Since there's no index on robotId, we need to scan (less efficient but works)
+        // In production, consider adding a GSI on robotId for better performance
+        const scanResult = await db.send(
+            new ScanCommand({
+                TableName: ROBOT_TABLE_NAME,
+                FilterExpression: 'robotId = :robotId',
+                ExpressionAttributeValues: {
+                    ':robotId': { S: robotId },
+                },
+                Limit: 1,
+            })
+        );
+        
+        const robotItem = scanResult.Items?.[0];
+
+        if (!robotItem) {
+            // Robot not found in Robot table - might be a legacy robot or not registered
+            // For now, allow access (fail open)
+            console.warn(`Robot ${robotId} not found in Robot table, allowing access`);
+            return true;
+        }
+
+        const allowedUsers = robotItem.allowedUsers?.SS || [];
+        
+        // If ACL is empty/null, robot is open access
+        if (allowedUsers.length === 0) {
+            return true;
+        }
+
+        // Check if user's email/username is in the ACL
+        // Try multiple identifiers: email, username, sub (as fallback)
+        const userIdentifiers = [
+            userEmailOrUsername?.toLowerCase(),
+            claims.email?.toLowerCase(),
+            (claims as any)['cognito:username']?.toLowerCase(),
+            claims.sub, // Last resort - unlikely to match but included for completeness
+        ].filter(Boolean) as string[];
+
+        const normalizedAllowedUsers = allowedUsers.map(u => u.toLowerCase());
+        
+        for (const identifier of userIdentifiers) {
+            if (normalizedAllowedUsers.includes(identifier.toLowerCase())) {
+                return true;
+            }
+        }
+
+        // User is not in ACL
+        console.log(`User ${userEmailOrUsername || claims.email || claims.sub} not in ACL for robot ${robotId}`);
+        return false;
+    } catch (error) {
+        console.warn('Failed to check robot ACL:', error);
+        // Fail open - if we can't check ACL, allow access (availability over security)
+        return true;
+    }
+}
+
 // Helper to determine if user is an admin
 function isAdmin(groups?: string[] | null): boolean {
     const gs = new Set((groups ?? []).map(g => g.toUpperCase()));
@@ -291,12 +375,15 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
 
     const connectionId = event.requestContext.connectionId!;
     try {
+        // Store username/email for ACL checks
+        const username = claims['cognito:username'] || claims.email || claims.sub || '';
         await db.send(
             new PutItemCommand({
                 TableName: CONN_TABLE,
                 Item: {
                     connectionId: { S: connectionId},
                     userId: { S: claims.sub },
+                    username: { S: username }, // Store for ACL checks
                     groups: { S: (claims.groups ?? []).join(',')},
                     kind: { S: 'client' },
                     ts: { N: String(Date.now()) },
@@ -450,6 +537,33 @@ async function handleSignal(
     return { statusCode: 400, body: 'invalid target' };
   }
 
+  // Get source connection ID (needed for logging and ACL checks)
+  const sourceConnId = event.requestContext.connectionId!;
+
+  // If target is robot, check ACL before allowing access
+  if (target === 'robot') {
+    // Get user's email/username from connection table for ACL check
+    let userEmailOrUsername: string | undefined;
+    try {
+      const connItem = await db.send(new GetItemCommand({
+        TableName: CONN_TABLE,
+        Key: { connectionId: { S: sourceConnId } },
+        ProjectionExpression: 'username',
+      }));
+      userEmailOrUsername = connItem.Item?.username?.S;
+    } catch (e) {
+      console.warn('Failed to get username from connection table:', e);
+    }
+
+    // Check ACL
+    const hasAccess = await canAccessRobot(robotId, claims, userEmailOrUsername);
+    if (!hasAccess) {
+      const userIdentifier = userEmailOrUsername || (claims as Claims).email || claims.sub || 'unknown';
+      console.log(`Access denied: User ${userIdentifier} attempted to access robot ${robotId}`);
+      return { statusCode: 403, body: 'Access denied: You are not authorized to access this robot' };
+    }
+  }
+
   // Determine destination
   let targetConn: string | undefined;
   if (target === 'client') {
@@ -472,7 +586,6 @@ async function handleSignal(
   }
 
   // Forward
-  const sourceConnId = event.requestContext.connectionId!;
   const outbound = {
     type,
     robotId,

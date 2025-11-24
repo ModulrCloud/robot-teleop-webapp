@@ -7,6 +7,7 @@ import { signaling } from './functions/signaling/resource';
 import { revokeTokenLambda } from './functions/revoke-token/resource';
 import { manageRobotOperator } from './functions/manage-robot-operator/resource';
 import { deleteRobotLambda } from './functions/delete-robot/resource';
+import { manageRobotACL } from './functions/manage-robot-acl/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -26,6 +27,7 @@ const backend = defineBackend({
   revokeTokenLambda,
   manageRobotOperator,
   deleteRobotLambda,
+  manageRobotACL,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -36,6 +38,7 @@ const signalingFunction = backend.signaling.resources.lambda;
 const revokeTokenLambdaFunction = backend.revokeTokenLambda.resources.lambda;
 const manageRobotOperatorFunction = backend.manageRobotOperator.resources.lambda;
 const deleteRobotLambdaFunction = backend.deleteRobotLambda.resources.lambda;
+const manageRobotACLFunction = backend.manageRobotACL.resources.lambda;
 
 // ============================================
 // Signaling Function Resources
@@ -113,6 +116,7 @@ signalingCdkFunction.addEnvironment('CONN_TABLE', connTable.tableName);
 signalingCdkFunction.addEnvironment('ROBOT_PRESENCE_TABLE', robotPresenceTable.tableName);
 signalingCdkFunction.addEnvironment('REVOKED_TOKENS_TABLE', revokedTokensTable.tableName);
 signalingCdkFunction.addEnvironment('ROBOT_OPERATOR_TABLE', robotOperatorTable.tableName);
+signalingCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 signalingCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 // Construct WebSocket management endpoint URL
 // Format: https://{api-id}.execute-api.{region}.amazonaws.com/{stage}
@@ -126,6 +130,7 @@ connTable.grantReadWriteData(signalingFunction);
 robotPresenceTable.grantReadWriteData(signalingFunction);
 revokedTokensTable.grantReadData(signalingFunction); // Read-only for checking blacklist
 robotOperatorTable.grantReadData(signalingFunction); // Read-only for checking delegations
+tables.Robot.grantReadData(signalingFunction); // Read-only for checking ACLs
 
 // Grant DynamoDB permissions to revoke token function
 revokedTokensTable.grantWriteData(revokeTokenLambdaFunction);
@@ -158,6 +163,10 @@ backend.setRobotLambda.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.table
 backend.deleteRobotLambda.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 backend.deleteRobotLambda.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
 
+// Manage robot ACL Lambda environment variables
+backend.manageRobotACL.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+backend.manageRobotACL.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+
 // Manage robot operator Lambda environment variables
 const manageRobotOperatorCdkFunction = manageRobotOperatorFunction as CdkFunction;
 manageRobotOperatorCdkFunction.addEnvironment('ROBOT_OPERATOR_TABLE', robotOperatorTable.tableName);
@@ -188,6 +197,17 @@ tables.Robot.grantReadWriteData(deleteRobotLambdaFunction);
 tables.Partner.grantReadData(deleteRobotLambdaFunction);
 // Grant permission to query the cognitoUsernameIndex (needed for ownership verification)
 deleteRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query", "dynamodb:GetItem", "dynamodb:Scan"],
+  resources: [
+    `${tables.Partner.tableArn}/index/cognitoUsernameIndex`
+  ]
+}));
+
+// Grant DynamoDB permissions to manage robot ACL function
+tables.Robot.grantReadWriteData(manageRobotACLFunction);
+tables.Partner.grantReadData(manageRobotACLFunction);
+// Grant permission to query the cognitoUsernameIndex (needed for ownership verification)
+manageRobotACLFunction.addToRolePolicy(new PolicyStatement({
   actions: ["dynamodb:Query", "dynamodb:GetItem", "dynamodb:Scan"],
   resources: [
     `${tables.Partner.tableArn}/index/cognitoUsernameIndex`

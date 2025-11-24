@@ -7,7 +7,7 @@ const ddbClient = new DynamoDBClient({});
 export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event) => {
   console.log('Received event:', JSON.stringify(event, null, 2));
 
-  const { robotName, description, model } = event.arguments;
+  const { robotName, description, model, enableAccessControl, additionalAllowedUsers } = event.arguments;
 
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
@@ -65,7 +65,7 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
 
   // Convert JS object to DynamoDB AttributeValues
   // Amplify models automatically include createdAt and updatedAt fields
-  const putItemInput = {
+  const putItemInput: any = {
     TableName: robotTableName,
     Item: {
       id: { S: robot.id },
@@ -80,19 +80,54 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
     },
   };
 
+  // Only create ACL if user opted in to access control
+  if (enableAccessControl === true) {
+    // Create ACL with default users:
+    // - Robot owner (Partner's Cognito username, which is often their email)
+    // - chris@modulr.cloud
+    // - mike@modulr.cloud
+    // - Any additional users provided by the partner
+    // Note: If allowedUsers is null/empty, robot is open access. If it exists, only listed users can access.
+    const ownerUsername = identity.username; // Cognito username (often email)
+    const defaultAllowedUsers = [
+      ownerUsername.toLowerCase(),
+      'chris@modulr.cloud',
+      'mike@modulr.cloud',
+    ];
+    
+    // Add any additional users provided (normalize to lowercase)
+    const additionalUsers = (additionalAllowedUsers || [])
+      .map((email: string) => email.trim().toLowerCase())
+      .filter((email: string) => email.length > 0 && email.includes('@'));
+    
+    // Combine defaults with additional users, removing duplicates
+    const allAllowedUsers = Array.from(new Set([...defaultAllowedUsers, ...additionalUsers]));
+    
+    putItemInput.Item.allowedUsers = { SS: allAllowedUsers };
+  }
+  // If enableAccessControl is false or undefined, no ACL is created (robot is open access)
+
   // Put the Robot into DynamoDB
+  const logItem: any = {
+    id: robot.id,
+    name: robot.robotName,
+    description: robot.description,
+    model: robot.model,
+    partnerId: robot.partnerId,
+    robotId: robot.robotId,
+    createdAt: now,
+    updatedAt: now,
+  };
+  if (enableAccessControl === true) {
+    logItem.allowedUsers = putItemInput.Item.allowedUsers?.SS || [];
+    logItem.accessControl = 'enabled';
+    logItem.additionalUsersProvided = additionalAllowedUsers?.length || 0;
+  } else {
+    logItem.accessControl = 'open (no ACL)';
+  }
   console.log('📝 Writing robot to DynamoDB:', {
     tableName: robotTableName,
-    item: {
-      id: robot.id,
-      name: robot.robotName,
-      description: robot.description,
-      model: robot.model,
-      partnerId: robot.partnerId,
-      robotId: robot.robotId,
-      createdAt: now,
-      updatedAt: now,
-    },
+    item: logItem,
   });
   
   // Log the actual DynamoDB item structure being written

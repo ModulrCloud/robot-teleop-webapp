@@ -4,6 +4,7 @@ import { setRobotLambda } from "../functions/set-robot/resource";
 import { revokeTokenLambda } from "../functions/revoke-token/resource";
 import { manageRobotOperator } from "../functions/manage-robot-operator/resource";
 import { deleteRobotLambda } from "../functions/delete-robot/resource";
+import { manageRobotACL } from "../functions/manage-robot-acl/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -85,6 +86,7 @@ const schema = a.schema({
     robotId: a.string(),
     partnerId: a.id().required(),
     partner: a.belongsTo('Partner', 'partnerId'),
+    allowedUsers: a.string().array(), // Optional: if null/empty, robot is open access. If set, only listed users can access.
   })
   .authorization((allow) => [
     allow.owner().to(["update", "delete"]),
@@ -124,6 +126,8 @@ const schema = a.schema({
       robotName: a.string().required(),
       description: a.string(),
       model: a.string(),
+      enableAccessControl: a.boolean(), // Optional: if true, creates ACL with default users
+      additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL
     })
     .returns(a.string())
     .authorization(allow => [allow.group('PARTNERS'), allow.group('ADMINS')])
@@ -157,7 +161,18 @@ const schema = a.schema({
     })
     .returns(LambdaResult)
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (owner/admin check)
-    .handler(a.handler.function(deleteRobotLambda))
+    .handler(a.handler.function(deleteRobotLambda)),
+
+  manageRobotACLLambda: a
+    .mutation()
+    .arguments({
+      robotId: a.string().required(), // Robot ID (UUID) to manage ACL for
+      userEmail: a.string(), // Email address to add/remove (required for 'add'/'remove' actions)
+      action: a.string().required(), // 'add', 'remove', or 'delete' (delete removes entire ACL)
+    })
+    .returns(LambdaResult)
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (owner/admin check)
+    .handler(a.handler.function(manageRobotACL))
 });
 
 export type Schema = ClientSchema<typeof schema>;
