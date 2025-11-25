@@ -97,6 +97,7 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
     
     // Add any additional users provided (normalize to lowercase)
     const additionalUsers = (additionalAllowedUsers || [])
+      .filter((email): email is string => email != null && typeof email === 'string')
       .map((email: string) => email.trim().toLowerCase())
       .filter((email: string) => email.length > 0 && email.includes('@'));
     
