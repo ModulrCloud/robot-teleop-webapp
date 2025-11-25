@@ -1,10 +1,9 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './CreateRobotListing.css';
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
-import { Amplify } from 'aws-amplify';
-import outputs from '../../amplify_outputs.json';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
@@ -29,13 +28,15 @@ type RobotListing = {
   robotName: string;
   description: string;
   model: string;
+  enableAccessControl: boolean;
+  allowedUserEmails: string; // Comma-separated or newline-separated emails
 };
 
-Amplify.configure(outputs);
 const client = generateClient<Schema>();
 
 export const CreateRobotListing = () => {
   usePageTitle();
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState<boolean | undefined>();
 
@@ -43,13 +44,16 @@ export const CreateRobotListing = () => {
     robotName: "",
     description: "",
     model: ROBOT_MODELS[0].value,
+    enableAccessControl: false,
+    allowedUserEmails: "",
   });
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = event.target;
+    const { name, value, type } = event.target;
+    const checked = (event.target as HTMLInputElement).checked;
     setRobotListing(prev => ({
       ...prev,
-      [name]: value,
+      [name]: type === 'checkbox' ? checked : value,
     }));
   };
 
@@ -58,17 +62,75 @@ export const CreateRobotListing = () => {
     setIsLoading(true);
     setSuccess(undefined);
 
-    const robot = await client.mutations.setRobotLambda(robotListing);
+    // Parse email list (split by comma or newline, trim, filter empty)
+    const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
+      ? robotListing.allowedUserEmails
+          .split(/[,\n]/)
+          .map(email => email.trim())
+          .filter(email => email.length > 0 && email.includes('@'))
+      : [];
 
-    if (robot.errors) {
-      setSuccess(false);
-    } else {
-      setSuccess(true);
-      setRobotListing({
-        robotName: "",
-        description: "",
-        model: ROBOT_MODELS[0].value,
+    const robotData = {
+      robotName: robotListing.robotName,
+      description: robotListing.description,
+      model: robotListing.model,
+      enableAccessControl: robotListing.enableAccessControl,
+      additionalAllowedUsers: emailList,
+    };
+
+    console.log('🤖 Creating robot with data:', robotData);
+
+    try {
+      const robot = await client.mutations.setRobotLambda(robotData);
+
+      console.log('📊 Robot creation response:', {
+        hasData: !!robot.data,
+        hasErrors: !!robot.errors,
+        data: robot.data,
+        errors: robot.errors,
       });
+
+      if (robot.errors) {
+        console.error('❌ Errors creating robot:', robot.errors);
+        setSuccess(false);
+      } else {
+        console.log('✅ Robot created successfully:', robot.data);
+        
+        // Parse the robot data to get robotId
+        try {
+          const robotData = JSON.parse(robot.data || '{}');
+          const robotId = robotData.robotId;
+          
+          if (robotId) {
+            // Redirect to setup page with robotId
+            navigate(`/robot-setup?robotId=${robotId}`);
+          } else {
+            // Fallback: show success message
+            setSuccess(true);
+            setRobotListing({
+              robotName: "",
+              description: "",
+              model: ROBOT_MODELS[0].value,
+              enableAccessControl: false,
+              allowedUserEmails: "",
+            });
+          }
+        } catch (parseError) {
+          console.error('Failed to parse robot data:', parseError);
+          // Fallback: show success message
+          setSuccess(true);
+          setRobotListing({
+            robotName: "",
+            description: "",
+            model: ROBOT_MODELS[0].value,
+            enableAccessControl: false,
+            allowedUserEmails: "",
+          });
+        }
+      }
+    } catch (error) {
+      console.error('❌ Exception creating robot:', error);
+      setSuccess(false);
     }
 
     setIsLoading(false);
@@ -158,6 +220,49 @@ export const CreateRobotListing = () => {
                 {robotListing.description.length} characters
               </div>
             </div>
+          </div>
+
+          <div className="form-section">
+            <h3>Access Control</h3>
+            
+            <div className="form-group">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  name="enableAccessControl"
+                  checked={robotListing.enableAccessControl}
+                  onChange={handleInputChange}
+                  disabled={isLoading}
+                />
+                <span>Restrict access to specific users</span>
+              </label>
+              <p className="form-help-text">
+                {robotListing.enableAccessControl 
+                  ? "Access will be restricted to you, chris@modulr.cloud, mike@modulr.cloud, and any users you add below. You can manage the access list after creating the robot."
+                  : "Robot will be accessible to all authenticated users. You can enable access control later if needed."}
+              </p>
+            </div>
+
+            {robotListing.enableAccessControl && (
+              <div className="form-group">
+                <label htmlFor="allowed-user-emails">
+                  Additional Allowed Users <span className="optional">(optional)</span>
+                </label>
+                <textarea 
+                  id="allowed-user-emails"
+                  name="allowedUserEmails"
+                  value={robotListing.allowedUserEmails}
+                  onChange={handleInputChange}
+                  placeholder="Enter email addresses, one per line or separated by commas&#10;Example:&#10;alice@example.com&#10;bob@example.com"
+                  rows={4}
+                  disabled={isLoading}
+                />
+                <p className="form-help-text">
+                  Enter email addresses of users who should have access to this robot. 
+                  You (the owner), chris@modulr.cloud, and mike@modulr.cloud are automatically included.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="form-actions">

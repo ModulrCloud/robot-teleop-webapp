@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Joystick, { type JoystickChange } from "../components/Joystick";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { useWebRTC } from "../hooks/useWebRTC";
@@ -18,6 +18,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import "./Teleop.css";
 import { usePageTitle } from "../hooks/usePageTitle";
+import outputs from '../../amplify_outputs.json';
 
 export default function Teleop() {
   usePageTitle();
@@ -32,10 +33,16 @@ export default function Teleop() {
   const [gamepadDetected, setGamepadDetected] = useState(false);
   const sendIntervalMs = 100; // 10 Hz
 
-  // TODO: Read from deployment config (environment/AWS Parameter Store)
-  const wsUrl = import.meta.env.VITE_WS_URL || 'ws://192.168.132.19:8765';
-  // TODO: Read from database based on selected robot
-  const robotId = import.meta.env.VITE_ROBOT_ID || 'robot1';
+  // Read WebSocket URL from amplify_outputs.json (AWS signaling server)
+  // Falls back to local WebSocket for development
+  const wsUrl = outputs?.custom?.signaling?.websocketUrl 
+    ? outputs.custom.signaling.websocketUrl 
+    : (import.meta.env.VITE_WS_URL || 'ws://192.168.132.19:8765');
+  
+  // Get robotId from URL params (set by RobotSelect page)
+  // Falls back to environment variable or default for development
+  const [searchParams] = useSearchParams();
+  const robotId = searchParams.get('robotId') || import.meta.env.VITE_ROBOT_ID || 'robot1';
 
   const { status, connect, disconnect, sendCommand, stopRobot } = useWebRTC({
     wsUrl,
@@ -64,14 +71,52 @@ export default function Teleop() {
       setGamepadDetected(hasGamepad);
     };
 
-    const interval = setInterval(checkGamepad, 1000);
-    window.addEventListener('gamepadconnected', checkGamepad);
-    window.addEventListener('gamepaddisconnected', checkGamepad);
+    // Check immediately on mount
+    checkGamepad();
+    
+    // Browser security: gamepads already connected require user interaction to detect
+    // Add one-time listeners for ANY user interaction to "activate" gamepad detection
+    let interactionHandled = false;
+    const handleFirstInteraction = () => {
+      if (!interactionHandled) {
+        interactionHandled = true;
+        checkGamepad(); // Check immediately after first interaction
+        // Remove listeners after first interaction
+        document.removeEventListener('mousedown', handleFirstInteraction);
+        document.removeEventListener('touchstart', handleFirstInteraction);
+        document.removeEventListener('keydown', handleFirstInteraction);
+        document.removeEventListener('pointerdown', handleFirstInteraction);
+      }
+    };
+    
+    // Listen for any user interaction to activate gamepad detection
+    document.addEventListener('mousedown', handleFirstInteraction, { once: true });
+    document.addEventListener('touchstart', handleFirstInteraction, { once: true });
+    document.addEventListener('keydown', handleFirstInteraction, { once: true });
+    document.addEventListener('pointerdown', handleFirstInteraction, { once: true });
+    
+    // Also check periodically (some browsers need user interaction first)
+    const interval = setInterval(checkGamepad, 500); // Check more frequently
+    
+    const handleGamepadConnected = () => {
+      checkGamepad();
+    };
+    
+    const handleGamepadDisconnected = () => {
+      checkGamepad();
+    };
+    
+    window.addEventListener('gamepadconnected', handleGamepadConnected);
+    window.addEventListener('gamepaddisconnected', handleGamepadDisconnected);
     
     return () => {
       clearInterval(interval);
-      window.removeEventListener('gamepadconnected', checkGamepad);
-      window.removeEventListener('gamepaddisconnected', checkGamepad);
+      window.removeEventListener('gamepadconnected', handleGamepadConnected);
+      window.removeEventListener('gamepaddisconnected', handleGamepadDisconnected);
+      document.removeEventListener('mousedown', handleFirstInteraction);
+      document.removeEventListener('touchstart', handleFirstInteraction);
+      document.removeEventListener('keydown', handleFirstInteraction);
+      document.removeEventListener('pointerdown', handleFirstInteraction);
     };
   }, [controlMode]);
 
@@ -81,6 +126,13 @@ export default function Teleop() {
       const turn = input.turn * -1.0;
       setCurrentSpeed({ forward, turn });
       setIsJoystickActive(forward !== 0 || turn !== 0);
+      
+      // Gamepad input detected - update detection status immediately
+      const gamepads = navigator.getGamepads();
+      const hasGamepad = Array.from(gamepads).some(g => g !== null);
+      if (hasGamepad && !gamepadDetected) {
+        setGamepadDetected(true);
+      }
       
       if (!status.connected || controlMode !== 'gamepad') return;
       const now = Date.now();
@@ -109,14 +161,18 @@ export default function Teleop() {
     if (!status.connected || controlMode !== 'joystick') return;
     
     setIsJoystickActive(true);
-    const now = Date.now();
-    if (now - lastSendTimeRef.current < sendIntervalMs) return;
-    lastSendTimeRef.current = now;
-
+    
+    // Update visual feedback immediately for responsive feel
     const forward = change.y * 0.5;
     const turn = change.x * -1.0;
     setCurrentSpeed({ forward, turn });
-    sendCommand(forward, turn);
+    
+    // Throttle network sends to avoid overwhelming the connection
+    const now = Date.now();
+    if (now - lastSendTimeRef.current >= sendIntervalMs) {
+      lastSendTimeRef.current = now;
+      sendCommand(forward, turn);
+    }
   };
 
   const handleJoystickEnd = () => {
@@ -239,7 +295,13 @@ export default function Teleop() {
               </button>
               <button
                 className={`mode-btn ${controlMode === 'gamepad' ? 'active' : ''}`}
-                onClick={() => setControlMode('gamepad')}
+                onClick={() => {
+                  setControlMode('gamepad');
+                  // User interaction activates gamepad API - check immediately
+                  const gamepads = navigator.getGamepads();
+                  const hasGamepad = Array.from(gamepads).some(g => g !== null);
+                  setGamepadDetected(hasGamepad);
+                }}
               >
                 <FontAwesomeIcon icon={faGamepad} />
                 Gamepad
@@ -322,9 +384,11 @@ export default function Teleop() {
                 <div className="gamepad-visual">
                   <FontAwesomeIcon icon={faGamepad} className="gamepad-icon" size="6x" />
                   <div className="gamepad-status not-detected-status">
-                    <FontAwesomeIcon icon={faCircleExclamation} className="status-warn" />
-                    <span>No Gamepad Detected</span>
-                    <div className="gamepad-hint">Connect a controller to use</div>
+                    <div className="gamepad-hint">
+                      {controlMode === 'gamepad' 
+                        ? 'Press a button on your controller to start'
+                        : 'Switch to Gamepad mode to use your controller'}
+                    </div>
                   </div>
                 </div>
               )}
