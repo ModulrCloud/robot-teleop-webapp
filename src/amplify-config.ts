@@ -3,7 +3,6 @@ import outputs from '../amplify_outputs.json'
 
 // CRITICAL: Import auth module AFTER configuration to ensure it sees the config
 // We'll do this in a way that doesn't block module loading
-let authModuleInitialized = false;
 
 // Configure Amplify - this must run before any other Amplify imports
 if (!outputs || !outputs.auth) {
@@ -39,7 +38,8 @@ try {
   // });
   
   // If region is missing, reconfigure with explicit structure
-  if (!config.Auth?.Cognito?.region) {
+  const cognitoConfig = config.Auth?.Cognito as { region?: string } | undefined;
+  if (!cognitoConfig?.region) {
     // Debug logging (commented out - uncomment for debugging)
     // console.warn('Region missing after initial configure, reconfiguring with explicit structure');
     
@@ -106,12 +106,13 @@ try {
   
   // Final verification
   const finalConfig = Amplify.getConfig();
-  if (!finalConfig?.Auth?.Cognito) {
+  const finalCognitoConfig = finalConfig?.Auth?.Cognito as { region?: string } | undefined;
+  if (!finalCognitoConfig) {
     console.error('CRITICAL: Auth.Cognito not found after configuration');
-    console.error('Config keys:', Object.keys(finalConfig));
-  } else if (!finalConfig.Auth.Cognito.region) {
+    console.error('Config keys:', Object.keys(finalConfig || {}));
+  } else if (!finalCognitoConfig.region) {
     console.error('CRITICAL: Region still missing after configuration');
-    console.error('Auth.Cognito keys:', Object.keys(finalConfig.Auth.Cognito));
+    console.error('Auth.Cognito keys:', Object.keys(finalCognitoConfig));
   } else {
     // Debug logging (commented out - uncomment for debugging)
     // console.log('✅ Amplify configured successfully');
@@ -122,12 +123,12 @@ try {
     // CRITICAL: Force auth module to initialize by importing it AFTER configuration
     // Use dynamic import in a way that doesn't block but ensures initialization
     import('aws-amplify/auth').then(() => {
-      authModuleInitialized = true;
       // console.log('✅ Auth module imported after configuration');
       
       // Verify the config is accessible from the auth module's perspective
       const configAfterAuthImport = Amplify.getConfig();
-      if (!configAfterAuthImport?.Auth?.Cognito?.region) {
+      const cognitoAfterImport = configAfterAuthImport?.Auth?.Cognito as { region?: string } | undefined;
+      if (!cognitoAfterImport?.region) {
         console.warn('⚠️ Auth module cannot see config after import');
       }
       // else {

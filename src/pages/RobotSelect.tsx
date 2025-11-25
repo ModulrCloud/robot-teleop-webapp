@@ -106,11 +106,12 @@ export default function RobotSelect() {
         if (response.data && response.data.length > 0) {
           robotItems = (response.data || [])
             .filter((robot) => robot !== null && robot !== undefined) // Filter out null robots
+            .filter((robot) => robot.robotId != null || robot.id != null) // Ensure we have a valid ID
             .map((robot) => ({
-              id: robot.robotId || robot.id, // Use robotId (string) for connection, fallback to id
-              uuid: robot.id, // Store the actual UUID for deletion
-              title: robot.name,
-              description: robot.description,
+              id: (robot.robotId || robot.id) as string, // Use robotId (string) for connection, fallback to id
+              uuid: robot.id || undefined, // Store the actual UUID for deletion
+              title: robot.name || 'Unnamed Robot',
+              description: robot.description || '',
               imageUrl: getRobotImage(robot.model),
             }));
           

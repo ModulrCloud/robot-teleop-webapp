@@ -6,6 +6,7 @@ export interface CardGridItemProps {
   title: string;
   description?: string;
   imageUrl?: string;
+  uuid?: string | undefined; // Optional UUID for identifying deletable items
   onClick?: (item: Omit<CardGridItemProps, 'onClick'>) => void;
 }
 

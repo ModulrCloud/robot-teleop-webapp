@@ -158,9 +158,9 @@ export function useAuthStatus(): AuthStatus {
 
     // Subscribe to sign-in/sign-out events
     const unsubscribe = Hub.listen("auth", ({ payload }) => {
-      const { event, data } = payload;
+      const { event } = payload;
       // Debug logging (commented out - uncomment for debugging)
-      // console.log('🔔 Auth Hub event received:', { event, data, payload });
+      // console.log('🔔 Auth Hub event received:', { event, payload });
       
       if (event === "signedIn" || event === "tokenRefresh") {
         // console.log('✅ Signed in event detected, loading user...');

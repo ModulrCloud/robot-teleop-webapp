@@ -8,8 +8,7 @@ import {
   faCopy,
   faCheckCircle,
   faArrowLeft,
-  faInfoCircle,
-  faLink
+  faInfoCircle
 } from '@fortawesome/free-solid-svg-icons';
 import outputs from '../../amplify_outputs.json';
 import './RobotSetup.css';

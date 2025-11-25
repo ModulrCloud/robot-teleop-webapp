@@ -32,7 +32,7 @@ function App() {
     const urlParams = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.substring(1));
     
-    const code = urlParams.get('code') || hashParams.get('code');
+    // const code = urlParams.get('code') || hashParams.get('code'); // Unused for now
     const error = urlParams.get('error') || hashParams.get('error');
     const errorDescription = urlParams.get('error_description') || hashParams.get('error_description');
     
@@ -56,7 +56,7 @@ function App() {
       });
       
       // Try to get more details from the session
-      fetchAuthSession().then(session => {
+      fetchAuthSession().then(() => {
         // console.log('Session after OAuth error:', session);
       }).catch(err => {
         console.error('Failed to fetch session after OAuth error:', err);

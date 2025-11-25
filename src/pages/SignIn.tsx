@@ -1,5 +1,4 @@
 import './SignIn.css';
-import { useEffect } from 'react';
 import { Button } from "react-bootstrap";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faGoogle } from '@fortawesome/free-brands-svg-icons';
@@ -48,7 +47,9 @@ export default function SignIn() {
       //   oauthDomain: checkConfig.Auth?.Cognito?.loginWith?.oauth?.domain
       // });
       
-      if (!checkConfig.Auth?.Cognito?.region) {
+      // Type assertion needed because Amplify config types can be complex
+      const cognitoConfig = checkConfig.Auth?.Cognito as { region?: string } | undefined;
+      if (!cognitoConfig?.region) {
         alert('Authentication configuration error: Region is missing. Please refresh the page.');
         console.error('Config at sign-in time:', checkConfig);
         return;
@@ -58,7 +59,7 @@ export default function SignIn() {
       // This might help if there's a module resolution issue
       try {
         // Clear any cached module state
-        const authModule = await import('aws-amplify/auth');
+        await import('aws-amplify/auth');
         // console.log('Auth module re-imported, checking config again...');
         
         // Verify config is still accessible after re-import
@@ -68,6 +69,8 @@ export default function SignIn() {
         //   hasCognito: !!configAfterImport.Auth?.Cognito,
         //   hasRegion: !!configAfterImport.Auth?.Cognito?.region
         // });
+        // Suppress unused variable warning
+        void configAfterImport;
       } catch (importError) {
         console.warn('Could not re-import auth module:', importError);
       }
