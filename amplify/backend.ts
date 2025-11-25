@@ -118,6 +118,9 @@ signalingCdkFunction.addEnvironment('REVOKED_TOKENS_TABLE', revokedTokensTable.t
 signalingCdkFunction.addEnvironment('ROBOT_OPERATOR_TABLE', robotOperatorTable.tableName);
 signalingCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 signalingCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+// DEVELOPMENT ONLY: Set ALLOW_NO_TOKEN=true to allow connections without JWT tokens (for testing)
+// ⚠️ WARNING: Never set this in production! This bypasses all authentication.
+// signalingCdkFunction.addEnvironment('ALLOW_NO_TOKEN', 'true'); // Uncomment for local testing
 // Construct WebSocket management endpoint URL
 // Format: https://{api-id}.execute-api.{region}.amazonaws.com/{stage}
 signalingCdkFunction.addEnvironment('WS_MGMT_ENDPOINT', 

@@ -367,6 +367,34 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
     // Clients / robots will pass ?token=<JWT> in the URL
     const token = event.queryStringParameters?.token ?? null;
 
+    // DEVELOPMENT/TESTING MODE: Allow connections without token if ALLOW_NO_TOKEN is set
+    // ⚠️ WARNING: Only enable this for local development/testing. NEVER in production!
+    const allowNoToken = process.env.ALLOW_NO_TOKEN === 'true';
+    
+    if (allowNoToken && !token) {
+        console.warn('⚠️ DEVELOPMENT MODE: Allowing connection without token (ALLOW_NO_TOKEN=true)');
+        const connectionId = event.requestContext.connectionId!;
+        try {
+            // Create a mock user for testing
+            await db.send(
+                new PutItemCommand({
+                    TableName: CONN_TABLE,
+                    Item: {
+                        connectionId: { S: connectionId},
+                        userId: { S: 'dev-test-user' },
+                        username: { S: 'dev-test-user' },
+                        groups: { S: 'PARTNERS' }, // Give dev user PARTNERS group for testing
+                        kind: { S: 'client' },
+                        ts: { N: String(Date.now()) },
+                    },
+                }),
+            );
+        } catch (e) {
+            console.warn('Connect put_item error', e);
+        }
+        return {statusCode: 200, body: '' };
+    }
+
     // Verify JWT token signature and expiration
     const claims = await verifyCognitoJWT(token);
     if (!claims?.sub) {
@@ -640,9 +668,25 @@ export async function handler(
 
   // All other events come through $default
   const token = event.queryStringParameters?.token ?? null;
-  const claims = await verifyCognitoJWT(token);
-  if (!claims?.sub) {
-    return { statusCode: 401, body: 'Unauthorized' };
+  
+  // DEVELOPMENT/TESTING MODE: Allow messages without token if ALLOW_NO_TOKEN is set
+  const allowNoToken = process.env.ALLOW_NO_TOKEN === 'true';
+  let claims: Claims | null = null;
+  
+  if (allowNoToken && !token) {
+    console.warn('⚠️ DEVELOPMENT MODE: Allowing message without token (ALLOW_NO_TOKEN=true)');
+    // Create mock claims for testing
+    claims = {
+      sub: 'dev-test-user',
+      groups: ['PARTNERS'],
+      email: 'dev-test@modulr.cloud',
+      'cognito:username': 'dev-test-user',
+    };
+  } else {
+    claims = await verifyCognitoJWT(token);
+    if (!claims?.sub) {
+      return { statusCode: 401, body: 'Unauthorized' };
+    }
   }
 
   // Parse raw JSON

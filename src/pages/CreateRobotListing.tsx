@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './CreateRobotListing.css';
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
@@ -35,6 +36,7 @@ const client = generateClient<Schema>();
 
 export const CreateRobotListing = () => {
   usePageTitle();
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState<boolean | undefined>();
 
@@ -93,14 +95,38 @@ export const CreateRobotListing = () => {
         setSuccess(false);
       } else {
         console.log('✅ Robot created successfully:', robot.data);
-        setSuccess(true);
-        setRobotListing({
-          robotName: "",
-          description: "",
-          model: ROBOT_MODELS[0].value,
-          enableAccessControl: false,
-          allowedUserEmails: "",
-        });
+        
+        // Parse the robot data to get robotId
+        try {
+          const robotData = JSON.parse(robot.data || '{}');
+          const robotId = robotData.robotId;
+          
+          if (robotId) {
+            // Redirect to setup page with robotId
+            navigate(`/robot-setup?robotId=${robotId}`);
+          } else {
+            // Fallback: show success message
+            setSuccess(true);
+            setRobotListing({
+              robotName: "",
+              description: "",
+              model: ROBOT_MODELS[0].value,
+              enableAccessControl: false,
+              allowedUserEmails: "",
+            });
+          }
+        } catch (parseError) {
+          console.error('Failed to parse robot data:', parseError);
+          // Fallback: show success message
+          setSuccess(true);
+          setRobotListing({
+            robotName: "",
+            description: "",
+            model: ROBOT_MODELS[0].value,
+            enableAccessControl: false,
+            allowedUserEmails: "",
+          });
+        }
       }
     } catch (error) {
       console.error('❌ Exception creating robot:', error);

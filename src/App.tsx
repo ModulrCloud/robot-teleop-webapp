@@ -18,6 +18,7 @@ import { UserProfile } from "./pages/UserProfile";
 import { SessionHistory } from "./pages/SessionHistory";
 import { AppLayout } from "./components/AppLayout";
 import { Settings } from "./pages/Settings";
+import RobotSetup from "./pages/RobotSetup";
 import { useEffect } from "react";
 import { fetchAuthSession } from "aws-amplify/auth";
 
@@ -99,6 +100,12 @@ function App() {
             <Route path='/create-robot-listing' element={
               <PrivateRoute>
                 <CreateRobotListing />
+              </PrivateRoute>
+            }
+            />
+            <Route path='/robot-setup' element={
+              <PrivateRoute>
+                <RobotSetup />
               </PrivateRoute>
             }
             />
