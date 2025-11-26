@@ -17,7 +17,7 @@ export interface CardGridItemHandle {
   isSelected: boolean;
 }
 
-const CardGridItem = forwardRef<CardGridItemHandle, CardGridItemProps>(function CardGridItem({id, title, description, location, imageUrl, disabled, onClick}, ref) {
+const CardGridItem = forwardRef<CardGridItemHandle, CardGridItemProps>(function CardGridItem({id, title, description, location, imageUrl, uuid, disabled, onClick}, ref) {
   const [isSelected, setIsSelected] = useState(false)
 
   useImperativeHandle(ref, () => ({

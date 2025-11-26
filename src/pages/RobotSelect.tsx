@@ -39,7 +39,6 @@ export default function RobotSelect() {
   const [robots, setRobots] = useState<RobotData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editingRobotId, setEditingRobotId] = useState<string | null>(null);
   const [deletingRobotId, setDeletingRobotId] = useState<string | null>(null);
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -256,7 +255,7 @@ export default function RobotSelect() {
           // If user object is missing, try to get it from auth session directly
           let userEmail = user?.email?.toLowerCase().trim();
           let userUsername = user?.username?.toLowerCase().trim();
-          const isAdmin = user?.group === 'ADMINS' || user?.group === 'ADMIN';
+          const isAdmin = user?.group === 'ADMINS';
           
           // If user object is empty, try to fetch from auth session
           if (!userEmail && !userUsername) {
@@ -631,7 +630,6 @@ export default function RobotSelect() {
             selected={selected}
             setSelected={setSelected}
             onEdit={canEditRobots ? handleEditRobot : undefined}
-            editingItemId={editingRobotId}
             onDelete={canEditRobots ? handleDeleteRobot : undefined}
             deletingItemId={deletingRobotId}
           />

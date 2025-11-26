@@ -41,7 +41,7 @@ type RobotListing = {
 const client = generateClient<Schema>();
 
 export const EditRobot = () => {
-  usePageTitle("Edit Robot");
+  usePageTitle();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const robotId = searchParams.get('robotId');
@@ -91,9 +91,9 @@ export const EditRobot = () => {
         // Extract allowed users (excluding default users)
         const allowedUsers = robotData.allowedUsers || [];
         const defaultUsers = ['chris@modulr.cloud', 'mike@modulr.cloud'];
-        const additionalUsers = allowedUsers.filter(
-          (email: string) => !defaultUsers.includes(email.toLowerCase())
-        );
+        const additionalUsers = allowedUsers
+          .filter((email): email is string => email != null && typeof email === 'string')
+          .filter((email: string) => !defaultUsers.includes(email.toLowerCase()));
 
         const name = robotData.name || "";
         setRobotName(name);
