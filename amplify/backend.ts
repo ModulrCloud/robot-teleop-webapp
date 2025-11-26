@@ -38,16 +38,22 @@ const userPool = backend.auth.resources.userPool;
 const userPoolClient = backend.auth.resources.userPoolClient;
 const tables = backend.data.resources.tables;
 
-// Configure token expiration times for Cognito User Pool
+// Configure token expiration times for Cognito User Pool Client
 // Range: 5 minutes to 1 day (1440 minutes)
 // Set to 4 hours (240 minutes) - good balance for robots and security
 // 
 // IMPORTANT: These settings apply to ALL users in the User Pool
 // If you need different expiration for robots vs users, you'll need separate User Pool Clients
 //
-userPoolClient.addPropertyOverride('AccessTokenValidity', 240); // 4 hours in minutes (5-1440)
-userPoolClient.addPropertyOverride('IdTokenValidity', 240); // 4 hours in minutes (5-1440)
-userPoolClient.addPropertyOverride('RefreshTokenValidity', 30); // 30 days (1-3650)
+// Access the underlying CloudFormation resource (CfnUserPoolClient) to add overrides
+// Note: Token expiration settings need to be configured via CDK escape hatches
+const cfnUserPoolClient = userPoolClient.node.defaultChild;
+if (cfnUserPoolClient) {
+  // Use addOverride for CloudFormation properties
+  (cfnUserPoolClient as any).addOverride('Properties.AccessTokenValidity', 240); // 4 hours in minutes (5-1440)
+  (cfnUserPoolClient as any).addOverride('Properties.IdTokenValidity', 240); // 4 hours in minutes (5-1440)
+  (cfnUserPoolClient as any).addOverride('Properties.RefreshTokenValidity', 30); // 30 days (1-3650)
+}
 const setUserGroupLambdaFunction = backend.setUserGroupLambda.resources.lambda;
 const setRobotLambdaFunction = backend.setRobotLambda.resources.lambda;
 const updateRobotLambdaFunction = backend.updateRobotLambda.resources.lambda;
