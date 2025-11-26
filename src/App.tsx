@@ -19,6 +19,7 @@ import { SessionHistory } from "./pages/SessionHistory";
 import { AppLayout } from "./components/AppLayout";
 import { Settings } from "./pages/Settings";
 import RobotSetup from "./pages/RobotSetup";
+import { EditRobot } from "./pages/EditRobot";
 import { useEffect } from "react";
 import { fetchAuthSession } from "aws-amplify/auth";
 
@@ -106,6 +107,12 @@ function App() {
             <Route path='/robot-setup' element={
               <PrivateRoute>
                 <RobotSetup />
+              </PrivateRoute>
+            }
+            />
+            <Route path='/edit-robot' element={
+              <PrivateRoute>
+                <EditRobot />
               </PrivateRoute>
             }
             />

@@ -364,6 +364,18 @@ function isAdmin(groups?: string[] | null): boolean {
 // $connect
 // ---------------------------------
 async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
+    const connectionId = event.requestContext.connectionId!;
+    const requestTime = new Date().toISOString();
+    
+    // Log connection attempt
+    console.log('[CONNECTION_ATTEMPT]', {
+        connectionId,
+        requestTime,
+        hasToken: !!event.queryStringParameters?.token,
+        sourceIp: event.requestContext.identity?.sourceIp,
+        userAgent: event.requestContext.identity?.userAgent,
+    });
+    
     // Clients / robots will pass ?token=<JWT> in the URL
     const token = event.queryStringParameters?.token ?? null;
 
@@ -373,7 +385,6 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
     
     if (allowNoToken && !token) {
         console.warn('⚠️ DEVELOPMENT MODE: Allowing connection without token (ALLOW_NO_TOKEN=true)');
-        const connectionId = event.requestContext.connectionId!;
         try {
             // Create a mock user for testing
             await db.send(
@@ -389,8 +400,10 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
                     },
                 }),
             );
+            console.log('[CONNECTION_SUCCESS]', { connectionId, mode: 'dev-no-token' });
         } catch (e) {
             console.warn('Connect put_item error', e);
+            console.error('[CONNECTION_ERROR]', { connectionId, error: String(e) });
         }
         return {statusCode: 200, body: '' };
     }
@@ -398,10 +411,14 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
     // Verify JWT token signature and expiration
     const claims = await verifyCognitoJWT(token);
     if (!claims?.sub) {
+        console.error('[CONNECTION_REJECTED]', {
+            connectionId,
+            reason: 'Invalid or missing token',
+            hasToken: !!token,
+        });
         return {statusCode: 401, body: 'unauthorized'};
     }
 
-    const connectionId = event.requestContext.connectionId!;
     try {
         // Store username/email for ACL checks
         const username = claims['cognito:username'] || claims.email || claims.sub || '';
@@ -418,8 +435,15 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
                 },
             }),
         );
+        console.log('[CONNECTION_SUCCESS]', {
+            connectionId,
+            userId: claims.sub,
+            username,
+            groups: claims.groups,
+        });
     } catch (e) {
         console.warn('Connect put_item error', e);
+        console.error('[CONNECTION_ERROR]', { connectionId, error: String(e) });
     }
     return {statusCode: 200, body: '' };
 }
@@ -454,10 +478,26 @@ async function handleRegister(
   msg: InboundMessage,
 ): Promise<APIGatewayProxyResult> {
   const robotId = msg.robotId;
-  if (!robotId) return { statusCode: 400, body: 'robotId required' };
+  const connectionId = event.requestContext.connectionId!;
+  
+  if (!robotId) {
+    console.error('[REGISTER_ERROR]', {
+      connectionId,
+      reason: 'robotId required',
+      receivedMessage: msg,
+    });
+    return { statusCode: 400, body: 'robotId required' };
+  }
 
   const caller = claims.sub!;
   const admin = isAdmin(claims.groups);
+  
+  console.log('[REGISTER_PROCESSING]', {
+    connectionId,
+    robotId,
+    userId: caller,
+    isAdmin: admin,
+  });
 
   try {
     await db.send(
@@ -496,9 +536,22 @@ async function handleRegister(
       );
     } else {
       console.warn('Presence put_item error', e);
+      console.error('[REGISTER_ERROR]', {
+        connectionId,
+        robotId,
+        error: String(e),
+        errorCode: e?.name || e?.Code || e?.code,
+      });
       return { statusCode: 500, body: 'DynamoDB error' };
     }
   }
+  
+  console.log('[REGISTER_SUCCESS]', {
+    connectionId,
+    robotId,
+    userId: caller,
+  });
+  
   return { statusCode: 200, body: '' };
 }
 
@@ -701,8 +754,23 @@ export async function handler(
   const msg = normalizeMessage(raw);
   const type = (msg.type || '').toString().trim().toLowerCase();
 
+  // Log incoming message
+  console.log('[MESSAGE_RECEIVED]', {
+    connectionId: event.requestContext.connectionId,
+    route: route,
+    messageType: type,
+    robotId: msg.robotId,
+    hasToken: !!token,
+    userId: claims?.sub,
+  });
+
   // Dispatch by message type
   if (type === 'register') {
+    console.log('[REGISTER_ATTEMPT]', {
+      connectionId: event.requestContext.connectionId,
+      robotId: msg.robotId,
+      userId: claims?.sub,
+    });
     return handleRegister(claims, event, msg);
   }
 

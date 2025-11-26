@@ -45,6 +45,9 @@ export function usePageTitle() {
       case "/robot-setup":
         title = "Robot Setup";
         break;
+      case "/edit-robot":
+        title = "Edit Robot";
+        break;
       default:
         title = location.pathname
           .split("/")

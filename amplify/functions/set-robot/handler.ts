@@ -7,7 +7,7 @@ const ddbClient = new DynamoDBClient({});
 export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event) => {
   console.log('Received event:', JSON.stringify(event, null, 2));
 
-  const { robotName, description, model, enableAccessControl, additionalAllowedUsers } = event.arguments;
+  const { robotName, description, model, enableAccessControl, additionalAllowedUsers, city, state, country, latitude, longitude } = event.arguments;
 
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
@@ -80,6 +80,23 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
     },
   };
 
+  // Add location fields if provided
+  if (city) {
+    putItemInput.Item.city = { S: city };
+  }
+  if (state) {
+    putItemInput.Item.state = { S: state };
+  }
+  if (country) {
+    putItemInput.Item.country = { S: country };
+  }
+  if (latitude !== undefined && latitude !== null) {
+    putItemInput.Item.latitude = { N: latitude.toString() };
+  }
+  if (longitude !== undefined && longitude !== null) {
+    putItemInput.Item.longitude = { N: longitude.toString() };
+  }
+
   // Only create ACL if user opted in to access control
   if (enableAccessControl === true) {
     // Create ACL with default users:
@@ -89,11 +106,26 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
     // - Any additional users provided by the partner
     // Note: If allowedUsers is null/empty, robot is open access. If it exists, only listed users can access.
     const ownerUsername = identity.username; // Cognito username (often email)
+    const ownerEmail = (identity as any).email || (identity as any).claims?.email; // Try to get email too
+    
+    console.log('🔐 Creating ACL for robot:', {
+      ownerUsername,
+      ownerEmail,
+      identityKeys: Object.keys(identity),
+      identityClaims: (identity as any).claims,
+    });
+    
     const defaultAllowedUsers = [
-      ownerUsername.toLowerCase(),
+      ownerUsername.toLowerCase().trim(),
       'chris@modulr.cloud',
       'mike@modulr.cloud',
     ];
+    
+    // Also add owner's email if it's different from username
+    if (ownerEmail && ownerEmail.toLowerCase().trim() !== ownerUsername.toLowerCase().trim()) {
+      defaultAllowedUsers.push(ownerEmail.toLowerCase().trim());
+      console.log('📧 Added owner email to ACL (different from username):', ownerEmail);
+    }
     
     // Add any additional users provided (normalize to lowercase)
     const additionalUsers = (additionalAllowedUsers || [])

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { fetchAuthSession } from 'aws-amplify/auth';
+import { generateClient } from 'aws-amplify/api';
+import { Schema } from '../../amplify/data/resource';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
@@ -13,11 +15,14 @@ import {
 import outputs from '../../amplify_outputs.json';
 import './RobotSetup.css';
 
+const client = generateClient<Schema>();
+
 export default function RobotSetup() {
   usePageTitle();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const robotId = searchParams.get('robotId');
+  const robotUuid = searchParams.get('robotId'); // This is the Robot.id (UUID)
+  const [robotId, setRobotId] = useState<string>(''); // This is the robotId field (robot-XXXXXXXX)
   const [connectionUrl, setConnectionUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [copiedRobotId, setCopiedRobotId] = useState(false);
@@ -25,9 +30,33 @@ export default function RobotSetup() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const generateConnectionUrl = async () => {
+    const loadRobotAndGenerateUrl = async () => {
       try {
         setLoading(true);
+        setError(null);
+        
+        // First, load the robot data to get the correct robotId
+        if (robotUuid) {
+          try {
+            const robot = await client.models.Robot.get({ id: robotUuid });
+            if (robot.data?.robotId) {
+              setRobotId(robot.data.robotId);
+            } else {
+              setError('Robot ID not found. The robot may not be properly configured.');
+              setLoading(false);
+              return;
+            }
+          } catch (robotError) {
+            console.error('Error loading robot:', robotError);
+            setError('Failed to load robot information. Please try again.');
+            setLoading(false);
+            return;
+          }
+        } else {
+          setError('No robot ID provided. Please go back and select a robot.');
+          setLoading(false);
+          return;
+        }
         
         // Get WebSocket URL from amplify_outputs.json
         const wsUrl = outputs?.custom?.signaling?.websocketUrl;
@@ -67,8 +96,8 @@ export default function RobotSetup() {
       }
     };
 
-    generateConnectionUrl();
-  }, []);
+    loadRobotAndGenerateUrl();
+  }, [robotUuid]);
 
   const handleCopy = async () => {
     try {
@@ -89,7 +118,7 @@ export default function RobotSetup() {
     }
   };
 
-  if (!robotId) {
+  if (!robotUuid) {
     return (
       <div className="robot-setup-page">
         <div className="setup-container">

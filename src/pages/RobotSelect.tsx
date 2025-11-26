@@ -39,35 +39,158 @@ export default function RobotSelect() {
   const [robots, setRobots] = useState<RobotData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editingRobotId, setEditingRobotId] = useState<string | null>(null);
   const [deletingRobotId, setDeletingRobotId] = useState<string | null>(null);
+  const [nextToken, setNextToken] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
   const hasSelected = selected.length > 0;
   const navigate = useNavigate();
   
-  // Check if user can delete robots (Partners or Admins)
-  const canDeleteRobots = user?.group === 'PARTNERS' || user?.group === 'ADMINS';
+  // Check if user can edit robots (Partners or Admins)
+  const canEditRobots = user?.group === 'PARTNERS' || user?.group === 'ADMINS';
 
   useEffect(() => {
     const loadRobots = async () => {
       try {
         setIsLoading(true);
         setError(null);
-        // Use Amplify v6 models API to list robots
-        const response = await client.models.Robot.list();
+        
+        // Check if the new ACL-filtered query is available (schema needs to be regenerated)
+        let response: any;
+        if (client.queries.listAccessibleRobotsLambda) {
+          console.log('🔍 Using listAccessibleRobotsLambda query');
+          try {
+            // Use the ACL-filtered query to only get robots the user can access
+            const queryResponse = await client.queries.listAccessibleRobotsLambda({
+              limit: 50, // Load 50 robots per page
+            });
+            
+            console.log('📥 Raw Lambda response:', {
+              hasData: !!queryResponse.data,
+              dataType: typeof queryResponse.data,
+              dataLength: typeof queryResponse.data === 'string' ? queryResponse.data.length : 'N/A',
+              hasErrors: !!queryResponse.errors,
+              errors: queryResponse.errors,
+            });
+            
+            // The response.data is a JSON string that needs to be parsed
+            let responseData: any = { robots: [], nextToken: '' };
+            try {
+              if (typeof queryResponse.data === 'string') {
+                console.log('📝 Parsing JSON string response...');
+                console.log('📝 Raw string (first 200 chars):', queryResponse.data.substring(0, 200));
+                const parsed = JSON.parse(queryResponse.data);
+                console.log('✅ Parsed successfully:', {
+                  hasRobots: !!parsed.robots,
+                  robotsType: typeof parsed.robots,
+                  robotsIsArray: Array.isArray(parsed.robots),
+                  robotsCount: parsed.robots?.length || 0,
+                  robotsValue: parsed.robots,
+                  hasNextToken: !!parsed.nextToken,
+                });
+                responseData = parsed;
+              } else if (queryResponse.data) {
+                console.log('📝 Using response.data directly (not a string)');
+                responseData = queryResponse.data as any;
+              } else {
+                console.warn('⚠️ queryResponse.data is null or undefined');
+              }
+            } catch (e) {
+              console.error('❌ Failed to parse response data:', e);
+              console.error('Raw data that failed to parse:', queryResponse.data);
+              // Try to extract robots from the raw string as fallback
+              if (typeof queryResponse.data === 'string') {
+                try {
+                  const match = queryResponse.data.match(/"robots":\[(.*?)\]/);
+                  if (match) {
+                    console.warn('⚠️ Found robots in string but parse failed, trying manual extraction');
+                  }
+                } catch {}
+              }
+            }
+            
+            console.log('📦 Final responseData before setting response:', {
+              hasRobots: !!responseData.robots,
+              robotsType: typeof responseData.robots,
+              robotsIsArray: Array.isArray(responseData.robots),
+              robotsCount: responseData.robots?.length || 0,
+            });
+            
+            response = {
+              data: responseData,
+              errors: queryResponse.errors,
+            };
+            
+            console.log('📦 Final response object:', {
+              hasData: !!response.data,
+              hasRobots: !!response.data?.robots,
+              robotsType: typeof response.data?.robots,
+              robotsIsArray: Array.isArray(response.data?.robots),
+              robotsCount: response.data?.robots?.length || 0,
+            });
+          } catch (error) {
+            console.error('❌ Error calling listAccessibleRobotsLambda:', error);
+            // Fallback to old query on error
+            console.warn('⚠️ Falling back to old Robot.list() query due to error');
+            const oldResponse = await client.models.Robot.list();
+            response = {
+              data: {
+                robots: oldResponse.data || [],
+                nextToken: '',
+              },
+              errors: oldResponse.errors,
+            };
+          }
+        } else {
+          // Fallback: Use the old query (no ACL filtering) until schema is regenerated
+          console.warn('⚠️ listAccessibleRobotsLambda not available yet. Using fallback query. Please restart Amplify sandbox.');
+          const oldResponse = await client.models.Robot.list();
+          // Transform to match new response format
+          response = {
+            data: {
+              robots: oldResponse.data || [],
+              nextToken: '',
+            },
+            errors: oldResponse.errors,
+          };
+        }
         
         // Log the raw response to see what's in the database
-        console.log('📊 Raw database response:', {
+        console.log('📊 ACL-filtered robots response:', {
           hasData: !!response.data,
-          dataLength: response.data?.length || 0,
+          dataType: typeof response.data,
+          dataIsString: typeof response.data === 'string',
+          robotsCount: response.data?.robots?.length || 0,
+          robotsType: typeof response.data?.robots,
+          robotsIsArray: Array.isArray(response.data?.robots),
+          nextToken: response.data?.nextToken || null,
           hasErrors: !!response.errors,
           errorsLength: response.errors?.length || 0,
+          // If data is still a string, try to parse it here
+          dataStringPreview: typeof response.data === 'string' ? response.data.substring(0, 200) : 'N/A',
         });
         
-        // Log each robot's actual fields to see what's missing
-        if (response.data && response.data.length > 0) {
-          console.log('🤖 Robots in database (showing all fields):');
-          response.data.forEach((robot: any, index: number) => {
+        // If response.data is still a string, parse it now
+        if (typeof response.data === 'string') {
+          console.warn('⚠️ response.data is still a string! Parsing now...');
+          try {
+            const parsed = JSON.parse(response.data);
+            response.data = parsed;
+            console.log('✅ Re-parsed response.data:', {
+              hasRobots: !!parsed.robots,
+              robotsCount: parsed.robots?.length || 0,
+            });
+          } catch (e) {
+            console.error('❌ Failed to re-parse response.data:', e);
+          }
+        }
+        
+        // Log each robot's actual fields
+        if (response.data?.robots && response.data.robots.length > 0) {
+          console.log(`🤖 Found ${response.data.robots.length} accessible robot(s):`);
+          response.data.robots.forEach((robot: any, index: number) => {
             if (robot === null || robot === undefined) {
-              console.log(`  Robot ${index + 1}: ❌ NULL (GraphQL returned null for this item)`);
+              console.log(`  Robot ${index + 1}: ❌ NULL`);
               return;
             }
             console.log(`  Robot ${index + 1}:`, {
@@ -76,10 +199,9 @@ export default function RobotSelect() {
               name: robot.name || '❌ MISSING',
               description: robot.description || '❌ MISSING',
               model: robot.model || '❌ MISSING',
-              partnerId: robot.partnerId || '❌ MISSING',
-              createdAt: robot.createdAt || '❌ MISSING',
-              updatedAt: robot.updatedAt || '❌ MISSING',
-              allFields: robot, // Show all fields
+              location: robot.city || robot.state || robot.country ? 
+                [robot.city, robot.state, robot.country].filter(Boolean).join(', ') : 'Not specified',
+              allowedUsers: robot.allowedUsers || [],
             });
           });
         }
@@ -103,19 +225,159 @@ export default function RobotSelect() {
         // Transform robots from database to RobotData (includes UUID for deletion)
         // Filter out null robots (GraphQL returns null for items with errors)
         // This allows us to show valid robots even if some have errors
-        if (response.data && response.data.length > 0) {
-          robotItems = (response.data || [])
-            .filter((robot) => robot !== null && robot !== undefined) // Filter out null robots
-            .filter((robot) => robot.robotId != null || robot.id != null) // Ensure we have a valid ID
-            .map((robot) => ({
-              id: (robot.robotId || robot.id) as string, // Use robotId (string) for connection, fallback to id
-              uuid: robot.id || undefined, // Store the actual UUID for deletion
-              title: robot.name || 'Unnamed Robot',
-              description: robot.description || '',
-              imageUrl: getRobotImage(robot.model),
-            }));
+        
+        // Handle case where response.data might still be a string (double-wrapped JSON)
+        let robotsData = response.data;
+        if (typeof robotsData === 'string') {
+          console.warn('⚠️ response.data is still a string, parsing now...');
+          try {
+            robotsData = JSON.parse(robotsData);
+            console.log('✅ Parsed robotsData:', {
+              hasRobots: !!robotsData.robots,
+              robotsCount: robotsData.robots?.length || 0,
+            });
+          } catch (e) {
+            console.error('❌ Failed to parse robotsData:', e);
+            robotsData = { robots: [], nextToken: '' };
+          }
+        }
+        
+        const robotsArray = robotsData?.robots && Array.isArray(robotsData.robots) ? robotsData.robots : [];
+        
+        console.log('🔍 Processing robots array:', {
+          robotsArrayLength: robotsArray.length,
+          responseDataRobots: robotsData?.robots,
+          isArray: Array.isArray(robotsData?.robots),
+          robotsDataType: typeof robotsData,
+        });
+        
+        if (robotsArray.length > 0) {
+          // Get user info for ACL checking
+          // If user object is missing, try to get it from auth session directly
+          let userEmail = user?.email?.toLowerCase().trim();
+          let userUsername = user?.username?.toLowerCase().trim();
+          const isAdmin = user?.group === 'ADMINS' || user?.group === 'ADMIN';
+          
+          // If user object is empty, try to fetch from auth session
+          if (!userEmail && !userUsername) {
+            console.warn('⚠️ User object is empty, trying to fetch from auth session...');
+            try {
+              const { fetchAuthSession, fetchUserAttributes, getCurrentUser } = await import('aws-amplify/auth');
+              const currentUser = await getCurrentUser();
+              const attrs = await fetchUserAttributes();
+              const session = await fetchAuthSession();
+              
+              userEmail = attrs.email?.toLowerCase().trim();
+              userUsername = currentUser.username?.toLowerCase().trim();
+              
+              console.log('📥 Fetched user info from auth:', {
+                email: userEmail,
+                username: userUsername,
+                allAttributes: attrs,
+                sessionPayload: session.tokens?.idToken?.payload,
+              });
+            } catch (e) {
+              console.error('❌ Failed to fetch user from auth:', e);
+            }
+          }
+          
+          console.log('👤 User identifiers for ACL matching:', {
+            email: userEmail || '❌ MISSING',
+            username: userUsername || '❌ MISSING',
+            displayName: user?.displayName || '❌ MISSING',
+            group: user?.group || '❌ MISSING',
+            isAdmin,
+            fullUserObject: user,
+          });
+          
+          console.log(`✅ Found ${robotsArray.length} robots to process`);
+          
+          robotItems = robotsArray
+            .filter((robot: any) => robot !== null && robot !== undefined) // Filter out null robots
+            .filter((robot: any) => robot.robotId != null || robot.id != null) // Ensure we have a valid ID
+            .map((robot: any) => {
+              // Build location string
+              const locationParts = [robot.city, robot.state, robot.country].filter(Boolean);
+              const location = locationParts.length > 0 ? locationParts.join(', ') : undefined;
+              
+              // Build description - keep location separate for display on new line
+              const description = robot.description || '';
+              
+              // Check if user can access this robot (for graying out)
+              const allowedUsers = robot.allowedUsers || [];
+              const hasACL = allowedUsers.length > 0;
+              let canAccess = false;
+              let accessReason = '';
+              
+              if (!hasACL) {
+                // No ACL = open access
+                canAccess = true;
+                accessReason = 'No ACL (open access)';
+              } else if (isAdmin) {
+                // Admins can access all robots
+                canAccess = true;
+                accessReason = 'Admin user';
+              } else {
+                // Check if user's email/username is in the ACL
+                const normalizedAllowedUsers = allowedUsers.map((email: string) => email.toLowerCase().trim());
+                const emailMatch = userEmail && normalizedAllowedUsers.includes(userEmail);
+                const usernameMatch = userUsername && normalizedAllowedUsers.includes(userUsername);
+                
+                canAccess = emailMatch || usernameMatch;
+                
+                if (canAccess) {
+                  accessReason = emailMatch ? `Email match: ${userEmail}` : `Username match: ${userUsername}`;
+                } else {
+                  accessReason = `Not in ACL. User identifiers: email=${userEmail || 'none'}, username=${userUsername || 'none'}. ACL: ${normalizedAllowedUsers.join(', ')}`;
+                }
+                
+                // Log ACL check details for debugging
+                if (robot.name === 'Tugga' || robot.name === 'ACL test') {
+                  console.log(`🔍 ACL check for robot "${robot.name}":`, {
+                    robotId: robot.id,
+                    hasACL,
+                    allowedUsers: normalizedAllowedUsers,
+                    userEmail,
+                    userUsername,
+                    emailMatch,
+                    usernameMatch,
+                    canAccess,
+                    accessReason,
+                  });
+                }
+                
+                // TODO: Also check if user is the owner (would need partnerId lookup)
+                // For now, we'll rely on the ACL check
+              }
+              
+              return {
+                id: (robot.robotId || robot.id) as string, // Use robotId (string) for connection, fallback to id
+                uuid: robot.id || undefined, // Store the actual UUID for deletion
+                title: robot.name || 'Unnamed Robot',
+                description: description,
+                location: location, // Location on separate line
+                imageUrl: getRobotImage(robot.model),
+                disabled: !canAccess, // Gray out if user can't access
+              };
+            });
           
           console.log(`✅ Successfully loaded ${robotItems.length} valid robot(s) from database`);
+          console.log('📋 Robot items details:', robotItems.map(r => ({ id: r.id, title: r.title, disabled: r.disabled })));
+          
+          // Update pagination state (nextToken is empty string when no more pages)
+          const token = response.data.nextToken || '';
+          setNextToken(token || null);
+          setHasMore(!!token);
+        } else {
+          console.warn('⚠️ No robots in robotsArray - robotsArray.length is 0');
+          console.warn('Response data structure:', {
+            hasData: !!response.data,
+            hasRobots: !!response.data?.robots,
+            robotsType: typeof response.data?.robots,
+            robotsValue: response.data?.robots,
+          });
+          setNextToken(null);
+          setHasMore(false);
         }
 
         // For local development/testing: Add default robot1 if no robots found
@@ -166,6 +428,18 @@ export default function RobotSelect() {
       // Or we could go directly to teleop with robotId in URL
       navigate(`/teleop?robotId=${selectedRobot.id}`);
     }
+  };
+
+  const handleEditRobot = (robot: RobotData, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent card selection when clicking edit
+    
+    if (!robot.uuid) {
+      console.error('Cannot edit robot: missing UUID');
+      return;
+    }
+    
+    // Navigate to edit page with robot UUID
+    navigate(`/edit-robot?robotId=${robot.uuid}`);
   };
 
   const handleDeleteRobot = async (robot: RobotData, event: React.MouseEvent) => {
@@ -252,6 +526,72 @@ export default function RobotSelect() {
     }
   };
 
+  const loadMoreRobots = async () => {
+    if (!nextToken || isLoading) return;
+    
+    try {
+      setIsLoading(true);
+      
+      if (!client.queries.listAccessibleRobotsLambda) {
+        console.warn('⚠️ listAccessibleRobotsLambda not available. Cannot load more robots.');
+        setHasMore(false);
+        return;
+      }
+      
+      const queryResponse = await client.queries.listAccessibleRobotsLambda({
+        limit: 50,
+        nextToken: nextToken,
+      });
+      
+      // The response.data is a JSON string that needs to be parsed
+      let responseData = { robots: [], nextToken: '' };
+      try {
+        if (typeof queryResponse.data === 'string') {
+          responseData = JSON.parse(queryResponse.data);
+        } else if (queryResponse.data) {
+          responseData = queryResponse.data as any;
+        }
+      } catch (e) {
+        console.error('Failed to parse response data:', e);
+      }
+      const robotsArray = Array.isArray(responseData.robots) ? responseData.robots : [];
+      if (robotsArray.length > 0) {
+        const newRobotItems = robotsArray
+          .filter((robot: any) => robot !== null && robot !== undefined)
+          .filter((robot: any) => robot.robotId != null || robot.id != null)
+          .map((robot: any) => {
+            const locationParts = [robot.city, robot.state, robot.country].filter(Boolean);
+            const location = locationParts.length > 0 ? locationParts.join(', ') : undefined;
+            let description = robot.description || '';
+            if (location) {
+              description = description ? `${description} • ${location}` : location;
+            }
+            
+            return {
+              id: (robot.robotId || robot.id) as string,
+              uuid: robot.id || undefined,
+              title: robot.name || 'Unnamed Robot',
+              description: description,
+              imageUrl: getRobotImage(robot.model),
+            };
+          });
+        
+        setRobots(prev => [...prev, ...newRobotItems]);
+        const token = responseData.nextToken || '';
+        setNextToken(token || null);
+        setHasMore(!!token);
+      } else {
+        setNextToken(null);
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.error('Error loading more robots:', err);
+      alert('Failed to load more robots. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="robot-select-container">
@@ -290,9 +630,30 @@ export default function RobotSelect() {
             multiple={false}
             selected={selected}
             setSelected={setSelected}
-            onDelete={canDeleteRobots ? handleDeleteRobot : undefined}
+            onEdit={canEditRobots ? handleEditRobot : undefined}
+            editingItemId={editingRobotId}
+            onDelete={canEditRobots ? handleDeleteRobot : undefined}
             deletingItemId={deletingRobotId}
           />
+      {hasMore && (
+        <button
+          className="load-more-button"
+          onClick={loadMoreRobots}
+          disabled={isLoading}
+          style={{
+            marginTop: '1rem',
+            padding: '0.75rem 1.5rem',
+            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            borderRadius: '8px',
+            color: '#fff',
+            cursor: isLoading ? 'wait' : 'pointer',
+            fontSize: '1rem',
+          }}
+        >
+          {isLoading ? 'Loading...' : 'Load More Robots'}
+        </button>
+      )}
       <button
         className="next-services-button"
         onClick={handleNext}

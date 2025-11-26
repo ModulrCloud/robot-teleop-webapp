@@ -137,10 +137,28 @@
   min-height: 120px;
 }
 
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 600px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .char-count {
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.4);
   text-align: right;
+  margin-top: 0.25rem;
+}
+
+.char-count-limit {
+  color: rgba(255, 193, 7, 0.9);
+  font-weight: 500;
 }
 
 .checkbox-label {
@@ -245,7 +263,7 @@
 
 .form-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   padding-top: 1rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
@@ -266,9 +284,21 @@
   box-shadow: 0 4px 16px rgba(255, 193, 7, 0.3);
 }
 
+.submit-btn.cancel-btn {
+  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.3) !important;
+}
+
 .submit-btn:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 6px 24px rgba(255, 193, 7, 0.4);
+}
+
+.submit-btn.cancel-btn {
+  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.3);
+}
+
+.submit-btn.cancel-btn:hover:not(:disabled) {
+  box-shadow: 0 6px 24px rgba(220, 38, 38, 0.4) !important;
 }
 
 .submit-btn:active:not(:disabled) {

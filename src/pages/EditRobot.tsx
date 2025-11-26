@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import './CreateRobotListing.css';
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
@@ -14,7 +14,8 @@ import {
   faTruck,
   faPersonWalking,
   faPlane,
-  faWater
+  faWater,
+  faTrash
 } from '@fortawesome/free-solid-svg-icons';
 
 const ROBOT_MODELS = [
@@ -39,11 +40,18 @@ type RobotListing = {
 
 const client = generateClient<Schema>();
 
-export const CreateRobotListing = () => {
-  usePageTitle();
+export const EditRobot = () => {
+  usePageTitle("Edit Robot");
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const robotId = searchParams.get('robotId');
+  
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingRobot, setIsLoadingRobot] = useState(true);
   const [success, setSuccess] = useState<boolean | undefined>();
+  const [error, setError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [robotName, setRobotName] = useState<string>('');
 
   const [robotListing, setRobotListing] = useState<RobotListing>({
     robotName: "",
@@ -58,6 +66,60 @@ export const CreateRobotListing = () => {
     longitude: "",
   });
 
+  // Load robot data
+  useEffect(() => {
+    const loadRobot = async () => {
+      if (!robotId) {
+        setError('No robot ID provided');
+        setIsLoadingRobot(false);
+        return;
+      }
+
+      try {
+        setIsLoadingRobot(true);
+        setError(null);
+        
+        // Try to get robot by ID
+        const robot = await client.models.Robot.get({ id: robotId });
+        
+        if (robot.errors || !robot.data) {
+          throw new Error(robot.errors?.[0]?.message || 'Robot not found');
+        }
+
+        const robotData = robot.data;
+        
+        // Extract allowed users (excluding default users)
+        const allowedUsers = robotData.allowedUsers || [];
+        const defaultUsers = ['chris@modulr.cloud', 'mike@modulr.cloud'];
+        const additionalUsers = allowedUsers.filter(
+          (email: string) => !defaultUsers.includes(email.toLowerCase())
+        );
+
+        const name = robotData.name || "";
+        setRobotName(name);
+        setRobotListing({
+          robotName: name,
+          description: robotData.description || "",
+          model: robotData.model || ROBOT_MODELS[0].value,
+          enableAccessControl: allowedUsers.length > 0,
+          allowedUserEmails: additionalUsers.join('\n'),
+          city: robotData.city || "",
+          state: robotData.state || "",
+          country: robotData.country || "",
+          latitude: robotData.latitude?.toString() || "",
+          longitude: robotData.longitude?.toString() || "",
+        });
+      } catch (err) {
+        console.error('Error loading robot:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load robot');
+      } finally {
+        setIsLoadingRobot(false);
+      }
+    };
+
+    loadRobot();
+  }, [robotId]);
+
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = event.target;
     const checked = (event.target as HTMLInputElement).checked;
@@ -67,10 +129,11 @@ export const CreateRobotListing = () => {
     }));
   };
 
-  const onConfirmCreate = async (event: React.FormEvent<HTMLFormElement>) => {
+  const onConfirmUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
     setSuccess(undefined);
+    setError(null);
 
     // Parse email list (split by comma or newline, trim, filter empty)
     const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
@@ -93,12 +156,19 @@ export const CreateRobotListing = () => {
       longitude: robotListing.longitude ? (isNaN(parseFloat(robotListing.longitude)) ? undefined : parseFloat(robotListing.longitude)) : undefined,
     };
 
-    console.log('🤖 Creating robot with data:', robotData);
+    console.log('🤖 Updating robot with data:', robotData);
 
     try {
-      const robot = await client.mutations.setRobotLambda(robotData);
+      if (!robotId) {
+        throw new Error('Robot ID is required for updates');
+      }
 
-      console.log('📊 Robot creation response:', {
+      const robot = await client.mutations.updateRobotLambda({
+        robotId,
+        ...robotData,
+      });
+
+      console.log('📊 Robot update response:', {
         hasData: !!robot.data,
         hasErrors: !!robot.errors,
         data: robot.data,
@@ -106,60 +176,125 @@ export const CreateRobotListing = () => {
       });
 
       if (robot.errors) {
-        console.error('❌ Errors creating robot:', robot.errors);
+        console.error('❌ Errors updating robot:', robot.errors);
+        setError(robot.errors[0]?.message || 'Failed to update robot');
         setSuccess(false);
       } else {
-        console.log('✅ Robot created successfully:', robot.data);
+        console.log('✅ Robot updated successfully:', robot.data);
+        setSuccess(true);
         
-        // Parse the robot data to get robotId
-        try {
-          const robotData = JSON.parse(robot.data || '{}');
-          const robotId = robotData.robotId;
-          
-          if (robotId) {
-            // Redirect to setup page with robotId
-            navigate(`/robot-setup?robotId=${robotId}`);
-          } else {
-            // Fallback: show success message
-            setSuccess(true);
-            setRobotListing({
-              robotName: "",
-              description: "",
-              model: ROBOT_MODELS[0].value,
-              enableAccessControl: false,
-              allowedUserEmails: "",
-              city: "",
-              state: "",
-              country: "",
-              latitude: "",
-              longitude: "",
-            });
+        // Redirect to Robot Setup page so user can get a fresh token URL
+        // The Robot Setup page will fetch a fresh token from the current auth session
+        if (robotId) {
+          navigate(`/robot-setup?robotId=${robotId}`);
+        } else {
+          // Fallback: try to get robotId from response
+          try {
+            const robotData = JSON.parse(robot.data || '{}');
+            const updatedRobotId = robotData.robotId;
+            if (updatedRobotId) {
+              navigate(`/robot-setup?robotId=${updatedRobotId}`);
+            } else {
+              // Final fallback: redirect to robots list
+              setTimeout(() => {
+                navigate('/robots');
+              }, 2000);
+            }
+          } catch (parseError) {
+            console.error('Failed to parse robot data:', parseError);
+            // Final fallback: redirect to robots list
+            setTimeout(() => {
+              navigate('/robots');
+            }, 2000);
           }
-        } catch (parseError) {
-          console.error('Failed to parse robot data:', parseError);
-          // Fallback: show success message
-          setSuccess(true);
-          setRobotListing({
-            robotName: "",
-            description: "",
-            model: ROBOT_MODELS[0].value,
-            enableAccessControl: false,
-            allowedUserEmails: "",
-            city: "",
-            state: "",
-            country: "",
-            latitude: "",
-            longitude: "",
-          });
         }
       }
     } catch (error) {
-      console.error('❌ Exception creating robot:', error);
+      console.error('❌ Exception updating robot:', error);
+      setError(error instanceof Error ? error.message : 'Failed to update robot');
       setSuccess(false);
     }
 
     setIsLoading(false);
   };
+
+  const handleDeleteRobot = async () => {
+    if (!robotId) {
+      setError('No robot ID provided');
+      return;
+    }
+
+    const confirmMessage = `Are you sure you want to delete "${robotName || 'this robot'}"? This action cannot be undone.`;
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      setError(null);
+      
+      console.log(`🗑️ Attempting to delete robot: ${robotName} (${robotId})`);
+      
+      const result = await client.mutations.deleteRobotLambda({ robotId });
+      
+      console.log('📊 Delete robot response:', {
+        hasData: !!result.data,
+        hasErrors: !!result.errors,
+        data: result.data,
+        errors: result.errors,
+      });
+      
+      // Check for GraphQL errors first
+      if (result.errors && result.errors.length > 0) {
+        console.error('❌ GraphQL errors:', result.errors);
+        const errorMessages = result.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ');
+        throw new Error(errorMessages);
+      }
+      
+      // Check the response status
+      if (result.data?.statusCode === 200) {
+        // Success - redirect to robots list
+        navigate('/robots');
+      } else {
+        throw new Error(result.data?.body || 'Failed to delete robot');
+      }
+    } catch (err) {
+      console.error('❌ Exception deleting robot:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete robot');
+      setSuccess(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  if (isLoadingRobot) {
+    return (
+      <div className="create-listing-page">
+        <LoadingWheel />
+      </div>
+    );
+  }
+
+  if (error && !robotId) {
+    return (
+      <div className="create-listing-page">
+        <div className="listing-header">
+          <div className="header-icon">
+            <FontAwesomeIcon icon={faRobot} />
+          </div>
+          <div className="header-content">
+            <h1>Edit Robot</h1>
+            <p>{error}</p>
+          </div>
+        </div>
+        <div className="listing-container">
+          <button onClick={() => navigate('/robots')} className="submit-btn">
+            Back to Robots
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="create-listing-page">
@@ -168,18 +303,18 @@ export const CreateRobotListing = () => {
           <FontAwesomeIcon icon={faRobot} />
         </div>
         <div className="header-content">
-          <h1>List a Robot</h1>
-          <p>Make your robot available for remote teleoperation by clients worldwide</p>
+          <h1>Edit Robot</h1>
+          <p>Update your robot's information and settings</p>
         </div>
       </div>
 
       <div className="listing-container">
         <div className="info-banner">
           <FontAwesomeIcon icon={faInfoCircle} />
-          <span>Listed robots will be visible to all verified clients on the platform</span>
+          <span>Changes will be reflected immediately for all users</span>
         </div>
 
-        <form className="listing-form" onSubmit={onConfirmCreate}>
+        <form className="listing-form" onSubmit={onConfirmUpdate}>
           <div className="form-section">
             <h3>Robot Details</h3>
             
@@ -264,7 +399,7 @@ export const CreateRobotListing = () => {
               </label>
               <p className="form-help-text">
                 {robotListing.enableAccessControl 
-                  ? "Access will be restricted to you, chris@modulr.cloud, mike@modulr.cloud, and any users you add below. You can manage the access list after creating the robot."
+                  ? "Access will be restricted to you, chris@modulr.cloud, mike@modulr.cloud, and any users you add below. You can manage the access list after updating the robot."
                   : "Robot will be accessible to all authenticated users. You can enable access control later if needed."}
               </p>
             </div>
@@ -371,22 +506,54 @@ export const CreateRobotListing = () => {
 
           <div className="form-actions">
             <button 
-              type="submit" 
+              type="button"
               className="submit-btn"
-              disabled={isLoading || !robotListing.robotName.trim()}
+              onClick={handleDeleteRobot}
+              disabled={isLoading || isDeleting}
+              style={{ 
+                background: '#dc2626',
+                backgroundImage: 'none',
+                color: 'white',
+                border: 'none',
+                padding: '0.875rem',
+                minWidth: '48px',
+                boxShadow: 'none'
+              }}
+              title="Delete Robot"
             >
-              {isLoading ? (
-                <>
-                  <LoadingWheel />
-                  <span>Creating Listing...</span>
-                </>
+              {isDeleting ? (
+                <LoadingWheel />
               ) : (
-                <>
-                  <FontAwesomeIcon icon={faRobot} />
-                  <span>Create Robot Listing</span>
-                </>
+                <FontAwesomeIcon icon={faTrash} />
               )}
             </button>
+            <div style={{ display: 'flex', gap: '1rem', marginLeft: 'auto' }}>
+              <button 
+                type="button"
+                className="submit-btn cancel-btn"
+                onClick={() => navigate('/robots')}
+                disabled={isLoading || isDeleting}
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                className="submit-btn"
+                disabled={isLoading || isDeleting || !robotListing.robotName.trim()}
+              >
+                {isLoading ? (
+                  <>
+                    <LoadingWheel />
+                    <span>Updating...</span>
+                  </>
+                ) : (
+                  <>
+                    <FontAwesomeIcon icon={faRobot} />
+                    <span>Update Robot</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </form>
 
@@ -395,17 +562,17 @@ export const CreateRobotListing = () => {
             <FontAwesomeIcon icon={faCheckCircle} />
             <div className="message-content">
               <strong>Success!</strong>
-              <p>Your robot listing has been created and is now available to clients.</p>
+              <p>Your robot has been updated successfully. Redirecting...</p>
             </div>
           </div>
         )}
 
-        {success === false && (
+        {success === false && error && (
           <div className="feedback-message error">
             <FontAwesomeIcon icon={faExclamationCircle} />
             <div className="message-content">
               <strong>Error</strong>
-              <p>Something went wrong. Please check your connection and try again.</p>
+              <p>{error}</p>
             </div>
           </div>
         )}
@@ -413,3 +580,4 @@ export const CreateRobotListing = () => {
     </div>
   );
 };
+

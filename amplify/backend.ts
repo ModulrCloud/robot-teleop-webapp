@@ -3,11 +3,13 @@ import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { setUserGroupLambda } from './functions/set-user-group/resource';
 import { setRobotLambda } from './functions/set-robot/resource';
+import { updateRobotLambda } from './functions/update-robot/resource';
 import { signaling } from './functions/signaling/resource';
 import { revokeTokenLambda } from './functions/revoke-token/resource';
 import { manageRobotOperator } from './functions/manage-robot-operator/resource';
 import { deleteRobotLambda } from './functions/delete-robot/resource';
 import { manageRobotACL } from './functions/manage-robot-acl/resource';
+import { listAccessibleRobots } from './functions/list-accessible-robots/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -23,22 +25,38 @@ const backend = defineBackend({
   data,
   setUserGroupLambda,
   setRobotLambda,
+  updateRobotLambda,
   signaling,
   revokeTokenLambda,
   manageRobotOperator,
   deleteRobotLambda,
   manageRobotACL,
+  listAccessibleRobots,
 });
 
 const userPool = backend.auth.resources.userPool;
+const userPoolClient = backend.auth.resources.userPoolClient;
 const tables = backend.data.resources.tables;
+
+// Configure token expiration times for Cognito User Pool
+// Range: 5 minutes to 1 day (1440 minutes)
+// Set to 4 hours (240 minutes) - good balance for robots and security
+// 
+// IMPORTANT: These settings apply to ALL users in the User Pool
+// If you need different expiration for robots vs users, you'll need separate User Pool Clients
+//
+userPoolClient.addPropertyOverride('AccessTokenValidity', 240); // 4 hours in minutes (5-1440)
+userPoolClient.addPropertyOverride('IdTokenValidity', 240); // 4 hours in minutes (5-1440)
+userPoolClient.addPropertyOverride('RefreshTokenValidity', 30); // 30 days (1-3650)
 const setUserGroupLambdaFunction = backend.setUserGroupLambda.resources.lambda;
 const setRobotLambdaFunction = backend.setRobotLambda.resources.lambda;
+const updateRobotLambdaFunction = backend.updateRobotLambda.resources.lambda;
 const signalingFunction = backend.signaling.resources.lambda;
 const revokeTokenLambdaFunction = backend.revokeTokenLambda.resources.lambda;
 const manageRobotOperatorFunction = backend.manageRobotOperator.resources.lambda;
 const deleteRobotLambdaFunction = backend.deleteRobotLambda.resources.lambda;
 const manageRobotACLFunction = backend.manageRobotACL.resources.lambda;
+const listAccessibleRobotsFunction = backend.listAccessibleRobots.resources.lambda;
 
 // ============================================
 // Signaling Function Resources
@@ -161,6 +179,8 @@ backend.addOutput({
 backend.setUserGroupLambda.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 backend.setRobotLambda.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 backend.setRobotLambda.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+backend.updateRobotLambda.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+backend.updateRobotLambda.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
 
 // Delete robot Lambda environment variables
 backend.deleteRobotLambda.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
@@ -169,6 +189,11 @@ backend.deleteRobotLambda.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.ta
 // Manage robot ACL Lambda environment variables
 backend.manageRobotACL.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 backend.manageRobotACL.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+
+// List accessible robots Lambda environment variables
+backend.listAccessibleRobots.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+backend.listAccessibleRobots.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+backend.listAccessibleRobots.addEnvironment('ROBOT_OPERATOR_TABLE_NAME', robotOperatorTable.tableName);
 
 // Manage robot operator Lambda environment variables
 const manageRobotOperatorCdkFunction = manageRobotOperatorFunction as CdkFunction;
@@ -194,6 +219,14 @@ setRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
     ]
 }));
 tables.Robot.grantWriteData(setRobotLambdaFunction);
+tables.Partner.grantReadData(updateRobotLambdaFunction);
+updateRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query'],
+  resources: [
+    tables.Partner.tableArn + '/index/cognitoUsernameIndex',
+  ],
+}));
+tables.Robot.grantReadWriteData(updateRobotLambdaFunction);
 
 // Grant DynamoDB permissions to delete robot function
 tables.Robot.grantReadWriteData(deleteRobotLambdaFunction);
@@ -214,5 +247,18 @@ manageRobotACLFunction.addToRolePolicy(new PolicyStatement({
   actions: ["dynamodb:Query", "dynamodb:GetItem", "dynamodb:Scan"],
   resources: [
     `${tables.Partner.tableArn}/index/cognitoUsernameIndex`
+  ]
+}));
+
+// Grant DynamoDB permissions to list accessible robots function
+tables.Robot.grantReadData(listAccessibleRobotsFunction);
+tables.Partner.grantReadData(listAccessibleRobotsFunction);
+robotOperatorTable.grantReadData(listAccessibleRobotsFunction);
+// Grant permission to query the cognitoUsernameIndex (needed for ownership verification)
+listAccessibleRobotsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query", "dynamodb:GetItem", "dynamodb:Scan"],
+  resources: [
+    `${tables.Partner.tableArn}/index/cognitoUsernameIndex`,
+    `${robotOperatorTable.tableArn}/index/robotIdIndex`
   ]
 }));

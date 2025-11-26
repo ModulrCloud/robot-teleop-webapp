@@ -98,35 +98,45 @@ export function useAuthStatus(): AuthStatus {
           return;
         }
 
-        // Debug logging (commented out - uncomment for debugging)
-        // console.log('🔍 Attempting to get current user...');
+        // Debug logging - enabled to debug ACL issues
+        console.log('🔍 Attempting to get current user...');
         const currentUser = await getCurrentUser();
-        // console.log('✅ Current user:', { username: currentUser.username });
+        console.log('✅ Current user:', { username: currentUser.username });
         
         const attrs = await fetchUserAttributes();
-        // console.log('✅ User attributes:', { name: attrs.name, email: attrs.email });
+        console.log('✅ User attributes:', { 
+          name: attrs.name, 
+          email: attrs.email,
+          allAttributes: attrs,
+        });
         
         const session = await fetchAuthSession();
-        // console.log('✅ Auth session:', {
-        //   isValid: !!session.tokens,
-        //   hasAccessToken: !!session.tokens?.accessToken,
-        //   hasIdToken: !!session.tokens?.idToken
-        // });
+        console.log('✅ Auth session:', {
+          isValid: !!session.tokens,
+          hasAccessToken: !!session.tokens?.accessToken,
+          hasIdToken: !!session.tokens?.idToken,
+          accessTokenPayload: session.tokens?.accessToken?.payload,
+          idTokenPayload: session.tokens?.idToken?.payload,
+        });
         
         const groups = session.tokens?.accessToken?.payload['cognito:groups'];
         const group = highestPriorityGroup(groups as string[] | undefined);
-        // console.log('✅ User groups:', { groups, highestPriority: group });
+        console.log('✅ User groups:', { groups, highestPriority: group });
+
+        const userData = {
+          username: currentUser.username,
+          name: attrs.name ?? null,
+          email: attrs.email ?? null,
+          displayName: attrs.name ?? attrs.email ?? currentUser.username,
+          group,
+        };
+        
+        console.log('👤 Setting user data:', userData);
 
         if (mounted) {
           setIsLoggedIn(true);
-          setUser({
-            username: currentUser.username,
-            name: attrs.name ?? null,
-            email: attrs.email ?? null,
-            displayName: attrs.name ?? attrs.email,
-            group,
-          });
-          // console.log('✅ Auth status updated - user is logged in');
+          setUser(userData);
+          console.log('✅ Auth status updated - user is logged in');
         }
       } catch (error) {
         // Log the actual error for debugging (commented out - uncomment for debugging)
