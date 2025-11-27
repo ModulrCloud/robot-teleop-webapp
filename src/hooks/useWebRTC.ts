@@ -53,8 +53,19 @@ export function useWebRTC(options: WebRTCOptions) {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const rosBridgeRef = useRef<WebRTCRosBridge | null>(null);
+  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const webrtcTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const webrtcConnectedRef = useRef<boolean>(false);
 
   const cleanup = useCallback(() => {
+    if (connectionTimeoutRef.current) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
+    }
+    if (webrtcTimeoutRef.current) {
+      clearTimeout(webrtcTimeoutRef.current);
+      webrtcTimeoutRef.current = null;
+    }
     if (pcRef.current) {
       pcRef.current.close();
       pcRef.current = null;
@@ -90,17 +101,55 @@ export function useWebRTC(options: WebRTCOptions) {
       const ws = new WebSocket(urlWithToken);
       wsRef.current = ws;
 
+      let connectionEstablished = false;
+
+      // Set timeout for WebSocket connection (10 seconds)
+      connectionTimeoutRef.current = setTimeout(() => {
+        if (!connectionEstablished && ws.readyState !== WebSocket.OPEN) {
+          setStatus(prev => ({ 
+            ...prev, 
+            connecting: false, 
+            error: 'Connection timeout: Unable to establish WebSocket connection. Please check your network and try again.' 
+          }));
+          cleanup();
+        }
+      }, 10000); // 10 second timeout
+
       ws.onerror = (error) => {
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
         setStatus(prev => ({ ...prev, connecting: false, error: 'WebSocket connection error' }));
         console.error('WebSocket error:', error);
       };
 
       ws.onclose = () => {
-        setStatus(prev => ({ ...prev, connecting: false, connected: false }));
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
+        // Only set error if connection closed before being established
+        if (!connectionEstablished) {
+          setStatus(prev => ({ 
+            ...prev, 
+            connecting: false, 
+            connected: false,
+            error: prev.error || 'Connection closed before establishing. Please check the server and try again.'
+          }));
+        } else {
+          setStatus(prev => ({ ...prev, connecting: false, connected: false }));
+        }
         cleanup();
       };
 
       ws.onopen = async () => {
+        connectionEstablished = true;
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
+
         // Note: For clients, we don't need to register with robotId
         // The signaling server tracks connections automatically on $connect
         // Only robots need to send { type: 'register', robotId: '...' }
@@ -109,6 +158,19 @@ export function useWebRTC(options: WebRTCOptions) {
           iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
         });
         pcRef.current = pc;
+
+        // Set timeout for WebRTC connection establishment (15 seconds)
+        webrtcConnectedRef.current = false;
+        webrtcTimeoutRef.current = setTimeout(() => {
+          if (!webrtcConnectedRef.current) {
+            setStatus(prev => ({ 
+              ...prev, 
+              connecting: false, 
+              error: 'WebRTC connection timeout: Unable to establish video connection. The robot may be offline or unreachable.' 
+            }));
+            cleanup();
+          }
+        }, 15000); // 15 second timeout for WebRTC
 
         pc.onicecandidate = (event) => {
           if (event.candidate && ws.readyState === WebSocket.OPEN) {
@@ -124,11 +186,17 @@ export function useWebRTC(options: WebRTCOptions) {
         };
 
         pc.ontrack = (event) => {
+          webrtcConnectedRef.current = true;
+          if (webrtcTimeoutRef.current) {
+            clearTimeout(webrtcTimeoutRef.current);
+            webrtcTimeoutRef.current = null;
+          }
           const stream = event.streams[0];
           setStatus(prev => ({
             ...prev,
             connected: true,
             connecting: false,
+            error: null, // Clear any previous errors
             videoStream: stream,
           }));
         };

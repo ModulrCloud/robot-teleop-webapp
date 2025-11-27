@@ -131,10 +131,16 @@ html {
   box-shadow: 0 4px 24px rgba(220, 53, 69, 0.2);
   margin-bottom: 1rem;
   backdrop-filter: blur(10px);
+  position: relative;
+  z-index: 1000;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .error-content {
   flex: 1;
+  min-width: 0; /* Allows flex item to shrink below content size */
+  overflow-wrap: break-word;
 }
 
 .error-details {
@@ -142,6 +148,8 @@ html {
   font-size: 0.85rem;
   opacity: 0.9;
   font-family: monospace;
+  word-break: break-all; /* Break long URLs */
+  overflow-wrap: break-word;
 }
 
 .retry-btn {
@@ -159,16 +167,26 @@ html {
   transition: all 0.3s ease;
   white-space: nowrap;
   box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+  position: relative;
+  z-index: 1001;
+  pointer-events: auto;
+  flex-shrink: 0; /* Prevents button from shrinking */
+  min-width: fit-content;
 }
 
-.retry-btn:hover {
+.retry-btn:hover:not(:disabled) {
   background: #ffca28;
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(255, 193, 7, 0.5);
 }
 
-.retry-btn:active {
+.retry-btn:active:not(:disabled) {
   transform: translateY(0);
+}
+
+.retry-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .teleop-panel {
@@ -659,6 +677,17 @@ html {
 
   .control-hints {
     grid-template-columns: 1fr;
+  }
+
+  .teleop-error-alert {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+
+  .retry-btn {
+    width: 100%;
+    justify-content: center;
   }
 }
   
