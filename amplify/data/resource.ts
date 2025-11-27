@@ -1,6 +1,12 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 import { setUserGroupLambda } from "../functions/set-user-group/resource";
 import { setRobotLambda } from "../functions/set-robot/resource";
+import { updateRobotLambda } from "../functions/update-robot/resource";
+import { revokeTokenLambda } from "../functions/revoke-token/resource";
+import { manageRobotOperator } from "../functions/manage-robot-operator/resource";
+import { deleteRobotLambda } from "../functions/delete-robot/resource";
+import { manageRobotACL } from "../functions/manage-robot-acl/resource";
+import { listAccessibleRobots } from "../functions/list-accessible-robots/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -81,11 +87,36 @@ const schema = a.schema({
     model: a.string(),
     robotId: a.string(),
     partnerId: a.id().required(),
-    partner: a.belongsTo('Partner', 'partnerId')
+    partner: a.belongsTo('Partner', 'partnerId'),
+    allowedUsers: a.string().array(), // Optional: if null/empty, robot is open access. If set, only listed users can access.
+    // Location fields
+    city: a.string(),
+    state: a.string(),
+    country: a.string(),
+    latitude: a.float(),
+    longitude: a.float(),
   })
   .authorization((allow) => [
     allow.owner().to(["update", "delete"]),
     allow.authenticated().to(["read"]),
+  ]),
+
+  // Delegation table: Partners can assign operators to their robots
+  RobotOperator: a.model({
+    id: a.id(),
+    robotId: a.string().required(), // The robotId string (not Robot.id) - used for lookup
+    operatorUserId: a.string().required(), // Cognito user ID (sub) of the delegated operator
+    operatorUsername: a.string(), // Username for display purposes
+    assignedBy: a.string().required(), // Cognito user ID who assigned this delegation
+    assignedAt: a.string().required(), // ISO timestamp
+  })
+  .secondaryIndexes(index => [
+    index("robotId").name("robotIdIndex"),
+    index("operatorUserId").name("operatorUserIdIndex"),
+  ])
+  .authorization((allow) => [
+    allow.authenticated().to(["read"]),
+    allow.owner(), // Only the partner who owns the robot can manage operators
   ]),
 
   setUserGroupLambda: a
@@ -103,10 +134,89 @@ const schema = a.schema({
       robotName: a.string().required(),
       description: a.string(),
       model: a.string(),
+      enableAccessControl: a.boolean(), // Optional: if true, creates ACL with default users
+      additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL
+      // Location fields
+      city: a.string(),
+      state: a.string(),
+      country: a.string(),
+      latitude: a.float(),
+      longitude: a.float(),
     })
     .returns(a.string())
     .authorization(allow => [allow.group('PARTNERS'), allow.group('ADMINS')])
-    .handler(a.handler.function(setRobotLambda))
+    .handler(a.handler.function(setRobotLambda)),
+
+  updateRobotLambda: a
+    .mutation()
+    .arguments({
+      robotId: a.string().required(), // Robot ID (UUID) to update
+      robotName: a.string(), // Optional: update name
+      description: a.string(), // Optional: update description
+      model: a.string(), // Optional: update model
+      enableAccessControl: a.boolean(), // Optional: update ACL (true = enable/update, false = disable/remove)
+      additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL (only used if enableAccessControl is true)
+      // Location fields (optional)
+      city: a.string(),
+      state: a.string(),
+      country: a.string(),
+      latitude: a.float(),
+      longitude: a.float(),
+    })
+    .returns(a.string())
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (owner/admin check)
+    .handler(a.handler.function(updateRobotLambda)),
+
+  revokeTokenLambda: a
+    .mutation()
+    .arguments({
+      token: a.string().required(),
+    })
+    .returns(LambdaResult)
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(revokeTokenLambda)),
+
+  manageRobotOperatorLambda: a
+    .mutation()
+    .arguments({
+      robotId: a.string().required(),
+      operatorUserId: a.string().required(),
+      operatorUsername: a.string(),
+      action: a.string().required(), // 'add' or 'remove'
+    })
+    .returns(LambdaResult)
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(manageRobotOperator)),
+
+  deleteRobotLambda: a
+    .mutation()
+    .arguments({
+      robotId: a.string().required(), // Robot ID (UUID) to delete
+    })
+    .returns(LambdaResult)
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (owner/admin check)
+    .handler(a.handler.function(deleteRobotLambda)),
+
+  manageRobotACLLambda: a
+    .mutation()
+    .arguments({
+      robotId: a.string().required(), // Robot ID (UUID) to manage ACL for
+      userEmail: a.string(), // Email address to add/remove (required for 'add'/'remove' actions)
+      action: a.string().required(), // 'add', 'remove', or 'delete' (delete removes entire ACL)
+    })
+    .returns(LambdaResult)
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (owner/admin check)
+    .handler(a.handler.function(manageRobotACL)),
+
+  listAccessibleRobotsLambda: a
+    .query()
+    .arguments({
+      limit: a.integer(), // Optional: number of robots to return (default: 50)
+      nextToken: a.string(), // Optional: pagination token from previous request
+    })
+    .returns(a.json()) // Return JSON object with robots array and nextToken
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (filters by ACL)
+    .handler(a.handler.function(listAccessibleRobots))
 });
 
 export type Schema = ClientSchema<typeof schema>;

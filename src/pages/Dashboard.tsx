@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStatus } from "../hooks/useAuthStatus";
 import { usePageTitle } from "../hooks/usePageTitle";
-import { formatGroupName } from "../utils/formatters";
+import { formatGroupName, capitalizeName } from "../utils/formatters";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faRocket,
@@ -82,7 +82,7 @@ export const Dashboard = () => {
     <div className="dashboard-container">
       <div className="dashboard-welcome">
         <div className="welcome-content">
-          <h1>Welcome back, {user?.email?.split('@')[0] || 'User'}!</h1>
+          <h1>Welcome back, {capitalizeName(user?.email?.split('@')[0]) || 'User'}!</h1>
           <p className="welcome-subtitle">
             {formatGroupName(user?.group)} • {currentTime.toLocaleDateString('en-US', { 
               weekday: 'long', 

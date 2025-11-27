@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { getCurrentUser, fetchUserAttributes, signOut as amplifySignOut, fetchAuthSession } from "aws-amplify/auth";
 import { Hub } from "aws-amplify/utils";
+import { generateClient } from "aws-amplify/api";
+import type { Schema } from "../../amplify/data/resource";
 
 type AuthGroup = "ADMINS" | "PARTNERS" | "CLIENTS";
 const VALID_GROUPS: string[] = ["ADMINS", "PARTNERS", "CLIENTS"];
@@ -24,12 +26,34 @@ async function signOut() {
     "amplify-signin-with-hostedUI",
   ];
   
-  console.log("Signing out of backend...");
+  try {
+    // Get current token before signing out so we can revoke it
+    const session = await fetchAuthSession();
+    const idToken = session.tokens?.idToken?.toString();
+    
+    // Revoke the token before signing out
+    if (idToken) {
+      try {
+        const client = generateClient<Schema>();
+        await client.mutations.revokeTokenLambda({ token: idToken });
+        // console.log("Token revoked successfully");
+      } catch (revokeError) {
+        // Log but don't block sign-out if revocation fails
+        console.warn("Failed to revoke token (continuing with sign-out):", revokeError);
+      }
+    }
+  } catch (error) {
+    // If we can't get the token, continue with sign-out anyway
+    console.warn("Could not get token for revocation (continuing with sign-out):", error);
+  }
+  
+  // Debug logging (commented out - uncomment for debugging)
+  // console.log("Signing out of backend...");
   await amplifySignOut({ global: true });
-  console.log("Clearing tokens from local storage...");
+  // console.log("Clearing tokens from local storage...");
   Object.keys(localStorage).forEach((key) => {
     if (amplifyPrefixes.some((prefix) => key.startsWith(prefix))) {
-      console.log(`Clear ${key} from local storage`);
+      // console.log(`Clear ${key} from local storage`);
       localStorage.removeItem(key);
     }
   });
@@ -61,23 +85,73 @@ export function useAuthStatus(): AuthStatus {
 
     const loadUser = async () => {
       try {
+        // Verify Amplify is configured before making calls
+        const { Amplify } = await import('aws-amplify');
+        const config = Amplify.getConfig();
+        if (!config || !config.Auth) {
+          console.warn('Amplify not configured yet, skipping auth check');
+          if (mounted) {
+            setIsLoggedIn(false);
+            setUser(null);
+            setLoading(false);
+          }
+          return;
+        }
+
+        // Debug logging - enabled to debug ACL issues
+        console.log('🔍 Attempting to get current user...');
         const currentUser = await getCurrentUser();
+        console.log('✅ Current user:', { username: currentUser.username });
+        
         const attrs = await fetchUserAttributes();
+        console.log('✅ User attributes:', { 
+          name: attrs.name, 
+          email: attrs.email,
+          allAttributes: attrs,
+        });
+        
         const session = await fetchAuthSession();
+        console.log('✅ Auth session:', {
+          isValid: !!session.tokens,
+          hasAccessToken: !!session.tokens?.accessToken,
+          hasIdToken: !!session.tokens?.idToken,
+          accessTokenPayload: session.tokens?.accessToken?.payload,
+          idTokenPayload: session.tokens?.idToken?.payload,
+        });
+        
         const groups = session.tokens?.accessToken?.payload['cognito:groups'];
         const group = highestPriorityGroup(groups as string[] | undefined);
+        console.log('✅ User groups:', { groups, highestPriority: group });
+
+        const userData = {
+          username: currentUser.username,
+          name: attrs.name ?? null,
+          email: attrs.email ?? null,
+          displayName: attrs.name ?? attrs.email ?? currentUser.username,
+          group,
+        };
+        
+        console.log('👤 Setting user data:', userData);
 
         if (mounted) {
           setIsLoggedIn(true);
-          setUser({
-            username: currentUser.username,
-            name: attrs.name ?? null,
-            email: attrs.email ?? null,
-            displayName: attrs.name ?? attrs.email,
-            group,
+          setUser(userData);
+          console.log('✅ Auth status updated - user is logged in');
+        }
+      } catch (error) {
+        // Log the actual error for debugging (commented out - uncomment for debugging)
+        // Only log if it's not the expected "user not authenticated" error
+        if (error instanceof Error && error.name !== 'UserUnAuthenticatedException') {
+          console.warn('⚠️ Auth check failed:', error);
+          console.warn('⚠️ Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
           });
         }
-      } catch {
+        // else {
+        //   console.warn('⚠️ Non-Error object:', error);
+        // }
         if (mounted) {
           setIsLoggedIn(false);
           setUser(null);
@@ -87,21 +161,33 @@ export function useAuthStatus(): AuthStatus {
       }
     };
 
-    loadUser();
+    // Small delay to ensure Amplify config has propagated
+    const timer = setTimeout(() => {
+      loadUser();
+    }, 100);
 
     // Subscribe to sign-in/sign-out events
     const unsubscribe = Hub.listen("auth", ({ payload }) => {
       const { event } = payload;
+      // Debug logging (commented out - uncomment for debugging)
+      // console.log('🔔 Auth Hub event received:', { event, payload });
+      
       if (event === "signedIn" || event === "tokenRefresh") {
+        // console.log('✅ Signed in event detected, loading user...');
         loadUser();
       } else if (event === "signedOut" || event === "tokenRefresh_failure") {
+        // console.log('❌ Signed out or token refresh failure:', event);
         setIsLoggedIn(false);
         setUser(null);
       }
+      // else {
+      //   console.log('ℹ️ Other auth event:', event);
+      // }
     });
 
     return () => {
       mounted = false;
+      clearTimeout(timer);
       unsubscribe();
     };
   }, []);
