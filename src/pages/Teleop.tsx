@@ -5,7 +5,6 @@ import { LoadingWheel } from "../components/LoadingWheel";
 import { useWebRTC } from "../hooks/useWebRTC";
 import { useGamepad } from "../hooks/useGamepad";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { getSignalingUrl } from "../config/signaling";
 import { 
   faClock,
   faRotate,
@@ -34,8 +33,7 @@ export default function Teleop() {
   const sendIntervalMs = 100; // 10 Hz
 
   // TODO: Read from deployment config (environment/AWS Parameter Store)
-  //const wsUrl = import.meta.env.VITE_WS_URL || 'ws://192.168.132.19:8765';
-  const wsUrl = getSignalingUrl();
+  const wsUrl = import.meta.env.VITE_WS_URL || 'ws://192.168.132.19:8765';
   // TODO: Read from database based on selected robot
   const robotId = import.meta.env.VITE_ROBOT_ID || 'robot1';
 

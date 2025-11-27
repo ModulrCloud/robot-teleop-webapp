@@ -28,6 +28,3 @@ dist-ssr
 # Amplify-specific files
 amplify_outputs.json
 .amplify
-
-# Remove any edits from the yarn file
-yarn.lock
