@@ -1,5 +1,5 @@
 .card-grid-card {
-  background-color: #10131a;
+  background: linear-gradient(90deg, #232a3a 60%, #1e2a47 100%);
   border-radius: 1rem;
   box-shadow: 0 2px 16px #0005;
   color: #fff;
@@ -10,7 +10,7 @@
   flex-direction: column;
   align-items: center;
   outline: none;
-  border: 2px solid transparent;
+  border: 2px solid transparent; /* Add this line */
 }
 
 .card-grid-card:hover {
@@ -30,42 +30,4 @@
   height: 128px;
   object-fit: contain;
   margin-bottom: 1rem;
-}
-
-.card-grid-content {
-  text-align: left;
-  width: 100%;
-}
-
-.card-grid-content h3 {
-  margin: 0 0 0.5rem 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-
-.card-grid-description {
-  margin: 0 0 0.5rem 0;
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 0.9rem;
-  line-height: 1.4;
-}
-
-.card-grid-location {
-  margin: 0;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 0.85rem;
-  font-style: italic;
-}
-
-.card-grid-card.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  filter: grayscale(0.7);
-  pointer-events: none; /* Prevent all interactions */
-}
-
-.card-grid-card.disabled:hover {
-  transform: none;
-  box-shadow: 0 2px 16px #0005;
-  border: 2px solid transparent;
 }

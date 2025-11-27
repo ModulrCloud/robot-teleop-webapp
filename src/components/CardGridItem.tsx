@@ -5,11 +5,8 @@ export interface CardGridItemProps {
   id: string | number;
   title: string;
   description?: string;
-  location?: string; // Optional location to display on separate line
   imageUrl?: string;
-  uuid?: string | undefined; // Optional UUID for identifying deletable items
-  disabled?: boolean; // If true, robot is not accessible (grayed out, not clickable)
-  onClick?: (item: Omit<CardGridItemProps, 'onClick' | 'disabled' | 'location'>) => void;
+  onClick?: (item: Omit<CardGridItemProps, 'onClick'>) => void;
 }
 
 export interface CardGridItemHandle {
@@ -17,7 +14,7 @@ export interface CardGridItemHandle {
   isSelected: boolean;
 }
 
-const CardGridItem = forwardRef<CardGridItemHandle, CardGridItemProps>(function CardGridItem({id, title, description, location, imageUrl, uuid, disabled, onClick}, ref) {
+const CardGridItem = forwardRef<CardGridItemHandle, CardGridItemProps>(function CardGridItem({id, title, description, imageUrl, onClick}, ref) {
   const [isSelected, setIsSelected] = useState(false)
 
   useImperativeHandle(ref, () => ({
@@ -26,23 +23,18 @@ const CardGridItem = forwardRef<CardGridItemHandle, CardGridItemProps>(function 
   }), [isSelected])
 
   const handleClick = () => {
-    if (disabled) {
-      return; // Don't allow clicking disabled robots
-    }
     if (onClick) {
-      onClick({ id, title, description, imageUrl, uuid })
+      onClick({ id, title, description, imageUrl })
     }
   }
 
   return (
     <div
       key={id}
-      className={`card-grid-card ${isSelected ? 'selected' : ''} ${disabled ? 'disabled' : ''}`}
+      className={isSelected ? `card-grid-card selected` : `card-grid-card`}
       onClick={_ => handleClick()}
-      tabIndex={disabled ? -1 : 0}
+      tabIndex={0}
       role="button"
-      aria-disabled={disabled}
-      title={disabled ? 'You do not have access to this robot' : undefined}
     >
       {imageUrl && (
         <div className="card-grid-image">
@@ -51,8 +43,7 @@ const CardGridItem = forwardRef<CardGridItemHandle, CardGridItemProps>(function 
       )}
       <div className="card-grid-content">
         <h3>{title}</h3>
-        {description && <p className="card-grid-description">{description}</p>}
-        {location && <p className="card-grid-location">{location}</p>}
+        {description && <p>{description}</p>}
       </div>
     </div>
   )

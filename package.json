@@ -7,23 +7,12 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:websocket": "tsx scripts/test-websocket-local.ts",
-    "test:ws-config": "tsx scripts/get-websocket-config.ts",
-    "test:get-token": "tsx scripts/get-token.ts",
-    "test:mock-server": "tsx scripts/mock-signaling-server.ts",
-    "inspect-robots": "tsx scripts/inspect-robots.ts",
-    "fix-robots": "tsx scripts/fix-robot-timestamps.ts",
-    "delete-robot": "tsx scripts/delete-robot.ts"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@aws-amplify/ui-react": "^6.13.0",
-    "@aws-sdk/client-apigatewaymanagementapi": "^3.914.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.913.0",
     "@aws-sdk/client-dynamodb": "^3.914.0",
-    "jose": "^5.9.6",
     "@fortawesome/fontawesome-svg-core": "^7.1.0",
     "@fortawesome/free-brands-svg-icons": "^7.1.0",
     "@fortawesome/free-solid-svg-icons": "^7.1.0",
@@ -38,13 +27,10 @@
   "devDependencies": {
     "@aws-amplify/backend": "^1.16.1",
     "@aws-amplify/backend-cli": "^1.8.0",
-    "@aws-cdk/aws-apigatewayv2-alpha": "^2.114.1-alpha.0",
-    "@aws-cdk/aws-apigatewayv2-integrations-alpha": "^2.114.1-alpha.0",
     "@eslint/js": "^9.36.0",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react-swc": "^4.1.0",
-    "@vitest/ui": "^4.0.13",
     "aws-cdk": "^2.1029.4",
     "aws-cdk-lib": "^2.218.0",
     "constructs": "^10.4.2",
@@ -54,10 +40,6 @@
     "globals": "^16.4.0",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.44.0",
-    "tsx": "^4.19.2",
-    "vite": "^7.1.7",
-    "vitest": "^4.0.13",
-    "ws": "^8.18.0",
-    "@types/ws": "^8.5.13"
+    "vite": "^7.1.7"
   }
 }

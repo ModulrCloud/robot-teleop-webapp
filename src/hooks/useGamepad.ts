@@ -26,13 +26,9 @@ export function useGamepad(
       const forwardFiltered = Math.abs(forward) > deadZone ? forward : 0;
       const turnFiltered = Math.abs(turn) > deadZone ? turn : 0;
 
-      // Check if any button is pressed (for detection purposes)
-      const anyButtonPressed = gamepad.buttons.some(btn => btn.pressed);
-
       if (
         forwardFiltered !== lastInputRef.current.forward ||
-        turnFiltered !== lastInputRef.current.turn ||
-        anyButtonPressed // Trigger on any button press to help with detection
+        turnFiltered !== lastInputRef.current.turn
       ) {
         lastInputRef.current = { forward: forwardFiltered, turn: turnFiltered };
         onInput({ forward: forwardFiltered, turn: turnFiltered });

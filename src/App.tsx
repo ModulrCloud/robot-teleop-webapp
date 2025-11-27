@@ -18,59 +18,15 @@ import { UserProfile } from "./pages/UserProfile";
 import { SessionHistory } from "./pages/SessionHistory";
 import { AppLayout } from "./components/AppLayout";
 import { Settings } from "./pages/Settings";
-import RobotSetup from "./pages/RobotSetup";
-import { EditRobot } from "./pages/EditRobot";
-import { useEffect } from "react";
-import { fetchAuthSession } from "aws-amplify/auth";
 
-// Amplify configuration is now in main.tsx
+// Amplify configuration
+import outputs from '../amplify_outputs.json';
 import '@aws-amplify/ui-react/styles.css';
+import { Amplify } from 'aws-amplify';
+
+Amplify.configure(outputs);
 
 function App() {
-  // Debug: Log OAuth callback handling (commented out - uncomment for debugging)
-  useEffect(() => {
-    // Check if we're coming back from OAuth redirect
-    const urlParams = new URLSearchParams(window.location.search);
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    
-    // const code = urlParams.get('code') || hashParams.get('code'); // Unused for now
-    const error = urlParams.get('error') || hashParams.get('error');
-    const errorDescription = urlParams.get('error_description') || hashParams.get('error_description');
-    
-    // if (code) {
-    //   console.log('🔵 OAuth callback detected - Authorization code received:', {
-    //     code: code.substring(0, 20) + '...',
-    //     fullUrl: window.location.href,
-    //     searchParams: Object.fromEntries(urlParams),
-    //     hashParams: Object.fromEntries(hashParams)
-    //   });
-    // }
-    
-    if (error) {
-      // Keep error logging for actual errors
-      console.error('🔴 OAuth callback error:', {
-        error,
-        errorDescription: decodeURIComponent(errorDescription || ''),
-        fullUrl: window.location.href,
-        searchParams: Object.fromEntries(urlParams),
-        hashParams: Object.fromEntries(hashParams)
-      });
-      
-      // Try to get more details from the session
-      fetchAuthSession().then(() => {
-        // console.log('Session after OAuth error:', session);
-      }).catch(err => {
-        console.error('Failed to fetch session after OAuth error:', err);
-      });
-    }
-    
-    // Log current URL for debugging (commented out)
-    // if (window.location.search || window.location.hash) {
-    //   console.log('📍 Current URL:', window.location.href);
-    //   console.log('📍 Search params:', Object.fromEntries(urlParams));
-    //   console.log('📍 Hash params:', Object.fromEntries(hashParams));
-    // }
-  }, []);
 
   return (
     <Router>
@@ -101,18 +57,6 @@ function App() {
             <Route path='/create-robot-listing' element={
               <PrivateRoute>
                 <CreateRobotListing />
-              </PrivateRoute>
-            }
-            />
-            <Route path='/robot-setup' element={
-              <PrivateRoute>
-                <RobotSetup />
-              </PrivateRoute>
-            }
-            />
-            <Route path='/edit-robot' element={
-              <PrivateRoute>
-                <EditRobot />
               </PrivateRoute>
             }
             />

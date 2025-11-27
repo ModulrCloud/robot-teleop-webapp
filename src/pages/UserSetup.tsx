@@ -8,10 +8,13 @@ import './UserSetup.css';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useLocation, useNavigate } from "react-router-dom";
 import { LoadingWheel } from "../components/LoadingWheel";
+import { Amplify } from 'aws-amplify';
+import outputs from '../../amplify_outputs.json';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faRobot, faGamepad, faCheckCircle } from '@fortawesome/free-solid-svg-icons';
 import { formatGroupName } from "../utils/formatters";
 
+Amplify.configure(outputs);
 const client = generateClient<Schema>();
 
 interface PrivateRouteProps {}
