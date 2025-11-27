@@ -34,6 +34,35 @@ const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
 type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate';
 type Target = 'robot' | 'client';
 
+// ---------------------------------
+// MESSAGE FORMAT DOCUMENTATION
+// ---------------------------------
+// 
+// IMPORTANT: Outbound message format was changed to match Modulr agent expectations.
+// 
+// Expected format (what we now send):
+//   { type, to, from, sdp?, candidate? }
+// 
+// Previous format (what we used to send):
+//   { type, robotId, from, payload: { sdp?, candidate? } }
+// 
+// This change ensures compatibility with:
+// 1. Browser code (useWebRTC.ts) which expects msg.sdp and msg.candidate at top level
+// 2. Modulr agent which expects { type, from, to, sdp, candidate } format
+// 
+// HISTORY:
+// - Original format (Mike's implementation): { type, from, to, sdp, candidate } at top level
+// - normalizeMessage() was added (commit 44633e5) to accept BOTH formats for incoming messages:
+//   * Top-level sdp/candidate (Mike's format) - folded into payload internally
+//   * Payload-wrapped format - kept as-is
+// - Browser code (useWebRTC.ts) has ALWAYS sent/expected top-level format (never changed)
+// - Server was sending payload-wrapped format, creating a mismatch
+// - This change fixes the outbound format to match what browser/agent expect
+// 
+// See handleSignal() function around line 689 for the implementation and revert instructions.
+// 
+// ---------------------------------
+
 type Claims = {
     sub?: string;
     groups?: string[];
@@ -666,13 +695,55 @@ async function handleSignal(
     targetConn = robotConn;
   }
 
-  // Forward
-  const outbound = {
+  // ============================================
+  // MESSAGE FORMAT CHANGE - MATCHING AGENT EXPECTATIONS
+  // ============================================
+  // 
+  // CHANGED: Modified outbound message format to match Modulr agent's expected format.
+  // 
+  // Previous format (what we were sending):
+  //   { type, robotId, from, payload: { sdp, candidate } }
+  // 
+  // New format (what agent/browser expect):
+  //   { type, to, from, sdp, candidate }  (all at top level)
+  // 
+  // This change was made because:
+  // 1. Browser expects msg.sdp and msg.candidate at top level (useWebRTC.ts lines 213-217)
+  // 2. Modulr agent expects { type, from, to, sdp, candidate } format
+  // 
+  // TO REVERT: Change this section back to:
+  //   const outbound = {
+  //     type,
+  //     robotId,
+  //     from: claims.sub ?? '',
+  //     payload: msg.payload ?? {},
+  //   };
+  // 
+  // ============================================
+  
+  // Extract sdp and candidate from payload to top level (for agent/browser compatibility)
+  const payload = msg.payload ?? {};
+  const outbound: Record<string, unknown> = {
     type,
-    robotId,
+    to: robotId,  // Use 'to' instead of 'robotId' to match agent's expected format
     from: claims.sub ?? '', // could also use event.requestContext.connectionId
-    payload: msg.payload ?? {},
   };
+  
+  // Unwrap sdp and candidate from payload to top level if present
+  if (payload.sdp) {
+    outbound.sdp = payload.sdp;
+  }
+  if (payload.candidate) {
+    outbound.candidate = payload.candidate;
+  }
+  
+  // Include any other payload fields (for future extensibility)
+  // But prioritize top-level sdp/candidate for compatibility
+  Object.keys(payload).forEach(key => {
+    if (key !== 'sdp' && key !== 'candidate' && !outbound[key]) {
+      outbound[key] = payload[key];
+    }
+  });
 
   // Log packet forwarding for verification
   console.log('[PACKET_FORWARD]', {
