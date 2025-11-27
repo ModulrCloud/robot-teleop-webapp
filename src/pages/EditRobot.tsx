@@ -15,7 +15,8 @@ import {
   faPersonWalking,
   faPlane,
   faWater,
-  faTrash
+  faTrash,
+  faCircle
 } from '@fortawesome/free-solid-svg-icons';
 
 const ROBOT_MODELS = [
@@ -52,6 +53,9 @@ export const EditRobot = () => {
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [robotName, setRobotName] = useState<string>('');
+  const [robotStatus, setRobotStatus] = useState<{ isOnline: boolean; lastSeen?: number } | null>(null);
+  const [isLoadingStatus, setIsLoadingStatus] = useState(false);
+  const [robotIdForStatus, setRobotIdForStatus] = useState<string>(''); // robotId field (robot-XXXXXXXX)
 
   const [robotListing, setRobotListing] = useState<RobotListing>({
     robotName: "",
@@ -97,6 +101,7 @@ export const EditRobot = () => {
 
         const name = robotData.name || "";
         setRobotName(name);
+        setRobotIdForStatus(robotData.robotId || ''); // Store robotId for status check
         setRobotListing({
           robotName: name,
           description: robotData.description || "",
@@ -119,6 +124,43 @@ export const EditRobot = () => {
 
     loadRobot();
   }, [robotId]);
+
+  // Load robot status
+  useEffect(() => {
+    const loadRobotStatus = async () => {
+      if (!robotIdForStatus) {
+        setRobotStatus(null);
+        return;
+      }
+
+      try {
+        setIsLoadingStatus(true);
+        const status = await client.queries.getRobotStatusLambda({
+          robotId: robotIdForStatus,
+        });
+        
+        if (status.data) {
+          setRobotStatus({
+            isOnline: status.data.isOnline || false,
+            lastSeen: status.data.lastSeen || undefined,
+          });
+        } else {
+          setRobotStatus({ isOnline: false });
+        }
+      } catch (err) {
+        console.error('Error loading robot status:', err);
+        setRobotStatus({ isOnline: false });
+      } finally {
+        setIsLoadingStatus(false);
+      }
+    };
+
+    loadRobotStatus();
+    
+    // Poll status every 10 seconds
+    const interval = setInterval(loadRobotStatus, 10000);
+    return () => clearInterval(interval);
+  }, [robotIdForStatus]);
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = event.target;
@@ -303,7 +345,30 @@ export const EditRobot = () => {
           <FontAwesomeIcon icon={faRobot} />
         </div>
         <div className="header-content">
-          <h1>Edit Robot</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <h1>Edit Robot</h1>
+            {robotIdForStatus && (
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.5rem',
+                fontSize: '0.9rem',
+                color: robotStatus?.isOnline ? '#ffb700' : '#666',
+                fontWeight: 500
+              }}>
+                <FontAwesomeIcon 
+                  icon={faCircle} 
+                  style={{ 
+                    fontSize: '0.6rem',
+                    color: robotStatus?.isOnline ? '#ffb700' : '#666'
+                  }} 
+                />
+                <span>
+                  {isLoadingStatus ? 'Checking...' : (robotStatus?.isOnline ? 'Online' : 'Offline')}
+                </span>
+              </div>
+            )}
+          </div>
           <p>Update your robot's information and settings</p>
         </div>
       </div>

@@ -7,10 +7,17 @@ import { manageRobotOperator } from "../functions/manage-robot-operator/resource
 import { deleteRobotLambda } from "../functions/delete-robot/resource";
 import { manageRobotACL } from "../functions/manage-robot-acl/resource";
 import { listAccessibleRobots } from "../functions/list-accessible-robots/resource";
+import { getRobotStatus } from "../functions/get-robot-status/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
   body: a.string(),
+});
+
+const RobotStatus = a.customType({
+  isOnline: a.boolean(),
+  lastSeen: a.integer(), // Optional by default in custom types
+  status: a.string(), // Optional by default in custom types
 });
 
 const schema = a.schema({
@@ -216,7 +223,16 @@ const schema = a.schema({
     })
     .returns(a.json()) // Return JSON object with robots array and nextToken
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (filters by ACL)
-    .handler(a.handler.function(listAccessibleRobots))
+    .handler(a.handler.function(listAccessibleRobots)),
+
+  getRobotStatusLambda: a
+    .query()
+    .arguments({
+      robotId: a.string().required(), // robotId (robot-XXXXXXXX format)
+    })
+    .returns(RobotStatus)
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (checks ACL)
+    .handler(a.handler.function(getRobotStatus))
 });
 
 export type Schema = ClientSchema<typeof schema>;

@@ -10,7 +10,8 @@ import {
   faChevronDown,
   faRightFromBracket,
   faCog,
-  faGlobe
+  faGlobe,
+  faList
 } from '@fortawesome/free-solid-svg-icons';
 import "./Navbar.css";
 import { formatGroupName, capitalizeName } from "./utils/formatters";
@@ -73,6 +74,15 @@ export default function Navbar() {
               <FontAwesomeIcon icon={faRobot} />
               <span>Robots</span>
             </Link>
+            {user?.group === "PARTNERS" && (
+              <Link 
+                to="/my-robots" 
+                className={`nav-link ${isActive('/my-robots') ? 'active' : ''}`}
+              >
+                <FontAwesomeIcon icon={faList} />
+                <span>My Robots</span>
+              </Link>
+            )}
             <Link 
               to="/sessions" 
               className={`nav-link ${isActive('/sessions') ? 'active' : ''}`}
@@ -170,6 +180,12 @@ export default function Navbar() {
             <FontAwesomeIcon icon={faRobot} />
             <span>Robots</span>
           </Link>
+          {user?.group === "PARTNERS" && (
+            <Link to="/my-robots" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
+              <FontAwesomeIcon icon={faList} />
+              <span>My Robots</span>
+            </Link>
+          )}
           <Link to="/sessions" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
             <FontAwesomeIcon icon={faClockRotateLeft} />
             <span>Sessions</span>

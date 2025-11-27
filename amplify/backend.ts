@@ -10,6 +10,7 @@ import { manageRobotOperator } from './functions/manage-robot-operator/resource'
 import { deleteRobotLambda } from './functions/delete-robot/resource';
 import { manageRobotACL } from './functions/manage-robot-acl/resource';
 import { listAccessibleRobots } from './functions/list-accessible-robots/resource';
+import { getRobotStatus } from './functions/get-robot-status/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -32,6 +33,7 @@ const backend = defineBackend({
   deleteRobotLambda,
   manageRobotACL,
   listAccessibleRobots,
+  getRobotStatus,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -74,6 +76,7 @@ const manageRobotOperatorFunction = backend.manageRobotOperator.resources.lambda
 const deleteRobotLambdaFunction = backend.deleteRobotLambda.resources.lambda;
 const manageRobotACLFunction = backend.manageRobotACL.resources.lambda;
 const listAccessibleRobotsFunction = backend.listAccessibleRobots.resources.lambda;
+const getRobotStatusFunction = backend.getRobotStatus.resources.lambda;
 
 // ============================================
 // Signaling Function Resources
@@ -211,6 +214,13 @@ backend.manageRobotACL.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.table
 backend.listAccessibleRobots.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 backend.listAccessibleRobots.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
 backend.listAccessibleRobots.addEnvironment('ROBOT_OPERATOR_TABLE_NAME', robotOperatorTable.tableName);
+
+// Get robot status Lambda environment variables
+const getRobotStatusCdkFunction = getRobotStatusFunction as CdkFunction;
+getRobotStatusCdkFunction.addEnvironment('ROBOT_PRESENCE_TABLE', robotPresenceTable.tableName);
+
+// Grant DynamoDB permissions to get robot status function
+robotPresenceTable.grantReadData(getRobotStatusFunction);
 
 // Manage robot operator Lambda environment variables
 const manageRobotOperatorCdkFunction = manageRobotOperatorFunction as CdkFunction;
