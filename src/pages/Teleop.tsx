@@ -241,13 +241,9 @@ export default function Teleop() {
             <strong>Connection Error:</strong> {status.error}
             <div className="error-details">Check that WebSocket server is running at: {wsUrl}</div>
           </div>
-          <button 
-            onClick={connect} 
-            className="retry-btn"
-            disabled={status.connecting}
-          >
+          <button onClick={connect} className="retry-btn">
             <FontAwesomeIcon icon={faRotate} />
-            {status.connecting ? 'Connecting...' : 'Retry Connection'}
+            Retry Connection
           </button>
         </div>
       )}
