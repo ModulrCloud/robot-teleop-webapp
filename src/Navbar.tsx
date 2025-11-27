@@ -13,7 +13,7 @@ import {
   faGlobe
 } from '@fortawesome/free-solid-svg-icons';
 import "./Navbar.css";
-import { formatGroupName, capitalizeName } from "./utils/formatters";
+import { formatGroupName } from "./utils/formatters";
 
 export default function Navbar() {
   const { isLoggedIn, signOut, user } = useAuthStatus();
@@ -102,7 +102,7 @@ export default function Navbar() {
                 <div className="user-avatar">
                   {user?.email?.[0].toUpperCase() || 'U'}
                 </div>
-                <span className="user-name">{capitalizeName(user?.email?.split('@')[0]) || 'User'}</span>
+                <span className="user-name">{user?.email?.split('@')[0] || 'User'}</span>
                 <FontAwesomeIcon icon={faChevronDown} className="dropdown-icon" />
               </button>
 
@@ -114,7 +114,7 @@ export default function Navbar() {
                         {user?.email?.[0].toUpperCase() || 'U'}
                       </div>
                       <div>
-                        <div className="dropdown-name">{capitalizeName(user?.email?.split('@')[0])}</div>
+                        <div className="dropdown-name">{user?.email?.split('@')[0]}</div>
                         <div className="dropdown-email">{user?.email}</div>
                         {user?.group && (
                           <div className="dropdown-role">{formatGroupName(user.group)}</div>

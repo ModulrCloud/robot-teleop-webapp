@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useAuthStatus } from "../hooks/useAuthStatus";
-import { formatGroupName, capitalizeName } from "../utils/formatters";
+import { formatGroupName } from "../utils/formatters";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faCog,
@@ -129,7 +129,7 @@ export const Settings = () => {
                 <div className="setting-item">
                   <div className="setting-info">
                     <label>Username</label>
-                    <span className="setting-value">{capitalizeName(user?.username)}</span>
+                    <span className="setting-value">{user?.username}</span>
                   </div>
                 </div>
                 <div className="setting-item">

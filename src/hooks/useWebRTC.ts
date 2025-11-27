@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { fetchAuthSession } from 'aws-amplify/auth';
 
 export interface WebRTCStatus {
   connecting: boolean;
@@ -74,20 +73,7 @@ export function useWebRTC(options: WebRTCOptions) {
     setStatus({ connecting: true, connected: false, error: null, videoStream: null });
 
     try {
-      // Get JWT token for WebSocket authentication
-      let token: string | undefined;
-      try {
-        const session = await fetchAuthSession();
-        token = session.tokens?.idToken?.toString();
-      } catch (authError) {
-        console.warn('Failed to get auth token for WebSocket:', authError);
-        setStatus(prev => ({ ...prev, connecting: false, error: 'Authentication required' }));
-        return;
-      }
-
-      // Append token to WebSocket URL if we have one
-      const urlWithToken = token ? `${wsUrl}?token=${encodeURIComponent(token)}` : wsUrl;
-      const ws = new WebSocket(urlWithToken);
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onerror = (error) => {
@@ -101,9 +87,7 @@ export function useWebRTC(options: WebRTCOptions) {
       };
 
       ws.onopen = async () => {
-        // Note: For clients, we don't need to register with robotId
-        // The signaling server tracks connections automatically on $connect
-        // Only robots need to send { type: 'register', robotId: '...' }
+        ws.send(JSON.stringify({ type: 'register', from: myId }));
 
         const pc = new RTCPeerConnection({
           iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],

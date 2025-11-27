@@ -5,10 +5,13 @@ import { useAuthStatus } from "../hooks/useAuthStatus";
 import './UserProfile.css';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { LoadingWheel } from "../components/LoadingWheel";
+import { Amplify } from 'aws-amplify';
+import outputs from '../../amplify_outputs.json';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faUser, faEdit, faSave, faTimes } from '@fortawesome/free-solid-svg-icons';
-import { formatGroupName, capitalizeName } from "../utils/formatters";
+import { formatGroupName } from "../utils/formatters";
 
+Amplify.configure(outputs);
 const client = generateClient<Schema>();
 
 interface PartnerData {
@@ -177,7 +180,7 @@ export function UserProfile() {
             <FontAwesomeIcon icon={faUser} />
           </div>
           <div className="profile-header-info">
-            <h1>{capitalizeName(user?.displayName) || capitalizeName(user?.email?.split('@')[0]) || user?.email}</h1>
+            <h1>{user?.displayName || user?.email}</h1>
             <span className="profile-badge">{formatGroupName(user?.group)}</span>
           </div>
         </div>
@@ -198,7 +201,7 @@ export function UserProfile() {
             </div>
             <div className="info-item">
               <label>Username</label>
-              <p>{capitalizeName(user?.username)}</p>
+              <p>{user?.username}</p>
             </div>
           </div>
         </div>
