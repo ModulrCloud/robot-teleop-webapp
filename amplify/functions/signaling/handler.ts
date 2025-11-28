@@ -185,11 +185,26 @@ function normalizeMessage(raw: RawMessage): InboundMessage {
 
   // ---- robotId ----
   // Preferred: explicit 'robotId' (Robot.id / UUID).
-  // Fallback: Mike's 'to' field if present.
+  // For robot messages: 'from' field contains robotId (check this FIRST to avoid conflicts)
+  // For client messages: 'to' field contains robotId
+  //   - Rust agent sends: { type: "register", from: "robot-id" }
+  //   - Rust agent sends: { type: "offer", from: "robot-id", to: "client-id", sdp: "..." }
+  //   - Rust agent sends: { type: "candidate", from: "robot-id", to: "client-id", candidate: {...} }
   let robotId: string | undefined;
   if (typeof raw.robotId === 'string' && raw.robotId.trim().length > 0) {
     robotId = raw.robotId.trim();
-  } else if (typeof raw.to === 'string' && raw.to.trim().length > 0) {
+  } else if (typeof raw.from === 'string' && raw.from.trim().length > 0) {
+    // For robot-to-client messages: { type: "offer", from: "robot-id", to: "client-id" }
+    // Also for registration: { type: "register", from: "robot-id" }
+    // Check 'from' FIRST for robot messages to avoid using 'to' as robotId
+    if (type === 'register' || type === 'offer' || type === 'answer' || type === 'candidate' || type === 'ice-candidate') {
+      robotId = raw.from.trim();
+    }
+  }
+  
+  // Only use 'to' as robotId if we haven't already extracted it from 'from'
+  // This handles client-to-robot messages: { type: "offer", to: "robot-id", from: "client-id" }
+  if (!robotId && typeof raw.to === 'string' && raw.to.trim().length > 0) {
     robotId = raw.to.trim();
   }
 
@@ -216,10 +231,24 @@ function normalizeMessage(raw: RawMessage): InboundMessage {
       ? (raw.target.toLowerCase() as Target)
       : undefined;
 
-  const clientConnectionId =
-    typeof raw.clientConnectionId === 'string'
-      ? raw.clientConnectionId.trim()
-      : undefined;
+  // Extract clientConnectionId:
+  // 1. Explicit clientConnectionId field
+  // 2. For robot-to-client messages: 'to' field contains client connection ID
+  //    (Rust format: { type: "answer", from: "robot-id", to: "client-connection-id" })
+  let clientConnectionId: string | undefined;
+  if (typeof raw.clientConnectionId === 'string') {
+    clientConnectionId = raw.clientConnectionId.trim();
+  } else if (
+    typeof raw.to === 'string' && 
+    raw.to.trim().length > 0 &&
+    (type === 'offer' || type === 'answer' || type === 'candidate' || type === 'ice-candidate') &&
+    robotId && // If we have a robotId, this might be from robot
+    typeof raw.from === 'string' && raw.from.trim() === robotId // Confirm 'from' matches robotId
+  ) {
+    // For robot-to-client messages, 'to' field is the client connection ID
+    // Only use this if 'from' matches the robotId we extracted (confirms message is from robot)
+    clientConnectionId = raw.to.trim();
+  }
 
   return {
     type,
@@ -810,15 +839,90 @@ async function handleSignal(
 ): Promise<APIGatewayProxyResult> {
   const robotId = msg.robotId?.trim();
   const type = msg.type;
-  if (!robotId || !type) return { statusCode: 400, body: 'Invalid Signal' };
-
-  const target = (msg.target ?? 'robot').toLowerCase();
-  if (target !== 'robot' && target !== 'client') {
-    return { statusCode: 400, body: 'invalid target' };
+  
+  // Log the incoming message for debugging
+  console.log('[HANDLE_SIGNAL_INPUT]', {
+    robotId,
+    type,
+    hasRobotId: !!robotId,
+    hasType: !!type,
+    clientConnectionId: msg.clientConnectionId,
+    target: msg.target,
+    payload: msg.payload,
+    sourceConnectionId: event.requestContext.connectionId,
+  });
+  
+  if (!robotId || !type) {
+    console.error('[HANDLE_SIGNAL_REJECTED]', {
+      reason: !robotId ? 'Missing robotId' : 'Missing type',
+      robotId,
+      type,
+      message: JSON.stringify(msg),
+    });
+    return { statusCode: 400, body: 'Invalid Signal' };
   }
 
   // Get source connection ID (needed for logging and ACL checks)
   const sourceConnId = event.requestContext.connectionId!;
+  
+  // Auto-detect if message is from a robot by checking RobotPresenceTable
+  // If source connection is registered as a robot, then this is a robot-to-client message
+  let isFromRobot = false;
+  try {
+    const robotPresence = await db.send(new GetItemCommand({
+      TableName: ROBOT_PRESENCE_TABLE,
+      Key: { robotId: { S: robotId } },
+      ProjectionExpression: 'connectionId',
+    }));
+    // If the source connection matches the robot's connection, this message is from the robot
+    if (robotPresence.Item?.connectionId?.S === sourceConnId) {
+      isFromRobot = true;
+      console.log('[ROBOT_DETECTED]', {
+        robotId,
+        sourceConnectionId: sourceConnId,
+        robotConnectionId: robotPresence.Item.connectionId.S,
+      });
+    }
+  } catch (e) {
+    console.warn('Failed to check robot presence for auto-detection:', e);
+  }
+  
+  // If we detected it's from a robot but don't have clientConnectionId, try to get it from the original message
+  // This handles the case where normalizeMessage didn't extract it (e.g., if 'to' field wasn't recognized)
+  if (isFromRobot && !msg.clientConnectionId) {
+    // Try to parse the original body to get the 'to' field
+    try {
+      const rawBody = JSON.parse(event.body ?? '{}');
+      if (typeof rawBody.to === 'string' && rawBody.to.trim().length > 0 && rawBody.to !== robotId) {
+        // The 'to' field should be the client connection ID
+        msg.clientConnectionId = rawBody.to.trim();
+        console.log('[EXTRACTED_CLIENT_CONNECTION_ID]', {
+          robotId,
+          clientConnectionId: msg.clientConnectionId,
+          fromOriginalTo: rawBody.to,
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to extract clientConnectionId from original message:', e);
+    }
+  }
+  
+  // Determine target: if message is from robot, target is 'client', otherwise default to 'robot'
+  // But respect explicit 'target' field if provided
+  let target: Target;
+  if (msg.target) {
+    target = (msg.target.toLowerCase() as Target);
+  } else if (isFromRobot) {
+    // Auto-detect: message from robot goes to client
+    target = 'client';
+  } else {
+    // Default: message from client goes to robot
+    target = 'robot';
+  }
+  
+  if (target !== 'robot' && target !== 'client') {
+    return { statusCode: 400, body: 'invalid target' };
+  }
 
   // If target is robot, check ACL before allowing access
   if (target === 'robot') {
@@ -847,11 +951,37 @@ async function handleSignal(
   // Determine destination
   let targetConn: string | undefined;
   if (target === 'client') {
-    const ccid = msg.clientConnectionId?.trim();
-    if (!ccid) {
-      return { statusCode: 400, body: 'clientConnectionId required for target=client' };
+    // For robot-to-client messages, clientConnectionId should be extracted from 'to' field
+    // by normalizeMessage when message is from robot
+    let ccid = msg.clientConnectionId?.trim();
+    
+    // If we don't have clientConnectionId but message is from robot, log a warning
+    // but still allow the message to be monitored (for testing with placeholder values)
+    if (!ccid && isFromRobot) {
+      console.warn('[HANDLE_SIGNAL_WARNING]', {
+        robotId,
+        type,
+        target,
+        isFromRobot,
+        hasClientConnectionId: !!msg.clientConnectionId,
+        message: 'No clientConnectionId found for robot-to-client message. This may be a test message with placeholder "to" value. Message will be logged but not sent.',
+      });
+      // Set to placeholder so monitoring can still capture it
+      targetConn = 'PLACEHOLDER_NO_CLIENT';
+    } else if (!ccid) {
+      console.error('[HANDLE_SIGNAL_ERROR]', {
+        robotId,
+        type,
+        target,
+        isFromRobot,
+        hasClientConnectionId: !!msg.clientConnectionId,
+        message: JSON.stringify(msg),
+      });
+      // Still set to placeholder so monitoring can capture it
+      targetConn = 'PLACEHOLDER_NO_CLIENT';
+    } else {
+      targetConn = ccid;
     }
-    targetConn = ccid;
   } else {
     const robotItem = await db.send(new GetItemCommand({
       TableName: ROBOT_PRESENCE_TABLE,
@@ -893,10 +1023,24 @@ async function handleSignal(
   
   // Extract sdp and candidate from payload to top level (for agent/browser compatibility)
   const payload = msg.payload ?? {};
+  
+  // Convert internal 'ice-candidate' type to 'candidate' for Rust agent compatibility
+  // Rust agent expects: { type: "candidate", ... }
+  // Browser also expects: type: "candidate" (see useWebRTC.ts line 215)
+  const outboundType = type === 'ice-candidate' ? 'candidate' : type;
+  
   const outbound: Record<string, unknown> = {
-    type,
-    to: robotId,  // Use 'to' instead of 'robotId' to match agent's expected format
-    from: claims.sub ?? '', // could also use event.requestContext.connectionId
+    type: outboundType,
+    // For client-to-robot: to = robotId
+    // For robot-to-client: to = clientConnectionId (from msg.clientConnectionId or original 'to' field)
+    // Note: If targetConn is PLACEHOLDER_NO_CLIENT, we'll use that in the monitor message but not send it
+    to: target === 'client' 
+      ? (targetConn && targetConn !== 'PLACEHOLDER_NO_CLIENT' ? targetConn : (msg.clientConnectionId || 'PLACEHOLDER_NO_CLIENT'))
+      : robotId,
+    // IMPORTANT: Use connection ID as 'from' so robots can reply directly
+    // - For robot messages: use robotId (robot identifier)
+    // - For client messages: use sourceConnId (connection ID so robot can reply)
+    from: isFromRobot ? robotId : sourceConnId, // If from robot, use robotId; otherwise use connection ID so robot can reply
   };
   
   // Unwrap sdp and candidate from payload to top level if present
@@ -926,26 +1070,8 @@ async function handleSignal(
     target: target,
   });
 
-  try {
-    await mgmt.send(new PostToConnectionCommand({
-      ConnectionId: targetConn!,
-      Data: Buffer.from(JSON.stringify(outbound), 'utf-8'),
-    }));
-    console.log('[PACKET_FORWARD_SUCCESS]', {
-      targetConnectionId: targetConn,
-      messageType: type,
-    });
-  } catch (err) {
-    // If the conn is gone, the caller will see a 200 from us but message won't deliver.
-    // That's fine; $disconnect cleanup should remove stale items.
-    console.warn('[PACKET_FORWARD_ERROR]', {
-      targetConnectionId: targetConn,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  // Send copy to monitoring connections (for debugging/diagnostics)
-  // Add metadata to help identify direction
+  // Send copy to monitoring connections FIRST (before attempting to send)
+  // This ensures messages appear in logger even if they can't be sent (e.g., placeholder client IDs)
   const monitorMessage = {
     ...outbound,
     _monitor: true, // Flag to indicate this is a monitor copy
@@ -954,6 +1080,33 @@ async function handleSignal(
     _direction: target === 'robot' ? 'client-to-robot' : 'robot-to-client',
   };
   await notifyMonitors(robotId, monitorMessage);
+
+  // Only attempt to send if we have a valid target connection (not a placeholder)
+  if (targetConn && targetConn !== 'PLACEHOLDER_NO_CLIENT') {
+    try {
+      await mgmt.send(new PostToConnectionCommand({
+        ConnectionId: targetConn,
+        Data: Buffer.from(JSON.stringify(outbound), 'utf-8'),
+      }));
+      console.log('[PACKET_FORWARD_SUCCESS]', {
+        targetConnectionId: targetConn,
+        messageType: type,
+      });
+    } catch (err) {
+      // If the conn is gone, the caller will see a 200 from us but message won't deliver.
+      // That's fine; $disconnect cleanup should remove stale items.
+      console.warn('[PACKET_FORWARD_ERROR]', {
+        targetConnectionId: targetConn,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  } else {
+    console.warn('[PACKET_FORWARD_SKIPPED]', {
+      targetConnectionId: targetConn,
+      messageType: type,
+      reason: 'No valid target connection (placeholder or missing client connection ID)',
+    });
+  }
 
   return { statusCode: 200, body: '' };
 }
@@ -1118,8 +1271,21 @@ export async function handler(
   }
 
   if (type === 'offer' || type === 'answer' || type === 'ice-candidate') {
+    console.log('[ROUTING_TO_HANDLE_SIGNAL]', {
+      type,
+      robotId: msg.robotId,
+      hasClaims: !!claims?.sub,
+    });
     return handleSignal(claims, event, msg);
   }
+
+  // Log unknown message types for debugging
+  console.warn('[UNKNOWN_MESSAGE_TYPE]', {
+    type,
+    robotId: msg.robotId,
+    message: JSON.stringify(msg),
+    rawBody: event.body,
+  });
 
   return { statusCode: 400, body: 'Unknown message type' };
 }

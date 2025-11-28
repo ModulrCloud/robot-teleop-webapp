@@ -268,10 +268,10 @@ export default function RobotSetup() {
                     <code className="code-block">
                       {JSON.stringify({
                         type: 'register',
-                        robotId: robotId
+                        from: robotId  // Use 'from' field (matches Rust agent format)
                       }, null, 2)}
                     </code>
-                    <p className="step-note">Send this message immediately after the WebSocket connection is established.</p>
+                    <p className="step-note">Send this message immediately after the WebSocket connection is established. The server accepts both <code>{"{ type: 'register', from: 'robot-id' }"}</code> (Rust format) and <code>{"{ type: 'register', robotId: 'robot-id' }"}</code> (legacy format) for compatibility.</p>
                   </div>
                 </div>
 
@@ -315,39 +315,49 @@ def on_message(ws, message):
         
         # Handle different message types
         if msg_type == "offer":
-            print(f"  → Received offer from {msg.get('from', 'unknown')}")
+            sender_id = msg.get('from', 'unknown')
+            print(f"  → Received offer from {sender_id}")
             print(f"  → SDP: {msg.get('sdp', 'N/A')[:50]}...")
+            # IMPORTANT: The 'from' field contains the browser's connection ID (e.g., "Uxqj_cTxoAMCKcw=")
+            # In production, this is the actual WebSocket connection ID assigned by AWS API Gateway
+            # We use this connection ID in the 'to' field when replying so the server knows where to forward the message
+            print(f"  → Will reply to connection ID: {sender_id}")
             # In a real robot, you would:
             # 1. Process the SDP offer
             # 2. Create a WebRTC answer
-            # 3. Send the answer back
+            # 3. Send the answer back using the connection ID from the 'from' field
             # For testing, send a mock answer
             if not should_close:
                 answer_msg = {
                     "type": "answer",
-                    "robotId": ROBOT_ID,
-                    "target": "client",
-                    "payload": {
-                        "sdp": "mock-answer-sdp-from-robot"
-                    }
+                    "from": ROBOT_ID,  # Use "from" not "robotId"
+                    "to": sender_id,  # Reply to the sender using their connection ID
+                    "sdp": "mock-answer-sdp-from-robot"  # SDP directly, not nested
                 }
                 ws.send(json.dumps(answer_msg))
-                print(f"  → Sent mock answer")
-        elif msg_type == "ice-candidate":
-            print(f"  → Received ICE candidate: {msg.get('candidate', 'N/A')[:50]}...")
+                print(f"  → Sent mock answer to {sender_id}")
+        elif msg_type == "candidate":  # Use "candidate" not "ice-candidate"
+            sender_id = msg.get('from', 'unknown')
+            print(f"  → Received ICE candidate from {sender_id}")
+            candidate = msg.get("candidate", {})
+            print(f"  → Candidate: {str(candidate)[:50]}...")
+            # IMPORTANT: The 'from' field contains the browser's connection ID
+            # We use this connection ID in the 'to' field when replying
             # In a real robot, you would add this candidate to your WebRTC peer connection
             # For testing, send a mock ICE candidate back
             if not should_close:
                 candidate_msg = {
-                    "type": "ice-candidate",
-                    "robotId": ROBOT_ID,
-                    "target": "client",
-                    "payload": {
-                        "candidate": "mock-ice-candidate-from-robot"
+                    "type": "candidate",  # Use "candidate" not "ice-candidate"
+                    "from": ROBOT_ID,  # Use "from" not "robotId"
+                    "to": sender_id,  # Reply to the sender using their connection ID
+                    "candidate": {  # Candidate object directly, not nested in payload
+                        "candidate": "mock-ice-candidate-from-robot",
+                        "sdpMLineIndex": 0,
+                        "sdpMid": "0"
                     }
                 }
                 ws.send(json.dumps(candidate_msg))
-                print(f"  → Sent mock ICE candidate")
+                print(f"  → Sent mock ICE candidate to {sender_id}")
         elif msg_type == "monitor-confirmed":
             print(f"  → Monitor subscription confirmed")
         else:
@@ -367,7 +377,7 @@ def on_open(ws):
     # Register the robot immediately
     register_msg = {
         "type": "register",
-        "robotId": ROBOT_ID
+        "from": ROBOT_ID  # Use "from" not "robotId" (matches Rust agent format)
     }
     ws.send(json.dumps(register_msg))
     print(f"Robot {ROBOT_ID} registered")
@@ -379,7 +389,7 @@ def on_open(ws):
         if not should_close:
             test_msg = {
                 "type": "register",  # Re-register to show robot is still active
-                "robotId": ROBOT_ID
+                "from": ROBOT_ID  # Use "from" not "robotId" (matches Rust agent format)
             }
             ws.send(json.dumps(test_msg))
             print(f"Sent keepalive message")
@@ -389,11 +399,9 @@ def on_open(ws):
         if not should_close:
             offer_msg = {
                 "type": "offer",
-                "robotId": ROBOT_ID,
-                "target": "robot",
-                "payload": {
-                    "sdp": "mock-offer-sdp-for-testing"
-                }
+                "from": ROBOT_ID,  # Use "from" not "robotId" (matches Rust agent format)
+                "to": "browser1",  #  Use "to" not "target"
+                "sdp": "mock-offer-sdp-for-testing"  #  SDP directly, not nested
             }
             ws.send(json.dumps(offer_msg))
             print(f"Sent mock offer message")
@@ -402,11 +410,13 @@ def on_open(ws):
         time.sleep(2)
         if not should_close:
             candidate_msg = {
-                "type": "ice-candidate",
-                "robotId": ROBOT_ID,
-                "target": "robot",
-                "payload": {
-                    "candidate": "mock-ice-candidate-for-testing"
+                "type": "candidate",  # Use "candidate" not "ice-candidate"
+                "from": ROBOT_ID,  # Use "from" not "robotId" (matches Rust agent format)
+                "to": "browser1",  #  Use "to" not "target"
+                "candidate": {  #  Candidate object directly, not nested in payload
+                    "candidate": "mock-ice-candidate-for-testing",
+                    "sdpMLineIndex": 0,
+                    "sdpMid": "0"
                 }
             }
             ws.send(json.dumps(candidate_msg))
@@ -488,39 +498,49 @@ def on_message(ws, message):
         
         # Handle different message types
         if msg_type == "offer":
-            print(f"  → Received offer from {msg.get('from', 'unknown')}")
+            sender_id = msg.get('from', 'unknown')
+            print(f"  → Received offer from {sender_id}")
             print(f"  → SDP: {msg.get('sdp', 'N/A')[:50]}...")
+            # IMPORTANT: The 'from' field contains the browser's connection ID (e.g., "Uxqj_cTxoAMCKcw=")
+            # In production, this is the actual WebSocket connection ID assigned by AWS API Gateway
+            # We use this connection ID in the 'to' field when replying so the server knows where to forward the message
+            print(f"  → Will reply to connection ID: {sender_id}")
             # In a real robot, you would:
             # 1. Process the SDP offer
             # 2. Create a WebRTC answer
-            # 3. Send the answer back
+            # 3. Send the answer back using the connection ID from the 'from' field
             # For testing, send a mock answer
             if not should_close:
                 answer_msg = {
                     "type": "answer",
-                    "robotId": ROBOT_ID,
-                    "target": "client",
-                    "payload": {
-                        "sdp": "mock-answer-sdp-from-robot"
-                    }
+                    "from": ROBOT_ID,  # Use "from" not "robotId"
+                    "to": sender_id,  # Reply to the sender using their connection ID
+                    "sdp": "mock-answer-sdp-from-robot"  # SDP directly, not nested
                 }
                 ws.send(json.dumps(answer_msg))
-                print(f"  → Sent mock answer")
-        elif msg_type == "ice-candidate":
-            print(f"  → Received ICE candidate: {msg.get('candidate', 'N/A')[:50]}...")
+                print(f"  → Sent mock answer to {sender_id}")
+        elif msg_type == "candidate":  # Use "candidate" not "ice-candidate"
+            sender_id = msg.get('from', 'unknown')
+            print(f"  → Received ICE candidate from {sender_id}")
+            candidate = msg.get("candidate", {})
+            print(f"  → Candidate: {str(candidate)[:50]}...")
+            # IMPORTANT: The 'from' field contains the browser's connection ID
+            # We use this connection ID in the 'to' field when replying
             # In a real robot, you would add this candidate to your WebRTC peer connection
             # For testing, send a mock ICE candidate back
             if not should_close:
                 candidate_msg = {
-                    "type": "ice-candidate",
-                    "robotId": ROBOT_ID,
-                    "target": "client",
-                    "payload": {
-                        "candidate": "mock-ice-candidate-from-robot"
+                    "type": "candidate",  # Use "candidate" not "ice-candidate"
+                    "from": ROBOT_ID,  # Use "from" not "robotId"
+                    "to": sender_id,  # Reply to the sender using their connection ID
+                    "candidate": {  # Candidate object directly, not nested in payload
+                        "candidate": "mock-ice-candidate-from-robot",
+                        "sdpMLineIndex": 0,
+                        "sdpMid": "0"
                     }
                 }
                 ws.send(json.dumps(candidate_msg))
-                print(f"  → Sent mock ICE candidate")
+                print(f"  → Sent mock ICE candidate to {sender_id}")
         elif msg_type == "monitor-confirmed":
             print(f"  → Monitor subscription confirmed")
         else:
@@ -540,7 +560,7 @@ def on_open(ws):
     # Register the robot immediately
     register_msg = {
         "type": "register",
-        "robotId": ROBOT_ID
+        "from": ROBOT_ID  # Use "from" not "robotId" (matches Rust agent format)
     }
     ws.send(json.dumps(register_msg))
     print(f"Robot {ROBOT_ID} registered")
@@ -552,7 +572,7 @@ def on_open(ws):
         if not should_close:
             test_msg = {
                 "type": "register",  # Re-register to show robot is still active
-                "robotId": ROBOT_ID
+                "from": ROBOT_ID  # Use "from" not "robotId" (matches Rust agent format)
             }
             ws.send(json.dumps(test_msg))
             print(f"Sent keepalive message")
@@ -562,11 +582,9 @@ def on_open(ws):
         if not should_close:
             offer_msg = {
                 "type": "offer",
-                "robotId": ROBOT_ID,
-                "target": "robot",
-                "payload": {
-                    "sdp": "mock-offer-sdp-for-testing"
-                }
+                "from": ROBOT_ID,  # Use "from" not "robotId" (matches Rust agent format)
+                "to": "browser1",  #  Use "to" not "target"
+                "sdp": "mock-offer-sdp-for-testing"  #  SDP directly, not nested
             }
             ws.send(json.dumps(offer_msg))
             print(f"Sent mock offer message")
@@ -575,11 +593,13 @@ def on_open(ws):
         time.sleep(2)
         if not should_close:
             candidate_msg = {
-                "type": "ice-candidate",
-                "robotId": ROBOT_ID,
-                "target": "robot",
-                "payload": {
-                    "candidate": "mock-ice-candidate-for-testing"
+                "type": "candidate",  # Use "candidate" not "ice-candidate"
+                "from": ROBOT_ID,  # Use "from" not "robotId" (matches Rust agent format)
+                "to": "browser1",  #  Use "to" not "target"
+                "candidate": {  #  Candidate object directly, not nested in payload
+                    "candidate": "mock-ice-candidate-for-testing",
+                    "sdpMLineIndex": 0,
+                    "sdpMid": "0"
                 }
             }
             ws.send(json.dumps(candidate_msg))

@@ -7,12 +7,20 @@
    - Select your log group: `/aws/lambda/amplify-robotteleop-undch--signalinglambda75CE8115-Lsv2iXh3b311`
    - Set time range to **"Last 1 hour"** (or custom range covering your test)
 
-2. **Run this query (Updated - includes new AUTH logs):**
+2. **Run this query (Updated - includes new AUTH logs and signal handling):**
 ```sql
 fields @timestamp, @message
-| filter @message like /LAMBDA_INVOCATION/ or @message like /AUTH_FROM_CONNECTION_TABLE/ or @message like /AUTH_LOOKUP_ERROR/ or @message like /AUTH_FAILED/ or @message like /MONITOR/ or @message like /REGISTER/ or @message like /CONNECTION/ or @message like /NOTIFY/ or @message like /MESSAGE_RECEIVED/
+| filter @message like /LAMBDA_INVOCATION/ or @message like /AUTH_FROM_CONNECTION_TABLE/ or @message like /AUTH_LOOKUP_ERROR/ or @message like /AUTH_FAILED/ or @message like /MONITOR/ or @message like /REGISTER/ or @message like /CONNECTION/ or @message like /NOTIFY/ or @message like /MESSAGE_RECEIVED/ or @message like /HANDLE_SIGNAL/ or @message like /ROUTING_TO_HANDLE_SIGNAL/ or @message like /PACKET_FORWARD/
 | sort @timestamp desc
 | limit 200
+```
+
+**Or this query to debug offer/candidate messages specifically:**
+```sql
+fields @timestamp, @message
+| filter @message like /HANDLE_SIGNAL/ or @message like /MESSAGE_RECEIVED/ or @message like /ROUTING_TO_HANDLE_SIGNAL/ or @message like /offer/ or @message like /candidate/ or @message like /PACKET_FORWARD/
+| sort @timestamp desc
+| limit 100
 ```
 
 **Or use this more comprehensive query to see ALL Lambda activity:**

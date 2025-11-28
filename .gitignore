@@ -28,3 +28,6 @@ dist-ssr
 # Amplify-specific files
 amplify_outputs.json
 .amplify
+
+# Rust test files and documentation
+rust/
