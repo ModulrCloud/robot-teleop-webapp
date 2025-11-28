@@ -93,11 +93,11 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     expressionAttributeValues[':description'] = { S: description };
   }
 
-  // Update model if provided
-  if (model !== undefined && model !== null) {
+  // Update model if provided and not empty
+  if (model !== undefined && model !== null && model.trim() !== '') {
     updateExpressions.push('#model = :model');
     expressionAttributeNames['#model'] = 'model';
-    expressionAttributeValues[':model'] = { S: model };
+    expressionAttributeValues[':model'] = { S: model.trim() };
   }
 
   // Update location fields if provided

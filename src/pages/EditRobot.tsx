@@ -102,10 +102,20 @@ export const EditRobot = () => {
         const name = robotData.name || "";
         setRobotName(name);
         setRobotIdForStatus(robotData.robotId || ''); // Store robotId for status check
+        
+        // Ensure model is a valid value, defaulting to first model if missing or invalid
+        const validModel = robotData.model && robotData.model.trim() !== '' 
+          ? robotData.model.trim().toLowerCase()
+          : ROBOT_MODELS[0].value;
+        // Validate that the model is one of the allowed values
+        const modelValue = ROBOT_MODELS.some(m => m.value === validModel) 
+          ? validModel 
+          : ROBOT_MODELS[0].value;
+        
         setRobotListing({
           robotName: name,
           description: robotData.description || "",
-          model: robotData.model || ROBOT_MODELS[0].value,
+          model: modelValue,
           enableAccessControl: allowedUsers.length > 0,
           allowedUserEmails: additionalUsers.join('\n'),
           city: robotData.city || "",
@@ -185,10 +195,18 @@ export const EditRobot = () => {
           .filter(email => email.length > 0 && email.includes('@'))
       : [];
 
+    // Ensure model is valid before sending
+    const validModel = robotListing.model && robotListing.model.trim() !== '' 
+      ? robotListing.model.trim().toLowerCase()
+      : ROBOT_MODELS[0].value;
+    const modelToSend = ROBOT_MODELS.some(m => m.value === validModel) 
+      ? validModel 
+      : ROBOT_MODELS[0].value;
+    
     const robotData = {
       robotName: robotListing.robotName,
       description: robotListing.description,
-      model: robotListing.model,
+      model: modelToSend,
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
       city: robotListing.city || undefined,

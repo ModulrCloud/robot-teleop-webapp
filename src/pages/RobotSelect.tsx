@@ -13,17 +13,18 @@ const client = generateClient<Schema>();
 
 // Map robot models to images
 const getRobotImage = (model?: string | null): string => {
-  switch (model?.toLowerCase()) {
+  const normalizedModel = model?.toLowerCase()?.trim();
+  switch (normalizedModel) {
     case 'rover':
-      return '/rover.webp';
+      return '/racer.png';
     case 'humanoid':
-      return '/robot_arm.webp';
+      return '/humaniod.png'; // Note: filename is "humaniod.png" (typo in filename)
     case 'drone':
-      return '/rover.webp';
+      return '/drone.png';
     case 'submarine':
-      return '/rover.webp';
+      return '/submarine.png';
     default:
-      return '/rover.webp';
+      return '/racer.png'; // Default to racer for unknown types
   }
 };
 
@@ -349,6 +350,11 @@ export default function RobotSelect() {
                 // For now, we'll rely on the ACL check
               }
               
+              // Log model for debugging
+              if (robot.model) {
+                console.log(`[ROBOT_IMAGE] Robot "${robot.name || 'Unnamed'}": model="${robot.model}", image="${getRobotImage(robot.model)}"`);
+              }
+              
               return {
                 id: (robot.robotId || robot.id) as string, // Use robotId (string) for connection, fallback to id
                 uuid: robot.id || undefined, // Store the actual UUID for deletion
@@ -388,7 +394,7 @@ export default function RobotSelect() {
               id: 'robot1',
               title: 'Test Robot (Local)',
               description: 'Default test robot for local development',
-              imageUrl: '/rover.webp',
+              imageUrl: '/racer.png',
               uuid: undefined, // No UUID for test robot (can't be deleted)
             },
           ];
@@ -405,7 +411,7 @@ export default function RobotSelect() {
               id: 'robot1',
               title: 'Test Robot (Local)',
               description: 'Default test robot for local development',
-              imageUrl: '/rover.webp',
+              imageUrl: '/racer.png',
               uuid: undefined, // No UUID for test robot (can't be deleted)
             },
           ]);
