@@ -26,6 +26,7 @@ export default function RobotSetup() {
   const [connectionUrl, setConnectionUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [copiedRobotId, setCopiedRobotId] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -290,21 +291,69 @@ export default function RobotSetup() {
             </div>
 
             <div className="setup-section">
-              <h2>Example Code</h2>
-              <p className="section-description">
-                Here's a simple example of how to connect your robot (Python):
-              </p>
-              <pre className="code-block large">
-{`import websocket
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h2 style={{ margin: 0 }}>Example Code</h2>
+                <button
+                  onClick={async () => {
+                    const codeText = `import websocket
 import json
+import time
+import threading
 
 # Your connection URL (from above)
 WS_URL = "${connectionUrl}"
 ROBOT_ID = "${robotId}"
 
+# Global flag to control connection lifetime
+should_close = False
+
 def on_message(ws, message):
     print(f"Received: {message}")
-    # Handle incoming messages (offers, answers, ICE candidates)
+    try:
+        msg = json.loads(message)
+        msg_type = msg.get("type", "")
+        
+        # Handle different message types
+        if msg_type == "offer":
+            print(f"  → Received offer from {msg.get('from', 'unknown')}")
+            print(f"  → SDP: {msg.get('sdp', 'N/A')[:50]}...")
+            # In a real robot, you would:
+            # 1. Process the SDP offer
+            # 2. Create a WebRTC answer
+            # 3. Send the answer back
+            # For testing, send a mock answer
+            if not should_close:
+                answer_msg = {
+                    "type": "answer",
+                    "robotId": ROBOT_ID,
+                    "target": "client",
+                    "payload": {
+                        "sdp": "mock-answer-sdp-from-robot"
+                    }
+                }
+                ws.send(json.dumps(answer_msg))
+                print(f"  → Sent mock answer")
+        elif msg_type == "ice-candidate":
+            print(f"  → Received ICE candidate: {msg.get('candidate', 'N/A')[:50]}...")
+            # In a real robot, you would add this candidate to your WebRTC peer connection
+            # For testing, send a mock ICE candidate back
+            if not should_close:
+                candidate_msg = {
+                    "type": "ice-candidate",
+                    "robotId": ROBOT_ID,
+                    "target": "client",
+                    "payload": {
+                        "candidate": "mock-ice-candidate-from-robot"
+                    }
+                }
+                ws.send(json.dumps(candidate_msg))
+                print(f"  → Sent mock ICE candidate")
+        elif msg_type == "monitor-confirmed":
+            print(f"  → Monitor subscription confirmed")
+        else:
+            print(f"  → Unknown message type: {msg_type}")
+    except json.JSONDecodeError:
+        print(f"  → Received non-JSON message")
 
 def on_error(ws, error):
     print(f"Error: {error}")
@@ -314,13 +363,56 @@ def on_close(ws, close_status_code, close_msg):
 
 def on_open(ws):
     print("Connected!")
-    # Register the robot
+    
+    # Register the robot immediately
     register_msg = {
         "type": "register",
         "robotId": ROBOT_ID
     }
     ws.send(json.dumps(register_msg))
     print(f"Robot {ROBOT_ID} registered")
+    
+    # Send test messages at different intervals to simulate robot activity
+    def send_test_messages():
+        # Send keepalive after 2 seconds
+        time.sleep(2)
+        if not should_close:
+            test_msg = {
+                "type": "register",  # Re-register to show robot is still active
+                "robotId": ROBOT_ID
+            }
+            ws.send(json.dumps(test_msg))
+            print(f"Sent keepalive message")
+        
+        # Send a mock offer after 4 seconds (simulating a client connection attempt)
+        time.sleep(2)
+        if not should_close:
+            offer_msg = {
+                "type": "offer",
+                "robotId": ROBOT_ID,
+                "target": "robot",
+                "payload": {
+                    "sdp": "mock-offer-sdp-for-testing"
+                }
+            }
+            ws.send(json.dumps(offer_msg))
+            print(f"Sent mock offer message")
+        
+        # Send a mock ICE candidate after 6 seconds
+        time.sleep(2)
+        if not should_close:
+            candidate_msg = {
+                "type": "ice-candidate",
+                "robotId": ROBOT_ID,
+                "target": "robot",
+                "payload": {
+                    "candidate": "mock-ice-candidate-for-testing"
+                }
+            }
+            ws.send(json.dumps(candidate_msg))
+            print(f"Sent mock ICE candidate")
+    
+    threading.Thread(target=send_test_messages, daemon=True).start()
 
 # Connect to WebSocket
 ws = websocket.WebSocketApp(
@@ -331,7 +423,195 @@ ws = websocket.WebSocketApp(
     on_open=on_open
 )
 
-ws.run_forever()`}
+# Run in a separate thread so we can control when to close
+def run_websocket():
+    ws.run_forever()
+
+thread = threading.Thread(target=run_websocket, daemon=True)
+thread.start()
+
+# Keep connection open for 10 seconds
+print("Keeping connection open for 10 seconds...")
+time.sleep(10)
+
+# Close the connection
+print("Closing connection...")
+should_close = True
+ws.close()
+print("Connection closed after 10 seconds")`;
+                    try {
+                      await navigator.clipboard.writeText(codeText);
+                      setCopiedCode(true);
+                      setTimeout(() => setCopiedCode(false), 2000);
+                    } catch (err) {
+                      console.error('Failed to copy:', err);
+                    }
+                  }}
+                  className={`copy-button ${copiedCode ? 'copied' : ''}`}
+                  title="Copy Example Code"
+                  style={{ marginLeft: 'auto' }}
+                >
+                  {copiedCode ? (
+                    <>
+                      <FontAwesomeIcon icon={faCheckCircle} />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <FontAwesomeIcon icon={faCopy} />
+                      <span>Copy Code</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <p className="section-description">
+                Here's a simple example of how to connect your robot (Python):
+              </p>
+              <pre className="code-block large">
+{`import websocket
+import json
+import time
+import threading
+
+# Your connection URL (from above)
+WS_URL = "${connectionUrl}"
+ROBOT_ID = "${robotId}"
+
+# Global flag to control connection lifetime
+should_close = False
+
+def on_message(ws, message):
+    print(f"Received: {message}")
+    try:
+        msg = json.loads(message)
+        msg_type = msg.get("type", "")
+        
+        # Handle different message types
+        if msg_type == "offer":
+            print(f"  → Received offer from {msg.get('from', 'unknown')}")
+            print(f"  → SDP: {msg.get('sdp', 'N/A')[:50]}...")
+            # In a real robot, you would:
+            # 1. Process the SDP offer
+            # 2. Create a WebRTC answer
+            # 3. Send the answer back
+            # For testing, send a mock answer
+            if not should_close:
+                answer_msg = {
+                    "type": "answer",
+                    "robotId": ROBOT_ID,
+                    "target": "client",
+                    "payload": {
+                        "sdp": "mock-answer-sdp-from-robot"
+                    }
+                }
+                ws.send(json.dumps(answer_msg))
+                print(f"  → Sent mock answer")
+        elif msg_type == "ice-candidate":
+            print(f"  → Received ICE candidate: {msg.get('candidate', 'N/A')[:50]}...")
+            # In a real robot, you would add this candidate to your WebRTC peer connection
+            # For testing, send a mock ICE candidate back
+            if not should_close:
+                candidate_msg = {
+                    "type": "ice-candidate",
+                    "robotId": ROBOT_ID,
+                    "target": "client",
+                    "payload": {
+                        "candidate": "mock-ice-candidate-from-robot"
+                    }
+                }
+                ws.send(json.dumps(candidate_msg))
+                print(f"  → Sent mock ICE candidate")
+        elif msg_type == "monitor-confirmed":
+            print(f"  → Monitor subscription confirmed")
+        else:
+            print(f"  → Unknown message type: {msg_type}")
+    except json.JSONDecodeError:
+        print(f"  → Received non-JSON message")
+
+def on_error(ws, error):
+    print(f"Error: {error}")
+
+def on_close(ws, close_status_code, close_msg):
+    print("Connection closed")
+
+def on_open(ws):
+    print("Connected!")
+    
+    # Register the robot immediately
+    register_msg = {
+        "type": "register",
+        "robotId": ROBOT_ID
+    }
+    ws.send(json.dumps(register_msg))
+    print(f"Robot {ROBOT_ID} registered")
+    
+    # Send test messages at different intervals to simulate robot activity
+    def send_test_messages():
+        # Send keepalive after 2 seconds
+        time.sleep(2)
+        if not should_close:
+            test_msg = {
+                "type": "register",  # Re-register to show robot is still active
+                "robotId": ROBOT_ID
+            }
+            ws.send(json.dumps(test_msg))
+            print(f"Sent keepalive message")
+        
+        # Send a mock offer after 4 seconds (simulating a client connection attempt)
+        time.sleep(2)
+        if not should_close:
+            offer_msg = {
+                "type": "offer",
+                "robotId": ROBOT_ID,
+                "target": "robot",
+                "payload": {
+                    "sdp": "mock-offer-sdp-for-testing"
+                }
+            }
+            ws.send(json.dumps(offer_msg))
+            print(f"Sent mock offer message")
+        
+        # Send a mock ICE candidate after 6 seconds
+        time.sleep(2)
+        if not should_close:
+            candidate_msg = {
+                "type": "ice-candidate",
+                "robotId": ROBOT_ID,
+                "target": "robot",
+                "payload": {
+                    "candidate": "mock-ice-candidate-for-testing"
+                }
+            }
+            ws.send(json.dumps(candidate_msg))
+            print(f"Sent mock ICE candidate")
+    
+    threading.Thread(target=send_test_messages, daemon=True).start()
+
+# Connect to WebSocket
+ws = websocket.WebSocketApp(
+    WS_URL,
+    on_message=on_message,
+    on_error=on_error,
+    on_close=on_close,
+    on_open=on_open
+)
+
+# Run in a separate thread so we can control when to close
+def run_websocket():
+    ws.run_forever()
+
+thread = threading.Thread(target=run_websocket, daemon=True)
+thread.start()
+
+# Keep connection open for 10 seconds
+print("Keeping connection open for 10 seconds...")
+time.sleep(10)
+
+# Close the connection
+print("Closing connection...")
+should_close = True
+ws.close()
+print("Connection closed after 10 seconds")`}
               </pre>
             </div>
 

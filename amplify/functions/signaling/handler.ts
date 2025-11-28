@@ -6,6 +6,7 @@ import {
     GetItemCommand,
     QueryCommand,
     ScanCommand,
+    UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
 import { createHash } from 'crypto';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
@@ -31,7 +32,7 @@ const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
 // Types
 // ---------------------------------
 
-type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate';
+type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor';
 type Target = 'robot' | 'client';
 
 // ---------------------------------
@@ -175,7 +176,8 @@ function normalizeMessage(raw: RawMessage): InboundMessage {
       t === 'answer' ||
       t === 'register' ||
       t === 'takeover' ||
-      t === 'ice-candidate'
+      t === 'ice-candidate' ||
+      t === 'monitor'
     ) {
       type = t as MessageType;
     }
@@ -461,6 +463,7 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
                     groups: { S: (claims.groups ?? []).join(',')},
                     kind: { S: 'client' },
                     ts: { N: String(Date.now()) },
+                    // monitoringRobotId will be set when monitor message is received
                 },
             }),
         );
@@ -580,8 +583,175 @@ async function handleRegister(
     robotId,
     userId: caller,
   });
+
+  // Notify monitoring connections about the registration
+  // Add _monitor flag and metadata to help logger identify and display the message
+  const monitorMessage = {
+    type: 'register',
+    robotId: robotId,
+    from: caller,
+    _monitor: true, // Flag to indicate this is a monitor copy
+    _source: connectionId,
+    _direction: 'robot-to-server', // Robot is registering with the server
+    timestamp: new Date().toISOString(),
+  };
+  await notifyMonitors(robotId, monitorMessage);
   
   return { statusCode: 200, body: '' };
+}
+
+// ---------------------------------
+// $monitor - Subscribe to messages for a specific robot
+// ---------------------------------
+
+async function handleMonitor(
+  claims: { sub?: string; groups?: string[] },
+  event: APIGatewayProxyEvent,
+  msg: InboundMessage,
+): Promise<APIGatewayProxyResult> {
+  const robotId = msg.robotId?.trim();
+  const connectionId = event.requestContext.connectionId!;
+  
+  if (!robotId) {
+    return { statusCode: 400, body: 'robotId required for monitoring' };
+  }
+
+  // Verify user has access to monitor this robot (must be owner, admin, or have ACL access)
+  const hasAccess = await canAccessRobot(robotId, claims);
+  if (!hasAccess) {
+    console.log(`[MONITOR_DENIED]`, {
+      connectionId,
+      robotId,
+      userId: claims.sub,
+    });
+    return { statusCode: 403, body: 'Access denied: You are not authorized to monitor this robot' };
+  }
+
+    // Store monitoring subscription in ConnectionsTable
+    // Use PutItem to replace the connection entry with monitoring info
+    // This is safe because we include all necessary fields
+    try {
+      const claimsTyped = claims as Claims;
+      const putItem = {
+        connectionId: { S: connectionId },
+        userId: { S: claims.sub ?? '' },
+        username: { S: claimsTyped['cognito:username'] || claimsTyped.email || claims.sub || '' },
+        groups: { S: (claims.groups ?? []).join(',') },
+        kind: { S: 'monitor' },
+        monitoringRobotId: { S: robotId }, // Store which robot this connection is monitoring
+        ts: { N: String(Date.now()) },
+      };
+      
+      console.log('[MONITOR_STORE_ATTEMPT]', {
+        connectionId,
+        robotId,
+        userId: claims.sub,
+        item: JSON.stringify(putItem),
+      });
+      
+      await db.send(
+        new PutItemCommand({
+          TableName: CONN_TABLE,
+          Item: putItem,
+        }),
+      );
+      
+      console.log('[MONITOR_SUBSCRIBED]', {
+        connectionId,
+        robotId,
+        userId: claims.sub,
+      });
+
+    // Send confirmation to monitor
+    await postTo(connectionId, {
+      type: 'monitor-confirmed',
+      robotId: robotId,
+      message: `Now monitoring messages for robot ${robotId}`,
+    });
+  } catch (e) {
+    console.error('[MONITOR_ERROR]', {
+      connectionId,
+      robotId,
+      error: String(e),
+    });
+    return { statusCode: 500, body: 'Failed to subscribe to monitoring' };
+  }
+
+  return { statusCode: 200, body: '' };
+}
+
+// Helper function to get all monitoring connections for a robot
+async function getMonitoringConnections(robotId: string): Promise<string[]> {
+  try {
+    // Scan ConnectionsTable for connections monitoring this robot
+    // Note: This is a scan operation. For better performance, consider adding a GSI on monitoringRobotId
+    console.log('[MONITOR_QUERY_START]', { robotId });
+    const result = await db.send(
+      new ScanCommand({
+        TableName: CONN_TABLE,
+        FilterExpression: 'monitoringRobotId = :robotId',
+        ExpressionAttributeValues: {
+          ':robotId': { S: robotId },
+        },
+        ProjectionExpression: 'connectionId',
+      }),
+    );
+    
+    const connections = (result.Items || [])
+      .map(item => item.connectionId?.S)
+      .filter((id): id is string => !!id);
+    
+    console.log('[MONITOR_QUERY_RESULT]', { 
+      robotId, 
+      foundConnections: connections.length,
+      connectionIds: connections 
+    });
+    
+    return connections;
+  } catch (e) {
+    console.error('[MONITOR_QUERY_ERROR]', { robotId, error: String(e) });
+    return [];
+  }
+}
+
+// Helper function to send message copies to monitoring connections
+async function notifyMonitors(robotId: string, message: unknown): Promise<void> {
+  console.log('[NOTIFY_MONITORS_START]', { robotId, messageType: (message as any)?.type });
+  const monitorConnections = await getMonitoringConnections(robotId);
+  
+  if (monitorConnections.length === 0) {
+    console.log('[NOTIFY_MONITORS_SKIP]', { 
+      robotId, 
+      reason: 'No monitoring connections found',
+      messageType: (message as any)?.type 
+    });
+    return; // No monitors, skip
+  }
+
+  // Send copy to all monitoring connections
+  const notifyPromises = monitorConnections.map(async (connId) => {
+    try {
+      await postTo(connId, message);
+    } catch (err: any) {
+      // Ignore GoneException (connection already closed)
+      if (err?.name !== 'GoneException') {
+        console.warn('[MONITOR_NOTIFY_ERROR]', {
+          connectionId: connId,
+          robotId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  });
+
+  await Promise.allSettled(notifyPromises);
+  
+  if (monitorConnections.length > 0) {
+    console.log('[MONITOR_NOTIFIED]', {
+      robotId,
+      monitorCount: monitorConnections.length,
+    });
+  }
 }
 
 // ---------------------------------
@@ -774,6 +944,17 @@ async function handleSignal(
     });
   }
 
+  // Send copy to monitoring connections (for debugging/diagnostics)
+  // Add metadata to help identify direction
+  const monitorMessage = {
+    ...outbound,
+    _monitor: true, // Flag to indicate this is a monitor copy
+    _source: sourceConnId,
+    _target: targetConn,
+    _direction: target === 'robot' ? 'client-to-robot' : 'robot-to-client',
+  };
+  await notifyMonitors(robotId, monitorMessage);
+
   return { statusCode: 200, body: '' };
 }
 
@@ -785,31 +966,108 @@ export async function handler(
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> {
   const route = event.requestContext.routeKey;
+  
+  // Log all incoming events to help debug routing issues
+  console.log('[LAMBDA_INVOCATION]', {
+    route: route,
+    connectionId: event.requestContext.connectionId,
+    eventType: event.requestContext.eventType,
+    requestId: event.requestContext.requestId,
+    hasBody: !!event.body,
+    bodyLength: event.body?.length || 0,
+    queryParams: event.queryStringParameters ? Object.keys(event.queryStringParameters) : [],
+  });
 
   // System routes
   if (route === '$connect') return onConnect(event);
   if (route === '$disconnect') return onDisconnect(event);
 
   // All other events come through $default
-  const token = event.queryStringParameters?.token ?? null;
+  // For $default route, the connection was already authenticated during $connect
+  // Look up the connection in ConnectionsTable to get user claims
+  const connectionId = event.requestContext.connectionId!;
   
-  // DEVELOPMENT/TESTING MODE: Allow messages without token if ALLOW_NO_TOKEN is set
-  const allowNoToken = process.env.ALLOW_NO_TOKEN === 'true';
+  // Log that we're using the new authentication method
+  console.log('[AUTH_METHOD_NEW]', {
+    connectionId,
+    timestamp: new Date().toISOString(),
+    message: 'Using connection table lookup for authentication',
+  });
+  
   let claims: Claims | null = null;
+  const token = event.queryStringParameters?.token ?? null; // Define token here for logging
   
-  if (allowNoToken && !token) {
-    console.warn('⚠️ DEVELOPMENT MODE: Allowing message without token (ALLOW_NO_TOKEN=true)');
-    // Create mock claims for testing
-    claims = {
-      sub: 'dev-test-user',
-      groups: ['PARTNERS'],
-      email: 'dev-test@modulr.cloud',
-      'cognito:username': 'dev-test-user',
-    };
-  } else {
-    claims = await verifyCognitoJWT(token);
-    if (!claims?.sub) {
-      return { statusCode: 401, body: 'Unauthorized' };
+  try {
+    const connItem = await db.send(new GetItemCommand({
+      TableName: CONN_TABLE,
+      Key: { connectionId: { S: connectionId } },
+      ProjectionExpression: 'userId, username, groups',
+    }));
+    
+    if (connItem.Item) {
+      const userId = connItem.Item.userId?.S;
+      const username = connItem.Item.username?.S;
+      const groupsStr = connItem.Item.groups?.S || '';
+      const groups = groupsStr ? groupsStr.split(',').filter(Boolean) : [];
+      
+      if (userId) {
+        claims = {
+          sub: userId,
+          groups: groups,
+          'cognito:username': username,
+          email: username?.includes('@') ? username : undefined,
+        };
+        console.log('[AUTH_FROM_CONNECTION_TABLE]', {
+          connectionId,
+          userId,
+          username,
+          groups,
+        });
+      } else {
+        console.warn('[AUTH_LOOKUP_MISSING_USERID]', {
+          connectionId,
+          hasItem: !!connItem.Item,
+          itemKeys: Object.keys(connItem.Item || {}),
+        });
+      }
+    } else {
+      console.warn('[AUTH_LOOKUP_NO_ITEM]', {
+        connectionId,
+        reason: 'Connection not found in ConnectionsTable',
+      });
+    }
+  } catch (error) {
+    console.error('[AUTH_LOOKUP_ERROR]', {
+      connectionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  
+  // If we couldn't get claims from connection table, try token from query params (fallback)
+  // This handles edge cases where connection might not be in table yet
+  if (!claims?.sub) {
+    
+    // DEVELOPMENT/TESTING MODE: Allow messages without token if ALLOW_NO_TOKEN is set
+    const allowNoToken = process.env.ALLOW_NO_TOKEN === 'true';
+    
+    if (allowNoToken && !token) {
+      console.warn('⚠️ DEVELOPMENT MODE: Allowing message without token (ALLOW_NO_TOKEN=true)');
+      claims = {
+        sub: 'dev-test-user',
+        groups: ['PARTNERS'],
+        email: 'dev-test@modulr.cloud',
+        'cognito:username': 'dev-test-user',
+      };
+    } else {
+      claims = await verifyCognitoJWT(token);
+      if (!claims?.sub) {
+        console.error('[AUTH_FAILED]', {
+          connectionId,
+          hasToken: !!token,
+          reason: 'No claims from connection table and token verification failed',
+        });
+        return { statusCode: 401, body: 'Unauthorized' };
+      }
     }
   }
 
@@ -843,6 +1101,16 @@ export async function handler(
       userId: claims?.sub,
     });
     return handleRegister(claims, event, msg);
+  }
+
+  if (type === 'monitor') {
+    console.log('[MONITOR_MESSAGE_RECEIVED]', {
+      connectionId: event.requestContext.connectionId,
+      robotId: msg.robotId,
+      userId: claims?.sub,
+      message: msg,
+    });
+    return handleMonitor(claims, event, msg);
   }
 
   if (type === 'takeover') {

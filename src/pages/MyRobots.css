@@ -178,6 +178,7 @@
   flex-direction: column;
   gap: 1.5rem;
   margin-top: 2rem;
+  max-width: 100%;
 }
 
 .robot-detail-card {
@@ -185,6 +186,8 @@
   border-radius: 1rem;
   padding: 1.5rem;
   border: 2px solid rgba(255, 255, 255, 0.1);
+  width: 100%;
+  min-width: 0;
 }
 
 .robot-detail-header {

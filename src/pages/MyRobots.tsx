@@ -5,6 +5,7 @@ import { Schema } from '../../amplify/data/resource';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useAuthStatus } from "../hooks/useAuthStatus";
 import { LoadingWheel } from "../components/LoadingWheel";
+import { RobotMessageLogger } from "../components/RobotMessageLogger";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faRobot,
@@ -13,6 +14,7 @@ import {
   faArrowLeft,
   faClock
 } from '@fortawesome/free-solid-svg-icons';
+import outputs from '../../amplify_outputs.json';
 import './MyRobots.css';
 
 const client = generateClient<Schema>();
@@ -295,6 +297,13 @@ export default function MyRobots() {
               <p>Connection history will be displayed here once tracking is implemented.</p>
               <p className="placeholder-note">This will show the last 10 connection/disconnection events with timestamps.</p>
             </div>
+          </div>
+
+          <div className="robot-detail-card">
+            <RobotMessageLogger 
+              robotId={selectedRobot.robotId}
+              wsUrl={outputs?.custom?.signaling?.websocketUrl || (import.meta.env.VITE_WS_URL || 'ws://localhost:8765')}
+            />
           </div>
         </div>
       </div>

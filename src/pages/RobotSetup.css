@@ -251,6 +251,30 @@
   overflow-y: auto;
 }
 
+/* Scrollbar styling for code blocks */
+.code-block::-webkit-scrollbar,
+.code-block.large::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.code-block::-webkit-scrollbar-track,
+.code-block.large::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.code-block::-webkit-scrollbar-thumb,
+.code-block.large::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.code-block::-webkit-scrollbar-thumb:hover,
+.code-block.large::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
 .step-content ul {
   margin: 0.5rem 0;
   padding-left: 1.5rem;
