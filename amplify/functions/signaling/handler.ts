@@ -185,27 +185,39 @@ function normalizeMessage(raw: RawMessage): InboundMessage {
 
   // ---- robotId ----
   // Preferred: explicit 'robotId' (Robot.id / UUID).
-  // For robot messages: 'from' field contains robotId (check this FIRST to avoid conflicts)
+  // For robot messages: 'from' field contains robotId
   // For client messages: 'to' field contains robotId
   //   - Rust agent sends: { type: "register", from: "robot-id" }
   //   - Rust agent sends: { type: "offer", from: "robot-id", to: "client-id", sdp: "..." }
-  //   - Rust agent sends: { type: "candidate", from: "robot-id", to: "client-id", candidate: {...} }
+  //   - Browser sends: { type: "offer", to: "robot-id", from: "browser1", sdp: "..." }
   let robotId: string | undefined;
   if (typeof raw.robotId === 'string' && raw.robotId.trim().length > 0) {
     robotId = raw.robotId.trim();
-  } else if (typeof raw.from === 'string' && raw.from.trim().length > 0) {
-    // For robot-to-client messages: { type: "offer", from: "robot-id", to: "client-id" }
-    // Also for registration: { type: "register", from: "robot-id" }
-    // Check 'from' FIRST for robot messages to avoid using 'to' as robotId
-    if (type === 'register' || type === 'offer' || type === 'answer' || type === 'candidate' || type === 'ice-candidate') {
+  } else if (type === 'register') {
+    // Registration messages always come from robots: { type: "register", from: "robot-id" }
+    if (typeof raw.from === 'string' && raw.from.trim().length > 0) {
       robotId = raw.from.trim();
     }
-  }
-  
-  // Only use 'to' as robotId if we haven't already extracted it from 'from'
-  // This handles client-to-robot messages: { type: "offer", to: "robot-id", from: "client-id" }
-  if (!robotId && typeof raw.to === 'string' && raw.to.trim().length > 0) {
-    robotId = raw.to.trim();
+  } else if (type === 'offer' || type === 'answer' || type === 'candidate' || type === 'ice-candidate') {
+    // For offer/answer/candidate messages, we need to determine if it's client-to-robot or robot-to-client
+    // Strategy: Check if 'to' field looks like a robotId (starts with "robot-"), if so, it's client-to-robot
+    // Otherwise, check if 'from' field looks like a robotId, if so, it's robot-to-client
+    const toField = typeof raw.to === 'string' ? raw.to.trim() : '';
+    const fromField = typeof raw.from === 'string' ? raw.from.trim() : '';
+    
+    // Check 'to' field first - if it starts with "robot-", it's likely the robotId (client-to-robot message)
+    if (toField.startsWith('robot-')) {
+      robotId = toField;
+    } else if (fromField.startsWith('robot-')) {
+      // If 'from' starts with "robot-", it's likely the robotId (robot-to-client message)
+      robotId = fromField;
+    } else if (toField.length > 0) {
+      // Fallback: use 'to' if it exists (for client-to-robot messages where robotId doesn't start with "robot-")
+      robotId = toField;
+    } else if (fromField.length > 0) {
+      // Last resort: use 'from' (for robot-to-client messages where robotId doesn't start with "robot-")
+      robotId = fromField;
+    }
   }
 
   // ---- payload ----

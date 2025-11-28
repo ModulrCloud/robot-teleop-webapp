@@ -308,34 +308,66 @@ ROBOT_ID = "${robotId}"
 should_close = False
 
 def on_message(ws, message):
-    print(f"Received: {message}")
+    print(f"")
+    print(f"📥 RECEIVED MESSAGE FROM SERVER:")
+    print(f"   Raw message: {message}")
+    print(f"   Message length: {len(message)} characters")
     try:
         msg = json.loads(message)
         msg_type = msg.get("type", "")
+        print(f"   Parsed type: {msg_type}")
+        print(f"   Full parsed message: {json.dumps(msg, indent=2)}")
         
         # Handle different message types
         if msg_type == "offer":
             sender_id = msg.get('from', 'unknown')
-            print(f"  → Received offer from {sender_id}")
-            print(f"  → SDP: {msg.get('sdp', 'N/A')[:50]}...")
+            sdp_offer = msg.get('sdp', '')
+            print(f"  → ✅ Received offer from {sender_id}")
+            print(f"  → SDP offer length: {len(sdp_offer)} characters")
+            if sdp_offer:
+                print(f"  → SDP preview: {sdp_offer[:100]}...")
             # IMPORTANT: The 'from' field contains the browser's connection ID (e.g., "Uxqj_cTxoAMCKcw=")
             # In production, this is the actual WebSocket connection ID assigned by AWS API Gateway
             # We use this connection ID in the 'to' field when replying so the server knows where to forward the message
             print(f"  → Will reply to connection ID: {sender_id}")
             # In a real robot, you would:
             # 1. Process the SDP offer
-            # 2. Create a WebRTC answer
+            # 2. Create a WebRTC answer using a WebRTC peer connection
             # 3. Send the answer back using the connection ID from the 'from' field
-            # For testing, send a mock answer
+            # 
+            # NOTE: This test script sends a minimal SDP answer format.
+            # The browser will receive it but the WebRTC connection won't actually work
+            # because we're not using a real WebRTC peer connection.
+            # This is just for testing the signaling flow, not the actual WebRTC connection.
             if not should_close:
+                # Create a minimal valid SDP answer format
+                # This won't establish a real connection, but it won't crash the browser
+                minimal_sdp_answer = f"""v=0
+o=- 0 0 IN IP4 127.0.0.1
+s=-
+t=0 0
+a=group:BUNDLE 0
+a=msid-semantic: WMS
+m=application 9 UDP/DTLS/SCTP webrtc-datachannel
+c=IN IP4 0.0.0.0
+a=ice-ufrag:test
+a=ice-pwd:test
+a=fingerprint:sha-256 00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00
+a=setup:actpass
+a=mid:0
+a=sctp-port:5000
+a=max-message-size:262144"""
+                
                 answer_msg = {
                     "type": "answer",
                     "from": ROBOT_ID,  # Use "from" not "robotId"
                     "to": sender_id,  # Reply to the sender using their connection ID
-                    "sdp": "mock-answer-sdp-from-robot"  # SDP directly, not nested
+                    "sdp": minimal_sdp_answer  # Minimal valid SDP format (won't work for real connection)
                 }
                 ws.send(json.dumps(answer_msg))
-                print(f"  → Sent mock answer to {sender_id}")
+                print(f"  → ✅ Sent answer to {sender_id} (minimal SDP - for signaling test only)")
+                print(f"  → ⚠️  Note: This won't establish a real WebRTC connection")
+                print(f"  →    A real robot would use a WebRTC peer connection to create a proper answer")
         elif msg_type == "candidate":  # Use "candidate" not "ice-candidate"
             sender_id = msg.get('from', 'unknown')
             print(f"  → Received ICE candidate from {sender_id}")
@@ -372,57 +404,40 @@ def on_close(ws, close_status_code, close_msg):
     print("Connection closed")
 
 def on_open(ws):
-    print("Connected!")
+    print("✅ Connected to WebSocket server!")
+    print(f"   Connection URL: {WS_URL}")
+    print(f"   Robot ID: {ROBOT_ID}")
     
     # Register the robot immediately
     register_msg = {
         "type": "register",
         "from": ROBOT_ID  # Use "from" not "robotId" (matches Rust agent format)
     }
+    print(f"📤 Sending registration message: {json.dumps(register_msg)}")
     ws.send(json.dumps(register_msg))
-    print(f"Robot {ROBOT_ID} registered")
+    print(f"✅ Registration message sent for robot: {ROBOT_ID}")
+    print(f"✅ Robot is now online and waiting for browser connections...")
+    print(f"   To test: Open the Teleop page in your browser and start a session")
+    print(f"   The robot will automatically respond to offers from browsers")
+    print(f"")
+    print(f"🔍 DEBUG: Watch for incoming messages below...")
+    print(f"   Any message from the server will appear as 'Received: ...'")
+    print(f"")
     
-    # Send test messages at different intervals to simulate robot activity
-    def send_test_messages():
-        # Send keepalive after 2 seconds
-        time.sleep(2)
-        if not should_close:
-            test_msg = {
-                "type": "register",  # Re-register to show robot is still active
-                "from": ROBOT_ID  # Use "from" not "robotId" (matches Rust agent format)
-            }
-            ws.send(json.dumps(test_msg))
-            print(f"Sent keepalive message")
-        
-        # Send a mock offer after 4 seconds (simulating a client connection attempt)
-        time.sleep(2)
-        if not should_close:
-            offer_msg = {
-                "type": "offer",
-                "from": ROBOT_ID,  # Use "from" not "robotId" (matches Rust agent format)
-                "to": "browser1",  #  Use "to" not "target"
-                "sdp": "mock-offer-sdp-for-testing"  #  SDP directly, not nested
-            }
-            ws.send(json.dumps(offer_msg))
-            print(f"Sent mock offer message")
-        
-        # Send a mock ICE candidate after 6 seconds
-        time.sleep(2)
-        if not should_close:
-            candidate_msg = {
-                "type": "candidate",  # Use "candidate" not "ice-candidate"
-                "from": ROBOT_ID,  # Use "from" not "robotId" (matches Rust agent format)
-                "to": "browser1",  #  Use "to" not "target"
-                "candidate": {  #  Candidate object directly, not nested in payload
-                    "candidate": "mock-ice-candidate-for-testing",
-                    "sdpMLineIndex": 0,
-                    "sdpMid": "0"
+    # Send periodic keepalive messages to show robot is still active
+    # In production, robots typically send keepalives every 30-60 seconds
+    def send_keepalive():
+        while not should_close:
+            time.sleep(30)  # Send keepalive every 30 seconds
+            if not should_close:
+                keepalive_msg = {
+                    "type": "register",  # Re-register to show robot is still active
+                    "from": ROBOT_ID  # Use "from" not "robotId" (matches Rust agent format)
                 }
-            }
-            ws.send(json.dumps(candidate_msg))
-            print(f"Sent mock ICE candidate")
+                ws.send(json.dumps(keepalive_msg))
+                print(f"📡 Keepalive sent (robot still online)")
     
-    threading.Thread(target=send_test_messages, daemon=True).start()
+    threading.Thread(target=send_keepalive, daemon=True).start()
 
 # Connect to WebSocket
 ws = websocket.WebSocketApp(
@@ -440,15 +455,19 @@ def run_websocket():
 thread = threading.Thread(target=run_websocket, daemon=True)
 thread.start()
 
-# Keep connection open for 10 seconds
-print("Keeping connection open for 10 seconds...")
-time.sleep(10)
-
-# Close the connection
-print("Closing connection...")
-should_close = True
-ws.close()
-print("Connection closed after 10 seconds")`;
+# Keep connection open indefinitely (robot waits for browser connections)
+# In production, the robot would run continuously until shutdown
+# Press Ctrl+C to stop
+print("\\n🤖 Robot is running and waiting for browser connections...")
+print("   Press Ctrl+C to stop the robot\\n")
+try:
+    while True:
+        time.sleep(1)
+except KeyboardInterrupt:
+    print("\\n🛑 Stopping robot...")
+    should_close = True
+    ws.close()
+    print("✅ Robot disconnected")`;
                     try {
                       await navigator.clipboard.writeText(codeText);
                       setCopiedCode(true);
@@ -491,34 +510,66 @@ ROBOT_ID = "${robotId}"
 should_close = False
 
 def on_message(ws, message):
-    print(f"Received: {message}")
+    print(f"")
+    print(f"📥 RECEIVED MESSAGE FROM SERVER:")
+    print(f"   Raw message: {message}")
+    print(f"   Message length: {len(message)} characters")
     try:
         msg = json.loads(message)
         msg_type = msg.get("type", "")
+        print(f"   Parsed type: {msg_type}")
+        print(f"   Full parsed message: {json.dumps(msg, indent=2)}")
         
         # Handle different message types
         if msg_type == "offer":
             sender_id = msg.get('from', 'unknown')
-            print(f"  → Received offer from {sender_id}")
-            print(f"  → SDP: {msg.get('sdp', 'N/A')[:50]}...")
+            sdp_offer = msg.get('sdp', '')
+            print(f"  → ✅ Received offer from {sender_id}")
+            print(f"  → SDP offer length: {len(sdp_offer)} characters")
+            if sdp_offer:
+                print(f"  → SDP preview: {sdp_offer[:100]}...")
             # IMPORTANT: The 'from' field contains the browser's connection ID (e.g., "Uxqj_cTxoAMCKcw=")
             # In production, this is the actual WebSocket connection ID assigned by AWS API Gateway
             # We use this connection ID in the 'to' field when replying so the server knows where to forward the message
             print(f"  → Will reply to connection ID: {sender_id}")
             # In a real robot, you would:
             # 1. Process the SDP offer
-            # 2. Create a WebRTC answer
+            # 2. Create a WebRTC answer using a WebRTC peer connection
             # 3. Send the answer back using the connection ID from the 'from' field
-            # For testing, send a mock answer
+            # 
+            # NOTE: This test script sends a minimal SDP answer format.
+            # The browser will receive it but the WebRTC connection won't actually work
+            # because we're not using a real WebRTC peer connection.
+            # This is just for testing the signaling flow, not the actual WebRTC connection.
             if not should_close:
+                # Create a minimal valid SDP answer format
+                # This won't establish a real connection, but it won't crash the browser
+                minimal_sdp_answer = f"""v=0
+o=- 0 0 IN IP4 127.0.0.1
+s=-
+t=0 0
+a=group:BUNDLE 0
+a=msid-semantic: WMS
+m=application 9 UDP/DTLS/SCTP webrtc-datachannel
+c=IN IP4 0.0.0.0
+a=ice-ufrag:test
+a=ice-pwd:test
+a=fingerprint:sha-256 00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00
+a=setup:actpass
+a=mid:0
+a=sctp-port:5000
+a=max-message-size:262144"""
+                
                 answer_msg = {
                     "type": "answer",
                     "from": ROBOT_ID,  # Use "from" not "robotId"
                     "to": sender_id,  # Reply to the sender using their connection ID
-                    "sdp": "mock-answer-sdp-from-robot"  # SDP directly, not nested
+                    "sdp": minimal_sdp_answer  # Minimal valid SDP format (won't work for real connection)
                 }
                 ws.send(json.dumps(answer_msg))
-                print(f"  → Sent mock answer to {sender_id}")
+                print(f"  → ✅ Sent answer to {sender_id} (minimal SDP - for signaling test only)")
+                print(f"  → ⚠️  Note: This won't establish a real WebRTC connection")
+                print(f"  →    A real robot would use a WebRTC peer connection to create a proper answer")
         elif msg_type == "candidate":  # Use "candidate" not "ice-candidate"
             sender_id = msg.get('from', 'unknown')
             print(f"  → Received ICE candidate from {sender_id}")
@@ -555,57 +606,40 @@ def on_close(ws, close_status_code, close_msg):
     print("Connection closed")
 
 def on_open(ws):
-    print("Connected!")
+    print("✅ Connected to WebSocket server!")
+    print(f"   Connection URL: {WS_URL}")
+    print(f"   Robot ID: {ROBOT_ID}")
     
     # Register the robot immediately
     register_msg = {
         "type": "register",
         "from": ROBOT_ID  # Use "from" not "robotId" (matches Rust agent format)
     }
+    print(f"📤 Sending registration message: {json.dumps(register_msg)}")
     ws.send(json.dumps(register_msg))
-    print(f"Robot {ROBOT_ID} registered")
+    print(f"✅ Registration message sent for robot: {ROBOT_ID}")
+    print(f"✅ Robot is now online and waiting for browser connections...")
+    print(f"   To test: Open the Teleop page in your browser and start a session")
+    print(f"   The robot will automatically respond to offers from browsers")
+    print(f"")
+    print(f"🔍 DEBUG: Watch for incoming messages below...")
+    print(f"   Any message from the server will appear as 'Received: ...'")
+    print(f"")
     
-    # Send test messages at different intervals to simulate robot activity
-    def send_test_messages():
-        # Send keepalive after 2 seconds
-        time.sleep(2)
-        if not should_close:
-            test_msg = {
-                "type": "register",  # Re-register to show robot is still active
-                "from": ROBOT_ID  # Use "from" not "robotId" (matches Rust agent format)
-            }
-            ws.send(json.dumps(test_msg))
-            print(f"Sent keepalive message")
-        
-        # Send a mock offer after 4 seconds (simulating a client connection attempt)
-        time.sleep(2)
-        if not should_close:
-            offer_msg = {
-                "type": "offer",
-                "from": ROBOT_ID,  # Use "from" not "robotId" (matches Rust agent format)
-                "to": "browser1",  #  Use "to" not "target"
-                "sdp": "mock-offer-sdp-for-testing"  #  SDP directly, not nested
-            }
-            ws.send(json.dumps(offer_msg))
-            print(f"Sent mock offer message")
-        
-        # Send a mock ICE candidate after 6 seconds
-        time.sleep(2)
-        if not should_close:
-            candidate_msg = {
-                "type": "candidate",  # Use "candidate" not "ice-candidate"
-                "from": ROBOT_ID,  # Use "from" not "robotId" (matches Rust agent format)
-                "to": "browser1",  #  Use "to" not "target"
-                "candidate": {  #  Candidate object directly, not nested in payload
-                    "candidate": "mock-ice-candidate-for-testing",
-                    "sdpMLineIndex": 0,
-                    "sdpMid": "0"
+    # Send periodic keepalive messages to show robot is still active
+    # In production, robots typically send keepalives every 30-60 seconds
+    def send_keepalive():
+        while not should_close:
+            time.sleep(30)  # Send keepalive every 30 seconds
+            if not should_close:
+                keepalive_msg = {
+                    "type": "register",  # Re-register to show robot is still active
+                    "from": ROBOT_ID  # Use "from" not "robotId" (matches Rust agent format)
                 }
-            }
-            ws.send(json.dumps(candidate_msg))
-            print(f"Sent mock ICE candidate")
+                ws.send(json.dumps(keepalive_msg))
+                print(f"📡 Keepalive sent (robot still online)")
     
-    threading.Thread(target=send_test_messages, daemon=True).start()
+    threading.Thread(target=send_keepalive, daemon=True).start()
 
 # Connect to WebSocket
 ws = websocket.WebSocketApp(

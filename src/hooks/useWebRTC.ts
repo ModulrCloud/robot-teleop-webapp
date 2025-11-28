@@ -98,6 +98,8 @@ export function useWebRTC(options: WebRTCOptions) {
 
       // Append token to WebSocket URL if we have one
       const urlWithToken = token ? `${wsUrl}?token=${encodeURIComponent(token)}` : wsUrl;
+      console.log('[BROWSER] Connecting to WebSocket:', wsUrl);
+      console.log('[BROWSER] Target robot:', robotId);
       const ws = new WebSocket(urlWithToken);
       wsRef.current = ws;
 
@@ -106,6 +108,7 @@ export function useWebRTC(options: WebRTCOptions) {
       // Set timeout for WebSocket connection (10 seconds)
       connectionTimeoutRef.current = setTimeout(() => {
         if (!connectionEstablished && ws.readyState !== WebSocket.OPEN) {
+          console.error('[BROWSER] WebSocket connection timeout');
           setStatus(prev => ({ 
             ...prev, 
             connecting: false, 
@@ -116,21 +119,23 @@ export function useWebRTC(options: WebRTCOptions) {
       }, 10000); // 10 second timeout
 
       ws.onerror = (error) => {
+        console.error('[BROWSER] WebSocket error:', error);
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
         setStatus(prev => ({ ...prev, connecting: false, error: 'WebSocket connection error' }));
-        console.error('WebSocket error:', error);
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        console.log('[BROWSER] WebSocket closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
         // Only set error if connection closed before being established
         if (!connectionEstablished) {
+          console.error('[BROWSER] Connection closed before establishing');
           setStatus(prev => ({ 
             ...prev, 
             connecting: false, 
@@ -144,6 +149,7 @@ export function useWebRTC(options: WebRTCOptions) {
       };
 
       ws.onopen = async () => {
+        console.log('[BROWSER] WebSocket opened, starting WebRTC connection...');
         connectionEstablished = true;
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
@@ -154,6 +160,7 @@ export function useWebRTC(options: WebRTCOptions) {
         // The signaling server tracks connections automatically on $connect
         // Only robots need to send { type: 'register', robotId: '...' }
 
+        console.log('[BROWSER] Creating RTCPeerConnection for robot:', robotId);
         const pc = new RTCPeerConnection({
           iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
         });
@@ -163,6 +170,7 @@ export function useWebRTC(options: WebRTCOptions) {
         webrtcConnectedRef.current = false;
         webrtcTimeoutRef.current = setTimeout(() => {
           if (!webrtcConnectedRef.current) {
+            console.error('[BROWSER] WebRTC connection timeout - robot may be offline');
             setStatus(prev => ({ 
               ...prev, 
               connecting: false, 
@@ -174,6 +182,7 @@ export function useWebRTC(options: WebRTCOptions) {
 
         pc.onicecandidate = (event) => {
           if (event.candidate && ws.readyState === WebSocket.OPEN) {
+            console.log('[BROWSER] Sending ICE candidate to robot:', robotId);
             ws.send(
               JSON.stringify({
                 type: 'candidate',
@@ -186,6 +195,7 @@ export function useWebRTC(options: WebRTCOptions) {
         };
 
         pc.ontrack = (event) => {
+          console.log('[BROWSER] Received video track from robot!');
           webrtcConnectedRef.current = true;
           if (webrtcTimeoutRef.current) {
             clearTimeout(webrtcTimeoutRef.current);
@@ -203,6 +213,7 @@ export function useWebRTC(options: WebRTCOptions) {
 
         const channel = pc.createDataChannel('control');
         channel.onopen = async () => {
+          console.log('[BROWSER] Data channel opened');
           rosBridgeRef.current = new WebRTCRosBridge(channel);
         };
 
@@ -210,28 +221,47 @@ export function useWebRTC(options: WebRTCOptions) {
 
         ws.onmessage = async (event) => {
           const msg = JSON.parse(event.data);
+          console.log('[BROWSER] Received message from server:', msg.type);
           if (msg.type === 'answer' && msg.sdp) {
-            await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
+            console.log('[BROWSER] Received answer from robot, setting remote description...');
+            try {
+              await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
+              console.log('[BROWSER] Remote description set successfully');
+            } catch (e) {
+              console.error('[BROWSER] Error setting remote description:', e);
+            }
           } else if (msg.type === 'candidate' && msg.candidate) {
             try {
               await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+              console.log('[BROWSER] Added ICE candidate from robot');
             } catch (e) {
-              console.error('Error adding ICE candidate:', e);
+              console.error('[BROWSER] Error adding ICE candidate:', e);
             }
+          } else {
+            console.log('[BROWSER] Unknown message type:', msg.type);
           }
         };
 
+        console.log('[BROWSER] Creating WebRTC offer...');
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
+        console.log('[BROWSER] Offer created, sending to robot:', robotId);
 
-        ws.send(
-          JSON.stringify({
-            to: robotId,
-            from: myId,
-            type: 'offer',
-            sdp: pc.localDescription?.sdp,
-          })
-        );
+        const offerMessage = {
+          to: robotId,
+          from: myId,
+          type: 'offer',
+          sdp: pc.localDescription?.sdp,
+        };
+        console.log('[BROWSER] Sending offer message:', { 
+          to: offerMessage.to, 
+          from: offerMessage.from, 
+          type: offerMessage.type,
+          sdpLength: offerMessage.sdp?.length 
+        });
+        
+        ws.send(JSON.stringify(offerMessage));
+        console.log('[BROWSER] Offer sent! Waiting for answer from robot...');
       };
     } catch (error) {
       setStatus(prev => ({
