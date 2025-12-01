@@ -41,9 +41,10 @@
 
 .robots-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(500px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 1.5rem;
   margin-top: 2rem;
+  align-items: stretch; /* Equal height rows */
 }
 
 .robot-card {
@@ -53,6 +54,10 @@
   cursor: pointer;
   transition: all 0.2s;
   border: 2px solid transparent;
+  display: flex;
+  flex-direction: column;
+  height: 100%; /* Fill grid cell */
+  min-height: 200px;
 }
 
 .robot-card:hover {
@@ -100,6 +105,12 @@
   margin: 0 0 1rem 0;
   line-height: 1.5;
   font-size: 0.9rem;
+  /* Clamp for consistency */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex: 1; /* Push footer to bottom */
 }
 
 .robot-card-footer {
@@ -108,6 +119,7 @@
   align-items: center;
   padding-top: 1rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: auto; /* Always at bottom */
 }
 
 .robot-card-id {

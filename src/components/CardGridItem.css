@@ -1,71 +1,110 @@
 .card-grid-card {
   background-color: #10131a;
   border-radius: 1rem;
-  box-shadow: 0 2px 16px #0005;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.3);
   color: #fff;
   padding: 1.5rem;
   cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
   display: flex;
   flex-direction: column;
-  align-items: center;
   outline: none;
   border: 2px solid transparent;
+  /* KEY FIX: Fill the grid cell height */
+  height: 100%;
+  min-height: 280px; /* Minimum height for consistency */
 }
 
 .card-grid-card:hover {
-  transform: translateY(-4px) scale(1.03);
-  box-shadow: 0 6px 24px #0007;
-  border: 2px solid var(--yellow);
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  border-color: var(--yellow, #ffc107);
 }
 
-.selected {
-  transform: translateY(-4px) scale(1.03);
-  box-shadow: 0 6px 24px #0007;
-  border: 2px solid var(--yellow);
+.card-grid-card.selected {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  border-color: var(--yellow, #ffc107);
+}
+
+/* Image container - consistent sizing */
+.card-grid-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 140px;
+  margin-bottom: 1rem;
+  flex-shrink: 0;
 }
 
 .card-grid-image img {
-  width: 128px;
-  height: 128px;
+  max-width: 100%;
+  max-height: 140px;
+  width: auto;
+  height: auto;
   object-fit: contain;
-  margin-bottom: 1rem;
 }
 
+/* Placeholder for cards without images - maintains spacing */
+.card-grid-card:not(:has(.card-grid-image)) .card-grid-content {
+  padding-top: 1rem;
+}
+
+/* Content area - grows to fill available space */
 .card-grid-content {
   text-align: left;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .card-grid-content h3 {
   margin: 0 0 0.5rem 0;
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   font-weight: 600;
+  line-height: 1.3;
+  /* Prevent overly long titles from breaking layout */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .card-grid-description {
-  margin: 0 0 0.5rem 0;
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 0.9rem;
-  line-height: 1.4;
+  margin: 0 0 0.75rem 0;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  /* Clamp description to 3 lines for consistency */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex: 1; /* Push location to bottom */
 }
 
 .card-grid-location {
   margin: 0;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.8rem;
   font-style: italic;
+  /* Keep location at bottom */
+  margin-top: auto;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+/* Disabled state */
 .card-grid-card.disabled {
   opacity: 0.5;
   cursor: not-allowed;
   filter: grayscale(0.7);
-  pointer-events: none; /* Prevent all interactions */
+  pointer-events: none;
 }
 
 .card-grid-card.disabled:hover {
   transform: none;
-  box-shadow: 0 2px 16px #0005;
-  border: 2px solid transparent;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.3);
+  border-color: transparent;
 }

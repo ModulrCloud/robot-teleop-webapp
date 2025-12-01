@@ -40,7 +40,7 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
   }, [multiple, selected, setSelected])
 
   const cards = useMemo(() => items.map(item => (
-    <div key={item.id} style={{ position: 'relative' }}>
+    <div key={item.id} style={{ position: 'relative', height: '100%' }}>
       <CardGridItem
         ref={(ref) => { itemRefs.current[item.id] = ref }}
         {...item}
@@ -131,7 +131,7 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
         </button>
       )}
     </div>
-  )), [items, onCardClick, onDelete, deletingItemId])
+  )), [items, onCardClick, onDelete, deletingItemId, onEdit, editingItemId])
 
   return (
     <div className="card-grid" style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}>

@@ -1,16 +1,7 @@
 .card-grid {
   display: grid;
-  gap: 2rem;
+  gap: 1.5rem;
   margin: 2rem 0;
-}
-
-.card-grid-content h3 {
-  margin: 0 0 0.5rem 0;
-  font-size: 1.25rem;
-}
-
-.card-grid-content p {
-  margin: 0;
-  color: #b0b8c9;
-  font-size: 1rem;
+  /* Ensure all grid items stretch to fill row height */
+  align-items: stretch;
 }
