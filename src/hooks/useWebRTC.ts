@@ -155,13 +155,17 @@ export function useWebRTC(options: WebRTCOptions) {
       };
 
       ws.onopen = async () => {
-        console.log('[BROWSER] WebSocket opened, waiting for connection ID...');
+        console.log('[BROWSER] WebSocket opened, sending ready message...');
         connectionEstablished = true;
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
         
+        // Send ready message to get our connection ID
+        ws.send(JSON.stringify({ type: 'ready' }));
+        
+        // Set timeout for welcome message (15 seconds)
         welcomeTimeoutRef.current = setTimeout(() => {
           console.error('[BROWSER] Welcome message timeout');
           setStatus(prev => ({ 

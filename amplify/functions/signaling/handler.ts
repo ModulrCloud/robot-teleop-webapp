@@ -526,16 +526,6 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
             username,
             groups: claims.groups,
         });
-        
-        // Send connection ID back to client
-        try {
-            await postTo(connectionId, {
-                type: 'welcome',
-                connectionId: connectionId,
-            });
-        } catch (e) {
-            console.warn('Failed to send welcome message:', e);
-        }
     } catch (e) {
         console.warn('Connect put_item error', e);
         console.error('[CONNECTION_ERROR]', { connectionId, error: String(e) });
@@ -1280,6 +1270,21 @@ export async function handler(
     hasToken: !!token,
     userId: claims?.sub,
   });
+
+  // Handle 'ready' message - send back connection ID
+  if (raw?.type === 'ready') {
+    console.log('[READY_MESSAGE]', { connectionId });
+    try {
+      await postTo(connectionId, {
+        type: 'welcome',
+        connectionId: connectionId,
+      });
+      return { statusCode: 200, body: 'ok' };
+    } catch (e) {
+      console.error('Failed to send welcome:', e);
+      return { statusCode: 500, body: 'failed to send welcome' };
+    }
+  }
 
   // Dispatch by message type
   if (type === 'register') {
