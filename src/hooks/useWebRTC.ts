@@ -55,6 +55,7 @@ export function useWebRTC(options: WebRTCOptions) {
   const rosBridgeRef = useRef<WebRTCRosBridge | null>(null);
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const webrtcTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const welcomeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const webrtcConnectedRef = useRef<boolean>(false);
   const myIdRef = useRef<string>(myId || ''); // Store actual connection ID
 
@@ -66,6 +67,10 @@ export function useWebRTC(options: WebRTCOptions) {
     if (webrtcTimeoutRef.current) {
       clearTimeout(webrtcTimeoutRef.current);
       webrtcTimeoutRef.current = null;
+    }
+    if (welcomeTimeoutRef.current) {
+      clearTimeout(welcomeTimeoutRef.current);
+      welcomeTimeoutRef.current = null;
     }
     if (pcRef.current) {
       pcRef.current.close();
@@ -156,6 +161,17 @@ export function useWebRTC(options: WebRTCOptions) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
+        
+        // Set timeout for welcome message (5 seconds)
+        welcomeTimeoutRef.current = setTimeout(() => {
+          console.error('[BROWSER] Welcome message timeout');
+          setStatus(prev => ({ 
+            ...prev, 
+            connecting: false, 
+            error: 'Server connection timeout: Did not receive connection confirmation.' 
+          }));
+          cleanup();
+        }, 5000);
       };
 
       // Handle all messages including welcome
@@ -165,6 +181,11 @@ export function useWebRTC(options: WebRTCOptions) {
 
         // Handle welcome message with our connection ID
         if (msg.type === 'welcome' && msg.connectionId) {
+          if (welcomeTimeoutRef.current) {
+            clearTimeout(welcomeTimeoutRef.current);
+            welcomeTimeoutRef.current = null;
+          }
+          
           console.log('[BROWSER] Received connection ID:', msg.connectionId);
           myIdRef.current = msg.connectionId;
           
