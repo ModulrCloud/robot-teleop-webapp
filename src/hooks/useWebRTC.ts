@@ -247,6 +247,17 @@ export function useWebRTC(options: WebRTCOptions) {
         await pc.setLocalDescription(offer);
         console.log('[BROWSER] Offer created, sending to robot:', robotId);
 
+        if (ws.readyState !== WebSocket.OPEN) {
+          console.error('[BROWSER] WebSocket is not open, cannot send offer');
+          setStatus(prev => ({
+            ...prev,
+            connecting: false,
+            error: 'WebSocket connection lost. Please try again.',
+          }));
+          cleanup();
+          return;
+        }
+
         const offerMessage = {
           to: robotId,
           from: myId,

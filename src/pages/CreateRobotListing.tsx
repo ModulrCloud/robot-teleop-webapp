@@ -111,14 +111,14 @@ export const CreateRobotListing = () => {
       } else {
         console.log('✅ Robot created successfully:', robot.data);
         
-        // Parse the robot data to get robotId
+        // Parse the robot data to get the UUID (id field, not robotId field)
         try {
           const robotData = JSON.parse(robot.data || '{}');
-          const robotId = robotData.robotId;
+          const robotUuid = robotData.id; // This is the UUID used for database queries
           
-          if (robotId) {
-            // Redirect to setup page with robotId
-            navigate(`/robot-setup?robotId=${robotId}`);
+          if (robotUuid) {
+            // Redirect to setup page with the robot's UUID
+            navigate(`/robot-setup?robotId=${robotUuid}`);
           } else {
             // Fallback: show success message
             setSuccess(true);
