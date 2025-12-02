@@ -473,6 +473,16 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
                 }),
             );
             console.log('[CONNECTION_SUCCESS]', { connectionId, mode: 'dev-no-token' });
+            
+            // Send connection ID back to client (dev mode)
+            try {
+                await postTo(connectionId, {
+                    type: 'welcome',
+                    connectionId: connectionId,
+                });
+            } catch (e) {
+                console.warn('Failed to send welcome message:', e);
+            }
         } catch (e) {
             console.warn('Connect put_item error', e);
             console.error('[CONNECTION_ERROR]', { connectionId, error: String(e) });
@@ -493,6 +503,7 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
 
     try {
         // Store username/email for ACL checks
+        const email = claims.email || '';
         const username = claims['cognito:username'] || claims.email || claims.sub || '';
         await db.send(
             new PutItemCommand({
@@ -500,7 +511,8 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
                 Item: {
                     connectionId: { S: connectionId},
                     userId: { S: claims.sub },
-                    username: { S: username }, // Store for ACL checks
+                    username: { S: username },
+                    email: { S: email },
                     groups: { S: (claims.groups ?? []).join(',')},
                     kind: { S: 'client' },
                     ts: { N: String(Date.now()) },
@@ -514,6 +526,16 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
             username,
             groups: claims.groups,
         });
+        
+        // Send connection ID back to client
+        try {
+            await postTo(connectionId, {
+                type: 'welcome',
+                connectionId: connectionId,
+            });
+        } catch (e) {
+            console.warn('Failed to send welcome message:', e);
+        }
     } catch (e) {
         console.warn('Connect put_item error', e);
         console.error('[CONNECTION_ERROR]', { connectionId, error: String(e) });
@@ -940,19 +962,20 @@ async function handleSignal(
   if (target === 'robot') {
     // Get user's email/username from connection table for ACL check
     let userEmailOrUsername: string | undefined;
+    let userEmail: string | undefined;
     try {
       const connItem = await db.send(new GetItemCommand({
         TableName: CONN_TABLE,
         Key: { connectionId: { S: sourceConnId } },
-        ProjectionExpression: 'username',
       }));
       userEmailOrUsername = connItem.Item?.username?.S;
+      userEmail = connItem.Item?.email?.S; // Get stored email
     } catch (e) {
       console.warn('Failed to get username from connection table:', e);
     }
 
-    // Check ACL
-    const hasAccess = await canAccessRobot(robotId, claims, userEmailOrUsername);
+    // Check ACL - pass email as the primary identifier
+    const hasAccess = await canAccessRobot(robotId, claims, userEmail || userEmailOrUsername);
     if (!hasAccess) {
       const userIdentifier = userEmailOrUsername || (claims as Claims).email || claims.sub || 'unknown';
       console.log(`Access denied: User ${userIdentifier} attempted to access robot ${robotId}`);
