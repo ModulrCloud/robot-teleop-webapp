@@ -162,7 +162,6 @@ export function useWebRTC(options: WebRTCOptions) {
           connectionTimeoutRef.current = null;
         }
         
-        // Set timeout for welcome message (5 seconds)
         welcomeTimeoutRef.current = setTimeout(() => {
           console.error('[BROWSER] Welcome message timeout');
           setStatus(prev => ({ 
@@ -171,7 +170,7 @@ export function useWebRTC(options: WebRTCOptions) {
             error: 'Server connection timeout: Did not receive connection confirmation.' 
           }));
           cleanup();
-        }, 5000);
+        }, 15000);
       };
 
       // Handle all messages including welcome
