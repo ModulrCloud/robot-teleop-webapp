@@ -144,6 +144,7 @@ export const handler: Schema["listAccessibleRobotsLambda"]["functionHandler"] = 
         model: robotItem.model?.S,
         partnerId: robotItem.partnerId?.S,
         allowedUsers: robotItem.allowedUsers?.SS || [],
+        imageUrl: robotItem.imageUrl?.S,
         createdAt: robotItem.createdAt?.S,
         updatedAt: robotItem.updatedAt?.S,
         // Location fields

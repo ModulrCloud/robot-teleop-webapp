@@ -25,6 +25,7 @@ interface Robot {
   description: string;
   model: string;
   robotId: string;
+  imageUrl?: string;
   city?: string;
   state?: string;
   country?: string;
@@ -93,6 +94,7 @@ export default function MyRobots() {
             description: robot.description || '',
             model: robot.model || '',
             robotId: robot.robotId || '',
+            imageUrl: robot.imageUrl || undefined,
             city: robot.city || undefined,
             state: robot.state || undefined,
             country: robot.country || undefined,
@@ -176,6 +178,19 @@ export default function MyRobots() {
   const formatDate = (timestamp?: number) => {
     if (!timestamp) return 'Never';
     return new Date(timestamp).toLocaleString();
+  };
+
+  const getRobotImage = (model?: string, imageUrl?: string): string => {
+    if (imageUrl) return imageUrl;
+    
+    const normalized = model?.toLowerCase()?.trim();
+    switch (normalized) {
+      case 'rover': return '/racer.png';
+      case 'humanoid': return '/humaniod.png';
+      case 'drone': return '/drone.png';
+      case 'submarine': return '/submarine.png';
+      default: return '/racer.png';
+    }
   };
 
   if (isLoading) {
@@ -343,6 +358,9 @@ export default function MyRobots() {
                 className="robot-card"
                 onClick={() => handleRobotClick(robot)}
               >
+                <div className="robot-card-image">
+                  <img src={getRobotImage(robot.model, robot.imageUrl)} alt={robot.name} />
+                </div>
                 <div className="robot-card-header">
                   <div className="robot-card-title">
                     <FontAwesomeIcon icon={faRobot} />

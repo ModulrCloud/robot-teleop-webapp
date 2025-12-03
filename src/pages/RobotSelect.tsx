@@ -8,23 +8,27 @@ import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from "../components/LoadingWheel";
 import "./RobotSelect.css";
+import { getUrl } from 'aws-amplify/storage';
 
 const client = generateClient<Schema>();
 
-// Map robot models to images
-const getRobotImage = (model?: string | null): string => {
+const getRobotImage = (model?: string | null, imageUrl?: string | null): string => {
+  if (imageUrl) {
+    return imageUrl;
+  }
+  
   const normalizedModel = model?.toLowerCase()?.trim();
   switch (normalizedModel) {
     case 'rover':
       return '/racer.png';
     case 'humanoid':
-      return '/humaniod.png'; // Note: filename is "humaniod.png" (typo in filename)
+      return '/humaniod.png';
     case 'drone':
       return '/drone.png';
     case 'submarine':
       return '/submarine.png';
     default:
-      return '/racer.png'; // Default to racer for unknown types
+      return '/racer.png';
   }
 };
 
@@ -352,7 +356,7 @@ export default function RobotSelect() {
               
               // Log model for debugging
               if (robot.model) {
-                console.log(`[ROBOT_IMAGE] Robot "${robot.name || 'Unnamed'}": model="${robot.model}", image="${getRobotImage(robot.model)}"`);
+                console.log(`[ROBOT_IMAGE] Robot "${robot.name || 'Unnamed'}": model="${robot.model}", image="${getRobotImage(robot.model, robot.imageUrl)}"`);
               }
               
               return {
@@ -361,7 +365,8 @@ export default function RobotSelect() {
                 title: robot.name || 'Unnamed Robot',
                 description: description,
                 location: location, // Location on separate line
-                imageUrl: getRobotImage(robot.model),
+                imageUrl: getRobotImage(robot.model, robot.imageUrl),
+                rawImageUrl: robot.imageUrl,
                 disabled: !canAccess, // Gray out if user can't access
               };
             });
@@ -401,6 +406,7 @@ export default function RobotSelect() {
         }
 
         setRobots(robotItems);
+        setRawRobotData(robotItems);
       } catch (err) {
         console.error('Exception loading robots:', err);
         // In dev mode, still show default robot even if there's an exception
@@ -425,6 +431,32 @@ export default function RobotSelect() {
 
     loadRobots();
   }, []);
+
+  const [resolvedImages, setResolvedImages] = useState<Record<string, string>>({});
+  const [rawRobotData, setRawRobotData] = useState<any[]>([]);
+
+  useEffect(() => {
+    const resolveImages = async () => {
+      const images: Record<string, string> = {};
+      for (const robot of rawRobotData) {
+        const key = (robot as any).rawImageUrl;
+        if (key && !key.startsWith('http') && !key.startsWith('/')) {
+          try {
+            const result = await getUrl({ path: key });
+            images[robot.id] = result.url.toString();
+          } catch {
+            images[robot.id] = '';
+          }
+        }
+      }
+      if (Object.keys(images).length > 0) {
+        setResolvedImages(images);
+      }
+    };
+    if (rawRobotData.length > 0) {
+      resolveImages();
+    }
+  }, [rawRobotData]);
 
   const handleNext = () => {
     if (hasSelected && selected[0]) {
@@ -577,7 +609,7 @@ export default function RobotSelect() {
               uuid: robot.id || undefined,
               title: robot.name || 'Unnamed Robot',
               description: description,
-              imageUrl: getRobotImage(robot.model),
+              imageUrl: resolvedImages[robot.id] || getRobotImage(robot.model, robot.imageUrl),
             };
           });
         
@@ -630,7 +662,7 @@ export default function RobotSelect() {
     <div className="robot-select-container">
       <h2>Select Robot</h2>
           <CardGrid
-            items={robots}
+            items={robots.map(robot => ({ ...robot, imageUrl: resolvedImages[robot.id] || robot.imageUrl }))}
             columns={3}
             multiple={false}
             selected={selected}

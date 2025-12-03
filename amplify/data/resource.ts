@@ -96,6 +96,7 @@ const schema = a.schema({
     partnerId: a.id().required(),
     partner: a.belongsTo('Partner', 'partnerId'),
     allowedUsers: a.string().array(), // Optional: if null/empty, robot is open access. If set, only listed users can access.
+    imageUrl: a.string(),
     // Location fields
     city: a.string(),
     state: a.string(),
@@ -143,6 +144,7 @@ const schema = a.schema({
       model: a.string(),
       enableAccessControl: a.boolean(), // Optional: if true, creates ACL with default users
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL
+      imageUrl: a.string(),
       // Location fields
       city: a.string(),
       state: a.string(),
@@ -163,6 +165,7 @@ const schema = a.schema({
       model: a.string(), // Optional: update model
       enableAccessControl: a.boolean(), // Optional: update ACL (true = enable/update, false = disable/remove)
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL (only used if enableAccessControl is true)
+      imageUrl: a.string(), // Optional: update imageUrl
       // Location fields (optional)
       city: a.string(),
       state: a.string(),

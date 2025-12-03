@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import './CreateRobotListing.css';
 import { generateClient } from 'aws-amplify/api';
+import { uploadData, getUrl } from 'aws-amplify/storage';
 import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -16,7 +17,9 @@ import {
   faPlane,
   faWater,
   faTrash,
-  faCircle
+  faCircle,
+  faCloudUploadAlt,
+  faTimes
 } from '@fortawesome/free-solid-svg-icons';
 
 const ROBOT_MODELS = [
@@ -69,6 +72,14 @@ export const EditRobot = () => {
     latitude: "",
     longitude: "",
   });
+
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [existingImageKey, setExistingImageKey] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load robot data
   useEffect(() => {
@@ -124,6 +135,21 @@ export const EditRobot = () => {
           latitude: robotData.latitude?.toString() || "",
           longitude: robotData.longitude?.toString() || "",
         });
+
+        // Load existing image if available
+        if (robotData.imageUrl) {
+          setExistingImageKey(robotData.imageUrl);
+          if (!robotData.imageUrl.startsWith('http')) {
+            try {
+              const result = await getUrl({ path: robotData.imageUrl });
+              setImagePreview(result.url.toString());
+            } catch (err) {
+              console.error('Error loading existing image:', err);
+            }
+          } else {
+            setImagePreview(robotData.imageUrl);
+          }
+        }
       } catch (err) {
         console.error('Error loading robot:', err);
         setError(err instanceof Error ? err.message : 'Failed to load robot');
@@ -181,11 +207,83 @@ export const EditRobot = () => {
     }));
   };
 
+  const handleFileSelect = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setUploadError('Please select an image file');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError('Image must be less than 5MB');
+      return;
+    }
+    setUploadError(null);
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileSelect(file);
+  };
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFileSelect(file);
+  };
+
+  const clearImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    setExistingImageKey(null);
+    setUploadError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const uploadImage = async (): Promise<string | null> => {
+    if (!imageFile) return existingImageKey;
+
+    const key = `robot-images/${Date.now()}-${Math.random().toString(36).slice(2)}.${imageFile.name.split('.').pop()}`;
+
+    try {
+      await uploadData({
+        path: key,
+        data: imageFile,
+        options: {
+          contentType: imageFile.type,
+          onProgress: ({ transferredBytes, totalBytes }) => {
+            if (totalBytes) setUploadProgress(Math.round((transferredBytes / totalBytes) * 100));
+          },
+        },
+      }).result;
+
+      return key;
+    } catch (error) {
+      console.error('Upload failed:', error);
+      throw error;
+    }
+  };
+
   const onConfirmUpdate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
     setSuccess(undefined);
     setError(null);
+    setUploadError(null);
+    setUploadProgress(0);
+
+    let imageUrl: string | null | undefined = existingImageKey;
+
+    if (imageFile) {
+      try {
+        imageUrl = await uploadImage();
+      } catch {
+        setUploadError('Failed to upload image. Please try again.');
+        setIsLoading(false);
+        return;
+      }
+    }
 
     // Parse email list (split by comma or newline, trim, filter empty)
     const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
@@ -209,6 +307,7 @@ export const EditRobot = () => {
       model: modelToSend,
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
+      imageUrl: imageUrl || undefined,
       city: robotListing.city || undefined,
       state: robotListing.state || undefined,
       country: robotListing.country || undefined,
@@ -463,6 +562,58 @@ export const EditRobot = () => {
               <div className={`char-count ${robotListing.description.length >= 280 ? 'char-count-limit' : ''}`}>
                 {robotListing.description.length}/280 characters
               </div>
+            </div>
+          </div>
+
+          <div className="form-section">
+            <h3>Robot Image</h3>
+            
+            <div className="form-group">
+              <label>
+                Image <span className="optional">(optional)</span>
+              </label>
+              
+              {!imagePreview ? (
+                <div
+                  className={`upload-zone ${isDragging ? 'dragging' : ''}`}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileInput}
+                    hidden
+                  />
+                  <div className="upload-prompt">
+                    <FontAwesomeIcon icon={faCloudUploadAlt} />
+                    <span>Drop an image here or click to browse</span>
+                    <small>PNG, JPG up to 5MB</small>
+                  </div>
+                </div>
+              ) : (
+                <div className="preview-container">
+                  <img src={imagePreview} alt="Preview" />
+                  <button type="button" className="remove-image" onClick={clearImage}>
+                    <FontAwesomeIcon icon={faTimes} />
+                  </button>
+                  {uploadProgress > 0 && uploadProgress < 100 && (
+                    <div className="upload-progress">
+                      <div className="progress-bar" style={{ width: `${uploadProgress}%` }} />
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {uploadError && (
+                <div className="upload-error">
+                  <FontAwesomeIcon icon={faExclamationCircle} />
+                  <span>{uploadError}</span>
+                </div>
+              )}
             </div>
           </div>
 

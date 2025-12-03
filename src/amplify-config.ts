@@ -69,24 +69,33 @@ try {
           userPoolId: outputs.auth.user_pool_id,
           userPoolClientId: outputs.auth.user_pool_client_id,
           identityPoolId: outputs.auth.identity_pool_id,
-          region: outputs.auth.aws_region, // CRITICAL: Include region
+          region: outputs.auth.aws_region,
           loginWith: loginWith
         }
       }
     };
     
     // CRITICAL: Preserve API config from initial configure or add from outputs
-    // This ensures generateClient() has access to the GraphQL endpoint
     if (config.API) {
-      // Preserve existing API config from initial configure
       completeConfig.API = config.API;
     } else if (outputs.data) {
-      // Add API config from outputs if it wasn't set by initial configure
       completeConfig.API = {
         GraphQL: {
           endpoint: outputs.data.url,
           region: outputs.data.aws_region,
           defaultAuthMode: outputs.data.default_authorization_type
+        }
+      };
+    }
+    
+    // CRITICAL: Preserve Storage config from initial configure or add from outputs
+    if (config.Storage) {
+      completeConfig.Storage = config.Storage;
+    } else if (outputs.storage) {
+      completeConfig.Storage = {
+        S3: {
+          bucket: outputs.storage.bucket_name,
+          region: outputs.storage.aws_region,
         }
       };
     }
