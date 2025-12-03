@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './CreateRobotListing.css';
 import { generateClient } from 'aws-amplify/api';
+import { uploadData } from 'aws-amplify/storage';
 import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -14,7 +15,9 @@ import {
   faTruck,
   faPersonWalking,
   faPlane,
-  faWater
+  faWater,
+  faCloudUploadAlt,
+  faTimes
 } from '@fortawesome/free-solid-svg-icons';
 
 const ROBOT_MODELS = [
@@ -58,6 +61,14 @@ export const CreateRobotListing = () => {
     longitude: "",
   });
 
+  // Image upload state
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = event.target;
     const checked = (event.target as HTMLInputElement).checked;
@@ -67,12 +78,83 @@ export const CreateRobotListing = () => {
     }));
   };
 
+  const handleFileSelect = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setUploadError('Please select an image file');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError('Image must be less than 5MB');
+      return;
+    }
+    setUploadError(null);
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFileSelect(file);
+  };
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFileSelect(file);
+  };
+
+  const clearImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    setUploadError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const uploadImage = async (): Promise<string | null> => {
+    if (!imageFile) return null;
+
+    const key = `robot-images/${Date.now()}-${Math.random().toString(36).slice(2)}.${imageFile.name.split('.').pop()}`;
+
+    try {
+      await uploadData({
+        path: key,
+        data: imageFile,
+        options: {
+          contentType: imageFile.type,
+          onProgress: ({ transferredBytes, totalBytes }) => {
+            if (totalBytes) setUploadProgress(Math.round((transferredBytes / totalBytes) * 100));
+          },
+        },
+      }).result;
+
+      return key;
+    } catch (error) {
+      console.error('Upload failed:', error);
+      throw error;
+    }
+  };
+
   const onConfirmCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
     setSuccess(undefined);
+    setUploadError(null);
+    setUploadProgress(0);
 
-    // Parse email list (split by comma or newline, trim, filter empty)
+    let imageUrl: string | null = null;
+
+    if (imageFile) {
+      try {
+        const key = await uploadImage();
+        imageUrl = key;
+      } catch {
+        setUploadError('Failed to upload image. Please try again.');
+        setIsLoading(false);
+        return;
+      }
+    }
+
     const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
       ? robotListing.allowedUserEmails
           .split(/[,\n]/)
@@ -86,6 +168,7 @@ export const CreateRobotListing = () => {
       model: robotListing.model,
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
+      imageUrl: imageUrl || undefined,
       city: robotListing.city || undefined,
       state: robotListing.state || undefined,
       country: robotListing.country || undefined,
@@ -93,72 +176,48 @@ export const CreateRobotListing = () => {
       longitude: robotListing.longitude ? (isNaN(parseFloat(robotListing.longitude)) ? undefined : parseFloat(robotListing.longitude)) : undefined,
     };
 
-    console.log('🤖 Creating robot with data:', robotData);
-
     try {
       const robot = await client.mutations.setRobotLambda(robotData);
 
-      console.log('📊 Robot creation response:', {
-        hasData: !!robot.data,
-        hasErrors: !!robot.errors,
-        data: robot.data,
-        errors: robot.errors,
-      });
-
       if (robot.errors) {
-        console.error('❌ Errors creating robot:', robot.errors);
         setSuccess(false);
       } else {
-        console.log('✅ Robot created successfully:', robot.data);
-        
-        // Parse the robot data to get the UUID (id field, not robotId field)
         try {
           const robotData = JSON.parse(robot.data || '{}');
-          const robotUuid = robotData.id; // This is the UUID used for database queries
-          
+          const robotUuid = robotData.id;
           if (robotUuid) {
-            // Redirect to setup page with the robot's UUID
             navigate(`/robot-setup?robotId=${robotUuid}`);
           } else {
-            // Fallback: show success message
             setSuccess(true);
-            setRobotListing({
-              robotName: "",
-              description: "",
-              model: ROBOT_MODELS[0].value,
-              enableAccessControl: false,
-              allowedUserEmails: "",
-              city: "",
-              state: "",
-              country: "",
-              latitude: "",
-              longitude: "",
-            });
+            resetForm();
           }
-        } catch (parseError) {
-          console.error('Failed to parse robot data:', parseError);
-          // Fallback: show success message
+        } catch {
           setSuccess(true);
-          setRobotListing({
-            robotName: "",
-            description: "",
-            model: ROBOT_MODELS[0].value,
-            enableAccessControl: false,
-            allowedUserEmails: "",
-            city: "",
-            state: "",
-            country: "",
-            latitude: "",
-            longitude: "",
-          });
+          resetForm();
         }
       }
     } catch (error) {
-      console.error('❌ Exception creating robot:', error);
+      console.error('Create robot failed:', error);
       setSuccess(false);
     }
 
     setIsLoading(false);
+  };
+
+  const resetForm = () => {
+    setRobotListing({
+      robotName: "",
+      description: "",
+      model: ROBOT_MODELS[0].value,
+      enableAccessControl: false,
+      allowedUserEmails: "",
+      city: "",
+      state: "",
+      country: "",
+      latitude: "",
+      longitude: "",
+    });
+    clearImage();
   };
 
   return (
@@ -245,6 +304,55 @@ export const CreateRobotListing = () => {
               <div className={`char-count ${robotListing.description.length >= 280 ? 'char-count-limit' : ''}`}>
                 {robotListing.description.length}/280 characters
               </div>
+            </div>
+
+            {/* Image Upload Section */}
+            <div className="form-group">
+              <label>
+                Robot Image <span className="optional">(optional)</span>
+              </label>
+              
+              {!imagePreview ? (
+                <div
+                  className={`upload-zone ${isDragging ? 'dragging' : ''}`}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileInput}
+                    hidden
+                  />
+                  <div className="upload-prompt">
+                    <FontAwesomeIcon icon={faCloudUploadAlt} />
+                    <span>Drop an image here or click to browse</span>
+                    <small>PNG, JPG up to 5MB</small>
+                  </div>
+                </div>
+              ) : (
+                <div className="preview-container">
+                  <img src={imagePreview} alt="Preview" />
+                  <button type="button" className="remove-image" onClick={clearImage}>
+                    <FontAwesomeIcon icon={faTimes} />
+                  </button>
+                  {uploadProgress > 0 && uploadProgress < 100 && (
+                    <div className="upload-progress">
+                      <div className="progress-bar" style={{ width: `${uploadProgress}%` }} />
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {uploadError && (
+                <div className="upload-error">
+                  <FontAwesomeIcon icon={faExclamationCircle} />
+                  <span>{uploadError}</span>
+                </div>
+              )}
             </div>
           </div>
 

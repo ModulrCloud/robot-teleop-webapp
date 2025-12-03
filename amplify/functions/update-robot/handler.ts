@@ -6,7 +6,7 @@ const ddbClient = new DynamoDBClient({});
 export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (event) => {
   console.log('Received event:', JSON.stringify(event, null, 2));
 
-  const { robotId, robotName, description, model, enableAccessControl, additionalAllowedUsers, city, state, country, latitude, longitude } = event.arguments;
+  const { robotId, robotName, description, model, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude } = event.arguments;
 
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
@@ -98,6 +98,13 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     updateExpressions.push('#model = :model');
     expressionAttributeNames['#model'] = 'model';
     expressionAttributeValues[':model'] = { S: model.trim() };
+  }
+
+  // Update imageUrl if provided
+  if (imageUrl !== undefined) {
+    updateExpressions.push('#imageUrl = :imageUrl');
+    expressionAttributeNames['#imageUrl'] = 'imageUrl';
+    expressionAttributeValues[':imageUrl'] = { S: imageUrl };
   }
 
   // Update location fields if provided
@@ -233,6 +240,7 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     name: robotName || robotResult.Item.name?.S,
     description: description !== undefined ? description : robotResult.Item.description?.S,
     model: model !== undefined ? model : robotResult.Item.model?.S,
+    imageUrl: imageUrl !== undefined ? imageUrl : robotResult.Item.imageUrl?.S,
     partnerId: robotPartnerId,
     updatedAt: now,
   };

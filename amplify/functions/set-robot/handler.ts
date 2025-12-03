@@ -7,7 +7,7 @@ const ddbClient = new DynamoDBClient({});
 export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event) => {
   console.log('Received event:', JSON.stringify(event, null, 2));
 
-  const { robotName, description, model, enableAccessControl, additionalAllowedUsers, city, state, country, latitude, longitude } = event.arguments;
+  const { robotName, description, model, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude } = event.arguments;
 
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
@@ -79,6 +79,11 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
       __typename: { S: robot.__typename },
     },
   };
+
+  // Add imageUrl if provided
+  if (imageUrl) {
+    putItemInput.Item.imageUrl = { S: imageUrl };
+  }
 
   // Add location fields if provided
   if (city) {

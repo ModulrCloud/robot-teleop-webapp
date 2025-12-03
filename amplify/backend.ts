@@ -1,6 +1,7 @@
 import { defineBackend } from '@aws-amplify/backend';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
+import { storage } from './storage/resource';
 import { setUserGroupLambda } from './functions/set-user-group/resource';
 import { setRobotLambda } from './functions/set-robot/resource';
 import { updateRobotLambda } from './functions/update-robot/resource';
@@ -24,6 +25,7 @@ import { Function as CdkFunction } from 'aws-cdk-lib/aws-lambda';
 const backend = defineBackend({
   auth,
   data,
+  storage,
   setUserGroupLambda,
   setRobotLambda,
   updateRobotLambda,
