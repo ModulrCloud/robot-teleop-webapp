@@ -11,7 +11,9 @@ import {
   faRightFromBracket,
   faCog,
   faGlobe,
-  faList
+  faList,
+  faBuilding,
+  faHandshake
 } from '@fortawesome/free-solid-svg-icons';
 import "./Navbar.css";
 import { formatGroupName, capitalizeName } from "./utils/formatters";
@@ -73,6 +75,13 @@ export default function Navbar() {
             >
               <FontAwesomeIcon icon={faRobot} />
               <span>Robots</span>
+            </Link>
+            <Link 
+              to="/services" 
+              className={`nav-link ${isActive('/services') ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faHandshake} />
+              <span>Services</span>
             </Link>
             {user?.group === "PARTNERS" && (
               <Link 
@@ -137,6 +146,12 @@ export default function Navbar() {
                     <FontAwesomeIcon icon={faUser} />
                     <span>Profile</span>
                   </Link>
+                  {user?.group === "PARTNERS" && (
+                    <Link to="/partner-profile/edit" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
+                      <FontAwesomeIcon icon={faBuilding} />
+                      <span>Company Profile</span>
+                    </Link>
+                  )}
                   <Link to="/settings" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
                     <FontAwesomeIcon icon={faCog} />
                     <span>Settings</span>
@@ -179,6 +194,10 @@ export default function Navbar() {
           <Link to="/robots" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
             <FontAwesomeIcon icon={faRobot} />
             <span>Robots</span>
+          </Link>
+          <Link to="/services" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
+            <FontAwesomeIcon icon={faHandshake} />
+            <span>Services</span>
           </Link>
           {user?.group === "PARTNERS" && (
             <Link to="/my-robots" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
