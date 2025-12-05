@@ -65,6 +65,13 @@ const schema = a.schema({
     reliabilityScore: a.float(),
     tags: a.hasMany('PartnerTag', 'partnerId'),
     robots: a.hasMany('Robot', 'partnerId'),
+    logoUrl: a.string(),
+    websiteUrl: a.string(),
+    contactEmail: a.string(),
+    companyType: a.string(),
+    integrationCode: a.string(),
+    integrationDocsUrl: a.string(),
+    isPublicProfile: a.boolean(),
   })
   .secondaryIndexes(index => [index("cognitoUsername").name("cognitoUsernameIndex")])
   .authorization((allow) => [

@@ -1,42 +1,216 @@
-.service-select-container {
-  position: relative;
-  padding-bottom: 100px;
+.partners-directory {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem;
 }
 
-.start-session-button {
-  position: absolute;
-  right: 2rem;
-  bottom: -80px;
-  padding: 0.9rem 2rem;
-  min-width: 200px;
-  font-size: 1.05rem;
-  font-weight: 600;
-  border-radius: 8px;
+.directory-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.directory-header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem 0;
+}
+
+.directory-header p {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1rem;
+}
+
+.directory-controls {
+  margin-bottom: 2rem;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 0.875rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.search-box svg {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.search-box input {
+  flex: 1;
+  background: transparent;
   border: none;
-  background: linear-gradient(135deg, #ffc107 0%, #ffb300 100%);
-  color: #000;
+  color: #fff;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.search-box input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.filter-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.filter-icon {
+  color: rgba(255, 255, 255, 0.4);
+  margin-right: 0.5rem;
+}
+
+.filter-tab {
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.filter-tab:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.filter-tab.active {
+  background: rgba(255, 193, 7, 0.15);
+  border-color: #ffc107;
+  color: #ffc107;
+}
+
+.partners-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1.25rem;
+}
+
+.partner-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3);
 }
 
-.start-session-button:hover {
+.partner-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 193, 7, 0.3);
   transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(255, 193, 7, 0.5);
-  background: linear-gradient(135deg, #ffd54f 0%, #ffc107 100%);
 }
 
-.start-session-button:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3);
+.card-logo {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.card-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.logo-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #ffc107, #ff9800);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-content h3 {
+  margin: 0 0 0.25rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.card-type {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  background: rgba(255, 193, 7, 0.1);
+  color: #ffc107;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  margin-bottom: 0.5rem;
+}
+
+.card-description {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.4;
+}
+
+.card-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.meta-item svg {
+  font-size: 0.75rem;
+  color: #ffc107;
+}
+
+.card-arrow {
+  color: rgba(255, 255, 255, 0.3);
+  transition: all 0.2s;
+  align-self: center;
+}
+
+.partner-card:hover .card-arrow {
+  color: #ffc107;
+  transform: translateX(4px);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 @media (max-width: 768px) {
-  .start-session-button {
-    position: relative;
-    right: auto;
-    bottom: auto;
-    width: 100%;
-    margin-top: 2rem;
+  .partners-directory {
+    padding: 1.5rem 1rem;
+  }
+
+  .filter-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 0.5rem;
+  }
+
+  .partners-grid {
+    grid-template-columns: 1fr;
   }
 }

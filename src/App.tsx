@@ -23,6 +23,8 @@ import { EditRobot } from "./pages/EditRobot";
 import MyRobots from "./pages/MyRobots";
 import { useEffect } from "react";
 import { fetchAuthSession } from "aws-amplify/auth";
+import PartnerProfile from './pages/PartnerProfile';
+import EditPartnerProfile from './pages/EditPartnerProfile';
 
 // Amplify configuration is now in main.tsx
 import '@aws-amplify/ui-react/styles.css';
@@ -158,6 +160,18 @@ function App() {
                 <Settings />
               </PrivateRoute>
             } 
+            />
+            <Route path='/partner/:partnerId' element={
+              <PrivateRoute>
+                <PartnerProfile />
+              </PrivateRoute>
+            }
+            />
+            <Route path='/partner-profile/edit' element={
+              <PrivateRoute>
+                <EditPartnerProfile />
+              </PrivateRoute>
+            }
             />
           </Routes>
         </main>
