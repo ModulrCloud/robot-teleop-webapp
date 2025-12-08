@@ -12,24 +12,19 @@ import { getUrl } from 'aws-amplify/storage';
 
 const client = generateClient<Schema>();
 
-const getRobotImage = (model?: string | null, imageUrl?: string | null): string => {
-  if (imageUrl) {
-    return imageUrl;
-  }
+const getRobotImage = (model: string, imageUrl?: string): string => {
+  if (imageUrl) return imageUrl;
   
-  const normalizedModel = model?.toLowerCase()?.trim();
-  switch (normalizedModel) {
-    case 'rover':
-      return '/racer.png';
-    case 'humanoid':
-      return '/humaniod.png';
-    case 'drone':
-      return '/drone.png';
-    case 'submarine':
-      return '/submarine.png';
-    default:
-      return '/racer.png';
-  }
+  const modelImages: Record<string, string> = {
+    'humanoid': '/humaniod.png',
+    'drone': '/drone.png',
+    'rover': '/rover.webp',
+    'arm': '/robot_arm.webp',
+    'submarine': '/submarine.png',
+    'racer': '/racer.png',
+  };
+  
+  return modelImages[model.toLowerCase()] || '/humaniod.png';
 };
 
 // Extended robot data to include the UUID for deletion

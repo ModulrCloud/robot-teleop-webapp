@@ -19,12 +19,10 @@ import './CreateRobotListing.css';
 const client = generateClient<Schema>();
 
 const COMPANY_TYPES = [
+  'Robot Provider',
   'AI Provider',
-  'Hardware Vendor',
-  'Software Platform',
-  'Integration Partner',
-  'Service Provider',
-  'Other'
+  'Data Service Provider',
+  'Compute Provider',
 ];
 
 export default function EditPartnerProfile() {
@@ -46,6 +44,9 @@ export default function EditPartnerProfile() {
     integrationCode: '',
     integrationDocsUrl: '',
     isPublicProfile: true,
+    twitterUrl: '',
+    telegramUrl: '',
+    githubUrl: '',
   });
 
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -78,6 +79,9 @@ export default function EditPartnerProfile() {
             integrationCode: partner.integrationCode || '',
             integrationDocsUrl: partner.integrationDocsUrl || '',
             isPublicProfile: partner.isPublicProfile ?? true,
+            twitterUrl: partner.twitterUrl || '',
+            telegramUrl: partner.telegramUrl || '',
+            githubUrl: partner.githubUrl || '',
           });
 
           if (partner.logoUrl) {
@@ -193,6 +197,9 @@ export default function EditPartnerProfile() {
         integrationDocsUrl: form.integrationDocsUrl || null,
         isPublicProfile: form.isPublicProfile,
         logoUrl: logoUrl || null,
+        twitterUrl: form.twitterUrl || null,
+        telegramUrl: form.telegramUrl || null,
+        githubUrl: form.githubUrl || null,
       };
 
       if (partnerId) {
@@ -361,6 +368,46 @@ export default function EditPartnerProfile() {
                 value={form.contactEmail}
                 onChange={handleChange}
                 placeholder="contact@example.com"
+                disabled={isLoading}
+              />
+            </div>
+          </div>
+
+          <div className="form-section">
+            <h3>Social Links</h3>
+
+            <div className="form-group">
+              <label>Twitter / X</label>
+              <input
+                type="url"
+                name="twitterUrl"
+                value={form.twitterUrl}
+                onChange={handleChange}
+                placeholder="https://x.com/yourcompany"
+                disabled={isLoading}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Telegram</label>
+              <input
+                type="url"
+                name="telegramUrl"
+                value={form.telegramUrl}
+                onChange={handleChange}
+                placeholder="https://t.me/yourgroup"
+                disabled={isLoading}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>GitHub</label>
+              <input
+                type="url"
+                name="githubUrl"
+                value={form.githubUrl}
+                onChange={handleChange}
+                placeholder="https://github.com/yourcompany"
                 disabled={isLoading}
               />
             </div>

@@ -72,6 +72,9 @@ const schema = a.schema({
     integrationCode: a.string(),
     integrationDocsUrl: a.string(),
     isPublicProfile: a.boolean(),
+    twitterUrl: a.string(),
+    telegramUrl: a.string(),
+    githubUrl: a.string(),
   })
   .secondaryIndexes(index => [index("cognitoUsername").name("cognitoUsernameIndex")])
   .authorization((allow) => [
