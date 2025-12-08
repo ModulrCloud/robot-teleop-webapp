@@ -19,6 +19,7 @@ import {
   faCode,
   faBook
 } from '@fortawesome/free-solid-svg-icons';
+import { faXTwitter, faTelegram, faGithub } from '@fortawesome/free-brands-svg-icons';
 import './PartnerProfile.css';
 
 const client = generateClient<Schema>();
@@ -35,6 +36,9 @@ interface Partner {
   integrationDocsUrl?: string;
   averageRating?: number;
   reliabilityScore?: number;
+  twitterUrl?: string;
+  telegramUrl?: string;
+  githubUrl?: string;
 }
 
 interface RobotItem {
@@ -84,6 +88,9 @@ export default function PartnerProfile() {
           integrationDocsUrl: data.integrationDocsUrl || undefined,
           averageRating: data.averageRating || undefined,
           reliabilityScore: data.reliabilityScore || undefined,
+          twitterUrl: data.twitterUrl || undefined,
+          telegramUrl: data.telegramUrl || undefined,
+          githubUrl: data.githubUrl || undefined,
         });
 
         if (data.logoUrl && !data.logoUrl.startsWith('http')) {
@@ -151,11 +158,11 @@ export default function PartnerProfile() {
 
       <div className="profile-hero">
         <div className="hero-logo">
-          {logoPreview ? (
-            <img src={logoPreview} alt={partner.name} />
-          ) : (
-            <div className="logo-placeholder">{partner.name.charAt(0)}</div>
-          )}
+          <img 
+            src={logoPreview || '/logo-thumb.png'} 
+            alt={partner.name}
+            onError={(e) => { e.currentTarget.src = '/logo-thumb.png'; }}
+          />
         </div>
         <div className="hero-content">
           <div className="hero-top">
@@ -194,6 +201,25 @@ export default function PartnerProfile() {
               </a>
             )}
           </div>
+          {(partner.twitterUrl || partner.telegramUrl || partner.githubUrl) && (
+            <div className="hero-socials">
+              {partner.twitterUrl && (
+                <a href={partner.twitterUrl} target="_blank" rel="noopener noreferrer" className="social-link">
+                  <FontAwesomeIcon icon={faXTwitter} />
+                </a>
+              )}
+              {partner.telegramUrl && (
+                <a href={partner.telegramUrl} target="_blank" rel="noopener noreferrer" className="social-link">
+                  <FontAwesomeIcon icon={faTelegram} />
+                </a>
+              )}
+              {partner.githubUrl && (
+                <a href={partner.githubUrl} target="_blank" rel="noopener noreferrer" className="social-link">
+                  <FontAwesomeIcon icon={faGithub} />
+                </a>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

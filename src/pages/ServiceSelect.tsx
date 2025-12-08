@@ -17,7 +17,7 @@ import "./ServiceSelect.css";
 
 const client = generateClient<Schema>();
 
-const COMPANY_TYPES = ['All', 'AI Provider', 'Hardware Vendor', 'Software Platform', 'Integration Partner', 'Service Provider'];
+const COMPANY_TYPES = ['All', 'Robot Provider', 'AI Provider', 'Data Service Provider', 'Compute Provider'];
 
 interface PartnerData {
   id: string;
@@ -164,11 +164,11 @@ export default function ServiceSelect() {
               onClick={() => navigate(`/partner/${partner.id}`)}
             >
               <div className="card-logo">
-                {resolvedLogos[partner.id] ? (
-                  <img src={resolvedLogos[partner.id]} alt={partner.name} />
-                ) : (
-                  <div className="logo-fallback">{partner.name.charAt(0)}</div>
-                )}
+                <img 
+                  src={resolvedLogos[partner.id] || '/logo-thumb.png'} 
+                  alt={partner.name}
+                  onError={(e) => { e.currentTarget.src = '/logo-thumb.png'; }}
+                />
               </div>
 
               <div className="card-content">
