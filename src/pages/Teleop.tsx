@@ -14,12 +14,7 @@ import {
   faGamepad,
   faRightFromBracket,
   faCheckCircle,
-  faLock,
-  faCamera,
-  faSearchPlus,
-  faSearchMinus,
-  faExpand,
-  faRotate as faRotateBack
+  faLock
 } from '@fortawesome/free-solid-svg-icons';
 import "./Teleop.css";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -37,11 +32,6 @@ export default function Teleop() {
   const [controlMode, setControlMode] = useState<'joystick' | 'gamepad'>('joystick');
   const [gamepadDetected, setGamepadDetected] = useState(false);
   const sendIntervalMs = 100; // 10 Hz
-
-  const [cameraMode, setCameraMode] = useState<'manual' | 'follow'>('manual');
-  const [cameraPan, setCameraPan] = useState(0);  // -100 to 100
-  const [cameraTilt, setCameraTilt] = useState(0); // -100 to 100
-  const [cameraZoom, setCameraZoom] = useState(1); // 1x to 5x
 
   // Read WebSocket URL from amplify_outputs.json (AWS signaling server)
   // Falls back to local WebSocket for development
@@ -418,94 +408,6 @@ export default function Teleop() {
               <span className="hint-icon">←→</span>
               <span>Turn Left/Right</span>
             </div>
-          </div>
-
-          <div className="camera-controls-section">
-            <div className="section-header">
-              <h4>
-                <FontAwesomeIcon icon={faCamera} />
-                Camera Control
-              </h4>
-              <div className="camera-mode-toggle">
-                <button 
-                  className={`mini-btn ${cameraMode === 'manual' ? 'active' : ''}`}
-                  onClick={() => setCameraMode('manual')}
-                >
-                  Manual
-                </button>
-                <button 
-                  className={`mini-btn ${cameraMode === 'follow' ? 'active' : ''}`}
-                  onClick={() => setCameraMode('follow')}
-                >
-                  Auto-Follow
-                </button>
-              </div>
-            </div>
-
-            {cameraMode === 'manual' && (
-              <div className="camera-manual-controls">
-                <div className="camera-dpad">
-                  <button className="dpad-btn up" onMouseDown={() => setCameraTilt(50)} onMouseUp={() => setCameraTilt(0)}>
-                    <span>▲</span>
-                  </button>
-                  <button className="dpad-btn left" onMouseDown={() => setCameraPan(-50)} onMouseUp={() => setCameraPan(0)}>
-                    <span>◀</span>
-                  </button>
-                  <div className="dpad-center">
-                    <FontAwesomeIcon icon={faCamera} />
-                  </div>
-                  <button className="dpad-btn right" onMouseDown={() => setCameraPan(50)} onMouseUp={() => setCameraPan(0)}>
-                    <span>▶</span>
-                  </button>
-                  <button className="dpad-btn down" onMouseDown={() => setCameraTilt(-50)} onMouseUp={() => setCameraTilt(0)}>
-                    <span>▼</span>
-                  </button>
-                </div>
-
-                <div className="zoom-controls">
-                  <button 
-                    className="zoom-btn"
-                    onClick={() => setCameraZoom(z => Math.max(1, z - 0.5))}
-                    disabled={cameraZoom <= 1}
-                  >
-                    <FontAwesomeIcon icon={faSearchMinus} />
-                  </button>
-                  <div className="zoom-indicator">
-                    <span>{cameraZoom.toFixed(1)}x</span>
-                  </div>
-                  <button 
-                    className="zoom-btn"
-                    onClick={() => setCameraZoom(z => Math.min(5, z + 0.5))}
-                    disabled={cameraZoom >= 5}
-                  >
-                    <FontAwesomeIcon icon={faSearchPlus} />
-                  </button>
-                </div>
-
-                <div className="camera-position">
-                  <div className="position-item">
-                    <span className="pos-label">Pan</span>
-                    <span className="pos-value">{cameraPan}°</span>
-                  </div>
-                  <div className="position-item">
-                    <span className="pos-label">Tilt</span>
-                    <span className="pos-value">{cameraTilt}°</span>
-                  </div>
-                </div>
-
-                <button className="camera-reset-btn" onClick={() => { setCameraPan(0); setCameraTilt(0); setCameraZoom(1); }}>
-                  <FontAwesomeIcon icon={faRotateBack} />
-                  Reset Camera
-                </button>
-              </div>
-            )}
-
-            {cameraMode === 'follow' && (
-              <div className="camera-follow-info">
-                <FontAwesomeIcon icon={faExpand} />
-                <span>Camera follows robot movement direction</span>
-              </div>
-            )}
           </div>
 
           <button 
