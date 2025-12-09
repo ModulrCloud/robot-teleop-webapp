@@ -55,7 +55,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 2rem;
+  gap: 0;
   margin-top: 2rem;
 }
 
@@ -73,8 +73,8 @@
 }
 
 .step-number {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.1);
   border: 2px solid rgba(255, 255, 255, 0.3);
@@ -83,6 +83,7 @@
   justify-content: center;
   color: #fff;
   font-weight: 600;
+  font-size: 0.95rem;
   transition: all 0.3s;
 }
 
@@ -93,8 +94,27 @@
 }
 
 .step-label {
-  color: #aaa;
-  font-size: 0.85rem;
+  color: #888;
+  font-size: 0.75rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.step.active .step-label {
+  color: #ffcc00;
+}
+
+/* Connecting lines as separate elements */
+.step-connector {
+  width: 40px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 0.5rem;
+  margin-bottom: 1.5rem; /* Align with circles, not labels */
+}
+
+.step-connector.active {
+  background: rgba(255, 204, 0, 0.6);
 }
 
 .setup-form {
@@ -356,10 +376,26 @@
   }
   
   .setup-steps {
-    gap: 1rem;
+    gap: 0;
+  }
+  
+  .step {
+    min-width: 60px;
+  }
+  
+  .step-number {
+    width: 36px;
+    height: 36px;
+    font-size: 0.9rem;
   }
   
   .step-label {
-    display: none;
+    font-size: 0.7rem;
+  }
+  
+  .step:not(:last-child)::after {
+    top: 18px;
+    left: calc(50% + 22px);
+    width: calc(100% - 4px);
   }
 }
