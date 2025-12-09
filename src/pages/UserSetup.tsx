@@ -144,12 +144,10 @@ export function UserSetup(_props: PrivateRouteProps) {
               <span className="step-number">1</span>
               <span className="step-label">Choose Type</span>
             </div>
-            <div className={`step-connector ${isPartner ? 'active' : ''}`} />
             <div className={`step ${isPartner ? 'active' : ''}`}>
               <span className="step-number">2</span>
               <span className="step-label">Details</span>
             </div>
-            <div className="step-connector" />
             <div className="step">
               <span className="step-number">3</span>
               <span className="step-label">Complete</span>
