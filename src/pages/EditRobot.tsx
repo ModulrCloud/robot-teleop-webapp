@@ -141,7 +141,7 @@ export const EditRobot = () => {
           setExistingImageKey(robotData.imageUrl);
           if (!robotData.imageUrl.startsWith('http')) {
             try {
-              const result = await getUrl({ path: robotData.imageUrl });
+              const result = await getUrl({ path: robotData.imageUrl, options: { bucket: 'robotImages' } });
               setImagePreview(result.url.toString());
             } catch (err) {
               console.error('Error loading existing image:', err);
