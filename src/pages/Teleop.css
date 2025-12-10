@@ -720,6 +720,13 @@ html {
   transform: scale(0.95);
 }
 
+.dpad-btn.pressed {
+  background: rgba(255, 193, 7, 0.3);
+  border-color: rgba(255, 193, 7, 0.5);
+  color: #ffc107;
+  transform: scale(0.95);
+}
+
 .dpad-btn.up { grid-area: up; }
 .dpad-btn.down { grid-area: down; }
 .dpad-btn.left { grid-area: left; }

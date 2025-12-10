@@ -42,6 +42,56 @@ export default function Teleop() {
   const [cameraPan, setCameraPan] = useState(0);  // -100 to 100
   const [cameraTilt, setCameraTilt] = useState(0); // -100 to 100
   const [cameraZoom, setCameraZoom] = useState(1); // 1x to 5x
+  const [pressedKeys, setPressedKeys] = useState<Set<string>>(new Set());
+
+  // Keyboard controls for camera (arrow keys)
+  useEffect(() => {
+    if (cameraMode !== 'manual') return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+      
+      setPressedKeys(prev => new Set(prev).add(e.key));
+      
+      switch (e.key) {
+        case 'ArrowUp':
+          setCameraTilt(50);
+          break;
+        case 'ArrowDown':
+          setCameraTilt(-50);
+          break;
+        case 'ArrowLeft':
+          setCameraPan(-50);
+          break;
+        case 'ArrowRight':
+          setCameraPan(50);
+          break;
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      setPressedKeys(prev => {
+        const next = new Set(prev);
+        next.delete(e.key);
+        return next;
+      });
+      
+      if (['ArrowUp', 'ArrowDown'].includes(e.key)) {
+        setCameraTilt(0);
+      }
+      if (['ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        setCameraPan(0);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [cameraMode]);
 
   // Read WebSocket URL from amplify_outputs.json (AWS signaling server)
   // Falls back to local WebSocket for development
@@ -445,19 +495,19 @@ export default function Teleop() {
             {cameraMode === 'manual' && (
               <div className="camera-manual-controls">
                 <div className="camera-dpad">
-                  <button className="dpad-btn up" onMouseDown={() => setCameraTilt(50)} onMouseUp={() => setCameraTilt(0)}>
+                  <button className={`dpad-btn up ${pressedKeys.has('ArrowUp') ? 'pressed' : ''}`} onMouseDown={() => setCameraTilt(50)} onMouseUp={() => setCameraTilt(0)}>
                     <span>▲</span>
                   </button>
-                  <button className="dpad-btn left" onMouseDown={() => setCameraPan(-50)} onMouseUp={() => setCameraPan(0)}>
+                  <button className={`dpad-btn left ${pressedKeys.has('ArrowLeft') ? 'pressed' : ''}`} onMouseDown={() => setCameraPan(-50)} onMouseUp={() => setCameraPan(0)}>
                     <span>◀</span>
                   </button>
                   <div className="dpad-center">
                     <FontAwesomeIcon icon={faCamera} />
                   </div>
-                  <button className="dpad-btn right" onMouseDown={() => setCameraPan(50)} onMouseUp={() => setCameraPan(0)}>
+                  <button className={`dpad-btn right ${pressedKeys.has('ArrowRight') ? 'pressed' : ''}`} onMouseDown={() => setCameraPan(50)} onMouseUp={() => setCameraPan(0)}>
                     <span>▶</span>
                   </button>
-                  <button className="dpad-btn down" onMouseDown={() => setCameraTilt(-50)} onMouseUp={() => setCameraTilt(0)}>
+                  <button className={`dpad-btn down ${pressedKeys.has('ArrowDown') ? 'pressed' : ''}`} onMouseDown={() => setCameraTilt(-50)} onMouseUp={() => setCameraTilt(0)}>
                     <span>▼</span>
                   </button>
                 </div>
