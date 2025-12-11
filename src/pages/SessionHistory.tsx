@@ -19,6 +19,8 @@ interface Session {
   status?: string | null;
 }
 
+const STALE_SESSION_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
 export const SessionHistory = () => {
   usePageTitle();
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -49,7 +51,34 @@ export const SessionHistory = () => {
         });
       }
 
-      const sessionData = (result.data || []).map(s => ({
+      const sessions = result.data || [];
+      const now = Date.now();
+
+      // Auto-cleanup: Mark stale active sessions as disconnected
+      for (const session of sessions) {
+        if (session.status === 'active') {
+          const startTime = new Date(session.startedAt).getTime();
+          const elapsed = now - startTime;
+          
+          // If session is active but older than threshold, mark as disconnected
+          if (elapsed > STALE_SESSION_THRESHOLD_MS) {
+            try {
+              await client.models.Session.update({
+                id: session.id,
+                endedAt: new Date().toISOString(),
+                durationSeconds: Math.floor(elapsed / 1000),
+                status: 'disconnected',
+              });
+              session.status = 'disconnected';
+              session.durationSeconds = Math.floor(elapsed / 1000);
+            } catch (err) {
+              console.error('Failed to cleanup stale session:', err);
+            }
+          }
+        }
+      }
+
+      const sessionData = sessions.map(s => ({
         id: s.id,
         robotId: s.robotId,
         robotName: s.robotName,
