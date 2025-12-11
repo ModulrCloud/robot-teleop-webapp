@@ -137,6 +137,29 @@ const schema = a.schema({
     allow.owner(), // Only the partner who owns the robot can manage operators
   ]),
 
+  // Session history for teleoperation sessions
+  Session: a.model({
+    id: a.id(),
+    userId: a.string().required(),        // Cognito username of the user
+    userEmail: a.string(),                // User's email for display
+    robotId: a.string().required(),       // Robot's robotId (robot-XXXXXXXX)
+    robotName: a.string(),                // Robot name for display
+    partnerId: a.string(),                // Partner who owns the robot
+    startedAt: a.datetime().required(),   // When session started
+    endedAt: a.datetime(),                // When session ended
+    durationSeconds: a.integer(),         // Total duration in seconds
+    status: a.string(),                   // 'active', 'completed', 'disconnected'
+  })
+  .secondaryIndexes(index => [
+    index("userId").name("userIdIndex"),
+    index("partnerId").name("partnerIdIndex"),
+  ])
+  .authorization((allow) => [
+    allow.owner().to(['create', 'read', 'update']),
+    allow.groups(['ADMINS']).to(['read', 'delete']),
+    allow.authenticated().to(['read']), // Partners can read sessions for their robots
+  ]),
+
   setUserGroupLambda: a
     .mutation()
     .arguments({
