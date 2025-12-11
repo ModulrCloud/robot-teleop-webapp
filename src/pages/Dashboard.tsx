@@ -15,8 +15,13 @@ import {
   faGaugeHigh,
   faArrowRight
 } from '@fortawesome/free-solid-svg-icons';
+import { generateClient } from 'aws-amplify/api';
+import { fetchAuthSession } from 'aws-amplify/auth';
+import type { Schema } from '../../amplify/data/resource';
 import "./Dashboard.css";
 import { UnderConstruction } from "../components/UnderConstruction";
+
+const client = generateClient<Schema>();
 
 interface DashboardStats {
   totalSessions: number;
@@ -28,9 +33,10 @@ interface DashboardStats {
 interface RecentSession {
   id: string;
   robotName: string;
+  robotId: string;
   date: Date;
   duration: number;
-  status: 'completed' | 'error';
+  status: 'completed' | 'active' | 'disconnected';
 }
 
 interface SystemStatus {
@@ -44,18 +50,16 @@ export const Dashboard = () => {
   const { user } = useAuthStatus();
   const navigate = useNavigate();
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [loading, setLoading] = useState(true);
 
-  // Mock data - replace with actual API calls when sessions are implemented
-  const [stats] = useState<DashboardStats>({
-    totalSessions: 0, // TODO: Fetch from database
+  const [stats, setStats] = useState<DashboardStats>({
+    totalSessions: 0,
     totalTime: 0,
     favoriteRobot: "None yet",
     avgSessionTime: 0,
   });
 
-  const [recentSessions] = useState<RecentSession[]>([
-    // TODO: Fetch from database when Session model is implemented
-  ]);
+  const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
 
   const [systemStatus] = useState<SystemStatus>({
     webrtc: true,
@@ -67,6 +71,67 @@ export const Dashboard = () => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    loadSessions();
+  }, []);
+
+  const loadSessions = async () => {
+    try {
+      const authSession = await fetchAuthSession();
+      const username = authSession.tokens?.idToken?.payload?.['cognito:username'] as string;
+      const groups = authSession.tokens?.idToken?.payload?.['cognito:groups'] as string[] | undefined;
+      const isAdmin = groups?.includes('ADMINS');
+
+      let result;
+      if (isAdmin) {
+        result = await client.models.Session.list();
+      } else {
+        result = await client.models.Session.list({
+          filter: { userId: { eq: username } }
+        });
+      }
+
+      const sessions = result.data || [];
+
+      const completedSessions = sessions.filter(s => s.status === 'completed');
+      const totalTime = completedSessions.reduce((sum, s) => sum + (s.durationSeconds || 0), 0);
+      const avgTime = completedSessions.length > 0 ? Math.round(totalTime / completedSessions.length) : 0;
+
+      const robotCounts: Record<string, number> = {};
+      sessions.forEach(s => {
+        const name = s.robotName || s.robotId;
+        robotCounts[name] = (robotCounts[name] || 0) + 1;
+      });
+      const favoriteRobot = Object.entries(robotCounts)
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || "None yet";
+
+      setStats({
+        totalSessions: sessions.length,
+        totalTime,
+        avgSessionTime: avgTime,
+        favoriteRobot,
+      });
+
+      const recent = sessions
+        .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+        .slice(0, 5)
+        .map(s => ({
+          id: s.id || '',
+          robotName: s.robotName || s.robotId,
+          robotId: s.robotId,
+          date: new Date(s.startedAt),
+          duration: s.durationSeconds || 0,
+          status: (s.status as 'completed' | 'active' | 'disconnected') || 'completed',
+        }));
+
+      setRecentSessions(recent);
+    } catch (err) {
+      console.error('Failed to load sessions:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -176,17 +241,13 @@ export const Dashboard = () => {
 
       <div className="dashboard-section">
         <h2 className="section-title">Your Stats</h2>
-        <UnderConstruction 
-          mode="banner" 
-          message="Real-time stats coming soon! Data will be available once session tracking is implemented."
-        />
         <div className="stats-grid">
           <div className="stat-card">
             <div className="stat-icon">
               <FontAwesomeIcon icon={faChartLine} />
             </div>
             <div className="stat-content">
-              <div className="stat-value">{stats.totalSessions}</div>
+              <div className="stat-value">{loading ? '—' : stats.totalSessions}</div>
               <div className="stat-label">Total Sessions</div>
             </div>
           </div>
@@ -196,7 +257,7 @@ export const Dashboard = () => {
               <FontAwesomeIcon icon={faClock} />
             </div>
             <div className="stat-content">
-              <div className="stat-value">{formatDuration(stats.totalTime)}</div>
+              <div className="stat-value">{loading ? '—' : formatDuration(stats.totalTime)}</div>
               <div className="stat-label">Total Time</div>
             </div>
           </div>
@@ -206,7 +267,7 @@ export const Dashboard = () => {
               <FontAwesomeIcon icon={faGaugeHigh} />
             </div>
             <div className="stat-content">
-              <div className="stat-value">{formatDuration(stats.avgSessionTime)}</div>
+              <div className="stat-value">{loading ? '—' : formatDuration(stats.avgSessionTime)}</div>
               <div className="stat-label">Avg Session</div>
             </div>
           </div>
@@ -216,7 +277,7 @@ export const Dashboard = () => {
               <FontAwesomeIcon icon={faRobot} />
             </div>
             <div className="stat-content">
-              <div className="stat-value truncate">{stats.favoriteRobot}</div>
+              <div className="stat-value truncate">{loading ? '—' : stats.favoriteRobot}</div>
               <div className="stat-label">Favorite Robot</div>
             </div>
           </div>
@@ -234,9 +295,13 @@ export const Dashboard = () => {
           </button>
         </div>
 
-        {recentSessions.length > 0 ? (
+        {loading ? (
+          <div className="empty-state">
+            <p>Loading sessions...</p>
+          </div>
+        ) : recentSessions.length > 0 ? (
           <div className="sessions-list">
-            {recentSessions.slice(0, 5).map((session) => (
+            {recentSessions.map((session) => (
               <div key={session.id} className="session-item">
                 <div className="session-icon">
                   <FontAwesomeIcon icon={faRobot} />
