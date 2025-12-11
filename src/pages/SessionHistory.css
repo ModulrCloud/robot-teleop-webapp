@@ -1,0 +1,146 @@
+.session-history-page {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.page-header {
+  margin-bottom: 2rem;
+}
+
+.page-header h1 {
+  color: #fff;
+  font-size: 1.75rem;
+  margin: 0 0 0.5rem 0;
+}
+
+.page-header .subtitle {
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0;
+}
+
+.loading {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 3rem;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.empty-state svg {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  opacity: 0.3;
+}
+
+.empty-state h3 {
+  color: #fff;
+  margin: 0 0 0.5rem 0;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+.sessions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.session-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  transition: background 0.2s;
+}
+
+.session-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.session-robot {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #fff;
+  font-weight: 600;
+  min-width: 150px;
+}
+
+.session-robot svg {
+  color: #ffc107;
+}
+
+.session-details {
+  display: flex;
+  gap: 1.5rem;
+  flex: 1;
+}
+
+.session-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+}
+
+.session-stat svg {
+  font-size: 0.85rem;
+  opacity: 0.6;
+}
+
+.session-status {
+  padding: 0.3rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.session-status.completed {
+  background: rgba(76, 175, 80, 0.15);
+  color: #4caf50;
+}
+
+.session-status.active {
+  background: rgba(255, 193, 7, 0.15);
+  color: #ffc107;
+}
+
+.session-status.disconnected {
+  background: rgba(244, 67, 54, 0.15);
+  color: #f44336;
+}
+
+.session-status.unknown {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+@media (max-width: 600px) {
+  .session-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  
+  .session-details {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .session-status {
+    align-self: flex-start;
+  }
+}

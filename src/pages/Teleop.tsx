@@ -19,6 +19,11 @@ import {
 import "./Teleop.css";
 import { usePageTitle } from "../hooks/usePageTitle";
 import outputs from '../../amplify_outputs.json';
+import { generateClient } from 'aws-amplify/api';
+import { fetchAuthSession, fetchUserAttributes } from 'aws-amplify/auth';
+import type { Schema } from '../../amplify/data/resource';
+
+const client = generateClient<Schema>();
 
 export default function Teleop() {
   usePageTitle();
@@ -32,6 +37,7 @@ export default function Teleop() {
   const [controlMode, setControlMode] = useState<'joystick' | 'gamepad'>('joystick');
   const [gamepadDetected, setGamepadDetected] = useState(false);
   const sendIntervalMs = 100; // 10 Hz
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   // Read WebSocket URL from amplify_outputs.json (AWS signaling server)
   // Falls back to local WebSocket for development
@@ -52,8 +58,32 @@ export default function Teleop() {
   useEffect(() => {
     if (status.connected && sessionStartTimeRef.current === null) {
       sessionStartTimeRef.current = Date.now();
+      
+      // Save session to database
+      (async () => {
+        try {
+          const session = await fetchAuthSession();
+          const attributes = await fetchUserAttributes();
+          const username = session.tokens?.idToken?.payload?.['cognito:username'] as string;
+          
+          const result = await client.models.Session.create({
+            userId: username,
+            userEmail: attributes.email || '',
+            robotId: robotId,
+            robotName: robotId, // Could be fetched from robot data if needed
+            startedAt: new Date().toISOString(),
+            status: 'active',
+          });
+          
+          if (result.data?.id) {
+            setSessionId(result.data.id);
+          }
+        } catch (err) {
+          console.error('Failed to create session:', err);
+        }
+      })();
     }
-  }, [status.connected]);
+  }, [status.connected, robotId]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -181,12 +211,28 @@ export default function Teleop() {
     if (status.connected) stopRobot();
   };
 
-  const handleEndSession = () => {
+  const handleEndSession = async () => {
     stopRobot();
     disconnect();
+    
     const duration = sessionStartTimeRef.current !== null 
       ? Math.floor((Date.now() - sessionStartTimeRef.current) / 1000)
       : 0;
+    
+    // Update session in database
+    if (sessionId) {
+      try {
+        await client.models.Session.update({
+          id: sessionId,
+          endedAt: new Date().toISOString(),
+          durationSeconds: duration,
+          status: 'completed',
+        });
+      } catch (err) {
+        console.error('Failed to update session:', err);
+      }
+    }
+    
     navigate('/endsession', { state: { duration } });
   };
 
