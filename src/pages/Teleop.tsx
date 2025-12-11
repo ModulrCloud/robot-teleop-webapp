@@ -59,18 +59,35 @@ export default function Teleop() {
     if (status.connected && sessionStartTimeRef.current === null) {
       sessionStartTimeRef.current = Date.now();
       
-      // Save session to database
       (async () => {
         try {
           const session = await fetchAuthSession();
           const attributes = await fetchUserAttributes();
           const username = session.tokens?.idToken?.payload?.['cognito:username'] as string;
           
+          // Close any existing active sessions for this user first
+          const existingSessions = await client.models.Session.list({
+            filter: { 
+              userId: { eq: username },
+              status: { eq: 'active' }
+            }
+          });
+          
+          for (const oldSession of existingSessions.data || []) {
+            await client.models.Session.update({
+              id: oldSession.id,
+              endedAt: new Date().toISOString(),
+              durationSeconds: Math.floor((Date.now() - new Date(oldSession.startedAt).getTime()) / 1000),
+              status: 'disconnected',
+            });
+          }
+          
+          // Now create new session
           const result = await client.models.Session.create({
             userId: username,
             userEmail: attributes.email || '',
             robotId: robotId,
-            robotName: robotId, // Could be fetched from robot data if needed
+            robotName: robotId,
             startedAt: new Date().toISOString(),
             status: 'active',
           });
