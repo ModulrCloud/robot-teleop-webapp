@@ -153,6 +153,7 @@ const schema = a.schema({
   .secondaryIndexes(index => [
     index("userId").name("userIdIndex"),
     index("partnerId").name("partnerIdIndex"),
+    index("robotId").name("robotIdIndex")
   ])
   .authorization((allow) => [
     allow.owner().to(['create', 'read', 'update']),
