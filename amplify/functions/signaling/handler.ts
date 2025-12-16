@@ -17,6 +17,7 @@ const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
 const REVOKED_TOKENS_TABLE = process.env.REVOKED_TOKENS_TABLE!;
 const ROBOT_OPERATOR_TABLE = process.env.ROBOT_OPERATOR_TABLE!;
 const ROBOT_TABLE_NAME = process.env.ROBOT_TABLE_NAME!;
+const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME; // For session lock enforcement
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!; // HTTPS management API
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
@@ -430,6 +431,69 @@ async function canAccessRobot(robotId: string, claims: Claims, userEmailOrUserna
 function isAdmin(groups?: string[] | null): boolean {
     const gs = new Set((groups ?? []).map(g => g.toUpperCase()));
     return gs.has('ADMINS') || gs.has('ADMIN');
+}
+
+// Session Lock Check
+
+/**
+ * Check if a robot is currently locked by another user's active session.
+ * Returns the locking user's info if robot is busy, null if available.
+ * 
+ * This provides server-side enforcement to prevent multiple clients
+ * from controlling the same robot simultaneously, even if client-side
+ * checks are bypassed.
+ */
+async function checkSessionLock(
+  robotId: string, 
+  currentUserId: string
+): Promise<{ userId: string; userEmail?: string } | null> {
+  if (!SESSION_TABLE_NAME) {
+    console.warn('[SESSION_LOCK] SESSION_TABLE_NAME not set, skipping session lock check');
+    return null;
+  }
+
+  try {
+    const result = await db.send(new QueryCommand({
+      TableName: SESSION_TABLE_NAME,
+      IndexName: 'robotIdIndex',
+      KeyConditionExpression: 'robotId = :robotId',
+      FilterExpression: '#status = :active',
+      ExpressionAttributeNames: {
+        '#status': 'status',
+      },
+      ExpressionAttributeValues: {
+        ':robotId': { S: robotId },
+        ':active': { S: 'active' },
+      },
+    }));
+
+    const activeSessionByOther = result.Items?.find(item => {
+      const sessionUserId = item.userId?.S;
+      return sessionUserId && sessionUserId !== currentUserId;
+    });
+
+    if (activeSessionByOther) {
+      console.log('[SESSION_LOCK_BLOCKED]', {
+        robotId,
+        currentUserId,
+        lockingUserId: activeSessionByOther.userId?.S,
+        lockingUserEmail: activeSessionByOther.userEmail?.S,
+      });
+      return {
+        userId: activeSessionByOther.userId?.S || 'unknown',
+        userEmail: activeSessionByOther.userEmail?.S,
+      };
+    }
+
+    return null;
+  } catch (err) {
+    console.error('[SESSION_LOCK_ERROR]', {
+      robotId,
+      currentUserId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
 }
 
 // ---------------------------------
@@ -970,6 +1034,30 @@ async function handleSignal(
       const userIdentifier = userEmailOrUsername || (claims as Claims).email || claims.sub || 'unknown';
       console.log(`Access denied: User ${userIdentifier} attempted to access robot ${robotId}`);
       return { statusCode: 403, body: 'Access denied: You are not authorized to access this robot' };
+    }
+
+    // Server-side session lock enforcement
+    // Only check for 'offer' messages (initial WebRTC connection attempts)
+    // This prevents a second client from establishing control of a robot
+    // that already has an active teleoperation session
+    if (type === 'offer') {
+      const sessionLock = await checkSessionLock(robotId, claims.sub!);
+      if (sessionLock) {
+        console.log('[SESSION_LOCK_REJECTED]', {
+          robotId,
+          attemptingUser: claims.sub,
+          lockingUser: sessionLock.userId,
+          lockingUserEmail: sessionLock.userEmail,
+          messageType: type,
+        });
+        return { 
+          statusCode: 423,
+          body: JSON.stringify({
+            error: 'Robot is currently controlled by another user',
+            lockedBy: sessionLock.userEmail || sessionLock.userId,
+          })
+        };
+      }
     }
   }
 
