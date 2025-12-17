@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { logger } from '../utils/logger';
 
 export interface GamepadInput {
   forward: number;
@@ -46,18 +47,18 @@ export function useGamepad(
     if (!enabled) return;
 
     if (!('getGamepads' in navigator)) {
-      console.warn('Gamepad API not supported');
+      logger.warn('Gamepad API not supported');
       return;
     }
 
     animationFrameRef.current = requestAnimationFrame(pollGamepad);
 
     const handleGamepadConnected = (e: GamepadEvent) => {
-      console.log('Gamepad connected:', e.gamepad.id);
+      logger.log('Gamepad connected:', e.gamepad.id);
     };
 
     const handleGamepadDisconnected = (e: GamepadEvent) => {
-      console.log('Gamepad disconnected:', e.gamepad.id);
+      logger.log('Gamepad disconnected:', e.gamepad.id);
       lastInputRef.current = { forward: 0, turn: 0 };
       onInput({ forward: 0, turn: 0 });
     };

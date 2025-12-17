@@ -7,6 +7,7 @@ import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { logger } from '../utils/logger';
 import { 
   faRobot, 
   faCheckCircle, 
@@ -144,14 +145,14 @@ export const EditRobot = () => {
               const result = await getUrl({ path: robotData.imageUrl, options: { bucket: 'robotImages' } });
               setImagePreview(result.url.toString());
             } catch (err) {
-              console.error('Error loading existing image:', err);
+              logger.error('Error loading existing image:', err);
             }
           } else {
             setImagePreview(robotData.imageUrl);
           }
         }
       } catch (err) {
-        console.error('Error loading robot:', err);
+        logger.error('Error loading robot:', err);
         setError(err instanceof Error ? err.message : 'Failed to load robot');
       } finally {
         setIsLoadingRobot(false);
@@ -184,7 +185,7 @@ export const EditRobot = () => {
           setRobotStatus({ isOnline: false });
         }
       } catch (err) {
-        console.error('Error loading robot status:', err);
+        logger.error('Error loading robot status:', err);
         setRobotStatus({ isOnline: false });
       } finally {
         setIsLoadingStatus(false);
@@ -260,7 +261,7 @@ export const EditRobot = () => {
 
       return key;
     } catch (error) {
-      console.error('Upload failed:', error);
+      logger.error('Upload failed:', error);
       throw error;
     }
   };
@@ -315,7 +316,7 @@ export const EditRobot = () => {
       longitude: robotListing.longitude ? (isNaN(parseFloat(robotListing.longitude)) ? undefined : parseFloat(robotListing.longitude)) : undefined,
     };
 
-    console.log('🤖 Updating robot with data:', robotData);
+    logger.log('🤖 Updating robot with data:', robotData);
 
     try {
       if (!robotId) {
@@ -327,7 +328,7 @@ export const EditRobot = () => {
         ...robotData,
       });
 
-      console.log('📊 Robot update response:', {
+      logger.log('📊 Robot update response:', {
         hasData: !!robot.data,
         hasErrors: !!robot.errors,
         data: robot.data,
@@ -335,11 +336,11 @@ export const EditRobot = () => {
       });
 
       if (robot.errors) {
-        console.error('❌ Errors updating robot:', robot.errors);
+        logger.error('❌ Errors updating robot:', robot.errors);
         setError(robot.errors[0]?.message || 'Failed to update robot');
         setSuccess(false);
       } else {
-        console.log('✅ Robot updated successfully:', robot.data);
+        logger.log('✅ Robot updated successfully:', robot.data);
         setSuccess(true);
         
         // Redirect to Robot Setup page so user can get a fresh token URL
@@ -360,7 +361,7 @@ export const EditRobot = () => {
               }, 2000);
             }
           } catch (parseError) {
-            console.error('Failed to parse robot data:', parseError);
+            logger.error('Failed to parse robot data:', parseError);
             // Final fallback: redirect to robots list
             setTimeout(() => {
               navigate('/robots');
@@ -369,7 +370,7 @@ export const EditRobot = () => {
         }
       }
     } catch (error) {
-      console.error('❌ Exception updating robot:', error);
+      logger.error('❌ Exception updating robot:', error);
       setError(error instanceof Error ? error.message : 'Failed to update robot');
       setSuccess(false);
     }
@@ -392,11 +393,11 @@ export const EditRobot = () => {
       setIsDeleting(true);
       setError(null);
       
-      console.log(`🗑️ Attempting to delete robot: ${robotName} (${robotId})`);
+      logger.log(`🗑️ Attempting to delete robot: ${robotName} (${robotId})`);
       
       const result = await client.mutations.deleteRobotLambda({ robotId });
       
-      console.log('📊 Delete robot response:', {
+      logger.log('📊 Delete robot response:', {
         hasData: !!result.data,
         hasErrors: !!result.errors,
         data: result.data,
@@ -405,7 +406,7 @@ export const EditRobot = () => {
       
       // Check for GraphQL errors first
       if (result.errors && result.errors.length > 0) {
-        console.error('❌ GraphQL errors:', result.errors);
+        logger.error('❌ GraphQL errors:', result.errors);
         const errorMessages = result.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ');
         throw new Error(errorMessages);
       }
@@ -418,7 +419,7 @@ export const EditRobot = () => {
         throw new Error(result.data?.body || 'Failed to delete robot');
       }
     } catch (err) {
-      console.error('❌ Exception deleting robot:', err);
+      logger.error('❌ Exception deleting robot:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete robot');
       setSuccess(false);
     } finally {

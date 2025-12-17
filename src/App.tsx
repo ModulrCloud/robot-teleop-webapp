@@ -25,6 +25,8 @@ import { useEffect } from "react";
 import { fetchAuthSession } from "aws-amplify/auth";
 import PartnerProfile from './pages/PartnerProfile';
 import EditPartnerProfile from './pages/EditPartnerProfile';
+import { DebugPanel } from './components/DebugPanel';
+import { logger } from './utils/logger';
 
 // Amplify configuration is now in main.tsx
 import '@aws-amplify/ui-react/styles.css';
@@ -51,7 +53,7 @@ function App() {
     
     if (error) {
       // Keep error logging for actual errors
-      console.error('🔴 OAuth callback error:', {
+      logger.error('🔴 OAuth callback error:', {
         error,
         errorDescription: decodeURIComponent(errorDescription || ''),
         fullUrl: window.location.href,
@@ -61,9 +63,9 @@ function App() {
       
       // Try to get more details from the session
       fetchAuthSession().then(() => {
-        // console.log('Session after OAuth error:', session);
+        // logger.log('Session after OAuth error:', session);
       }).catch(err => {
-        console.error('Failed to fetch session after OAuth error:', err);
+        logger.error('Failed to fetch session after OAuth error:', err);
       });
     }
     
@@ -176,6 +178,7 @@ function App() {
           </Routes>
         </main>
       </AppLayout>
+      {import.meta.env.DEV && <DebugPanel />}
     </Router>
   );
 }

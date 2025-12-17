@@ -8,6 +8,7 @@ import { LoadingWheel } from "../components/LoadingWheel";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faUser, faEdit, faSave, faTimes } from '@fortawesome/free-solid-svg-icons';
 import { formatGroupName, capitalizeName } from "../utils/formatters";
+import { logger } from '../utils/logger';
 
 const client = generateClient<Schema>();
 
@@ -92,7 +93,7 @@ export function UserProfile() {
         }
       }
     } catch (err) {
-      console.error("Error loading profile:", err);
+      logger.error("Error loading profile:", err);
       setError("Failed to load profile data");
     } finally {
       setLoading(false);
@@ -142,7 +143,7 @@ export function UserProfile() {
           setTimeout(() => setSuccess(""), 3000);
         }
       } catch (err) {
-        console.error("Error updating profile:", err);
+        logger.error("Error updating profile:", err);
         setError("An error occurred while updating");
       } finally {
         setSaving(false);

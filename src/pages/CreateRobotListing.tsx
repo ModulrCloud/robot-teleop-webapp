@@ -7,6 +7,7 @@ import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { logger } from '../utils/logger';
 import { 
   faRobot, 
   faCheckCircle, 
@@ -130,7 +131,7 @@ export const CreateRobotListing = () => {
 
       return key;
     } catch (error) {
-      console.error('Upload failed:', error);
+      logger.error('Upload failed:', error);
       throw error;
     }
   };
@@ -197,7 +198,7 @@ export const CreateRobotListing = () => {
         }
       }
     } catch (error) {
-      console.error('Create robot failed:', error);
+      logger.error('Create robot failed:', error);
       setSuccess(false);
     }
 

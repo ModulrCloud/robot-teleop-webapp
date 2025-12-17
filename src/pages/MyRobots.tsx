@@ -16,6 +16,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import outputs from '../../amplify_outputs.json';
 import './MyRobots.css';
+import { logger } from '../utils/logger';
 
 const client = generateClient<Schema>();
 
@@ -107,7 +108,7 @@ export default function MyRobots() {
           loadRobotStatuses(robotsList);
         }
       } catch (err) {
-        console.error('Error loading robots:', err);
+        logger.error('Error loading robots:', err);
         setError(err instanceof Error ? err.message : 'Failed to load robots');
       } finally {
         setIsLoading(false);
@@ -137,7 +138,7 @@ export default function MyRobots() {
               }
             };
           } catch (err) {
-            console.error(`Error loading status for ${robot.robotId}:`, err);
+            logger.error(`Error loading status for ${robot.robotId}:`, err);
             return {
               robotId: robot.robotId,
               status: { isOnline: false }
@@ -152,7 +153,7 @@ export default function MyRobots() {
       });
       setRobotStatuses(statusMap);
     } catch (err) {
-      console.error('Error loading robot statuses:', err);
+      logger.error('Error loading robot statuses:', err);
     }
   };
 

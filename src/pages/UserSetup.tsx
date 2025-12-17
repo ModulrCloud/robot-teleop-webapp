@@ -11,6 +11,7 @@ import { LoadingWheel } from "../components/LoadingWheel";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faRobot, faGamepad, faCheckCircle } from '@fortawesome/free-solid-svg-icons';
 import { formatGroupName } from "../utils/formatters";
+import { logger } from '../utils/logger';
 
 const client = generateClient<Schema>();
 
@@ -108,7 +109,7 @@ export function UserSetup(_props: PrivateRouteProps) {
       navigate(from, { replace: true });
 
     } catch (err) {
-      console.error("Error during setup:", err);
+      logger.error("Error during setup:", err);
       setError("An unexpected error occurred. Please try again.");
       setSettingGroup(false);
     }

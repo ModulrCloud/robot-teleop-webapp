@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { logger } from '../utils/logger';
 import {
   faCopy,
   faTrash,
@@ -115,26 +116,26 @@ export function RobotMessageLogger({ robotId, wsUrl }: RobotMessageLoggerProps) 
 
     const connect = async () => {
       try {
-        console.log('[LOGGER] Starting connection...', { wsUrl, robotId });
+        logger.log('[LOGGER] Starting connection...', { wsUrl, robotId });
         
         // Get auth token
         const session = await fetchAuthSession();
         const token = session.tokens?.idToken?.toString();
         
         if (!token) {
-          console.error('[LOGGER] No auth token available');
+          logger.error('[LOGGER] No auth token available');
           addLog('system', '', { type: 'error', message: 'Authentication required' });
           return;
         }
 
-        console.log('[LOGGER] Got auth token, connecting to WebSocket...');
+        logger.log('[LOGGER] Got auth token, connecting to WebSocket...');
         const urlWithToken = `${wsUrl}?token=${encodeURIComponent(token)}`;
-        console.log('[LOGGER] WebSocket URL:', urlWithToken.substring(0, 100) + '...');
+        logger.log('[LOGGER] WebSocket URL:', urlWithToken.substring(0, 100) + '...');
         const ws = new WebSocket(urlWithToken);
         wsRef.current = ws;
 
         ws.onopen = () => {
-          console.log('[LOGGER] WebSocket opened!', { readyState: ws.readyState });
+          logger.log('[LOGGER] WebSocket opened!', { readyState: ws.readyState });
           if (mounted) {
             setIsConnected(true);
             addLog('system', '', { 
@@ -150,20 +151,20 @@ export function RobotMessageLogger({ robotId, wsUrl }: RobotMessageLoggerProps) 
                   type: 'monitor',
                   robotId: robotId,
                 };
-                console.log('[LOGGER] Sending monitor message:', monitorMessage, 'readyState:', wsRef.current.readyState);
+                logger.log('[LOGGER] Sending monitor message:', monitorMessage, 'readyState:', wsRef.current.readyState);
                 try {
                   wsRef.current.send(JSON.stringify(monitorMessage));
-                  console.log('[LOGGER] Monitor message sent successfully');
+                  logger.log('[LOGGER] Monitor message sent successfully');
                   addLog('outgoing', JSON.stringify(monitorMessage), monitorMessage);
                 } catch (error) {
-                  console.error('[LOGGER] Error sending monitor message:', error);
+                  logger.error('[LOGGER] Error sending monitor message:', error);
                   addLog('system', '', {
                     type: 'error',
                     message: `Failed to send monitor message: ${error instanceof Error ? error.message : 'Unknown error'}`
                   });
                 }
               } else {
-                console.warn('[LOGGER] Cannot send monitor message - robotId:', robotId, 'readyState:', wsRef.current?.readyState, 'mounted:', mounted);
+                logger.warn('[LOGGER] Cannot send monitor message - robotId:', robotId, 'readyState:', wsRef.current?.readyState, 'mounted:', mounted);
               }
             }, 100); // Small delay to ensure connection is fully ready
           }
@@ -176,7 +177,7 @@ export function RobotMessageLogger({ robotId, wsUrl }: RobotMessageLoggerProps) 
               const parsed = JSON.parse(event.data);
               
               // Debug: Log all incoming messages to console
-              console.log('[LOGGER] Received message:', parsed);
+              logger.log('[LOGGER] Received message:', parsed);
               
               // Handle monitor-confirmed message specially
               if (parsed.type === 'monitor-confirmed') {
@@ -200,14 +201,14 @@ export function RobotMessageLogger({ robotId, wsUrl }: RobotMessageLoggerProps) 
               }
             } catch (error) {
               // If parsing fails, just log as incoming
-              console.warn('[LOGGER] Failed to parse message:', event.data, error);
+              logger.warn('[LOGGER] Failed to parse message:', event.data, error);
               addLog('incoming', event.data);
             }
           }
         };
 
         ws.onerror = (error) => {
-          console.error('[LOGGER] WebSocket error:', error);
+          logger.error('[LOGGER] WebSocket error:', error);
           if (mounted) {
             addLog('system', '', { 
               type: 'error', 
@@ -217,7 +218,7 @@ export function RobotMessageLogger({ robotId, wsUrl }: RobotMessageLoggerProps) 
         };
 
         ws.onclose = (event) => {
-          console.log('[LOGGER] WebSocket closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
+          logger.log('[LOGGER] WebSocket closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
           if (mounted) {
             setIsConnected(false);
             addLog('system', '', { 
@@ -228,7 +229,7 @@ export function RobotMessageLogger({ robotId, wsUrl }: RobotMessageLoggerProps) 
             // Attempt to reconnect after 3 seconds
             setTimeout(() => {
               if (mounted) {
-                console.log('[LOGGER] Attempting to reconnect...');
+                logger.log('[LOGGER] Attempting to reconnect...');
                 connect();
               }
             }, 3000);
@@ -353,7 +354,7 @@ export function RobotMessageLogger({ robotId, wsUrl }: RobotMessageLoggerProps) 
       showToast('Test message sent! Check logs below.');
     } catch (error) {
       showToast('Failed to send test message');
-      console.error('Error sending test message:', error);
+      logger.error('Error sending test message:', error);
     } finally {
       setIsTesting(false);
     }
