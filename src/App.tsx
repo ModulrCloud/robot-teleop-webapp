@@ -178,7 +178,7 @@ function App() {
           </Routes>
         </main>
       </AppLayout>
-      {import.meta.env.DEV && <DebugPanel />}
+      {(import.meta.env.DEV || import.meta.env.VITE_SHOW_DEBUG_PANEL === 'true') && <DebugPanel />}
     </Router>
   );
 }
