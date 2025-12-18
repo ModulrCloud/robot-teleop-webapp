@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useAuthStatus } from "../hooks/useAuthStatus";
 import { usePageTitle } from "../hooks/usePageTitle"
 import { useLocation, useNavigate } from "react-router-dom";
+import { logger } from "../utils/logger";
 
 export const Home = () => {
   usePageTitle();
@@ -12,7 +13,7 @@ export const Home = () => {
 
   useEffect(() => {
     if (!loading && !hasUserGroup) {
-      console.log("Redirecting to user setup page...");
+      logger.log("Redirecting to user setup page...");
       navigate("/user-setup", { replace: true, state: { from: location } });
     }
   }, [isLoggedIn, loading, navigate, location]);

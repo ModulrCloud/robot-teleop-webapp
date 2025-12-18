@@ -14,6 +14,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import outputs from '../../amplify_outputs.json';
 import './RobotSetup.css';
+import { logger } from '../utils/logger';
 
 const client = generateClient<Schema>();
 
@@ -48,7 +49,7 @@ export default function RobotSetup() {
               return;
             }
           } catch (robotError) {
-            console.error('Error loading robot:', robotError);
+            logger.error('Error loading robot:', robotError);
             setError('Failed to load robot information. Please try again.');
             setLoading(false);
             return;
@@ -73,7 +74,7 @@ export default function RobotSetup() {
           const session = await fetchAuthSession();
           token = session.tokens?.idToken?.toString();
         } catch (authError) {
-          console.warn('Failed to get auth token:', authError);
+          logger.warn('Failed to get auth token:', authError);
           // For development/testing, allow URL without token
           // In production, this should be required
           if (import.meta.env.DEV) {
@@ -90,7 +91,7 @@ export default function RobotSetup() {
         const fullUrl = token ? `${wsUrl}?token=${encodeURIComponent(token)}` : wsUrl;
         setConnectionUrl(fullUrl);
       } catch (err) {
-        console.error('Error generating connection URL:', err);
+        logger.error('Error generating connection URL:', err);
         setError('Failed to generate connection URL. Please try again.');
       } finally {
         setLoading(false);
@@ -106,7 +107,7 @@ export default function RobotSetup() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy:', err);
+      logger.error('Failed to copy:', err);
       // Fallback: select text
       const textArea = document.createElement('textarea');
       textArea.value = connectionUrl;
@@ -186,7 +187,7 @@ export default function RobotSetup() {
                           setCopiedRobotId(true);
                           setTimeout(() => setCopiedRobotId(false), 2000);
                         } catch (err) {
-                          console.error('Failed to copy:', err);
+                          logger.error('Failed to copy:', err);
                         }
                       }}
                       className={`copy-button ${copiedRobotId ? 'copied' : ''}`}
@@ -473,7 +474,7 @@ except KeyboardInterrupt:
                       setCopiedCode(true);
                       setTimeout(() => setCopiedCode(false), 2000);
                     } catch (err) {
-                      console.error('Failed to copy:', err);
+                      logger.error('Failed to copy:', err);
                     }
                   }}
                   className={`copy-button ${copiedCode ? 'copied' : ''}`}

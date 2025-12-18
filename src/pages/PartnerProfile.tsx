@@ -6,6 +6,7 @@ import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { logger } from '../utils/logger';
 import { 
   faGlobe, 
   faEnvelope, 
@@ -112,7 +113,7 @@ export default function PartnerProfile() {
           city: r.city || undefined,
         })));
       } catch (err) {
-        console.error('Error loading partner:', err);
+        logger.error('Error loading partner:', err);
         setError('Failed to load partner profile');
       } finally {
         setIsLoading(false);

@@ -20,6 +20,7 @@ import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
 import "./Dashboard.css";
 import { UnderConstruction } from "../components/UnderConstruction";
+import { logger } from '../utils/logger';
 
 const client = generateClient<Schema>();
 
@@ -127,7 +128,7 @@ export const Dashboard = () => {
 
       setRecentSessions(recent);
     } catch (err) {
-      console.error('Failed to load sessions:', err);
+      logger.error('Failed to load sessions:', err);
     } finally {
       setLoading(false);
     }

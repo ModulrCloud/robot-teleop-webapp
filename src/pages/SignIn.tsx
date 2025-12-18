@@ -11,6 +11,7 @@ import { usePageTitle } from '../hooks/usePageTitle';
 import { useAuthStatus } from '../hooks/useAuthStatus';
 import { useNavigate } from 'react-router-dom';
 import { LoadingWheel } from '../components/LoadingWheel';
+import { logger } from '../utils/logger';
 
 export default function SignIn() {
   usePageTitle();
@@ -23,7 +24,7 @@ export default function SignIn() {
   //   const hashParams = new URLSearchParams(window.location.hash.substring(1));
   //   
   //   if (urlParams.toString() || hashParams.toString()) {
-  //     console.log('🔍 SignIn page loaded with URL params:', {
+  //     logger.log('🔍 SignIn page loaded with URL params:', {
   //       search: Object.fromEntries(urlParams),
   //       hash: Object.fromEntries(hashParams),
   //       fullUrl: window.location.href
@@ -37,7 +38,7 @@ export default function SignIn() {
       const checkConfig = Amplify.getConfig();
       
       // Debug logging (commented out - uncomment for debugging)
-      // console.log('Pre-sign-in config check:', {
+      // logger.log('Pre-sign-in config check:', {
       //   hasAuth: !!checkConfig.Auth,
       //   hasCognito: !!checkConfig.Auth?.Cognito,
       //   hasRegion: !!checkConfig.Auth?.Cognito?.region,
@@ -51,7 +52,7 @@ export default function SignIn() {
       const cognitoConfig = checkConfig.Auth?.Cognito as { region?: string } | undefined;
       if (!cognitoConfig?.region) {
         alert('Authentication configuration error: Region is missing. Please refresh the page.');
-        console.error('Config at sign-in time:', checkConfig);
+        logger.error('Config at sign-in time:', checkConfig);
         return;
       }
       
@@ -60,11 +61,11 @@ export default function SignIn() {
       try {
         // Clear any cached module state
         await import('aws-amplify/auth');
-        // console.log('Auth module re-imported, checking config again...');
+        // logger.log('Auth module re-imported, checking config again...');
         
         // Verify config is still accessible after re-import
         const configAfterImport = Amplify.getConfig();
-        // console.log('Config after auth module import:', {
+        // logger.log('Config after auth module import:', {
         //   hasAuth: !!configAfterImport.Auth,
         //   hasCognito: !!configAfterImport.Auth?.Cognito,
         //   hasRegion: !!configAfterImport.Auth?.Cognito?.region
@@ -72,26 +73,26 @@ export default function SignIn() {
         // Suppress unused variable warning
         void configAfterImport;
       } catch (importError) {
-        console.warn('Could not re-import auth module:', importError);
+        logger.warn('Could not re-import auth module:', importError);
       }
       
-      // console.log('🚀 Initiating Google sign-in redirect...');
-      // console.log('📍 Current URL before redirect:', window.location.href);
+      // logger.log('🚀 Initiating Google sign-in redirect...');
+      // logger.log('📍 Current URL before redirect:', window.location.href);
       
       try {
         await signInWithRedirect({
           provider: 'Google'
         });
         // Note: signInWithRedirect will navigate away, so code after this won't run
-        // console.log('✅ signInWithRedirect called successfully (redirect should happen now)');
+        // logger.log('✅ signInWithRedirect called successfully (redirect should happen now)');
       } catch (redirectError) {
-        console.error('❌ Error during signInWithRedirect:', redirectError);
+        logger.error('❌ Error during signInWithRedirect:', redirectError);
         throw redirectError; // Re-throw to be caught by outer catch
       }
     } catch (error) {
       // Keep error logging for actual errors
-      console.error('❌ Sign in error caught:', error);
-      console.error('❌ Error details:', {
+      logger.error('❌ Sign in error caught:', error);
+      logger.error('❌ Error details:', {
         name: error instanceof Error ? error.name : 'Unknown',
         message: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
@@ -101,10 +102,10 @@ export default function SignIn() {
       // More detailed error messages
       if (error instanceof Error) {
         const errorMsg = error.message || 'Unknown error';
-        // console.error('❌ Error message:', errorMsg);
+        // logger.error('❌ Error message:', errorMsg);
         alert(`Sign in failed: ${errorMsg}\n\nCheck the browser console for more details.`);
       } else {
-        console.error('❌ Non-Error object:', error);
+        logger.error('❌ Non-Error object:', error);
         alert(`Sign in failed. Please check the browser console for details.\n\nError: ${JSON.stringify(error)}`);
       }
     }

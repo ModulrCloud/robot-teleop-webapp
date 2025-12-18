@@ -23,6 +23,7 @@ import outputs from '../../amplify_outputs.json';
 import { generateClient } from 'aws-amplify/api';
 import { fetchAuthSession, fetchUserAttributes } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
+import { logger } from '../utils/logger';
 
 const client = generateClient<Schema>();
 
@@ -142,7 +143,7 @@ export default function Teleop() {
             setSessionId(result.data.id);
           }
         } catch (err) {
-          console.error('Failed to create session:', err);
+          logger.error('Failed to create session:', err);
         }
       })();
     }
@@ -284,7 +285,7 @@ export default function Teleop() {
           status: 'completed',
         });
       } catch (err) {
-        console.error('Failed to update session:', err);
+        logger.error('Failed to update session:', err);
       }
     }
     

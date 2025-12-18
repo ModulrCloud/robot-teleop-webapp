@@ -6,6 +6,7 @@ import type { Schema } from '../../amplify/data/resource';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faClock, faRobot, faCalendar } from '@fortawesome/free-solid-svg-icons';
 import "./SessionHistory.css";
+import { logger } from '../utils/logger';
 
 const client = generateClient<Schema>();
 
@@ -72,7 +73,7 @@ export const SessionHistory = () => {
               session.status = 'disconnected';
               session.durationSeconds = Math.floor(elapsed / 1000);
             } catch (err) {
-              console.error('Failed to cleanup stale session:', err);
+              logger.error('Failed to cleanup stale session:', err);
             }
           }
         }
@@ -95,7 +96,7 @@ export const SessionHistory = () => {
 
       setSessions(sessionData as Session[]);
     } catch (err) {
-      console.error('Failed to load sessions:', err);
+      logger.error('Failed to load sessions:', err);
     } finally {
       setLoading(false);
     }

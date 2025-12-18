@@ -9,6 +9,7 @@ import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from "../components/LoadingWheel";
 import "./RobotSelect.css";
 import { getUrl } from 'aws-amplify/storage';
+import { logger } from '../utils/logger';
 
 const client = generateClient<Schema>();
 
@@ -57,14 +58,14 @@ export default function RobotSelect() {
         // Check if the new ACL-filtered query is available (schema needs to be regenerated)
         let response: any;
         if (client.queries.listAccessibleRobotsLambda) {
-          console.log('🔍 Using listAccessibleRobotsLambda query');
+          logger.log('🔍 Using listAccessibleRobotsLambda query');
           try {
             // Use the ACL-filtered query to only get robots the user can access
             const queryResponse = await client.queries.listAccessibleRobotsLambda({
               limit: 50, // Load 50 robots per page
             });
             
-            console.log('📥 Raw Lambda response:', {
+            logger.log('📥 Raw Lambda response:', {
               hasData: !!queryResponse.data,
               dataType: typeof queryResponse.data,
               dataLength: typeof queryResponse.data === 'string' ? queryResponse.data.length : 'N/A',
@@ -76,10 +77,10 @@ export default function RobotSelect() {
             let responseData: any = { robots: [], nextToken: '' };
             try {
               if (typeof queryResponse.data === 'string') {
-                console.log('📝 Parsing JSON string response...');
-                console.log('📝 Raw string (first 200 chars):', queryResponse.data.substring(0, 200));
+                logger.log('📝 Parsing JSON string response...');
+                logger.log('📝 Raw string (first 200 chars):', queryResponse.data.substring(0, 200));
                 const parsed = JSON.parse(queryResponse.data);
-                console.log('✅ Parsed successfully:', {
+                logger.log('✅ Parsed successfully:', {
                   hasRobots: !!parsed.robots,
                   robotsType: typeof parsed.robots,
                   robotsIsArray: Array.isArray(parsed.robots),
@@ -89,26 +90,26 @@ export default function RobotSelect() {
                 });
                 responseData = parsed;
               } else if (queryResponse.data) {
-                console.log('📝 Using response.data directly (not a string)');
+                logger.log('📝 Using response.data directly (not a string)');
                 responseData = queryResponse.data as any;
               } else {
-                console.warn('⚠️ queryResponse.data is null or undefined');
+                logger.warn('⚠️ queryResponse.data is null or undefined');
               }
             } catch (e) {
-              console.error('❌ Failed to parse response data:', e);
-              console.error('Raw data that failed to parse:', queryResponse.data);
+              logger.error('❌ Failed to parse response data:', e);
+              logger.error('Raw data that failed to parse:', queryResponse.data);
               // Try to extract robots from the raw string as fallback
               if (typeof queryResponse.data === 'string') {
                 try {
                   const match = queryResponse.data.match(/"robots":\[(.*?)\]/);
                   if (match) {
-                    console.warn('⚠️ Found robots in string but parse failed, trying manual extraction');
+                    logger.warn('⚠️ Found robots in string but parse failed, trying manual extraction');
                   }
                 } catch {}
               }
             }
             
-            console.log('📦 Final responseData before setting response:', {
+            logger.log('📦 Final responseData before setting response:', {
               hasRobots: !!responseData.robots,
               robotsType: typeof responseData.robots,
               robotsIsArray: Array.isArray(responseData.robots),
@@ -120,7 +121,7 @@ export default function RobotSelect() {
               errors: queryResponse.errors,
             };
             
-            console.log('📦 Final response object:', {
+            logger.log('📦 Final response object:', {
               hasData: !!response.data,
               hasRobots: !!response.data?.robots,
               robotsType: typeof response.data?.robots,
@@ -128,9 +129,9 @@ export default function RobotSelect() {
               robotsCount: response.data?.robots?.length || 0,
             });
           } catch (error) {
-            console.error('❌ Error calling listAccessibleRobotsLambda:', error);
+            logger.error('❌ Error calling listAccessibleRobotsLambda:', error);
             // Fallback to old query on error
-            console.warn('⚠️ Falling back to old Robot.list() query due to error');
+            logger.warn('⚠️ Falling back to old Robot.list() query due to error');
             const oldResponse = await client.models.Robot.list();
             response = {
               data: {
@@ -142,7 +143,7 @@ export default function RobotSelect() {
           }
         } else {
           // Fallback: Use the old query (no ACL filtering) until schema is regenerated
-          console.warn('⚠️ listAccessibleRobotsLambda not available yet. Using fallback query. Please restart Amplify sandbox.');
+          logger.warn('⚠️ listAccessibleRobotsLambda not available yet. Using fallback query. Please restart Amplify sandbox.');
           const oldResponse = await client.models.Robot.list();
           // Transform to match new response format
           response = {
@@ -155,7 +156,7 @@ export default function RobotSelect() {
         }
         
         // Log the raw response to see what's in the database
-        console.log('📊 ACL-filtered robots response:', {
+        logger.log('📊 ACL-filtered robots response:', {
           hasData: !!response.data,
           dataType: typeof response.data,
           dataIsString: typeof response.data === 'string',
@@ -171,28 +172,28 @@ export default function RobotSelect() {
         
         // If response.data is still a string, parse it now
         if (typeof response.data === 'string') {
-          console.warn('⚠️ response.data is still a string! Parsing now...');
+          logger.warn('⚠️ response.data is still a string! Parsing now...');
           try {
             const parsed = JSON.parse(response.data);
             response.data = parsed;
-            console.log('✅ Re-parsed response.data:', {
+            logger.log('✅ Re-parsed response.data:', {
               hasRobots: !!parsed.robots,
               robotsCount: parsed.robots?.length || 0,
             });
           } catch (e) {
-            console.error('❌ Failed to re-parse response.data:', e);
+            logger.error('❌ Failed to re-parse response.data:', e);
           }
         }
         
         // Log each robot's actual fields
         if (response.data?.robots && response.data.robots.length > 0) {
-          console.log(`🤖 Found ${response.data.robots.length} accessible robot(s):`);
+          logger.log(`🤖 Found ${response.data.robots.length} accessible robot(s):`);
           response.data.robots.forEach((robot: any, index: number) => {
             if (robot === null || robot === undefined) {
-              console.log(`  Robot ${index + 1}: ❌ NULL`);
+              logger.log(`  Robot ${index + 1}: ❌ NULL`);
               return;
             }
-            console.log(`  Robot ${index + 1}:`, {
+            logger.log(`  Robot ${index + 1}:`, {
               id: robot.id || '❌ MISSING',
               robotId: robot.robotId || '❌ MISSING',
               name: robot.name || '❌ MISSING',
@@ -209,10 +210,10 @@ export default function RobotSelect() {
         
         // Log errors but don't block - we'll still try to use valid robots from response.data
         if (response.errors && response.errors.length > 0) {
-          console.warn('⚠️ Some robots have errors (will be filtered out):', response.errors.length);
+          logger.warn('⚠️ Some robots have errors (will be filtered out):', response.errors.length);
           // Log detailed error information for debugging
           response.errors.forEach((err: any, index: number) => {
-            console.error(`Error ${index + 1}:`, {
+            logger.error(`Error ${index + 1}:`, {
               message: err.message,
               errorType: err.errorType,
               errorInfo: err.errorInfo,
@@ -228,22 +229,22 @@ export default function RobotSelect() {
         // Handle case where response.data might still be a string (double-wrapped JSON)
         let robotsData = response.data;
         if (typeof robotsData === 'string') {
-          console.warn('⚠️ response.data is still a string, parsing now...');
+          logger.warn('⚠️ response.data is still a string, parsing now...');
           try {
             robotsData = JSON.parse(robotsData);
-            console.log('✅ Parsed robotsData:', {
+            logger.log('✅ Parsed robotsData:', {
               hasRobots: !!robotsData.robots,
               robotsCount: robotsData.robots?.length || 0,
             });
           } catch (e) {
-            console.error('❌ Failed to parse robotsData:', e);
+            logger.error('❌ Failed to parse robotsData:', e);
             robotsData = { robots: [], nextToken: '' };
           }
         }
         
         const robotsArray = robotsData?.robots && Array.isArray(robotsData.robots) ? robotsData.robots : [];
         
-        console.log('🔍 Processing robots array:', {
+        logger.log('🔍 Processing robots array:', {
           robotsArrayLength: robotsArray.length,
           responseDataRobots: robotsData?.robots,
           isArray: Array.isArray(robotsData?.robots),
@@ -259,7 +260,7 @@ export default function RobotSelect() {
           
           // If user object is empty, try to fetch from auth session
           if (!userEmail && !userUsername) {
-            console.warn('⚠️ User object is empty, trying to fetch from auth session...');
+            logger.warn('⚠️ User object is empty, trying to fetch from auth session...');
             try {
               const { fetchAuthSession, fetchUserAttributes, getCurrentUser } = await import('aws-amplify/auth');
               const currentUser = await getCurrentUser();
@@ -269,18 +270,18 @@ export default function RobotSelect() {
               userEmail = attrs.email?.toLowerCase().trim();
               userUsername = currentUser.username?.toLowerCase().trim();
               
-              console.log('📥 Fetched user info from auth:', {
+              logger.log('📥 Fetched user info from auth:', {
                 email: userEmail,
                 username: userUsername,
                 allAttributes: attrs,
                 sessionPayload: session.tokens?.idToken?.payload,
               });
             } catch (e) {
-              console.error('❌ Failed to fetch user from auth:', e);
+              logger.error('❌ Failed to fetch user from auth:', e);
             }
           }
           
-          console.log('👤 User identifiers for ACL matching:', {
+          logger.log('👤 User identifiers for ACL matching:', {
             email: userEmail || '❌ MISSING',
             username: userUsername || '❌ MISSING',
             displayName: user?.displayName || '❌ MISSING',
@@ -289,7 +290,7 @@ export default function RobotSelect() {
             fullUserObject: user,
           });
           
-          console.log(`✅ Found ${robotsArray.length} robots to process`);
+          logger.log(`✅ Found ${robotsArray.length} robots to process`);
           
           robotItems = robotsArray
             .filter((robot: any) => robot !== null && robot !== undefined) // Filter out null robots
@@ -332,7 +333,7 @@ export default function RobotSelect() {
                 
                 // Log ACL check details for debugging
                 if (robot.name === 'Tugga' || robot.name === 'ACL test') {
-                  console.log(`🔍 ACL check for robot "${robot.name}":`, {
+                  logger.log(`🔍 ACL check for robot "${robot.name}":`, {
                     robotId: robot.id,
                     hasACL,
                     allowedUsers: normalizedAllowedUsers,
@@ -351,7 +352,7 @@ export default function RobotSelect() {
               
               // Log model for debugging
               if (robot.model) {
-                console.log(`[ROBOT_IMAGE] Robot "${robot.name || 'Unnamed'}": model="${robot.model}", image="${getRobotImage(robot.model, robot.imageUrl)}"`);
+                logger.log(`[ROBOT_IMAGE] Robot "${robot.name || 'Unnamed'}": model="${robot.model}", image="${getRobotImage(robot.model, robot.imageUrl)}"`);
               }
               
               return {
@@ -366,16 +367,16 @@ export default function RobotSelect() {
               };
             });
           
-          console.log(`✅ Successfully loaded ${robotItems.length} valid robot(s) from database`);
-          console.log('📋 Robot items details:', robotItems.map(r => ({ id: r.id, title: r.title, disabled: r.disabled })));
+          logger.log(`✅ Successfully loaded ${robotItems.length} valid robot(s) from database`);
+          logger.log('📋 Robot items details:', robotItems.map(r => ({ id: r.id, title: r.title, disabled: r.disabled })));
           
           // Update pagination state (nextToken is empty string when no more pages)
           const token = response.data.nextToken || '';
           setNextToken(token || null);
           setHasMore(!!token);
         } else {
-          console.warn('⚠️ No robots in robotsArray - robotsArray.length is 0');
-          console.warn('Response data structure:', {
+          logger.warn('⚠️ No robots in robotsArray - robotsArray.length is 0');
+          logger.warn('Response data structure:', {
             hasData: !!response.data,
             hasRobots: !!response.data?.robots,
             robotsType: typeof response.data?.robots,
@@ -388,7 +389,7 @@ export default function RobotSelect() {
         // For local development/testing: Add default robot1 if no robots found
         // This allows testing even when user is a Client account
         if (robotItems.length === 0 && (import.meta.env.DEV || import.meta.env.VITE_WS_URL)) {
-          console.log('No robots found, adding default test robot for dev mode');
+          logger.log('No robots found, adding default test robot for dev mode');
           robotItems = [
             {
               id: 'robot1',
@@ -403,10 +404,10 @@ export default function RobotSelect() {
         setRobots(robotItems);
         setRawRobotData(robotItems);
       } catch (err) {
-        console.error('Exception loading robots:', err);
+        logger.error('Exception loading robots:', err);
         // In dev mode, still show default robot even if there's an exception
         if (import.meta.env.DEV || import.meta.env.VITE_WS_URL) {
-          console.warn('Exception occurred, but adding default test robot for dev mode');
+          logger.warn('Exception occurred, but adding default test robot for dev mode');
           setRobots([
             {
               id: 'robot1',
@@ -466,7 +467,7 @@ export default function RobotSelect() {
     event.stopPropagation(); // Prevent card selection when clicking edit
     
     if (!robot.uuid) {
-      console.error('Cannot edit robot: missing UUID');
+      logger.error('Cannot edit robot: missing UUID');
       return;
     }
     
@@ -478,7 +479,7 @@ export default function RobotSelect() {
     event.stopPropagation(); // Prevent card selection when clicking delete
     
     if (!robot.uuid) {
-      console.error('Cannot delete robot: missing UUID');
+      logger.error('Cannot delete robot: missing UUID');
       return;
     }
 
@@ -489,11 +490,11 @@ export default function RobotSelect() {
 
     try {
       setDeletingRobotId(robot.uuid);
-      console.log(`🗑️ Attempting to delete robot: ${robotName} (${robot.uuid})`);
+      logger.log(`🗑️ Attempting to delete robot: ${robotName} (${robot.uuid})`);
       
       const result = await client.mutations.deleteRobotLambda({ robotId: robot.uuid });
       
-      console.log('📊 Delete robot response:', {
+      logger.log('📊 Delete robot response:', {
         hasData: !!result.data,
         hasErrors: !!result.errors,
         data: result.data,
@@ -502,7 +503,7 @@ export default function RobotSelect() {
       
       // Check for GraphQL errors first
       if (result.errors && result.errors.length > 0) {
-        console.error('❌ GraphQL errors:', result.errors);
+        logger.error('❌ GraphQL errors:', result.errors);
         const errorMessages = result.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ');
         throw new Error(errorMessages);
       }
@@ -512,7 +513,7 @@ export default function RobotSelect() {
         // Remove the robot from the list
         setRobots(robots.filter(r => r.uuid !== robot.uuid));
         setSelected(selected.filter(s => s.id !== robot.id));
-        console.log(`✅ Robot "${robotName}" deleted successfully`);
+        logger.log(`✅ Robot "${robotName}" deleted successfully`);
       } else {
         // Try to parse error message from body
         let errorMessage = 'Failed to delete robot';
@@ -524,11 +525,11 @@ export default function RobotSelect() {
             errorMessage = result.data.body;
           }
         }
-        console.error('❌ Delete failed with status:', result.data?.statusCode, 'body:', result.data?.body);
+        logger.error('❌ Delete failed with status:', result.data?.statusCode, 'body:', result.data?.body);
         throw new Error(errorMessage);
       }
     } catch (error: any) {
-      console.error('❌ Exception deleting robot:', {
+      logger.error('❌ Exception deleting robot:', {
         error,
         message: error.message,
         errors: error.errors,
@@ -565,7 +566,7 @@ export default function RobotSelect() {
       setIsLoading(true);
       
       if (!client.queries.listAccessibleRobotsLambda) {
-        console.warn('⚠️ listAccessibleRobotsLambda not available. Cannot load more robots.');
+        logger.warn('⚠️ listAccessibleRobotsLambda not available. Cannot load more robots.');
         setHasMore(false);
         return;
       }
@@ -584,7 +585,7 @@ export default function RobotSelect() {
           responseData = queryResponse.data as any;
         }
       } catch (e) {
-        console.error('Failed to parse response data:', e);
+        logger.error('Failed to parse response data:', e);
       }
       const robotsArray = Array.isArray(responseData.robots) ? responseData.robots : [];
       if (robotsArray.length > 0) {
@@ -617,7 +618,7 @@ export default function RobotSelect() {
         setHasMore(false);
       }
     } catch (err) {
-      console.error('Error loading more robots:', err);
+      logger.error('Error loading more robots:', err);
       alert('Failed to load more robots. Please try again.');
     } finally {
       setIsLoading(false);

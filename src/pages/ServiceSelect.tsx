@@ -6,6 +6,7 @@ import { Schema } from '../../amplify/data/resource';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { logger } from '../utils/logger';
 import { 
   faSearch, 
   faStar, 
@@ -63,7 +64,7 @@ export default function ServiceSelect() {
         setPartners(partnerData);
         setFilteredPartners(partnerData);
       } catch (err) {
-        console.error('Error loading partners:', err);
+        logger.error('Error loading partners:', err);
       } finally {
         setIsLoading(false);
       }

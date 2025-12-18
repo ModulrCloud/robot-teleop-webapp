@@ -7,6 +7,7 @@ import { LoadingWheel } from '../components/LoadingWheel';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { useAuthStatus } from '../hooks/useAuthStatus';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { logger } from '../utils/logger';
 import { 
   faBuilding,
   faCheckCircle,
@@ -95,7 +96,7 @@ export default function EditPartnerProfile() {
           }
         }
       } catch (err) {
-        console.error('Error loading partner:', err);
+        logger.error('Error loading partner:', err);
         setError('Failed to load profile');
       } finally {
         setIsLoadingPartner(false);
@@ -162,7 +163,7 @@ export default function EditPartnerProfile() {
 
       return key;
     } catch (err) {
-      console.error('Logo upload failed:', err);
+      logger.error('Logo upload failed:', err);
       setUploadError('Failed to upload logo');
       throw err;
     }
@@ -214,7 +215,7 @@ export default function EditPartnerProfile() {
       setSuccess(true);
       setTimeout(() => navigate('/'), 1500);
     } catch (err) {
-      console.error('Error saving profile:', err);
+      logger.error('Error saving profile:', err);
       setError('Failed to save profile');
       setSuccess(false);
     } finally {
