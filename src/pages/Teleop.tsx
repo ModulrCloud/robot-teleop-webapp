@@ -20,12 +20,7 @@ import {
 import "./Teleop.css";
 import { usePageTitle } from "../hooks/usePageTitle";
 import outputs from '../../amplify_outputs.json';
-import { generateClient } from 'aws-amplify/api';
-import { fetchAuthSession, fetchUserAttributes } from 'aws-amplify/auth';
-import type { Schema } from '../../amplify/data/resource';
 import { logger } from '../utils/logger';
-
-const client = generateClient<Schema>();
 
 export default function Teleop() {
   usePageTitle();
@@ -39,12 +34,7 @@ export default function Teleop() {
   const [controlMode, setControlMode] = useState<'joystick' | 'gamepad'>('joystick');
   const [gamepadDetected, setGamepadDetected] = useState(false);
   const sendIntervalMs = 100; // 10 Hz
-  const [sessionId, setSessionId] = useState<string | null>(null);
 
-  // Session lock state
-  const [robotBusy, setRobotBusy] = useState(false);
-  const [busyUser, setBusyUser] = useState<string | null>(null);
-  const [checkingLock, setCheckingLock] = useState(true);
 
   // Read WebSocket URL from amplify_outputs.json (AWS signaling server)
   // Falls back to local WebSocket for development
@@ -63,37 +53,7 @@ export default function Teleop() {
   });
 
   useEffect(() => {
-    const checkRobotAvailability = async () => {
-      setCheckingLock(true);
-      try {
-        const session = await fetchAuthSession();
-        const currentUser = session.tokens?.idToken?.payload?.['cognito:username'] as string;
-        
-        const activeSessions = await client.models.Session.list({
-          filter: {
-            robotId: { eq: robotId },
-            status: { eq: 'active' }
-          }
-        });
-        
-        const activeSession = activeSessions.data?.find(s => s.userId !== currentUser);
-        
-        if (activeSession) {
-          setRobotBusy(true);
-          setBusyUser(activeSession.userEmail || activeSession.userId || 'Another user');
-        } else {
-          setRobotBusy(false);
-          connect();
-        }
-      } catch (err) {
-        console.error('Failed to check robot availability:', err);
-        connect();
-      } finally {
-        setCheckingLock(false);
-      }
-    };
-    
-    checkRobotAvailability();
+    connect();
     
     return () => {
       stopRobot();
@@ -105,47 +65,7 @@ export default function Teleop() {
   useEffect(() => {
     if (status.connected && sessionStartTimeRef.current === null) {
       sessionStartTimeRef.current = Date.now();
-      
-      (async () => {
-        try {
-          const session = await fetchAuthSession();
-          const attributes = await fetchUserAttributes();
-          const username = session.tokens?.idToken?.payload?.['cognito:username'] as string;
-          
-          // Close any existing active sessions for this user first
-          const existingSessions = await client.models.Session.list({
-            filter: { 
-              userId: { eq: username },
-              status: { eq: 'active' }
-            }
-          });
-          
-          for (const oldSession of existingSessions.data || []) {
-            await client.models.Session.update({
-              id: oldSession.id,
-              endedAt: new Date().toISOString(),
-              durationSeconds: Math.floor((Date.now() - new Date(oldSession.startedAt).getTime()) / 1000),
-              status: 'disconnected',
-            });
-          }
-          
-          // Now create new session
-          const result = await client.models.Session.create({
-            userId: username,
-            userEmail: attributes.email || '',
-            robotId: robotId,
-            robotName: robotId,
-            startedAt: new Date().toISOString(),
-            status: 'active',
-          });
-          
-          if (result.data?.id) {
-            setSessionId(result.data.id);
-          }
-        } catch (err) {
-          logger.error('Failed to create session:', err);
-        }
-      })();
+      logger.log('Session started for robot:', robotId);
     }
   }, [status.connected, robotId]);
 
@@ -267,27 +187,13 @@ export default function Teleop() {
     if (status.connected) stopRobot();
   };
 
-  const handleEndSession = async () => {
+  const handleEndSession = () => {
     stopRobot();
     disconnect();
     
     const duration = sessionStartTimeRef.current !== null 
       ? Math.floor((Date.now() - sessionStartTimeRef.current) / 1000)
       : 0;
-    
-    // Update session in database
-    if (sessionId) {
-      try {
-        await client.models.Session.update({
-          id: sessionId,
-          endedAt: new Date().toISOString(),
-          durationSeconds: duration,
-          status: 'completed',
-        });
-      } catch (err) {
-        logger.error('Failed to update session:', err);
-      }
-    }
     
     navigate('/endsession', { state: { duration } });
   };
@@ -299,18 +205,7 @@ export default function Teleop() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  if (checkingLock) {
-    return (
-      <div className="teleop-container">
-        <div className="teleop-loading">
-          <LoadingWheel />
-          <span>Checking robot availability...</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (robotBusy) {
+  if (status.robotBusy) {
     return (
       <div className="teleop-container">
         <div className="robot-busy-modal">
@@ -318,7 +213,7 @@ export default function Teleop() {
             <FontAwesomeIcon icon={faUserLock} className="busy-icon" />
             <h2>Robot Currently in Use</h2>
             <p className="busy-message">
-              Oops, sorry but this robot is being controlled by <strong>{busyUser}</strong>.
+              Oops, sorry but this robot is being controlled by <strong>{status.busyUser}</strong>.
             </p>
             <p className="busy-hint">
               I will let you know once their session is closed.
