@@ -50,6 +50,7 @@ export function UserProfile() {
 
   useEffect(() => {
     loadProfileData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const loadProfileData = async () => {
