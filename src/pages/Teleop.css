@@ -618,6 +618,104 @@ html {
   font-size: 1rem;
 }
 
+/* Robot Busy Modal */
+.teleop-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 60vh;
+  gap: 1rem;
+  color: #aaa;
+  font-size: 1.1rem;
+}
+
+.robot-busy-modal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 2rem;
+}
+
+.busy-content {
+  text-align: center;
+  max-width: 480px;
+  padding: 3rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.busy-icon {
+  font-size: 4rem;
+  color: #f59e0b;
+  margin-bottom: 1.5rem;
+}
+
+.busy-content h2 {
+  margin: 0 0 1rem;
+  color: #fff;
+  font-size: 1.75rem;
+}
+
+.busy-message {
+  color: #ccc;
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+
+.busy-message strong {
+  color: #60a5fa;
+}
+
+.busy-hint {
+  color: #888;
+  font-size: 0.95rem;
+  margin-bottom: 2rem;
+}
+
+.busy-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.busy-actions .retry-btn {
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: background 0.2s;
+}
+
+.busy-actions .retry-btn:hover {
+  background: #2563eb;
+}
+
+.busy-actions .back-btn {
+  background: transparent;
+  color: #aaa;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.busy-actions .back-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .security-indicator-banner {
@@ -690,4 +788,3 @@ html {
     justify-content: center;
   }
 }
-  

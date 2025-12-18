@@ -14,7 +14,8 @@ import {
   faGamepad,
   faRightFromBracket,
   faCheckCircle,
-  faLock
+  faLock,
+  faUserLock
 } from '@fortawesome/free-solid-svg-icons';
 import "./Teleop.css";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -39,6 +40,11 @@ export default function Teleop() {
   const sendIntervalMs = 100; // 10 Hz
   const [sessionId, setSessionId] = useState<string | null>(null);
 
+  // Session lock state
+  const [robotBusy, setRobotBusy] = useState(false);
+  const [busyUser, setBusyUser] = useState<string | null>(null);
+  const [checkingLock, setCheckingLock] = useState(true);
+
   // Read WebSocket URL from amplify_outputs.json (AWS signaling server)
   // Falls back to local WebSocket for development
   const wsUrl = outputs?.custom?.signaling?.websocketUrl 
@@ -54,6 +60,46 @@ export default function Teleop() {
     wsUrl,
     robotId,
   });
+
+  useEffect(() => {
+    const checkRobotAvailability = async () => {
+      setCheckingLock(true);
+      try {
+        const session = await fetchAuthSession();
+        const currentUser = session.tokens?.idToken?.payload?.['cognito:username'] as string;
+        
+        const activeSessions = await client.models.Session.list({
+          filter: {
+            robotId: { eq: robotId },
+            status: { eq: 'active' }
+          }
+        });
+        
+        const activeSession = activeSessions.data?.find(s => s.userId !== currentUser);
+        
+        if (activeSession) {
+          setRobotBusy(true);
+          setBusyUser(activeSession.userEmail || activeSession.userId || 'Another user');
+        } else {
+          setRobotBusy(false);
+          connect();
+        }
+      } catch (err) {
+        console.error('Failed to check robot availability:', err);
+        connect();
+      } finally {
+        setCheckingLock(false);
+      }
+    };
+    
+    checkRobotAvailability();
+    
+    return () => {
+      stopRobot();
+      disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [robotId]);
 
   useEffect(() => {
     if (status.connected && sessionStartTimeRef.current === null) {
@@ -191,14 +237,6 @@ export default function Teleop() {
   );
 
   useEffect(() => {
-    connect();
-    return () => {
-      stopRobot();
-      disconnect();
-    };
-  }, [connect, disconnect, stopRobot]);
-
-  useEffect(() => {
     if (videoRef.current && status.videoStream) {
       videoRef.current.srcObject = status.videoStream;
     }
@@ -259,6 +297,51 @@ export default function Teleop() {
     const s = seconds % 60;
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
+
+  if (checkingLock) {
+    return (
+      <div className="teleop-container">
+        <div className="teleop-loading">
+          <LoadingWheel />
+          <span>Checking robot availability...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (robotBusy) {
+    return (
+      <div className="teleop-container">
+        <div className="robot-busy-modal">
+          <div className="busy-content">
+            <FontAwesomeIcon icon={faUserLock} className="busy-icon" />
+            <h2>Robot Currently in Use</h2>
+            <p className="busy-message">
+              Oops, sorry but this robot is being controlled by <strong>{busyUser}</strong>.
+            </p>
+            <p className="busy-hint">
+              I will let you know once their session is closed.
+            </p>
+            <div className="busy-actions">
+              <button 
+                className="retry-btn"
+                onClick={() => window.location.reload()}
+              >
+                <FontAwesomeIcon icon={faRotate} />
+                Check Again
+              </button>
+              <button 
+                className="back-btn"
+                onClick={() => navigate('/robots')}
+              >
+                Browse Other Robots
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="teleop-container">
