@@ -158,7 +158,6 @@ const schema = a.schema({
   .authorization((allow) => [
     allow.owner().to(['create', 'read', 'update']),
     allow.groups(['ADMINS']).to(['read', 'delete']),
-    allow.authenticated().to(['read']),
   ]),
 
   setUserGroupLambda: a
