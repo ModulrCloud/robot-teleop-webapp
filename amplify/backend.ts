@@ -174,7 +174,7 @@ robotPresenceTable.grantReadWriteData(signalingFunction);
 revokedTokensTable.grantReadData(signalingFunction); // Read-only for checking blacklist
 robotOperatorTable.grantReadData(signalingFunction); // Read-only for checking delegations
 tables.Robot.grantReadData(signalingFunction); // Read-only for checking ACLs
-tables.Session.grantReadData(signalingFunction); // Read-only for session lock enforcement
+tables.Session.grantReadWriteData(signalingFunction); // Read/write for session management
 signalingCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
 
 // Grant DynamoDB permissions to revoke token function

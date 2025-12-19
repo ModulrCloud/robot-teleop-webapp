@@ -7,6 +7,8 @@ export interface WebRTCStatus {
   connected: boolean;
   error: string | null;
   videoStream: MediaStream | null;
+  robotBusy: boolean;
+  busyUser: string | null;
 }
 
 export interface WebRTCOptions {
@@ -49,6 +51,8 @@ export function useWebRTC(options: WebRTCOptions) {
     connected: false,
     error: null,
     videoStream: null,
+    robotBusy: false,
+    busyUser: null,
   });
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -89,7 +93,7 @@ export function useWebRTC(options: WebRTCOptions) {
       cleanup();
     }
 
-    setStatus({ connecting: true, connected: false, error: null, videoStream: null });
+    setStatus({ connecting: true, connected: false, error: null, videoStream: null, robotBusy: false, busyUser: null });
 
     try {
       // Get JWT token for WebSocket authentication
@@ -182,6 +186,20 @@ export function useWebRTC(options: WebRTCOptions) {
       ws.onmessage = async (event) => {
         const msg = JSON.parse(event.data);
         logger.log('[BROWSER] Received message from server:', msg.type);
+
+        if (msg.type === 'session-locked') {
+          logger.warn('[BROWSER] Robot is locked by another user:', msg.lockedBy);
+          setStatus(prev => ({
+            ...prev,
+            connecting: false,
+            connected: false,
+            error: null,
+            robotBusy: true,
+            busyUser: msg.lockedBy || 'Another user',
+          }));
+          cleanup();
+          return;
+        }
 
         // Handle welcome message with our connection ID
         if (msg.type === 'welcome' && msg.connectionId) {

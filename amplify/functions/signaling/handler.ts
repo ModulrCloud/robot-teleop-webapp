@@ -496,6 +496,166 @@ async function checkSessionLock(
   }
 }
 
+async function createSession(
+  connectionId: string,
+  userId: string,
+  userEmail: string | undefined,
+  robotId: string
+): Promise<string | null> {
+  if (!SESSION_TABLE_NAME) {
+    console.warn('[SESSION_CREATE] SESSION_TABLE_NAME not set, skipping session creation');
+    return null;
+  }
+
+  const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  const now = new Date().toISOString();
+
+  try {
+    await endUserSessions(userId);
+
+    await db.send(new PutItemCommand({
+      TableName: SESSION_TABLE_NAME,
+      Item: {
+        id: { S: sessionId },
+        owner: { S: userId },
+        userId: { S: userId },
+        userEmail: { S: userEmail || '' },
+        robotId: { S: robotId },
+        robotName: { S: robotId },
+        connectionId: { S: connectionId },
+        startedAt: { S: now },
+        status: { S: 'active' },
+        createdAt: { S: now },
+        updatedAt: { S: now },
+        __typename: { S: 'Session' },
+      },
+    }));
+
+    console.log('[SESSION_CREATED]', { sessionId, userId, robotId, connectionId });
+    return sessionId;
+  } catch (err) {
+    console.error('[SESSION_CREATE_ERROR]', {
+      userId,
+      robotId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
+
+async function endSession(sessionId: string): Promise<void> {
+  if (!SESSION_TABLE_NAME) return;
+
+  const now = new Date().toISOString();
+
+  try {
+    const result = await db.send(new QueryCommand({
+      TableName: SESSION_TABLE_NAME,
+      KeyConditionExpression: 'id = :id',
+      ExpressionAttributeValues: {
+        ':id': { S: sessionId },
+      },
+      Limit: 1,
+    }));
+
+    if (!result.Items?.[0]) {
+      console.warn('[SESSION_END] Session not found:', sessionId);
+      return;
+    }
+
+    const session = result.Items[0];
+    const startedAt = session.startedAt?.S;
+    const durationSeconds = startedAt 
+      ? Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000)
+      : 0;
+
+    await db.send(new UpdateItemCommand({
+      TableName: SESSION_TABLE_NAME,
+      Key: { id: { S: sessionId } },
+      UpdateExpression: 'SET #status = :completed, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now',
+      ExpressionAttributeNames: {
+        '#status': 'status',
+      },
+      ExpressionAttributeValues: {
+        ':completed': { S: 'completed' },
+        ':endedAt': { S: now },
+        ':duration': { N: String(durationSeconds) },
+        ':now': { S: now },
+      },
+    }));
+
+    console.log('[SESSION_ENDED]', { sessionId, durationSeconds });
+  } catch (err) {
+    console.error('[SESSION_END_ERROR]', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+async function endUserSessions(userId: string): Promise<void> {
+  if (!SESSION_TABLE_NAME) return;
+
+  try {
+    const result = await db.send(new QueryCommand({
+      TableName: SESSION_TABLE_NAME,
+      IndexName: 'userIdIndex',
+      KeyConditionExpression: 'userId = :userId',
+      FilterExpression: '#status = :active',
+      ExpressionAttributeNames: {
+        '#status': 'status',
+      },
+      ExpressionAttributeValues: {
+        ':userId': { S: userId },
+        ':active': { S: 'active' },
+      },
+    }));
+
+    for (const item of result.Items || []) {
+      const sessionId = item.id?.S;
+      if (sessionId) {
+        await endSession(sessionId);
+      }
+    }
+  } catch (err) {
+    console.error('[END_USER_SESSIONS_ERROR]', {
+      userId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+async function endConnectionSessions(connectionId: string): Promise<void> {
+  if (!SESSION_TABLE_NAME) return;
+
+  try {
+    const result = await db.send(new ScanCommand({
+      TableName: SESSION_TABLE_NAME,
+      FilterExpression: 'connectionId = :connId AND #status = :active',
+      ExpressionAttributeNames: {
+        '#status': 'status',
+      },
+      ExpressionAttributeValues: {
+        ':connId': { S: connectionId },
+        ':active': { S: 'active' },
+      },
+    }));
+
+    for (const item of result.Items || []) {
+      const sessionId = item.id?.S;
+      if (sessionId) {
+        console.log('[DISCONNECT_SESSION_END]', { sessionId, connectionId });
+        await endSession(sessionId);
+      }
+    }
+  } catch (err) {
+    console.error('[END_CONNECTION_SESSIONS_ERROR]', {
+      connectionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 // ---------------------------------
 // $connect
 // ---------------------------------
@@ -603,6 +763,9 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
 
 async function onDisconnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
     const connectionId = event.requestContext.connectionId!;
+    
+    await endConnectionSessions(connectionId);
+    
     try {
         await db.send(
             new DeleteItemCommand({
@@ -1041,15 +1204,27 @@ async function handleSignal(
     // This prevents a second client from establishing control of a robot
     // that already has an active teleoperation session
     if (type === 'offer') {
-      const sessionLock = await checkSessionLock(robotId, claims.sub!);
+      const currentUserIdentifier = userEmailOrUsername || claims.sub!;
+      const sessionLock = await checkSessionLock(robotId, currentUserIdentifier);
       if (sessionLock) {
         console.log('[SESSION_LOCK_REJECTED]', {
           robotId,
-          attemptingUser: claims.sub,
+          attemptingUser: currentUserIdentifier,
           lockingUser: sessionLock.userId,
           lockingUserEmail: sessionLock.userEmail,
           messageType: type,
         });
+        
+        try {
+          await postTo(sourceConnId, {
+            type: 'session-locked',
+            robotId,
+            lockedBy: sessionLock.userEmail || 'Another user',
+          });
+        } catch (e) {
+          console.warn('[SESSION_LOCK_NOTIFY_ERROR]', e);
+        }
+        
         return { 
           statusCode: 423,
           body: JSON.stringify({
@@ -1205,6 +1380,25 @@ async function handleSignal(
         targetConnectionId: targetConn,
         messageType: type,
       });
+      
+      if (type === 'offer' && target === 'robot' && claims?.sub) {
+        let userEmail: string | undefined;
+        let username: string | undefined;
+        try {
+          const connItem = await db.send(new GetItemCommand({
+            TableName: CONN_TABLE,
+            Key: { connectionId: { S: sourceConnId } },
+            ProjectionExpression: 'email, username',
+          }));
+          userEmail = connItem.Item?.email?.S;
+          username = connItem.Item?.username?.S;
+        } catch (e) {
+          console.warn('[SESSION_GET_USER_INFO_ERROR]', e);
+        }
+        
+        const sessionUserId = username || claims.sub;
+        await createSession(sourceConnId, sessionUserId, userEmail, robotId);
+      }
     } catch (err) {
       // If the conn is gone, the caller will see a 200 from us but message won't deliver.
       // That's fine; $disconnect cleanup should remove stale items.
