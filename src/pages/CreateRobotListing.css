@@ -557,3 +557,14 @@
 .form-group input[type="email"]::placeholder {
   color: rgba(255, 255, 255, 0.4);
 }
+
+.form-group.has-error input,
+.form-group.has-error textarea {
+  border-color: #ef4444;
+}
+
+.field-error {
+  color: #ef4444;
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+}
