@@ -41,9 +41,14 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => {
+    if (!isLoggedIn || !user?.username) {
+      setHasPartnerProfile(null);
+      return;
+    }
+    setHasPartnerProfile(null);
     let cancelled = false;
     const checkPartnerProfile = async () => {
-      if (user?.group === "PARTNERS" && user?.username) {
+      if (user?.group === "PARTNERS") {
         try {
           const res = await client.models.Partner.list({
             filter: { cognitoUsername: { eq: user.username } },
@@ -55,13 +60,13 @@ export default function Navbar() {
         } catch {
           if (!cancelled) setHasPartnerProfile(null);
         }
-      } else if (user?.group !== "PARTNERS") {
+      } else {
         setHasPartnerProfile(null);
       }
     };
     checkPartnerProfile();
     return () => { cancelled = true; };
-  }, [user?.group, user?.username, location.pathname]);
+  }, [isLoggedIn, user?.group, user?.username, location.pathname]);
 
   const handleSignOut = async () => {
     await signOut();
