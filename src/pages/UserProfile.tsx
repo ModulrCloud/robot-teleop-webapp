@@ -26,6 +26,7 @@ interface ClientData {
   averageRating?: number | null;
   reliabilityScore?: number | null;
   publicKey?: string | null;
+  preferredCurrency?: string | null;
 }
 
 export function UserProfile() {
@@ -44,6 +45,11 @@ export function UserProfile() {
     name: "",
     description: "",
   });
+  
+  const [currencyForm, setCurrencyForm] = useState({
+    preferredCurrency: "USD",
+  });
+  const [isEditingCurrency, setIsEditingCurrency] = useState(false);
 
   const isPartner = user?.group === "PARTNERS";
   const isClient = user?.group === "CLIENTS";
@@ -90,6 +96,10 @@ export function UserProfile() {
             averageRating: clientRecord.averageRating,
             reliabilityScore: clientRecord.reliabilityScore,
             publicKey: clientRecord.publicKey,
+            preferredCurrency: clientRecord.preferredCurrency || "USD",
+          });
+          setCurrencyForm({
+            preferredCurrency: clientRecord.preferredCurrency || "USD",
           });
         }
       }
@@ -163,6 +173,55 @@ export function UserProfile() {
     setError("");
   };
 
+  const handleCurrencyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setCurrencyForm({
+      preferredCurrency: e.target.value,
+    });
+  };
+
+  const handleSaveCurrency = async () => {
+    if (!clientData?.id) return;
+
+    setSaving(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const { errors } = await client.models.Client.update({
+        id: clientData.id,
+        preferredCurrency: currencyForm.preferredCurrency,
+      });
+
+      if (errors) {
+        setError("Failed to update currency preference");
+      } else {
+        setClientData(prev => prev ? {
+          ...prev,
+          preferredCurrency: currencyForm.preferredCurrency,
+        } : null);
+        setSuccess("Currency preference updated successfully!");
+        setIsEditingCurrency(false);
+        setTimeout(() => setSuccess(""), 3000);
+        // Reload page to update credits display
+        window.location.reload();
+      }
+    } catch (err) {
+      logger.error("Error updating currency:", err);
+      setError("An error occurred while updating currency");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelCurrency = () => {
+    if (clientData) {
+      setCurrencyForm({
+        preferredCurrency: clientData.preferredCurrency || "USD",
+      });
+    }
+    setIsEditingCurrency(false);
+  };
+
   if (loading) {
     return (
       <div className="loading-wrapper">
@@ -202,6 +261,54 @@ export function UserProfile() {
               <label>Username</label>
               <p>{capitalizeName(user?.username)}</p>
             </div>
+            {isClient && (
+              <div className="info-item">
+                <label>Preferred Currency</label>
+                {isEditingCurrency ? (
+                  <div className="currency-edit">
+                    <select
+                      value={currencyForm.preferredCurrency}
+                      onChange={handleCurrencyChange}
+                      className="form-select"
+                      disabled={saving}
+                    >
+                      <option value="USD">USD - US Dollar ($)</option>
+                      <option value="EUR">EUR - Euro (€)</option>
+                      <option value="GBP">GBP - British Pound (£)</option>
+                      <option value="CAD">CAD - Canadian Dollar (C$)</option>
+                      <option value="AUD">AUD - Australian Dollar (A$)</option>
+                      <option value="JPY">JPY - Japanese Yen (¥)</option>
+                    </select>
+                    <div className="currency-edit-actions">
+                      <button 
+                        onClick={handleSaveCurrency} 
+                        className="btn-save-small"
+                        disabled={saving}
+                      >
+                        <FontAwesomeIcon icon={faSave} /> Save
+                      </button>
+                      <button 
+                        onClick={handleCancelCurrency} 
+                        className="btn-cancel-small"
+                        disabled={saving}
+                      >
+                        <FontAwesomeIcon icon={faTimes} /> Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="currency-display">
+                    <p>{clientData?.preferredCurrency || "USD"}</p>
+                    <button 
+                      onClick={() => setIsEditingCurrency(true)} 
+                      className="btn-edit-small"
+                    >
+                      <FontAwesomeIcon icon={faEdit} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

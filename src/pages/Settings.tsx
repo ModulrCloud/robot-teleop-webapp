@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useAuthStatus } from "../hooks/useAuthStatus";
+import { generateClient } from "aws-amplify/api";
+import type { Schema } from "../../amplify/data/resource";
 import { formatGroupName, capitalizeName } from "../utils/formatters";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -13,7 +15,10 @@ import {
   faCheck,
   faInfoCircle,
 } from "@fortawesome/free-solid-svg-icons";
+import { logger } from "../utils/logger";
 import "./Settings.css";
+
+const client = generateClient<Schema>();
 
 type SettingSection =
   | "account"
@@ -25,6 +30,10 @@ type SettingSection =
 export const Settings = () => {
   usePageTitle();
   const { user } = useAuthStatus();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState("");
+  const [error, setError] = useState("");
 
   const [activeSection, setActiveSection] = useState<SettingSection>("account");
 
@@ -36,8 +45,71 @@ export const Settings = () => {
     language: "en",
   });
 
-  const handleCurrencyChange = (currency: string) => {
+  // Load currency preference from database
+  useEffect(() => {
+    const loadCurrency = async () => {
+      if (!user?.username) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const { data: clients } = await client.models.Client.list({
+          filter: { cognitoUsername: { eq: user.username } },
+        });
+
+        if (clients && clients.length > 0) {
+          const clientRecord = clients[0];
+          const preferredCurrency = clientRecord.preferredCurrency || "USD";
+          setSettings((prev) => ({ ...prev, currency: preferredCurrency }));
+        }
+      } catch (err) {
+        logger.error("Error loading currency preference:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadCurrency();
+  }, [user?.username]);
+
+  const handleCurrencyChange = async (currency: string) => {
     setSettings((prev) => ({ ...prev, currency }));
+    
+    // Save to database
+    if (!user?.username) return;
+
+    setSaving(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const { data: clients } = await client.models.Client.list({
+        filter: { cognitoUsername: { eq: user.username } },
+      });
+
+      if (clients && clients.length > 0) {
+        const clientRecord = clients[0];
+        const { errors } = await client.models.Client.update({
+          id: clientRecord.id,
+          preferredCurrency: currency,
+        });
+
+        if (errors) {
+          setError("Failed to update currency preference");
+        } else {
+          setSuccess("Currency preference updated successfully!");
+          setTimeout(() => setSuccess(""), 3000);
+          // Reload page to update credits display
+          window.location.reload();
+        }
+      }
+    } catch (err) {
+      logger.error("Error updating currency:", err);
+      setError("An error occurred while updating currency");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleLanguageChange = (language: string) => {
@@ -109,6 +181,17 @@ export const Settings = () => {
                 Your account details and preferences
               </p>
 
+              {success && (
+                <div className="success-message" style={{ marginBottom: '1rem' }}>
+                  {success}
+                </div>
+              )}
+              {error && (
+                <div className="error-message" style={{ marginBottom: '1rem' }}>
+                  {error}
+                </div>
+              )}
+
               <div className="settings-group">
                 <div className="setting-item">
                   <div className="setting-info">
@@ -143,11 +226,14 @@ export const Settings = () => {
                     className="setting-select"
                     value={settings.currency}
                     onChange={(e) => handleCurrencyChange(e.target.value)}
+                    disabled={saving || loading}
                   >
-                    <option value="USD">USD ($)</option>
-                    <option value="EUR">EUR (€)</option>
-                    <option value="GBP">GBP (£)</option>
-                    <option value="JPY">JPY (¥)</option>
+                    <option value="USD">USD - US Dollar ($)</option>
+                    <option value="EUR">EUR - Euro (€)</option>
+                    <option value="GBP">GBP - British Pound (£)</option>
+                    <option value="CAD">CAD - Canadian Dollar (C$)</option>
+                    <option value="AUD">AUD - Australian Dollar (A$)</option>
+                    <option value="JPY">JPY - Japanese Yen (¥)</option>
                   </select>
                 </div>
               </div>

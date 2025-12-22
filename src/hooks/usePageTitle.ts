@@ -24,6 +24,9 @@ export function usePageTitle() {
       case "/settings":
         title = "Settings";
         break;
+      case "/credits":
+        title = "Credits";
+        break;
       case "/robots":
         title = "Select Robot";
         break;

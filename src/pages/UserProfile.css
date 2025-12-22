@@ -257,6 +257,118 @@
   }
 }
 
+/* Currency Selection Styles */
+.currency-display {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.currency-display p {
+  margin: 0;
+  flex: 1;
+}
+
+.btn-edit-small {
+  padding: 0.35rem 0.65rem;
+  background: rgba(255, 204, 0, 0.1);
+  border: 1px solid #ffcc00;
+  color: #ffcc00;
+  border-radius: 0.4rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-edit-small:hover {
+  background: #ffcc00;
+  color: #000;
+}
+
+.currency-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.form-select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
+  font-family: inherit;
+  font-size: 1rem;
+  transition: border-color 0.3s;
+  cursor: pointer;
+}
+
+.form-select:focus {
+  outline: none;
+  border-color: #ffcc00;
+}
+
+.form-select option {
+  background: #1a1a1a;
+  color: #fff;
+}
+
+.currency-edit-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.btn-save-small,
+.btn-cancel-small {
+  padding: 0.5rem 1rem;
+  border-radius: 0.4rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+}
+
+.btn-save-small {
+  background: #ffcc00;
+  color: #000;
+}
+
+.btn-save-small:hover {
+  background: #ffd700;
+  transform: translateY(-2px);
+}
+
+.btn-save-small:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-cancel-small {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.btn-cancel-small:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.btn-cancel-small:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 @media (max-width: 768px) {
   .profile-info-grid {
     grid-template-columns: 1fr;
@@ -274,6 +386,10 @@
   }
 
   .form-actions {
+    flex-direction: column;
+  }
+
+  .currency-edit-actions {
     flex-direction: column;
   }
 }
