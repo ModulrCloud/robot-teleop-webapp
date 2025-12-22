@@ -6,7 +6,8 @@ import './UserProfile.css';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faUser, faEdit, faSave, faTimes } from '@fortawesome/free-solid-svg-icons';
+import { faUser, faEdit, faSave, faTimes, faExternalLinkAlt } from '@fortawesome/free-solid-svg-icons';
+import { useNavigate } from 'react-router-dom';
 import { formatGroupName, capitalizeName } from "../utils/formatters";
 import { logger } from '../utils/logger';
 
@@ -31,6 +32,7 @@ interface ClientData {
 export function UserProfile() {
   usePageTitle();
   const { user } = useAuthStatus();
+  const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -209,11 +211,16 @@ export function UserProfile() {
           <div className="profile-section">
             <div className="section-header">
               <h2>Partner Profile</h2>
-              {!isEditing && (
-                <button onClick={() => setIsEditing(true)} className="btn-edit">
-                  <FontAwesomeIcon icon={faEdit} /> Edit Profile
+              <div className="section-actions">
+                {!isEditing && (
+                  <button onClick={() => setIsEditing(true)} className="btn-edit">
+                    <FontAwesomeIcon icon={faEdit} /> Edit Profile
+                  </button>
+                )}
+                <button onClick={() => navigate('/partner-profile/edit')} className="btn-edit-full">
+                  <FontAwesomeIcon icon={faExternalLinkAlt} /> Edit Full Profile
                 </button>
-              )}
+              </div>
             </div>
 
             {isEditing ? (

@@ -246,6 +246,15 @@ export default function EditPartnerProfile() {
       if (partnerId) {
         await client.models.Partner.update({ id: partnerId, ...data });
       } else {
+        const existingCheck = await client.models.Partner.list({
+          filter: { cognitoUsername: { eq: user?.username || '' } },
+          limit: 1,
+        });
+        if (existingCheck.data && existingCheck.data.length > 0) {
+          setError('A company profile already exists for this account');
+          setIsLoading(false);
+          return;
+        }
         await client.models.Partner.create({
           ...data,
           cognitoUsername: user?.username,

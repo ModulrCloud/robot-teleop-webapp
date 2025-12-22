@@ -82,6 +82,15 @@ export function UserSetup(_props: PrivateRouteProps) {
       await fetchAuthSession({ forceRefresh: true });
 
       if (userGroup === "partner") {
+        const existingPartner = await client.models.Partner.list({
+          filter: { cognitoUsername: { eq: user?.username || '' } },
+          limit: 1,
+        });
+        if (existingPartner.data && existingPartner.data.length > 0) {
+          const from = location.state?.from || "/";
+          navigate(from, { replace: true });
+          return;
+        }
         const createPartnerResp = await client.models.Partner.create({
           cognitoUsername: user?.username,
           name: partnerDetails.name.trim(),
