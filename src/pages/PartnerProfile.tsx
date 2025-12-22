@@ -183,10 +183,12 @@ export default function PartnerProfile() {
                 <span>{Math.round(partner.reliabilityScore * 100)}% Reliable</span>
               </div>
             )}
-            <div className="stat-pill">
-              <FontAwesomeIcon icon={faRobot} />
-              <span>{robots.length} Robots</span>
-            </div>
+            {partner.companyType === 'Robot Provider' && (
+              <div className="stat-pill">
+                <FontAwesomeIcon icon={faRobot} />
+                <span>{robots.length} Robots</span>
+              </div>
+            )}
           </div>
           <div className="hero-actions">
             {partner.websiteUrl && (
@@ -260,7 +262,7 @@ export default function PartnerProfile() {
           )}
         </div>
 
-        {robots.length > 0 && (
+        {partner.companyType === 'Robot Provider' && robots.length > 0 && (
           <aside className="profile-sidebar">
             <h3>Available Robots</h3>
             <div className="robots-list">

@@ -41,15 +41,27 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => {
-    if (user?.group === "PARTNERS" && user?.username) {
-      client.models.Partner.list({
-        filter: { cognitoUsername: { eq: user.username } },
-        limit: 1,
-      })
-        .then(res => setHasPartnerProfile((res.data?.length || 0) > 0))
-        .catch(() => setHasPartnerProfile(null));
-    }
-  }, [user]);
+    let cancelled = false;
+    const checkPartnerProfile = async () => {
+      if (user?.group === "PARTNERS" && user?.username) {
+        try {
+          const res = await client.models.Partner.list({
+            filter: { cognitoUsername: { eq: user.username } },
+            limit: 1,
+          });
+          if (!cancelled) {
+            setHasPartnerProfile((res.data?.length || 0) > 0);
+          }
+        } catch {
+          if (!cancelled) setHasPartnerProfile(null);
+        }
+      } else if (user?.group !== "PARTNERS") {
+        setHasPartnerProfile(null);
+      }
+    };
+    checkPartnerProfile();
+    return () => { cancelled = true; };
+  }, [user?.group, user?.username, location.pathname]);
 
   const handleSignOut = async () => {
     await signOut();
