@@ -56,6 +56,7 @@ export default function EditPartnerProfile() {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -106,6 +107,40 @@ export default function EditPartnerProfile() {
     loadPartner();
   }, [user]);
 
+  const validateField = (name: string, value: string): string => {
+    if (!value) return '';
+    
+    const socialPatterns: Record<string, { prefix: string; hint: string }> = {
+      twitterUrl: { prefix: 'https://x.com/', hint: 'https://x.com/username' },
+      telegramUrl: { prefix: 'https://t.me/', hint: 'https://t.me/username' },
+      githubUrl: { prefix: 'https://github.com/', hint: 'https://github.com/username' },
+    };
+
+    if (socialPatterns[name]) {
+      if (value.startsWith('@')) {
+        return `Use full URL: ${socialPatterns[name].hint}`;
+      }
+      if (!value.startsWith(socialPatterns[name].prefix)) {
+        return `Must start with ${socialPatterns[name].prefix}`;
+      }
+    }
+
+    if (['websiteUrl', 'integrationDocsUrl'].includes(name)) {
+      if (!value.startsWith('https://') && !value.startsWith('http://')) {
+        return 'Must start with https://';
+      }
+    }
+
+    if (name === 'contactEmail') {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(value)) {
+        return 'Enter a valid email address';
+      }
+    }
+
+    return '';
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     const checked = (e.target as HTMLInputElement).checked;
@@ -113,6 +148,11 @@ export default function EditPartnerProfile() {
       ...prev,
       [name]: type === 'checkbox' ? checked : value,
     }));
+
+    const validatedFields = ['twitterUrl', 'telegramUrl', 'githubUrl', 'websiteUrl', 'integrationDocsUrl', 'contactEmail'];
+    if (validatedFields.includes(name)) {
+      setFieldErrors(prev => ({ ...prev, [name]: validateField(name, value) }));
+    }
   };
 
   const handleFileSelect = (file: File) => {
@@ -349,7 +389,7 @@ export default function EditPartnerProfile() {
           <div className="form-section">
             <h3>Contact</h3>
 
-            <div className="form-group">
+            <div className={`form-group ${fieldErrors.websiteUrl ? 'has-error' : ''}`}>
               <label>Website URL</label>
               <input
                 type="url"
@@ -359,9 +399,12 @@ export default function EditPartnerProfile() {
                 placeholder="https://example.com"
                 disabled={isLoading}
               />
+              {fieldErrors.websiteUrl && (
+                <span className="field-error">{fieldErrors.websiteUrl}</span>
+              )}
             </div>
 
-            <div className="form-group">
+            <div className={`form-group ${fieldErrors.contactEmail ? 'has-error' : ''}`}>
               <label>Contact Email</label>
               <input
                 type="email"
@@ -371,13 +414,16 @@ export default function EditPartnerProfile() {
                 placeholder="contact@example.com"
                 disabled={isLoading}
               />
+              {fieldErrors.contactEmail && (
+                <span className="field-error">{fieldErrors.contactEmail}</span>
+              )}
             </div>
           </div>
 
           <div className="form-section">
             <h3>Social Links</h3>
 
-            <div className="form-group">
+            <div className={`form-group ${fieldErrors.twitterUrl ? 'has-error' : ''}`}>
               <label>Twitter / X</label>
               <input
                 type="url"
@@ -387,9 +433,12 @@ export default function EditPartnerProfile() {
                 placeholder="https://x.com/yourcompany"
                 disabled={isLoading}
               />
+              {fieldErrors.twitterUrl && (
+                <span className="field-error">{fieldErrors.twitterUrl}</span>
+              )}
             </div>
 
-            <div className="form-group">
+            <div className={`form-group ${fieldErrors.telegramUrl ? 'has-error' : ''}`}>
               <label>Telegram</label>
               <input
                 type="url"
@@ -399,9 +448,12 @@ export default function EditPartnerProfile() {
                 placeholder="https://t.me/yourgroup"
                 disabled={isLoading}
               />
+              {fieldErrors.telegramUrl && (
+                <span className="field-error">{fieldErrors.telegramUrl}</span>
+              )}
             </div>
 
-            <div className="form-group">
+            <div className={`form-group ${fieldErrors.githubUrl ? 'has-error' : ''}`}>
               <label>GitHub</label>
               <input
                 type="url"
@@ -411,6 +463,9 @@ export default function EditPartnerProfile() {
                 placeholder="https://github.com/yourcompany"
                 disabled={isLoading}
               />
+              {fieldErrors.githubUrl && (
+                <span className="field-error">{fieldErrors.githubUrl}</span>
+              )}
             </div>
           </div>
 
@@ -430,7 +485,7 @@ export default function EditPartnerProfile() {
               />
             </div>
 
-            <div className="form-group">
+            <div className={`form-group ${fieldErrors.integrationDocsUrl ? 'has-error' : ''}`}>
               <label>Documentation URL</label>
               <input
                 type="url"
@@ -440,6 +495,9 @@ export default function EditPartnerProfile() {
                 placeholder="https://docs.example.com"
                 disabled={isLoading}
               />
+              {fieldErrors.integrationDocsUrl && (
+                <span className="field-error">{fieldErrors.integrationDocsUrl}</span>
+              )}
             </div>
           </div>
 
@@ -462,7 +520,7 @@ export default function EditPartnerProfile() {
             <button type="button" className="submit-btn cancel-btn" onClick={() => navigate('/')} disabled={isLoading}>
               Cancel
             </button>
-            <button type="submit" className="submit-btn" disabled={isLoading || !form.name || !form.description}>
+            <button type="submit" className="submit-btn" disabled={isLoading || !form.name || !form.description || Object.values(fieldErrors).some(e => e)}>
               {isLoading ? <LoadingWheel /> : (partnerId ? 'Save Changes' : 'Create Profile')}
             </button>
           </div>

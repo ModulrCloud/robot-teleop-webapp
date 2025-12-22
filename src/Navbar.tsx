@@ -1,7 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { generateClient } from 'aws-amplify/api';
+import { Schema } from '../amplify/data/resource';
 import { useAuthStatus } from "./hooks/useAuthStatus";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+
+const client = generateClient<Schema>();
 import {
   faHome,
   faRobot,
@@ -22,6 +26,7 @@ export default function Navbar() {
   const { isLoggedIn, signOut, user } = useAuthStatus();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [hasPartnerProfile, setHasPartnerProfile] = useState<boolean | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
 
@@ -34,6 +39,17 @@ export default function Navbar() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (user?.group === "PARTNERS" && user?.username) {
+      client.models.Partner.list({
+        filter: { cognitoUsername: { eq: user.username } },
+        limit: 1,
+      })
+        .then(res => setHasPartnerProfile((res.data?.length || 0) > 0))
+        .catch(() => setHasPartnerProfile(null));
+    }
+  }, [user]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -149,7 +165,7 @@ export default function Navbar() {
                   {user?.group === "PARTNERS" && (
                     <Link to="/partner-profile/edit" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
                       <FontAwesomeIcon icon={faBuilding} />
-                      <span>Company Profile</span>
+                      <span>{hasPartnerProfile === null ? 'Company Profile' : hasPartnerProfile ? 'Edit Company Profile' : 'Create Company Profile'}</span>
                     </Link>
                   )}
                   <Link to="/settings" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
