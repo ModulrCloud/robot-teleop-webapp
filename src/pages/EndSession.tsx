@@ -1,12 +1,37 @@
-import { useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { generateClient } from 'aws-amplify/api';
+import { Schema } from '../../amplify/data/resource';
+import { LoadingWheel } from "../components/LoadingWheel";
 import "./EndSession.css";
 import { usePageTitle } from "../hooks/usePageTitle";
 
+const client = generateClient<Schema>();
+
 export default function EndSession() {
   usePageTitle();
-  const location = useLocation();
   const navigate = useNavigate();
-  const duration = (location.state as { duration?: number })?.duration || 0;
+  const [duration, setDuration] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchSession = async () => {
+      try {
+        const result = await client.queries.getSessionLambda({});
+        if (result.data?.durationSeconds != null) {
+          setDuration(result.data.durationSeconds);
+        } else {
+          setDuration(0);
+        }
+      } catch {
+        setDuration(0);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSession();
+  }, []);
 
   const formatDuration = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -14,6 +39,14 @@ export default function EndSession() {
     const s = seconds % 60;
     return `${h}h ${m}m ${s}s`;
   };
+
+  if (loading) {
+    return (
+      <div className="endsession-container">
+        <LoadingWheel />
+      </div>
+    );
+  }
 
   return (
     <div className="endsession-container">
@@ -28,7 +61,7 @@ export default function EndSession() {
       <div className="session-stats">
         <div className="stat-item">
           <span className="stat-label">Duration</span>
-          <span className="stat-value">{formatDuration(duration)}</span>
+          <span className="stat-value">{formatDuration(duration ?? 0)}</span>
         </div>
       </div>
 
