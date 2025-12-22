@@ -45,7 +45,9 @@ export default function Navbar() {
       client.models.Partner.list({
         filter: { cognitoUsername: { eq: user.username } },
         limit: 1,
-      }).then(res => setHasPartnerProfile((res.data?.length || 0) > 0));
+      })
+        .then(res => setHasPartnerProfile((res.data?.length || 0) > 0))
+        .catch(() => setHasPartnerProfile(null));
     }
   }, [user]);
 
@@ -163,7 +165,7 @@ export default function Navbar() {
                   {user?.group === "PARTNERS" && (
                     <Link to="/partner-profile/edit" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
                       <FontAwesomeIcon icon={faBuilding} />
-                      <span>{hasPartnerProfile ? 'Edit Company Profile' : 'Create Company Profile'}</span>
+                      <span>{hasPartnerProfile === null ? 'Company Profile' : hasPartnerProfile ? 'Edit Company Profile' : 'Create Company Profile'}</span>
                     </Link>
                   )}
                   <Link to="/settings" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
