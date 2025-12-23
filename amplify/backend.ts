@@ -12,6 +12,7 @@ import { deleteRobotLambda } from './functions/delete-robot/resource';
 import { manageRobotACL } from './functions/manage-robot-acl/resource';
 import { listAccessibleRobots } from './functions/list-accessible-robots/resource';
 import { getRobotStatus } from './functions/get-robot-status/resource';
+import { getSessionLambda } from './functions/get-session/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -36,6 +37,7 @@ const backend = defineBackend({
   manageRobotACL,
   listAccessibleRobots,
   getRobotStatus,
+  getSessionLambda,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -79,6 +81,7 @@ const deleteRobotLambdaFunction = backend.deleteRobotLambda.resources.lambda;
 const manageRobotACLFunction = backend.manageRobotACL.resources.lambda;
 const listAccessibleRobotsFunction = backend.listAccessibleRobots.resources.lambda;
 const getRobotStatusFunction = backend.getRobotStatus.resources.lambda;
+const getSessionLambdaFunction = backend.getSessionLambda.resources.lambda;
 
 // ============================================
 // Signaling Function Resources
@@ -291,5 +294,16 @@ listAccessibleRobotsFunction.addToRolePolicy(new PolicyStatement({
   resources: [
     `${tables.Partner.tableArn}/index/cognitoUsernameIndex`,
     `${robotOperatorTable.tableArn}/index/robotIdIndex`
+  ]
+}));
+
+// Get session Lambda configuration
+const getSessionCdkFunction = getSessionLambdaFunction as CdkFunction;
+getSessionCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
+tables.Session.grantReadData(getSessionLambdaFunction);
+getSessionLambdaFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.Session.tableArn}/index/userIdIndex`
   ]
 }));

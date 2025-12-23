@@ -190,14 +190,7 @@ export default function Teleop() {
   const handleEndSession = () => {
     stopRobot();
     disconnect();
-    
-    // TODO: Replace client-side timing with server-side lookup from Session table
-    // Client timing can be manipulated - use Lambda to fetch authoritative duration for billing
-    const duration = sessionStartTimeRef.current !== null 
-      ? Math.floor((Date.now() - sessionStartTimeRef.current) / 1000)
-      : 0;
-    
-    navigate('/endsession', { state: { duration } });
+    navigate('/endsession');
   };
 
   const formatTime = (seconds: number) => {
