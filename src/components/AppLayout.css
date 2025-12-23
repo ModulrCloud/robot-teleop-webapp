@@ -3,9 +3,6 @@
 }
 
 .global-banner-container {
-  position: sticky;
-  top: 65px;
-  z-index: 999;
   padding: 1rem 1.5rem 0;
   max-width: 1400px;
   margin: 0 auto;
