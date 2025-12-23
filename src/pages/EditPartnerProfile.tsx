@@ -64,12 +64,20 @@ export default function EditPartnerProfile() {
       if (!user?.username) return;
 
       try {
-        const result = await client.models.Partner.list({
-          filter: { cognitoUsername: { eq: user.username } },
-          limit: 1,
-        });
+        logger.log('[EditPartnerProfile] Searching for partner with username:', user.username, 'or email:', user.email);
+        
+        const allPartners = await client.models.Partner.list({ limit: 100 });
+        const emailPrefix = user.email?.split('@')[0] || '';
+        
+        const matchingPartner = allPartners.data?.find(p => 
+          p.cognitoUsername === user.username ||
+          p.cognitoUsername === user.email ||
+          (emailPrefix && p.cognitoUsername?.includes(emailPrefix))
+        );
+        
+        logger.log('[EditPartnerProfile] Found partner:', matchingPartner ? { id: matchingPartner.id, name: matchingPartner.name } : 'none');
 
-        const partner = result.data?.[0];
+        const partner = matchingPartner;
         if (partner) {
           setPartnerId(partner.id!);
           setForm({
@@ -246,13 +254,18 @@ export default function EditPartnerProfile() {
       if (partnerId) {
         await client.models.Partner.update({ id: partnerId, ...data });
       } else {
-        const existingCheck = await client.models.Partner.list({
-          filter: { cognitoUsername: { eq: user?.username || '' } },
-          limit: 1,
-        });
-        if (existingCheck.data && existingCheck.data.length > 0) {
-          setError('A company profile already exists for this account');
-          setIsLoading(false);
+        const allPartners = await client.models.Partner.list({ limit: 100 });
+        const emailPrefix = user?.email?.split('@')[0] || '';
+        const existingPartner = allPartners.data?.find(p => 
+          p.cognitoUsername === user?.username ||
+          p.cognitoUsername === user?.email ||
+          (emailPrefix && p.cognitoUsername?.includes(emailPrefix))
+        );
+        
+        if (existingPartner) {
+          await client.models.Partner.update({ id: existingPartner.id!, ...data });
+          setSuccess(true);
+          setTimeout(() => navigate('/'), 1500);
           return;
         }
         await client.models.Partner.create({

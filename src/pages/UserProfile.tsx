@@ -61,12 +61,15 @@ export function UserProfile() {
     setLoading(true);
     try {
       if (isPartner) {
-        const { data: partners } = await client.models.Partner.list({
-          filter: { cognitoUsername: { eq: user.username } }
-        });
+        const allPartners = await client.models.Partner.list({ limit: 100 });
+        const emailPrefix = user.email?.split('@')[0] || '';
+        const partner = allPartners.data?.find(p => 
+          p.cognitoUsername === user.username ||
+          p.cognitoUsername === user.email ||
+          (emailPrefix && p.cognitoUsername?.includes(emailPrefix))
+        );
         
-        if (partners && partners.length > 0) {
-          const partner = partners[0];
+        if (partner) {
           setPartnerData({
             id: partner.id || "",
             name: partner.name || "",
