@@ -54,21 +54,21 @@ export default function MyRobots() {
         setIsLoading(true);
         setError(null);
 
-        // Get user's partnerId by querying Partner table
-        // First, we need to get the current user's partner record
-        const partners = await client.models.Partner.list({
-          filter: {
-            cognitoUsername: { eq: user?.username || '' }
-          }
-        });
+        const allPartners = await client.models.Partner.list({ limit: 100 });
+        const emailPrefix = user?.email?.split('@')[0] || '';
+        const matchingPartner = allPartners.data?.find(p => 
+          p.cognitoUsername === user?.username ||
+          p.cognitoUsername === user?.email ||
+          (emailPrefix && p.cognitoUsername?.includes(emailPrefix))
+        );
 
-        if (partners.errors || !partners.data || partners.data.length === 0) {
+        if (!matchingPartner) {
           setError('No partner profile found. Please complete your user setup.');
           setIsLoading(false);
           return;
         }
 
-        const partnerId = partners.data[0].id;
+        const partnerId = matchingPartner.id;
 
         if (!partnerId) {
           setError('Partner ID not found. Please complete your user setup.');
