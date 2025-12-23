@@ -149,7 +149,7 @@ export default function Navbar() {
                   {user?.group === "PARTNERS" && (
                     <Link to="/partner-profile/edit" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
                       <FontAwesomeIcon icon={faBuilding} />
-                      <span>Company Profile</span>
+                      <span>Edit Company Profile</span>
                     </Link>
                   )}
                   <Link to="/settings" className="dropdown-item" onClick={() => setShowUserMenu(false)}>

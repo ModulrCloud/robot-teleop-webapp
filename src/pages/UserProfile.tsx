@@ -6,7 +6,8 @@ import './UserProfile.css';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faUser, faEdit, faSave, faTimes } from '@fortawesome/free-solid-svg-icons';
+import { faUser, faEdit, faSave, faTimes, faExternalLinkAlt } from '@fortawesome/free-solid-svg-icons';
+import { useNavigate } from 'react-router-dom';
 import { formatGroupName, capitalizeName } from "../utils/formatters";
 import { logger } from '../utils/logger';
 
@@ -31,6 +32,7 @@ interface ClientData {
 export function UserProfile() {
   usePageTitle();
   const { user } = useAuthStatus();
+  const navigate = useNavigate();
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -59,12 +61,15 @@ export function UserProfile() {
     setLoading(true);
     try {
       if (isPartner) {
-        const { data: partners } = await client.models.Partner.list({
-          filter: { cognitoUsername: { eq: user.username } }
-        });
+        const allPartners = await client.models.Partner.list({ limit: 100 });
+        const emailPrefix = user.email?.split('@')[0] || '';
+        const partner = allPartners.data?.find(p => 
+          p.cognitoUsername === user.username ||
+          p.cognitoUsername === user.email ||
+          (emailPrefix && p.cognitoUsername?.includes(emailPrefix))
+        );
         
-        if (partners && partners.length > 0) {
-          const partner = partners[0];
+        if (partner) {
           setPartnerData({
             id: partner.id || "",
             name: partner.name || "",
@@ -209,11 +214,16 @@ export function UserProfile() {
           <div className="profile-section">
             <div className="section-header">
               <h2>Partner Profile</h2>
-              {!isEditing && (
-                <button onClick={() => setIsEditing(true)} className="btn-edit">
-                  <FontAwesomeIcon icon={faEdit} /> Edit Profile
+              <div className="section-actions">
+                {!isEditing && (
+                  <button onClick={() => setIsEditing(true)} className="btn-edit">
+                    <FontAwesomeIcon icon={faEdit} /> Edit Profile
+                  </button>
+                )}
+                <button onClick={() => navigate('/partner-profile/edit')} className="btn-edit-full">
+                  <FontAwesomeIcon icon={faExternalLinkAlt} /> Edit Full Profile
                 </button>
-              )}
+              </div>
             </div>
 
             {isEditing ? (
