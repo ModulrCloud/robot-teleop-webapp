@@ -50,6 +50,7 @@ export const EditRobot = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const robotId = searchParams.get('robotId');
+  const isViewMode = searchParams.get('mode') === 'view';
   
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingRobot, setIsLoadingRobot] = useState(true);
@@ -464,7 +465,7 @@ export const EditRobot = () => {
         </div>
         <div className="header-content">
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <h1>Edit Robot</h1>
+            <h1>{isViewMode ? 'Robot Details' : 'Edit Robot'}</h1>
             {robotIdForStatus && (
               <div style={{ 
                 display: 'flex', 
@@ -487,17 +488,100 @@ export const EditRobot = () => {
               </div>
             )}
           </div>
-          <p>Update your robot's information and settings</p>
+          <p>{isViewMode ? 'View robot information' : 'Update your robot\'s information and settings'}</p>
         </div>
       </div>
 
       <div className="listing-container">
-        <div className="info-banner">
-          <FontAwesomeIcon icon={faInfoCircle} />
-          <span>Changes will be reflected immediately for all users</span>
-        </div>
+        {isViewMode ? (
+          <>
+            <div className="robot-view-details">
+              <div className="view-section">
+                <h3>Robot Information</h3>
+                
+                <div className="view-row">
+                  <span className="view-label">Name</span>
+                  <span className="view-value">{robotListing.robotName || 'N/A'}</span>
+                </div>
+                
+                <div className="view-row">
+                  <span className="view-label">Type</span>
+                  <span className="view-value" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <FontAwesomeIcon icon={ROBOT_MODELS.find(m => m.value === robotListing.model)?.icon || faRobot} />
+                    {ROBOT_MODELS.find(m => m.value === robotListing.model)?.label || robotListing.model}
+                  </span>
+                </div>
+                
+                <div className="view-row">
+                  <span className="view-label">Description</span>
+                  <span className="view-value">{robotListing.description || 'No description'}</span>
+                </div>
 
-        <form className="listing-form" onSubmit={onConfirmUpdate}>
+                {imagePreview && (
+                  <div className="view-row">
+                    <span className="view-label">Image</span>
+                    <div className="view-value">
+                      <img 
+                        src={imagePreview} 
+                        alt={robotListing.robotName} 
+                        style={{ maxWidth: '200px', borderRadius: '8px' }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {(robotListing.city || robotListing.state || robotListing.country) && (
+                <div className="view-section">
+                  <h3>Location</h3>
+                  <div className="view-row">
+                    <span className="view-label">Address</span>
+                    <span className="view-value">
+                      {[robotListing.city, robotListing.state, robotListing.country]
+                        .filter(Boolean)
+                        .join(', ') || 'Not specified'}
+                    </span>
+                  </div>
+                  {(robotListing.latitude || robotListing.longitude) && (
+                    <div className="view-row">
+                      <span className="view-label">Coordinates</span>
+                      <span className="view-value">
+                        {robotListing.latitude}, {robotListing.longitude}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="view-section">
+                <h3>Access</h3>
+                <div className="view-row">
+                  <span className="view-label">Access Control</span>
+                  <span className="view-value">
+                    {robotListing.enableAccessControl ? 'Restricted' : 'Open to all users'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="form-actions">
+              <button 
+                type="button"
+                className="submit-btn"
+                onClick={() => navigate('/robots')}
+              >
+                Back to Robots
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="info-banner">
+              <FontAwesomeIcon icon={faInfoCircle} />
+              <span>Changes will be reflected immediately for all users</span>
+            </div>
+
+            <form className="listing-form" onSubmit={onConfirmUpdate}>
           <div className="form-section">
             <h3>Robot Details</h3>
             
@@ -513,7 +597,7 @@ export const EditRobot = () => {
                 onChange={handleInputChange}
                 placeholder="Enter a unique name for your robot"
                 required
-                disabled={isLoading}
+                disabled={isLoading || isViewMode}
               />
             </div>
 
@@ -533,7 +617,7 @@ export const EditRobot = () => {
                       value={model.value}
                       checked={robotListing.model === model.value}
                       onChange={handleInputChange}
-                      disabled={isLoading}
+                      disabled={isLoading || isViewMode}
                     />
                     <div className="model-card">
                       <div className="model-icon">
@@ -558,7 +642,7 @@ export const EditRobot = () => {
                 placeholder="Describe your robot's capabilities, specifications, and use cases..."
                 rows={5}
                 maxLength={280}
-                disabled={isLoading}
+                disabled={isLoading || isViewMode}
               />
               <div className={`char-count ${robotListing.description.length >= 280 ? 'char-count-limit' : ''}`}>
                 {robotListing.description.length}/280 characters
@@ -628,7 +712,7 @@ export const EditRobot = () => {
                   name="enableAccessControl"
                   checked={robotListing.enableAccessControl}
                   onChange={handleInputChange}
-                  disabled={isLoading}
+                  disabled={isLoading || isViewMode}
                 />
                 <span>Restrict access to specific users</span>
               </label>
@@ -651,7 +735,7 @@ export const EditRobot = () => {
                   onChange={handleInputChange}
                   placeholder="Enter email addresses, one per line or separated by commas&#10;Example:&#10;alice@example.com&#10;bob@example.com"
                   rows={4}
-                  disabled={isLoading}
+                  disabled={isLoading || isViewMode}
                 />
                 <p className="form-help-text">
                   Enter email addresses of users who should have access to this robot. 
@@ -676,7 +760,7 @@ export const EditRobot = () => {
                 value={robotListing.city}
                 onChange={handleInputChange}
                 placeholder="e.g., San Francisco"
-                disabled={isLoading}
+                disabled={isLoading || isViewMode}
               />
             </div>
 
@@ -689,7 +773,7 @@ export const EditRobot = () => {
                 value={robotListing.state}
                 onChange={handleInputChange}
                 placeholder="e.g., California"
-                disabled={isLoading}
+                disabled={isLoading || isViewMode}
               />
             </div>
 
@@ -702,7 +786,7 @@ export const EditRobot = () => {
                 value={robotListing.country}
                 onChange={handleInputChange}
                 placeholder="e.g., United States"
-                disabled={isLoading}
+                disabled={isLoading || isViewMode}
               />
             </div>
 
@@ -716,7 +800,7 @@ export const EditRobot = () => {
                   value={robotListing.latitude}
                   onChange={handleInputChange}
                   placeholder="e.g., 37.7749"
-                  disabled={isLoading}
+                  disabled={isLoading || isViewMode}
                 />
               </div>
 
@@ -729,7 +813,7 @@ export const EditRobot = () => {
                   value={robotListing.longitude}
                   onChange={handleInputChange}
                   placeholder="e.g., -122.4194"
-                  disabled={isLoading}
+                  disabled={isLoading || isViewMode}
                 />
               </div>
             </div>
@@ -810,6 +894,8 @@ export const EditRobot = () => {
               <p>{error}</p>
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
     </div>
