@@ -111,16 +111,28 @@ export function useAuthStatus(): AuthStatus {
           allAttributes: attrs,
         });
         
-        const session = await fetchAuthSession();
-        logger.log('✅ Auth session:', {
-          isValid: !!session.tokens,
-          hasAccessToken: !!session.tokens?.accessToken,
-          hasIdToken: !!session.tokens?.idToken,
-          accessTokenPayload: session.tokens?.accessToken?.payload,
-          idTokenPayload: session.tokens?.idToken?.payload,
-        });
+        // Fetch auth session - wrap in try-catch to handle Cognito Identity errors gracefully
+        // These errors are common in development (React Strict Mode) and are usually non-blocking
+        let session;
+        try {
+          session = await fetchAuthSession();
+          logger.log('✅ Auth session:', {
+            isValid: !!session.tokens,
+            hasAccessToken: !!session.tokens?.accessToken,
+            hasIdToken: !!session.tokens?.idToken,
+            accessTokenPayload: session.tokens?.accessToken?.payload,
+            idTokenPayload: session.tokens?.idToken?.payload,
+          });
+        } catch (sessionError) {
+          // Cognito Identity errors (400 Bad Request) are common in development
+          // They occur when trying to get AWS credentials and are usually non-blocking
+          // Log but don't throw - the app can still function without Identity Pool credentials
+          logger.log('⚠️ Auth session fetch warning (non-blocking):', sessionError);
+          // Create a minimal session object to prevent errors downstream
+          session = { tokens: null };
+        }
         
-        const groups = session.tokens?.accessToken?.payload['cognito:groups'];
+        const groups = session.tokens?.accessToken?.payload?.['cognito:groups'];
         const group = highestPriorityGroup(groups as string[] | undefined);
         logger.log('✅ User groups:', { groups, highestPriority: group });
 

@@ -102,6 +102,7 @@
 }
 
 .form-group input[type="text"],
+.form-group input[type="number"],
 .form-group textarea {
   padding: 0.875rem 1rem;
   background: rgba(255, 255, 255, 0.08);
@@ -114,6 +115,7 @@
 }
 
 .form-group input[type="text"]:focus,
+.form-group input[type="number"]:focus,
 .form-group textarea:focus {
   outline: none;
   background: rgba(255, 255, 255, 0.1);
@@ -122,11 +124,13 @@
 }
 
 .form-group input[type="text"]::placeholder,
+.form-group input[type="number"]::placeholder,
 .form-group textarea::placeholder {
   color: rgba(255, 255, 255, 0.4);
 }
 
 .form-group input[type="text"]:disabled,
+.form-group input[type="number"]:disabled,
 .form-group textarea:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -135,6 +139,17 @@
 .form-group textarea {
   resize: vertical;
   min-height: 120px;
+}
+
+/* Number input styling - hide spinner buttons for cleaner look */
+.form-group input[type="number"]::-webkit-inner-spin-button,
+.form-group input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.form-group input[type="number"] {
+  -moz-appearance: textfield;
 }
 
 .form-row {

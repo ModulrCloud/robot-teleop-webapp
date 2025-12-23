@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './CreateRobotListing.css';
 import { generateClient } from 'aws-amplify/api';
@@ -6,6 +6,8 @@ import { uploadData } from 'aws-amplify/storage';
 import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
 import { usePageTitle } from "../hooks/usePageTitle";
+import { useAuthStatus } from "../hooks/useAuthStatus";
+import { getCurrencyInfo, creditsToCurrencySync, currencyToCreditsSync, fetchExchangeRates, type CurrencyCode } from '../utils/credits';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
 import { 
@@ -32,6 +34,7 @@ type RobotListing = {
   robotName: string;
   description: string;
   model: string;
+  hourlyRateCredits: number;
   enableAccessControl: boolean;
   allowedUserEmails: string; // Comma-separated or newline-separated emails
   city: string;
@@ -53,6 +56,7 @@ export const CreateRobotListing = () => {
     robotName: "",
     description: "",
     model: ROBOT_MODELS[0].value,
+    hourlyRateCredits: 100, // Default 100 credits/hour (stored internally)
     enableAccessControl: false,
     allowedUserEmails: "",
     city: "",
@@ -61,6 +65,10 @@ export const CreateRobotListing = () => {
     latitude: "",
     longitude: "",
   });
+  
+  // Display value in user's currency (converted from credits)
+  // Default: 100 credits = $1.00 USD
+  const [hourlyRateCurrency, setHourlyRateCurrency] = useState<number>(1.00);
 
   // Image upload state
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -69,14 +77,109 @@ export const CreateRobotListing = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { user } = useAuthStatus();
+  const [currencyDisplay, setCurrencyDisplay] = useState<string>('USD');
+  const [currencyCode, setCurrencyCode] = useState<CurrencyCode>('USD');
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number> | undefined>();
+
+  // Fetch exchange rates on mount
+  useEffect(() => {
+    fetchExchangeRates().then(rates => {
+      setExchangeRates(rates);
+    }).catch(err => {
+      console.warn('Failed to fetch exchange rates:', err);
+    });
+  }, []);
+
+  // Load user's preferred currency for display
+  // Check Partner record first (for partners), then Client record (for clients)
+  useEffect(() => {
+    const loadCurrency = async () => {
+      if (!user?.username) {
+        setCurrencyDisplay('USD');
+        setCurrencyCode('USD');
+        // Convert default credits to USD for display
+        setHourlyRateCurrency(creditsToCurrencySync(robotListing.hourlyRateCredits, 'USD', exchangeRates));
+        return;
+      }
+
+      try {
+        // Check Partner record first (if user is a partner)
+        const { data: partners } = await client.models.Partner.list({
+          filter: { cognitoUsername: { eq: user.username } },
+        });
+
+        let preferredCurrency: CurrencyCode = 'USD';
+        
+        if (partners && partners.length > 0) {
+          // User is a partner - use Partner record's currency preference
+          preferredCurrency = (partners[0]?.preferredCurrency || "USD").toUpperCase() as CurrencyCode;
+        } else {
+          // User is a client - check Client record
+          const { data: clients } = await client.models.Client.list({
+            filter: { cognitoUsername: { eq: user.username } },
+          });
+          const clientRecord = clients?.[0];
+          preferredCurrency = (clientRecord?.preferredCurrency || "USD").toUpperCase() as CurrencyCode;
+        }
+        
+        setCurrencyCode(preferredCurrency);
+        
+        const currencyInfo = getCurrencyInfo(preferredCurrency);
+        // Show currency code (USD, EUR, etc.) or "?" if currency info is invalid
+        setCurrencyDisplay(currencyInfo.symbol === '?' ? '?' : preferredCurrency);
+        
+        // Convert current credits value to new currency for display
+        const currencyValue = creditsToCurrencySync(robotListing.hourlyRateCredits, preferredCurrency, exchangeRates);
+        setHourlyRateCurrency(currencyValue);
+      } catch (err) {
+        logger.error("Error loading currency preference:", err);
+        // Fallback to USD on error
+        setCurrencyDisplay('USD');
+        setCurrencyCode('USD');
+        setHourlyRateCurrency(creditsToCurrencySync(robotListing.hourlyRateCredits, 'USD', exchangeRates));
+      }
+    };
+
+    loadCurrency();
+  }, [user?.username, exchangeRates]);
+
+  // Update displayed currency value when credits change or currency changes
+  useEffect(() => {
+    if (currencyCode && exchangeRates) {
+      const currencyValue = creditsToCurrencySync(robotListing.hourlyRateCredits, currencyCode, exchangeRates);
+      setHourlyRateCurrency(currencyValue);
+    }
+  }, [robotListing.hourlyRateCredits, currencyCode, exchangeRates]);
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = event.target;
     const checked = (event.target as HTMLInputElement).checked;
-    setRobotListing(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
+    
+    // Handle hourly rate input (user enters currency value, we convert to credits)
+    if (type === 'number' && name === 'hourlyRateCredits') {
+      // Remove any non-numeric characters except decimal point
+      const sanitized = value.replace(/[^0-9.]/g, '');
+      // Convert to number, default to 0 if empty or invalid
+      const currencyValue = sanitized === '' || sanitized === '.' ? 0 : parseFloat(sanitized);
+      
+      if (!isNaN(currencyValue) && currencyValue >= 0) {
+        // Update displayed currency value
+        setHourlyRateCurrency(currencyValue);
+        
+        // Convert currency value back to credits for storage
+        const creditsValue = currencyToCreditsSync(currencyValue, currencyCode, exchangeRates);
+        setRobotListing(prev => ({
+          ...prev,
+          hourlyRateCredits: creditsValue,
+        }));
+      }
+    } else {
+      setRobotListing(prev => ({
+        ...prev,
+        [name]: type === 'checkbox' ? checked : value,
+      }));
+    }
   };
 
   const handleFileSelect = (file: File) => {
@@ -167,6 +270,7 @@ export const CreateRobotListing = () => {
       robotName: robotListing.robotName,
       description: robotListing.description,
       model: robotListing.model,
+      hourlyRateCredits: robotListing.hourlyRateCredits,
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
       imageUrl: imageUrl || undefined,
@@ -210,6 +314,7 @@ export const CreateRobotListing = () => {
       robotName: "",
       description: "",
       model: ROBOT_MODELS[0].value,
+      hourlyRateCredits: 100,
       enableAccessControl: false,
       allowedUserEmails: "",
       city: "",
@@ -305,6 +410,28 @@ export const CreateRobotListing = () => {
               <div className={`char-count ${robotListing.description.length >= 280 ? 'char-count-limit' : ''}`}>
                 {robotListing.description.length}/280 characters
               </div>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="hourly-rate">
+                Hourly Rate ({currencyDisplay}) <span className="required">*</span>
+              </label>
+              <input 
+                id="hourly-rate" 
+                type="number" 
+                name="hourlyRateCredits"
+                value={hourlyRateCurrency.toFixed(2)}
+                onChange={handleInputChange}
+                placeholder="1.00"
+                min="0"
+                step="0.01"
+                required
+                disabled={isLoading}
+              />
+              <small className="form-help-text">
+                Set the hourly rate in your preferred currency that clients will pay to use this robot. 
+                The platform will add a markup on top of this rate.
+              </small>
             </div>
 
             {/* Image Upload Section */}

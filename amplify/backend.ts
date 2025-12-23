@@ -12,6 +12,15 @@ import { deleteRobotLambda } from './functions/delete-robot/resource';
 import { manageRobotACL } from './functions/manage-robot-acl/resource';
 import { listAccessibleRobots } from './functions/list-accessible-robots/resource';
 import { getRobotStatus } from './functions/get-robot-status/resource';
+import { createStripeCheckout } from './functions/create-stripe-checkout/resource';
+import { addCredits } from './functions/add-credits/resource';
+import { verifyStripePayment } from './functions/verify-stripe-payment/resource';
+import { getUserCredits } from './functions/get-user-credits/resource';
+import { updateAutoTopUp } from './functions/update-auto-topup/resource';
+import { assignAdmin } from './functions/assign-admin/resource';
+import { removeAdmin } from './functions/remove-admin/resource';
+import { listAdmins } from './functions/list-admins/resource';
+import { processSessionPayment } from './functions/process-session-payment/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -36,6 +45,15 @@ const backend = defineBackend({
   manageRobotACL,
   listAccessibleRobots,
   getRobotStatus,
+  createStripeCheckout,
+  addCredits,
+  verifyStripePayment,
+  getUserCredits,
+  updateAutoTopUp,
+  assignAdmin,
+  removeAdmin,
+  listAdmins,
+  processSessionPayment,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -79,6 +97,15 @@ const deleteRobotLambdaFunction = backend.deleteRobotLambda.resources.lambda;
 const manageRobotACLFunction = backend.manageRobotACL.resources.lambda;
 const listAccessibleRobotsFunction = backend.listAccessibleRobots.resources.lambda;
 const getRobotStatusFunction = backend.getRobotStatus.resources.lambda;
+const createStripeCheckoutFunction = backend.createStripeCheckout.resources.lambda;
+const addCreditsFunction = backend.addCredits.resources.lambda;
+const verifyStripePaymentFunction = backend.verifyStripePayment.resources.lambda;
+const getUserCreditsFunction = backend.getUserCredits.resources.lambda;
+const updateAutoTopUpFunction = backend.updateAutoTopUp.resources.lambda;
+const assignAdminFunction = backend.assignAdmin.resources.lambda;
+const removeAdminFunction = backend.removeAdmin.resources.lambda;
+const listAdminsFunction = backend.listAdmins.resources.lambda;
+const processSessionPaymentFunction = backend.processSessionPayment.resources.lambda;
 
 // ============================================
 // Signaling Function Resources
@@ -293,3 +320,109 @@ listAccessibleRobotsFunction.addToRolePolicy(new PolicyStatement({
     `${robotOperatorTable.tableArn}/index/robotIdIndex`
   ]
 }));
+
+// Stripe checkout Lambda - no additional permissions needed (just uses Stripe API)
+const createStripeCheckoutCdkFunction = createStripeCheckoutFunction as CdkFunction;
+createStripeCheckoutCdkFunction.addEnvironment('FRONTEND_URL', 'http://localhost:5173'); // Can be overridden in production
+
+// Add credits Lambda environment variables and permissions
+const addCreditsCdkFunction = addCreditsFunction as CdkFunction;
+addCreditsCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+addCreditsCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
+tables.UserCredits.grantReadWriteData(addCreditsFunction);
+tables.CreditTransaction.grantWriteData(addCreditsFunction);
+// Grant permission to query the userIdIndex (needed for looking up by userId)
+addCreditsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.UserCredits.tableArn}/index/userIdIndex`
+  ]
+}));
+
+// Verify Stripe payment Lambda - no additional permissions needed (just uses Stripe API)
+
+// Get user credits Lambda environment variables and permissions
+const getUserCreditsCdkFunction = getUserCreditsFunction as CdkFunction;
+getUserCreditsCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+tables.UserCredits.grantReadData(getUserCreditsFunction);
+// Grant permission to query the userIdIndex (needed for looking up by userId)
+getUserCreditsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.UserCredits.tableArn}/index/userIdIndex`
+  ]
+}));
+
+// Update auto top-up Lambda environment variables and permissions
+const updateAutoTopUpCdkFunction = updateAutoTopUpFunction as CdkFunction;
+updateAutoTopUpCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+tables.UserCredits.grantReadWriteData(updateAutoTopUpFunction);
+// Grant permission to query the userIdIndex (needed for looking up by userId)
+updateAutoTopUpFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.UserCredits.tableArn}/index/userIdIndex`
+  ]
+}));
+
+// Process session payment Lambda environment variables and permissions
+const processSessionPaymentCdkFunction = processSessionPaymentFunction as CdkFunction;
+processSessionPaymentCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+processSessionPaymentCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
+processSessionPaymentCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
+processSessionPaymentCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+processSessionPaymentCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
+processSessionPaymentCdkFunction.addEnvironment('PARTNER_PAYOUT_TABLE', tables.PartnerPayout.tableName);
+tables.UserCredits.grantReadWriteData(processSessionPaymentFunction);
+tables.CreditTransaction.grantWriteData(processSessionPaymentFunction);
+tables.Session.grantReadWriteData(processSessionPaymentFunction);
+tables.Robot.grantReadData(processSessionPaymentFunction);
+tables.PlatformSettings.grantReadData(processSessionPaymentFunction);
+tables.PartnerPayout.grantWriteData(processSessionPaymentFunction);
+// Grant permission to query the userIdIndex (needed for looking up by userId)
+processSessionPaymentFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.UserCredits.tableArn}/index/userIdIndex`,
+    `${tables.Robot.tableArn}/index/robotIdIndex`
+  ]
+}));
+
+// Admin audit table - tracks all admin assignments/removals
+const adminAuditTable = new Table(dataStack, 'AdminAuditTable', {
+  partitionKey: { name: 'id', type: AttributeType.STRING },
+  billingMode: BillingMode.PAY_PER_REQUEST,
+  removalPolicy: RemovalPolicy.DESTROY, // For sandbox/dev
+});
+// Add GSIs for admin and target user lookups
+adminAuditTable.addGlobalSecondaryIndex({
+  indexName: 'adminUserIdIndex',
+  partitionKey: { name: 'adminUserId', type: AttributeType.STRING },
+});
+adminAuditTable.addGlobalSecondaryIndex({
+  indexName: 'targetUserIdIndex',
+  partitionKey: { name: 'targetUserId', type: AttributeType.STRING },
+});
+adminAuditTable.addGlobalSecondaryIndex({
+  indexName: 'timestampIndex',
+  partitionKey: { name: 'timestamp', type: AttributeType.STRING },
+});
+
+// Assign admin Lambda environment variables and permissions
+const assignAdminCdkFunction = assignAdminFunction as CdkFunction;
+assignAdminCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+assignAdminCdkFunction.addEnvironment('ADMIN_AUDIT_TABLE', adminAuditTable.tableName);
+userPool.grant(assignAdminFunction, 'cognito-idp:AdminAddUserToGroup', 'cognito-idp:AdminListGroupsForUser');
+adminAuditTable.grantWriteData(assignAdminFunction);
+
+// Remove admin Lambda environment variables and permissions
+const removeAdminCdkFunction = removeAdminFunction as CdkFunction;
+removeAdminCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+removeAdminCdkFunction.addEnvironment('ADMIN_AUDIT_TABLE', adminAuditTable.tableName);
+userPool.grant(removeAdminFunction, 'cognito-idp:AdminRemoveUserFromGroup', 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:ListUsersInGroup');
+adminAuditTable.grantWriteData(removeAdminFunction);
+
+// List admins Lambda environment variables and permissions
+const listAdminsCdkFunction = listAdminsFunction as CdkFunction;
+listAdminsCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+userPool.grant(listAdminsFunction, 'cognito-idp:ListUsersInGroup');

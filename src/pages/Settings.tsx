@@ -45,7 +45,7 @@ export const Settings = () => {
     language: "en",
   });
 
-  // Load currency preference from database
+  // Load currency preference from database (check both Partner and Client records)
   useEffect(() => {
     const loadCurrency = async () => {
       if (!user?.username) {
@@ -54,6 +54,20 @@ export const Settings = () => {
       }
 
       try {
+        // Check if user is a partner first
+        const { data: partners } = await client.models.Partner.list({
+          filter: { cognitoUsername: { eq: user.username } },
+        });
+
+        if (partners && partners.length > 0) {
+          const partnerRecord = partners[0];
+          const preferredCurrency = partnerRecord.preferredCurrency || "USD";
+          setSettings((prev) => ({ ...prev, currency: preferredCurrency }));
+          setLoading(false);
+          return;
+        }
+
+        // If not a partner, check if user is a client
         const { data: clients } = await client.models.Client.list({
           filter: { cognitoUsername: { eq: user.username } },
         });
@@ -84,6 +98,31 @@ export const Settings = () => {
     setSuccess("");
 
     try {
+      // Check if user is a partner first
+      const { data: partners } = await client.models.Partner.list({
+        filter: { cognitoUsername: { eq: user.username } },
+      });
+
+      if (partners && partners.length > 0) {
+        const partnerRecord = partners[0];
+        const { errors } = await client.models.Partner.update({
+          id: partnerRecord.id,
+          preferredCurrency: currency,
+        });
+
+        if (errors) {
+          setError("Failed to update currency preference");
+        } else {
+          setSuccess("Currency preference updated successfully!");
+          setTimeout(() => setSuccess(""), 3000);
+          // Reload page to update credits display
+          window.location.reload();
+        }
+        setSaving(false);
+        return;
+      }
+
+      // If not a partner, check if user is a client
       const { data: clients } = await client.models.Client.list({
         filter: { cognitoUsername: { eq: user.username } },
       });

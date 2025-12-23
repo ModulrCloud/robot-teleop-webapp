@@ -8,6 +8,15 @@ import { deleteRobotLambda } from "../functions/delete-robot/resource";
 import { manageRobotACL } from "../functions/manage-robot-acl/resource";
 import { listAccessibleRobots } from "../functions/list-accessible-robots/resource";
 import { getRobotStatus } from "../functions/get-robot-status/resource";
+import { createStripeCheckout } from "../functions/create-stripe-checkout/resource";
+import { addCredits } from "../functions/add-credits/resource";
+import { verifyStripePayment } from "../functions/verify-stripe-payment/resource";
+import { getUserCredits } from "../functions/get-user-credits/resource";
+import { updateAutoTopUp } from "../functions/update-auto-topup/resource";
+import { assignAdmin } from "../functions/assign-admin/resource";
+import { removeAdmin } from "../functions/remove-admin/resource";
+import { listAdmins } from "../functions/list-admins/resource";
+import { processSessionPayment } from "../functions/process-session-payment/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -63,6 +72,7 @@ const schema = a.schema({
     publicKey: a.string(),
     averageRating: a.float(),
     reliabilityScore: a.float(),
+    preferredCurrency: a.string(), // Partner's preferred currency (e.g., 'USD', 'EUR', 'GBP')
     tags: a.hasMany('PartnerTag', 'partnerId'),
     robots: a.hasMany('Robot', 'partnerId'),
     logoUrl: a.string(),
@@ -145,6 +155,26 @@ const schema = a.schema({
     allow.groups(['ADMINS']).to(['create', 'read']),
   ]),
 
+  // Admin audit log - tracks all admin assignments/removals
+  AdminAudit: a.model({
+    id: a.id(),
+    action: a.string().required(), // 'ASSIGN_ADMIN' or 'REMOVE_ADMIN'
+    adminUserId: a.string().required(), // Who performed the action
+    targetUserId: a.string().required(), // Who was affected
+    reason: a.string(), // Optional reason for the action
+    timestamp: a.string().required(), // ISO timestamp
+    metadata: a.json(), // Additional metadata (admin groups, counts, etc.)
+  })
+  .secondaryIndexes(index => [
+    index("adminUserId").name("adminUserIdIndex"), // Track actions by admin
+    index("targetUserId").name("targetUserIdIndex"), // Track actions on user
+    index("timestamp").name("timestampIndex"), // Sort by time
+  ])
+  .authorization((allow) => [
+    // Only ADMINS can read and create audit logs (creates happen via assignAdmin/removeAdmin Lambdas)
+    allow.groups(['ADMINS']).to(['create', 'read']),
+  ]),
+
   // Dynamic credit tier configuration (supports sales/offers)
   CreditTier: a.model({
     id: a.id(),
@@ -174,6 +204,53 @@ const schema = a.schema({
     allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
   ]),
 
+  // Platform settings (markup percentage, etc.) - managed by ADMINS
+  PlatformSettings: a.model({
+    id: a.id(),
+    settingKey: a.string().required(), // 'platformMarkupPercent', 'minimumPayoutAmount', etc.
+    settingValue: a.string().required(), // JSON string or simple value
+    description: a.string(), // What this setting controls
+    updatedBy: a.string(), // Admin user who last updated
+    updatedAt: a.datetime().required(),
+  })
+  .secondaryIndexes(index => [
+    index("settingKey").name("settingKeyIndex"), // For quick lookups
+  ])
+  .authorization((allow) => [
+    // Everyone can read (for calculating costs)
+    allow.authenticated().to(['read']),
+    // Only ADMINS can create/update
+    allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+  ]),
+
+  // Partner payout tracking - tracks earnings and payouts for robot partners
+  PartnerPayout: a.model({
+    id: a.id(),
+    partnerId: a.string().required(), // Partner's Cognito user ID
+    partnerEmail: a.string(), // Partner's email for display
+    sessionId: a.string(), // Reference to the Session that generated this payout
+    robotId: a.string().required(), // Robot that generated the earnings
+    robotName: a.string(), // Robot name for display
+    creditsEarned: a.float().required(), // Credits earned by partner (after markup)
+    platformFee: a.float().required(), // Platform markup deducted
+    totalCreditsCharged: a.float().required(), // Total credits charged to user
+    durationSeconds: a.integer().required(), // Session duration
+    status: a.string().required(), // 'pending', 'paid', 'cancelled'
+    payoutDate: a.datetime(), // When payout was processed (if paid)
+    createdAt: a.datetime().required(), // When session completed
+  })
+  .secondaryIndexes(index => [
+    index("partnerId").name("partnerIdIndex"), // For partner earnings view
+    index("status").name("statusIndex"), // For filtering by payout status
+    index("createdAt").name("createdAtIndex"), // For sorting by date
+  ])
+  .authorization((allow) => [
+    // Partners can read their own payouts
+    allow.owner().to(['read']),
+    // ADMINS can read all and manage payouts
+    allow.groups(['ADMINS']).to(['read', 'update', 'delete']),
+  ]),
+
   Robot: a.model({
     id: a.id(),
     name: a.string().required(),
@@ -184,6 +261,8 @@ const schema = a.schema({
     partner: a.belongsTo('Partner', 'partnerId'),
     allowedUsers: a.string().array(), // Optional: if null/empty, robot is open access. If set, only listed users can access.
     imageUrl: a.string(),
+    // Pricing: Hourly rate in credits (before platform markup)
+    hourlyRateCredits: a.float().default(100), // Default 100 credits/hour (editable by robot owner)
     // Location fields
     city: a.string(),
     state: a.string(),
@@ -191,6 +270,9 @@ const schema = a.schema({
     latitude: a.float(),
     longitude: a.float(),
   })
+  .secondaryIndexes(index => [
+    index("robotId").name("robotIdIndex"), // For lookups by robotId string (robot-XXXXXXXX)
+  ])
   .authorization((allow) => [
     allow.owner().to(["update", "delete"]),
     allow.authenticated().to(["read"]),
@@ -226,6 +308,11 @@ const schema = a.schema({
     endedAt: a.datetime(),                // When session ended
     durationSeconds: a.integer(),         // Total duration in seconds
     status: a.string(),                   // 'active', 'completed', 'disconnected'
+    // Cost tracking
+    creditsCharged: a.float(),            // Total credits charged to user (includes markup)
+    partnerEarnings: a.float(),           // Credits earned by partner (after markup)
+    platformFee: a.float(),               // Platform markup in credits
+    hourlyRateCredits: a.float(),        // Robot's hourly rate at time of session (snapshot)
   })
   .secondaryIndexes(index => [
     index("userId").name("userIdIndex"),
@@ -252,6 +339,7 @@ const schema = a.schema({
       robotName: a.string().required(),
       description: a.string(),
       model: a.string(),
+      hourlyRateCredits: a.float(), // Optional: hourly rate in credits (defaults to 100)
       enableAccessControl: a.boolean(), // Optional: if true, creates ACL with default users
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL
       imageUrl: a.string(),
@@ -273,6 +361,7 @@ const schema = a.schema({
       robotName: a.string(), // Optional: update name
       description: a.string(), // Optional: update description
       model: a.string(), // Optional: update model
+      hourlyRateCredits: a.float(), // Optional: update hourly rate in credits
       enableAccessControl: a.boolean(), // Optional: update ACL (true = enable/update, false = disable/remove)
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL (only used if enableAccessControl is true)
       imageUrl: a.string(), // Optional: update imageUrl
@@ -345,7 +434,91 @@ const schema = a.schema({
     })
     .returns(RobotStatus)
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (checks ACL)
-    .handler(a.handler.function(getRobotStatus))
+    .handler(a.handler.function(getRobotStatus)),
+
+  createStripeCheckoutLambda: a
+    .mutation()
+    .arguments({
+      tierId: a.string().required(),
+      userId: a.string().required(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(createStripeCheckout)),
+
+  verifyStripePaymentLambda: a
+    .mutation()
+    .arguments({
+      sessionId: a.string().required(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(verifyStripePayment)),
+
+  processSessionPaymentLambda: a
+    .mutation()
+    .arguments({
+      sessionId: a.string().required(), // Session ID to process payment for
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (checks session ownership)
+    .handler(a.handler.function(processSessionPayment)),
+
+  addCreditsLambda: a
+    .mutation()
+    .arguments({
+      userId: a.string().required(),
+      credits: a.integer().required(),
+      amountPaid: a.float(),
+      currency: a.string(),
+      tierId: a.string(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Authorization is handled in Lambda (checks owner/admin)
+    .handler(a.handler.function(addCredits)),
+
+  getUserCreditsLambda: a
+    .query()
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Authorization is handled in Lambda (returns own credits)
+    .handler(a.handler.function(getUserCredits)),
+
+  updateAutoTopUpLambda: a
+    .mutation()
+    .arguments({
+      autoTopUpEnabled: a.boolean(),
+      autoTopUpThreshold: a.integer(),
+      autoTopUpTier: a.string(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Authorization is handled in Lambda (updates own settings only)
+    .handler(a.handler.function(updateAutoTopUp)),
+
+  assignAdminLambda: a
+    .mutation()
+    .arguments({
+      targetUserId: a.string().required(),
+      reason: a.string(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.groups(['ADMINS'])]) // Only existing admins can assign admin
+    .handler(a.handler.function(assignAdmin)),
+
+  removeAdminLambda: a
+    .mutation()
+    .arguments({
+      targetUserId: a.string().required(),
+      reason: a.string(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.groups(['ADMINS'])]) // Only existing admins can remove admin
+    .handler(a.handler.function(removeAdmin)),
+
+  listAdminsLambda: a
+    .query()
+    .returns(a.json())
+    .authorization(allow => [allow.groups(['ADMINS'])]) // Only admins can list admins
+    .handler(a.handler.function(listAdmins))
 });
 
 export type Schema = ClientSchema<typeof schema>;

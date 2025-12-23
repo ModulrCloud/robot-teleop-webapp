@@ -6,7 +6,7 @@ const ddbClient = new DynamoDBClient({});
 export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (event) => {
   console.log('Received event:', JSON.stringify(event, null, 2));
 
-  const { robotId, robotName, description, model, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude } = event.arguments;
+  const { robotId, robotName, description, model, hourlyRateCredits, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude } = event.arguments;
 
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
@@ -98,6 +98,13 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     updateExpressions.push('#model = :model');
     expressionAttributeNames['#model'] = 'model';
     expressionAttributeValues[':model'] = { S: model.trim() };
+  }
+
+  // Update hourlyRateCredits if provided
+  if (hourlyRateCredits !== undefined && hourlyRateCredits !== null) {
+    updateExpressions.push('#hourlyRateCredits = :hourlyRateCredits');
+    expressionAttributeNames['#hourlyRateCredits'] = 'hourlyRateCredits';
+    expressionAttributeValues[':hourlyRateCredits'] = { N: hourlyRateCredits.toString() };
   }
 
   // Update imageUrl if provided

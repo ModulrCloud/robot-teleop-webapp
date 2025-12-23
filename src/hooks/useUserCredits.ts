@@ -12,6 +12,7 @@ interface UserCreditsData {
   formattedBalance: string;
   loading: boolean;
   error: string | null;
+  refreshCredits: () => Promise<void>;
 }
 
 /**
@@ -36,49 +37,94 @@ export function useUserCredits(): UserCreditsData {
     });
   }, []);
 
-  // Fetch user credits and currency preference
-  useEffect(() => {
-    const loadCredits = async () => {
-      if (!user?.username) {
-        setLoading(false);
-        return;
-      }
+  const loadCredits = async () => {
+    if (!user?.username) {
+      setLoading(false);
+      return;
+    }
 
-      setLoading(true);
-      setError(null);
+    setLoading(true);
+    setError(null);
 
+    try {
+      // Fetch user credits using Lambda query (uses secondary index directly, same as addCredits)
+      let userCredits;
       try {
-        // Fetch user credits
-        const { data: userCreditsList } = await client.models.UserCredits.list({
-          filter: { userId: { eq: user.username } },
-        });
+        // Use the Lambda query that uses the secondary index directly (same approach as addCredits)
+        const result = await client.queries.getUserCreditsLambda();
+        
+        // Parse the JSON response
+        let queryData: { success?: boolean; userCredits?: any };
+        if (typeof result.data === 'string') {
+          try {
+            const firstParse = JSON.parse(result.data);
+            if (typeof firstParse === 'string') {
+              queryData = JSON.parse(firstParse);
+            } else {
+              queryData = firstParse;
+            }
+          } catch (e) {
+            queryData = { success: false };
+          }
+        } else {
+          queryData = result.data as typeof queryData;
+        }
+        
+        userCredits = queryData.userCredits || null;
+      } catch (err) {
+        userCredits = null;
+      }
+      
+      const creditsValue = getCredits(userCredits?.credits);
+      setCredits(creditsValue);
 
-        const userCredits = userCreditsList?.[0];
-        const creditsValue = getCredits(userCredits?.credits);
-        setCredits(creditsValue);
-
-        // Fetch user's preferred currency from Client model
-        const { data: clients } = await client.models.Client.list({
+      // Fetch user's preferred currency - check Partner model first (for partners), then Client model (for clients)
+      let preferredCurrency: CurrencyCode | null = null;
+      
+      try {
+        // Check if user is a partner first
+        const { data: partners } = await client.models.Partner.list({
           filter: { cognitoUsername: { eq: user.username } },
         });
 
-        const clientRecord = clients?.[0];
-        const preferredCurrency = (clientRecord?.preferredCurrency || 'USD').toUpperCase() as CurrencyCode;
-        setCurrency(preferredCurrency);
-
-        // Format balance with currency conversion
-        const formatted = formatCreditsAsCurrencySync(creditsValue, preferredCurrency, exchangeRates);
-        setFormattedBalance(formatted);
-      } catch (err) {
-        console.error('Error loading user credits:', err);
-        setError('Failed to load credits');
-        setFormattedBalance('$0.00');
-      } finally {
-        setLoading(false);
+        if (partners && partners.length > 0) {
+          // User is a partner - use Partner record's currency preference
+          preferredCurrency = partners[0]?.preferredCurrency 
+            ? (partners[0].preferredCurrency.toUpperCase() as CurrencyCode)
+            : null;
+        } else {
+          // User is a client - check Client record
+          const { data: clients } = await client.models.Client.list({
+            filter: { cognitoUsername: { eq: user.username } },
+          });
+          const clientRecord = clients?.[0];
+          preferredCurrency = clientRecord?.preferredCurrency 
+            ? (clientRecord.preferredCurrency.toUpperCase() as CurrencyCode)
+            : null;
+        }
+      } catch (currencyError) {
+        // If currency lookup fails, continue with null (will show "?" fallback)
+        console.warn('Failed to load currency preference:', currencyError);
       }
-    };
 
+      setCurrency(preferredCurrency || 'USD'); // Fallback to USD for state, but pass null to formatter for "?" display
+
+      // Format balance with currency conversion
+      // Pass null if currency couldn't be loaded to trigger "?" fallback
+      const formatted = formatCreditsAsCurrencySync(creditsValue, preferredCurrency, exchangeRates);
+      setFormattedBalance(formatted);
+    } catch (err) {
+      setError('Failed to load credits');
+      setFormattedBalance('$0.00');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch user credits and currency preference
+  useEffect(() => {
     loadCredits();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.username, exchangeRates]);
 
   // Update formatted balance when credits or currency changes
@@ -95,6 +141,7 @@ export function useUserCredits(): UserCreditsData {
     formattedBalance,
     loading,
     error,
+    refreshCredits: loadCredits,
   };
 }
 

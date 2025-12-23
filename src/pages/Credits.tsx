@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useAuthStatus } from "../hooks/useAuthStatus";
 import { useUserCredits } from "../hooks/useUserCredits";
@@ -38,7 +39,8 @@ interface CreditTransaction {
 export const Credits = () => {
   usePageTitle();
   const { user } = useAuthStatus();
-  const { credits, currency: preferredCurrency, formattedBalance, loading: creditsLoading } = useUserCredits();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { credits, currency: preferredCurrency, formattedBalance, loading: creditsLoading, refreshCredits } = useUserCredits();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState("");
@@ -67,16 +69,54 @@ export const Credits = () => {
     }
   }, [user?.username]);
 
+  // Handle Stripe payment redirect
+  useEffect(() => {
+    if (!user?.username) {
+      logger.log("⏳ [REDIRECT] Waiting for user to load...");
+      return;
+    }
+
+    const success = searchParams.get('success');
+    const sessionId = searchParams.get('session_id');
+    const canceled = searchParams.get('canceled') || searchParams.get('cancelled');
+
+    if (canceled === 'true') {
+      logger.log("❌ [REDIRECT] Payment was canceled");
+      setError("Payment was canceled. No charges were made.");
+      // Clean up URL
+      setSearchParams({});
+      return;
+    }
+
+    if (success === 'true' && sessionId) {
+      logger.log("✅ [REDIRECT] Payment success detected, processing...");
+      handlePaymentSuccess(sessionId);
+    }
+  }, [user?.username, searchParams]);
+
   const loadCreditsData = async () => {
     if (!user?.username) return;
 
     try {
-      const { data: userCreditsList } = await client.models.UserCredits.list({
-        filter: { userId: { eq: user.username } },
-      });
+      // Use secured Lambda query instead of direct GraphQL access
+      const result = await client.queries.getUserCreditsLambda();
+      
+      // Parse the JSON response
+      let queryData: { success?: boolean; userCredits?: any };
+      if (typeof result.data === 'string') {
+        try {
+          const firstParse = JSON.parse(result.data);
+          queryData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+        } catch (e) {
+          logger.error("Error parsing getUserCredits response:", e);
+          return;
+        }
+      } else {
+        queryData = result.data as typeof queryData;
+      }
 
-      if (userCreditsList && userCreditsList.length > 0) {
-        const userCredits = userCreditsList[0];
+      if (queryData.userCredits) {
+        const userCredits = queryData.userCredits;
         setAutoTopUpEnabled(userCredits.autoTopUpEnabled || false);
         setAutoTopUpThreshold(userCredits.autoTopUpThreshold || 100);
         setAutoTopUpTier(userCredits.autoTopUpTier || "50");
@@ -162,33 +202,34 @@ export const Credits = () => {
     setSuccess("");
 
     try {
-      const { data: userCreditsList } = await client.models.UserCredits.list({
-        filter: { userId: { eq: user.username } },
+      // Use secured Lambda mutation instead of direct GraphQL access
+      const result = await client.mutations.updateAutoTopUpLambda({
+        autoTopUpEnabled,
+        autoTopUpThreshold,
+        autoTopUpTier,
       });
 
-      if (userCreditsList && userCreditsList.length > 0) {
-        const userCredits = userCreditsList[0];
-        await client.models.UserCredits.update({
-          id: userCredits.id,
-          autoTopUpEnabled,
-          autoTopUpThreshold,
-          autoTopUpTier,
-        });
-
-        setSuccess("Auto top-up settings saved successfully!");
-        setTimeout(() => setSuccess(""), 3000);
+      // Parse the JSON response
+      let updateData: { success?: boolean };
+      if (typeof result.data === 'string') {
+        try {
+          const firstParse = JSON.parse(result.data);
+          updateData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+        } catch (e) {
+          logger.error("Error parsing updateAutoTopUp response:", e);
+          throw new Error("Failed to parse server response");
+        }
       } else {
-        // Create new UserCredits record if it doesn't exist
-        await client.models.UserCredits.create({
-          userId: user.username,
-          credits: 0,
-          autoTopUpEnabled,
-          autoTopUpThreshold,
-          autoTopUpTier,
-        });
+        updateData = result.data as typeof updateData;
+      }
 
+      if (updateData.success) {
         setSuccess("Auto top-up settings saved successfully!");
         setTimeout(() => setSuccess(""), 3000);
+        // Refresh credits data to get updated settings
+        await loadCreditsData();
+      } else {
+        throw new Error("Server returned unsuccessful response");
       }
     } catch (err) {
       logger.error("Error saving auto top-up settings:", err);
@@ -233,6 +274,105 @@ export const Credits = () => {
 
   const getTierLabel = (tier: {tierId: string, name: string, basePrice: number}) => {
     return `${tier.name} (${formatCurrency(tier.basePrice, preferredCurrency || 'USD')})`;
+  };
+
+  const handlePaymentSuccess = async (sessionId: string) => {
+    if (!user?.username) {
+      logger.error("❌ [PAYMENT] No user logged in");
+      setError("You must be logged in to process payment");
+      return;
+    }
+
+    try {
+      logger.log("🎯 [PAYMENT] Starting payment success handler");
+      logger.log("🎯 [PAYMENT] Session ID:", sessionId);
+      logger.log("🎯 [PAYMENT] Current user:", user.username);
+
+      // Step 1: Verify payment with Stripe
+      logger.log("🔍 [PAYMENT] Step 1: Verifying payment with Stripe...");
+      const verifyResult = await client.mutations.verifyStripePaymentLambda({
+        sessionId,
+      });
+
+      logger.log("✅ [PAYMENT] Verification result:", verifyResult);
+
+      // Parse verification result (same double-encoding issue as checkout)
+      
+      let verifyData: {
+        success?: boolean;
+        userId?: string;
+        tierId?: string;
+        credits?: number;
+        amountPaid?: number;
+        currency?: string;
+      };
+
+      if (typeof verifyResult.data === 'string') {
+        try {
+          const firstParse = JSON.parse(verifyResult.data);
+          if (typeof firstParse === 'string') {
+            verifyData = JSON.parse(firstParse);
+          } else {
+            verifyData = firstParse;
+          }
+        } catch (e) {
+          throw new Error("Failed to parse payment verification response");
+        }
+      } else {
+        verifyData = verifyResult.data as typeof verifyData;
+      }
+
+
+      if (!verifyData.success || !verifyData.credits) {
+        throw new Error("Payment verification failed");
+      }
+
+      logger.log("✅ [PAYMENT] Payment verified:", verifyData);
+
+      // Step 2: Add credits to user account
+      logger.log("🔍 [PAYMENT] Step 2: Adding credits to account...");
+      const addCreditsResult = await client.mutations.addCreditsLambda({
+        userId: verifyData.userId!,
+        credits: verifyData.credits,
+        amountPaid: verifyData.amountPaid,
+        currency: verifyData.currency || 'USD',
+        tierId: verifyData.tierId,
+      });
+
+      logger.log("✅ [PAYMENT] Credits added:", addCreditsResult);
+
+      // Wait a moment for DynamoDB eventual consistency
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased to 2 seconds
+
+      // Refresh credits and transactions
+      
+      // Retry logic - sometimes user object needs a moment
+      let retries = 0;
+      while (!user?.username && retries < 5) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        retries++;
+      }
+      
+      if (user?.username) {
+        await refreshCredits(); // Refresh the balance from useUserCredits hook
+      } else {
+      }
+      await loadCreditsData(); // Refresh auto-top-up settings
+      await loadTransactions(); // Refresh transaction history
+
+      // Clean up URL parameters
+      setSearchParams({});
+
+      setSuccess(`Successfully added ${verifyData.credits.toLocaleString()} credits to your account!`);
+      setTimeout(() => setSuccess(""), 5000);
+    } catch (err) {
+      logger.error("❌ [PAYMENT] Error processing payment:", err);
+      setError(
+        err instanceof Error 
+          ? `Failed to process payment: ${err.message}` 
+          : "Failed to process payment. Please contact support if credits were charged."
+      );
+    }
   };
 
   if (loading || creditsLoading) {

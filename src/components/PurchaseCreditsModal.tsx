@@ -9,7 +9,13 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { useUserCredits } from '../hooks/useUserCredits';
 import { formatCurrency } from '../utils/credits';
+import { generateClient } from 'aws-amplify/api';
+import type { Schema } from '../../amplify/data/resource';
+import { useAuthStatus } from '../hooks/useAuthStatus';
+import { logger } from '../utils/logger';
 import './PurchaseCreditsModal.css';
+
+const client = generateClient<Schema>();
 
 interface PurchaseCreditsModalProps {
   isOpen: boolean;
@@ -55,8 +61,10 @@ const DEFAULT_TIERS: CreditTier[] = [
 
 export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalProps) {
   const { currency, formattedBalance } = useUserCredits();
+  const { user } = useAuthStatus();
   const [selectedTier, setSelectedTier] = useState<string | null>(null);
   const [tiers] = useState<CreditTier[]>(DEFAULT_TIERS);
+  const [error, setError] = useState<string>('');
 
   // Close on Escape key
   useEffect(() => {
@@ -81,15 +89,79 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
     };
   }, [isOpen]);
 
-  const handlePurchase = (tierId: string) => {
+  const handlePurchase = async (tierId: string) => {
+    if (!user?.username) {
+      setError('You must be logged in to purchase credits');
+      return;
+    }
+
     setSelectedTier(tierId);
-    // TODO: Integrate with Stripe checkout
-    console.log('Purchase tier:', tierId);
-    // For now, just show a message
-    setTimeout(() => {
-      alert('Stripe integration coming soon! This will redirect to Stripe checkout.');
+    setError('');
+
+    try {
+      logger.log('Creating Stripe checkout session for tier:', tierId);
+      
+      const result = await client.mutations.createStripeCheckoutLambda({
+        tierId,
+        userId: user.username,
+      });
+
+      console.log('🔍 [STRIPE] Full response object:', result);
+      console.log('🔍 [STRIPE] result.data:', result.data);
+      console.log('🔍 [STRIPE] typeof result.data:', typeof result.data);
+      console.log('🔍 [STRIPE] result.data as string:', JSON.stringify(result.data));
+
+      // Parse the JSON response - GraphQL mutations returning a.json() return a string
+      let checkoutData: { checkoutUrl?: string; sessionId?: string };
+      
+      if (typeof result.data === 'string') {
+        console.log('🔍 [STRIPE] Parsing as string...');
+        try {
+          const firstParse = JSON.parse(result.data);
+          console.log('✅ [STRIPE] First parse result:', firstParse);
+          console.log('🔍 [STRIPE] First parse type:', typeof firstParse);
+          
+          // Check if the first parse is still a string (double encoding)
+          if (typeof firstParse === 'string') {
+            console.log('⚠️ [STRIPE] Still a string after first parse, parsing again...');
+            checkoutData = JSON.parse(firstParse);
+            console.log('✅ [STRIPE] Second parse successful:', checkoutData);
+          } else {
+            checkoutData = firstParse;
+            console.log('✅ [STRIPE] Using first parse result');
+          }
+        } catch (e) {
+          console.error('❌ [STRIPE] Parse failed:', e);
+          console.error('❌ [STRIPE] Raw data:', result.data);
+          throw new Error('Invalid response format from server');
+        }
+      } else if (result.data && typeof result.data === 'object') {
+        console.log('🔍 [STRIPE] Using data as object directly');
+        checkoutData = result.data as { checkoutUrl?: string; sessionId?: string };
+      } else {
+        console.error('❌ [STRIPE] Unexpected response format:', result);
+        throw new Error('Unexpected response format from server');
+      }
+
+      const checkoutUrl = checkoutData?.checkoutUrl;
+      const sessionId = checkoutData?.sessionId;
+
+      console.log('🔍 [STRIPE] Final checkoutData:', checkoutData);
+      console.log('🔍 [STRIPE] checkoutUrl:', checkoutUrl);
+      console.log('🔍 [STRIPE] sessionId:', sessionId);
+
+      if (!checkoutUrl) {
+        logger.error('No checkoutUrl in response. Full data:', checkoutData);
+        throw new Error('No checkout URL returned from server');
+      }
+
+      // Redirect to Stripe Checkout
+      window.location.href = checkoutUrl;
+    } catch (err) {
+      logger.error('Error creating Stripe checkout:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create checkout session');
       setSelectedTier(null);
-    }, 100);
+    }
   };
 
   if (!isOpen) return null;
@@ -111,6 +183,20 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
             <FontAwesomeIcon icon={faTimes} />
           </button>
         </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="modal-error" style={{ 
+            padding: '12px', 
+            margin: '0 24px', 
+            backgroundColor: '#f44336', 
+            color: 'white', 
+            borderRadius: '4px',
+            marginBottom: '16px'
+          }}>
+            {error}
+          </div>
+        )}
 
         {/* Tiers Grid */}
         <div className="modal-body">
