@@ -1,37 +1,46 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
-import { LoadingWheel } from "../components/LoadingWheel";
 import "./EndSession.css";
 import { usePageTitle } from "../hooks/usePageTitle";
 
 const client = generateClient<Schema>();
 
+interface LocationState {
+  duration?: number;
+  sessionId?: string | null;
+}
+
 export default function EndSession() {
   usePageTitle();
   const navigate = useNavigate();
-  const [duration, setDuration] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-
+  const location = useLocation();
+  
+  const state = location.state as LocationState | null;
+  const clientDuration = state?.duration ?? 0;
+  const sessionId = state?.sessionId;
+  
+  const [serverDuration, setServerDuration] = useState<number | null>(null);
+  
   useEffect(() => {
-    const fetchSession = async () => {
+    const fetchServerDuration = async () => {
+      if (!sessionId) return;
+      
       try {
-        const result = await client.queries.getSessionLambda({});
+        const result = await client.queries.getSessionLambda({ sessionId });
         if (result.data?.durationSeconds != null) {
-          setDuration(result.data.durationSeconds);
-        } else {
-          setDuration(0);
+          setServerDuration(result.data.durationSeconds);
         }
-      } catch {
-        setDuration(0);
-      } finally {
-        setLoading(false);
+      } catch (err) {
+        console.error('[END_SESSION] Failed to fetch server duration:', err);
       }
     };
-
-    fetchSession();
-  }, []);
+    
+    fetchServerDuration();
+  }, [sessionId]);
+  
+  const displayDuration = serverDuration ?? clientDuration;
 
   const formatDuration = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -39,14 +48,6 @@ export default function EndSession() {
     const s = seconds % 60;
     return `${h}h ${m}m ${s}s`;
   };
-
-  if (loading) {
-    return (
-      <div className="endsession-container">
-        <LoadingWheel />
-      </div>
-    );
-  }
 
   return (
     <div className="endsession-container">
@@ -61,7 +62,7 @@ export default function EndSession() {
       <div className="session-stats">
         <div className="stat-item">
           <span className="stat-label">Duration</span>
-          <span className="stat-value">{formatDuration(duration ?? 0)}</span>
+          <span className="stat-value">{formatDuration(displayDuration)}</span>
         </div>
       </div>
 

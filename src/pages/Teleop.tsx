@@ -190,7 +190,8 @@ export default function Teleop() {
   const handleEndSession = () => {
     stopRobot();
     disconnect();
-    navigate('/endsession');
+    // Pass both client-side duration (for display) and sessionId (for server-side billing verification)
+    navigate('/endsession', { state: { duration: sessionTime, sessionId: status.sessionId } });
   };
 
   const formatTime = (seconds: number) => {

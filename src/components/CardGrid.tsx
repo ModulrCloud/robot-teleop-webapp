@@ -1,6 +1,8 @@
 import { useMemo, useRef, useCallback } from "react";
 import CardGridItem, {type CardGridItemProps} from "./CardGridItem";
 import type { CardGridItemHandle } from "./CardGridItem";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faSearch, faPen, faTimes, faSpinner } from "@fortawesome/free-solid-svg-icons";
 import "./CardGrid.css";
 
 interface CardGridProps {
@@ -65,17 +67,13 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
             minWidth: '32px',
             minHeight: '32px',
             cursor: 'pointer',
-            fontSize: '16px',
-            fontWeight: 'bold',
+            fontSize: '14px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 10,
-            lineHeight: '1',
             padding: 0,
             margin: 0,
-            textAlign: 'center',
-            verticalAlign: 'middle',
             transition: 'all 0.2s',
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
           }}
@@ -88,7 +86,7 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
             e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.3)';
           }}
         >
-          👁
+          <FontAwesomeIcon icon={faSearch} />
         </button>
       )}
       {onEdit && (item as any).uuid && (
@@ -110,18 +108,14 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
             minWidth: '32px',
             minHeight: '32px',
             cursor: editingItemId === item.id ? 'wait' : 'pointer',
-            fontSize: '16px',
-            fontWeight: 'bold',
+            fontSize: '14px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 10,
             opacity: editingItemId === item.id ? 0.6 : 1,
-            lineHeight: '1',
             padding: 0,
             margin: 0,
-            textAlign: 'center',
-            verticalAlign: 'middle',
             transition: 'all 0.2s',
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
           }}
@@ -136,7 +130,7 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
             e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.3)';
           }}
         >
-          {editingItemId === item.id ? '⏳' : <span style={{ transform: 'scaleX(-1)', display: 'inline-block' }}>✎</span>}
+          {editingItemId === item.id ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faPen} />}
         </button>
       )}
       {onDelete && (item as any).uuid && (
@@ -158,21 +152,27 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
             minWidth: '28px',
             minHeight: '28px',
             cursor: deletingItemId === item.id ? 'wait' : 'pointer',
-            fontSize: '20px',
-            fontWeight: 'bold',
+            fontSize: '12px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             zIndex: 10,
             opacity: deletingItemId === item.id ? 0.6 : 1,
-            lineHeight: '1',
             padding: 0,
             margin: 0,
-            textAlign: 'center',
-            verticalAlign: 'middle',
+            transition: 'all 0.2s',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+          }}
+          onMouseEnter={(e) => {
+            if (deletingItemId !== item.id) {
+              e.currentTarget.style.transform = 'scale(1.1)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
           }}
         >
-          {deletingItemId === item.id ? '⏳' : '✕'}
+          {deletingItemId === item.id ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faTimes} />}
         </button>
       )}
     </div>
