@@ -23,11 +23,17 @@ export const handler: Schema["assignAdminLambda"]["functionHandler"] = async (ev
 
   const adminUserId = identity.username;
   const adminGroups = "groups" in identity ? identity.groups : [];
-  const isAdmin = adminGroups?.includes("ADMINS") || adminGroups?.includes("ADMIN");
+  const isInAdminGroup = adminGroups?.includes("ADMINS") || adminGroups?.includes("ADMIN");
+  
+  // Get user email for domain-based access check
+  const userEmail = (identity as any).email || (identity as any).claims?.email;
+  const isModulrEmployee = userEmail && 
+    typeof userEmail === 'string' && 
+    userEmail.toLowerCase().trim().endsWith('@modulr.cloud');
 
-  // SECURITY: Only existing admins can assign admin status
-  if (!isAdmin) {
-    throw new Error("Unauthorized: only ADMINS can assign admin status");
+  // SECURITY: Only existing admins (ADMINS group) or Modulr employees can assign admin status
+  if (!isInAdminGroup && !isModulrEmployee) {
+    throw new Error("Unauthorized: only ADMINS or Modulr employees (@modulr.cloud) can assign admin status");
   }
 
   if (!targetUserId) {

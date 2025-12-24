@@ -19,6 +19,7 @@ import { SessionHistory } from "./pages/SessionHistory";
 import { AppLayout } from "./components/AppLayout";
 import { Settings } from "./pages/Settings";
 import { Credits } from "./pages/Credits";
+import { Admin } from "./pages/Admin";
 import RobotSetup from "./pages/RobotSetup";
 import { EditRobot } from "./pages/EditRobot";
 import MyRobots from "./pages/MyRobots";
@@ -167,6 +168,12 @@ function App() {
             <Route path='/credits' element={
               <PrivateRoute>
                 <Credits />
+              </PrivateRoute>
+            } 
+            />
+            <Route path='/admin' element={
+              <PrivateRoute>
+                <Admin />
               </PrivateRoute>
             } 
             />

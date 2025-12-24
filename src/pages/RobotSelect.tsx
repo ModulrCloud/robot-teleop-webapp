@@ -10,6 +10,7 @@ import { LoadingWheel } from "../components/LoadingWheel";
 import "./RobotSelect.css";
 import { getUrl } from 'aws-amplify/storage';
 import { logger } from '../utils/logger';
+import { formatCreditsAsCurrencySync, fetchExchangeRates } from '../utils/credits';
 
 const client = generateClient<Schema>();
 
@@ -43,11 +44,56 @@ export default function RobotSelect() {
   const [deletingRobotId, setDeletingRobotId] = useState<string | null>(null);
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const [platformMarkup, setPlatformMarkup] = useState<number>(30); // Default 30%
+  const [userCurrency, setUserCurrency] = useState<string>('USD');
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
   const hasSelected = selected.length > 0;
   const navigate = useNavigate();
   
   // Check if user can edit robots (Partners or Admins)
   const canEditRobots = user?.group === 'PARTNERS' || user?.group === 'ADMINS';
+
+  // Load platform markup and user currency preference
+  useEffect(() => {
+    const loadPlatformSettings = async () => {
+      try {
+        // Load platform markup
+        const { data: settings } = await client.models.PlatformSettings.list({
+          filter: { settingKey: { eq: 'platformMarkupPercent' } },
+        });
+        if (settings && settings.length > 0) {
+          const markupValue = parseFloat(settings[0].settingValue || '30');
+          setPlatformMarkup(markupValue);
+        }
+
+        // Load user's currency preference
+        if (user?.username) {
+          // Check Partner first, then Client
+          const { data: partners } = await client.models.Partner.list({
+            filter: { cognitoUsername: { eq: user.username } },
+          });
+          if (partners && partners.length > 0 && partners[0].preferredCurrency) {
+            setUserCurrency(partners[0].preferredCurrency.toUpperCase());
+          } else {
+            const { data: clients } = await client.models.Client.list({
+              filter: { cognitoUsername: { eq: user.username } },
+            });
+            if (clients && clients.length > 0 && clients[0].preferredCurrency) {
+              setUserCurrency(clients[0].preferredCurrency.toUpperCase());
+            }
+          }
+        }
+
+        // Fetch exchange rates
+        const rates = await fetchExchangeRates();
+        setExchangeRates(rates);
+      } catch (err) {
+        logger.error("Error loading platform settings:", err);
+      }
+    };
+
+    loadPlatformSettings();
+  }, [user?.username]);
 
   useEffect(() => {
     const loadRobots = async () => {
@@ -355,6 +401,28 @@ export default function RobotSelect() {
                 logger.log(`[ROBOT_IMAGE] Robot "${robot.name || 'Unnamed'}": model="${robot.model}", image="${getRobotImage(robot.model, robot.imageUrl)}"`);
               }
               
+              // Calculate hourly rate (partner rate + platform fee)
+              let hourlyRateDisplay: string | undefined = undefined;
+              
+              if (robot.hourlyRateCredits !== null && robot.hourlyRateCredits !== undefined && robot.hourlyRateCredits > 0) {
+                // Partner's base rate in credits
+                const baseRateCredits = robot.hourlyRateCredits;
+                
+                // Calculate total rate with platform markup
+                // Formula: totalRate = baseRate * (1 + markupPercent / 100)
+                const totalRateCredits = baseRateCredits * (1 + platformMarkup / 100);
+                
+                // Convert to user's currency for display
+                const formattedRate = formatCreditsAsCurrencySync(
+                  totalRateCredits,
+                  userCurrency as any,
+                  exchangeRates || undefined
+                );
+                
+                hourlyRateDisplay = `${formattedRate}/hour`;
+              } else if (robot.hourlyRateCredits === 0) {
+                hourlyRateDisplay = "Free";
+              }
               return {
                 id: (robot.robotId || robot.id) as string, // Use robotId (string) for connection, fallback to id
                 uuid: robot.id || undefined, // Store the actual UUID for deletion
@@ -364,6 +432,7 @@ export default function RobotSelect() {
                 imageUrl: getRobotImage(robot.model, robot.imageUrl),
                 rawImageUrl: robot.imageUrl,
                 disabled: !canAccess, // Gray out if user can't access
+                hourlyRate: hourlyRateDisplay,
               };
             });
           
@@ -425,8 +494,12 @@ export default function RobotSelect() {
       }
     };
 
-    loadRobots();
-  }, []);
+    // Only load robots if we have platform settings loaded (or at least defaults)
+    // This ensures we can calculate prices correctly
+    if (platformMarkup && userCurrency && exchangeRates !== null) {
+      loadRobots();
+    }
+  }, [platformMarkup, userCurrency, exchangeRates]);
 
   const [resolvedImages, setResolvedImages] = useState<Record<string, string>>({});
   const [rawRobotData, setRawRobotData] = useState<any[]>([]);

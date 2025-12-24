@@ -147,6 +147,8 @@ export const handler: Schema["listAccessibleRobotsLambda"]["functionHandler"] = 
         imageUrl: robotItem.imageUrl?.S,
         createdAt: robotItem.createdAt?.S,
         updatedAt: robotItem.updatedAt?.S,
+        // Pricing field
+        hourlyRateCredits: robotItem.hourlyRateCredits?.N ? parseFloat(robotItem.hourlyRateCredits.N) : undefined,
         // Location fields
         city: robotItem.city?.S,
         state: robotItem.state?.S,

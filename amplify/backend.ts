@@ -20,6 +20,9 @@ import { updateAutoTopUp } from './functions/update-auto-topup/resource';
 import { assignAdmin } from './functions/assign-admin/resource';
 import { removeAdmin } from './functions/remove-admin/resource';
 import { listAdmins } from './functions/list-admins/resource';
+import { listUsers } from './functions/list-users/resource';
+import { getSystemStats } from './functions/get-system-stats/resource';
+import { listAuditLogs } from './functions/list-audit-logs/resource';
 import { processSessionPayment } from './functions/process-session-payment/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
@@ -53,6 +56,9 @@ const backend = defineBackend({
   assignAdmin,
   removeAdmin,
   listAdmins,
+  listUsers,
+  getSystemStats,
+  listAuditLogs,
   processSessionPayment,
 });
 
@@ -105,6 +111,9 @@ const updateAutoTopUpFunction = backend.updateAutoTopUp.resources.lambda;
 const assignAdminFunction = backend.assignAdmin.resources.lambda;
 const removeAdminFunction = backend.removeAdmin.resources.lambda;
 const listAdminsFunction = backend.listAdmins.resources.lambda;
+const listUsersFunction = backend.listUsers.resources.lambda;
+const getSystemStatsFunction = backend.getSystemStats.resources.lambda;
+const listAuditLogsFunction = backend.listAuditLogs.resources.lambda;
 const processSessionPaymentFunction = backend.processSessionPayment.resources.lambda;
 
 // ============================================
@@ -268,7 +277,7 @@ tables.Robot.grantReadData(manageRobotOperatorFunction);
 tables.Partner.grantReadData(manageRobotOperatorFunction);
 
 // Lambda permissions
-userPool.grant(setUserGroupLambdaFunction, 'cognito-idp:AdminAddUserToGroup');
+userPool.grant(setUserGroupLambdaFunction, 'cognito-idp:AdminAddUserToGroup', 'cognito-idp:AdminRemoveUserFromGroup', 'cognito-idp:ListGroupsForUser');
 tables.Partner.grantReadData(setRobotLambdaFunction);
 setRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
   actions: ["dynamodb:Query", "dynamodb:GetItem", "dynamodb:Scan"],
@@ -426,3 +435,51 @@ adminAuditTable.grantWriteData(removeAdminFunction);
 const listAdminsCdkFunction = listAdminsFunction as CdkFunction;
 listAdminsCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 userPool.grant(listAdminsFunction, 'cognito-idp:ListUsersInGroup');
+
+// List users Lambda environment variables and permissions
+const listUsersCdkFunction = listUsersFunction as CdkFunction;
+listUsersCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+listUsersCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+listUsersCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+listUsersCdkFunction.addEnvironment('CLIENT_TABLE_NAME', tables.Client.tableName);
+userPool.grant(listUsersFunction, 'cognito-idp:ListUsers', 'cognito-idp:ListUsersInGroup', 'cognito-idp:AdminGetUser');
+tables.UserCredits.grantReadData(listUsersFunction);
+tables.Partner.grantReadData(listUsersFunction);
+tables.Client.grantReadData(listUsersFunction);
+// Grant permission to query the userIdIndex
+listUsersFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query", "dynamodb:Scan"],
+  resources: [
+    `${tables.UserCredits.tableArn}/index/userIdIndex`,
+    `${tables.Partner.tableArn}`,
+    `${tables.Client.tableArn}`,
+  ],
+}));
+
+// Get system stats Lambda environment variables and permissions
+const getSystemStatsCdkFunction = getSystemStatsFunction as CdkFunction;
+getSystemStatsCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+getSystemStatsCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+getSystemStatsCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
+getSystemStatsCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+getSystemStatsCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
+userPool.grant(getSystemStatsFunction, 'cognito-idp:ListUsers', 'cognito-idp:AdminGetUser');
+tables.Robot.grantReadData(getSystemStatsFunction);
+tables.Session.grantReadData(getSystemStatsFunction);
+tables.UserCredits.grantReadData(getSystemStatsFunction);
+tables.CreditTransaction.grantReadData(getSystemStatsFunction);
+
+// List audit logs Lambda environment variables and permissions
+const listAuditLogsCdkFunction = listAuditLogsFunction as CdkFunction;
+listAuditLogsCdkFunction.addEnvironment('ADMIN_AUDIT_TABLE', adminAuditTable.tableName);
+listAuditLogsCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+adminAuditTable.grantReadData(listAuditLogsFunction);
+userPool.grant(listAuditLogsFunction, 'cognito-idp:AdminGetUser');
+// Grant permission to query the indexes
+listAuditLogsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${adminAuditTable.tableArn}/index/adminUserIdIndex`,
+    `${adminAuditTable.tableArn}/index/targetUserIdIndex`,
+  ],
+}));

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuthStatus } from "./hooks/useAuthStatus";
 import { useUserCredits } from "./hooks/useUserCredits";
+import { hasAdminAccess } from "./utils/admin";
 import { PurchaseCreditsModal } from "./components/PurchaseCreditsModal";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -17,7 +18,8 @@ import {
   faBuilding,
   faHandshake,
   faCoins,
-  faWallet
+  faWallet,
+  faShieldAlt
 } from '@fortawesome/free-solid-svg-icons';
 import "./Navbar.css";
 import { formatGroupName, capitalizeName } from "./utils/formatters";
@@ -179,6 +181,12 @@ export default function Navbar() {
                     <FontAwesomeIcon icon={faCoins} />
                     <span>Credits</span>
                   </Link>
+                  {hasAdminAccess(user?.email, user?.group ? [user.group] : undefined) && (
+                    <Link to="/admin" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
+                      <FontAwesomeIcon icon={faShieldAlt} />
+                      <span>Admin</span>
+                    </Link>
+                  )}
                   <button 
                     className="dropdown-item" 
                     onClick={() => {

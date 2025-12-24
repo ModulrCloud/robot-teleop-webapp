@@ -16,6 +16,9 @@ import { updateAutoTopUp } from "../functions/update-auto-topup/resource";
 import { assignAdmin } from "../functions/assign-admin/resource";
 import { removeAdmin } from "../functions/remove-admin/resource";
 import { listAdmins } from "../functions/list-admins/resource";
+import { listUsers } from "../functions/list-users/resource";
+import { getSystemStats } from "../functions/get-system-stats/resource";
+import { listAuditLogs } from "../functions/list-audit-logs/resource";
 import { processSessionPayment } from "../functions/process-session-payment/resource";
 
 const LambdaResult = a.customType({
@@ -328,6 +331,7 @@ const schema = a.schema({
     .mutation()
     .arguments({
       group: a.string(),
+      targetUsername: a.string(), // Optional: if provided and caller is admin, change this user's group instead
     })
     .returns(LambdaResult)
     .authorization(allow => [allow.authenticated()])
@@ -501,7 +505,7 @@ const schema = a.schema({
       reason: a.string(),
     })
     .returns(a.json())
-    .authorization(allow => [allow.groups(['ADMINS'])]) // Only existing admins can assign admin
+    .authorization(allow => [allow.authenticated()]) // Auth check happens in Lambda (domain-based + group-based)
     .handler(a.handler.function(assignAdmin)),
 
   removeAdminLambda: a
@@ -517,8 +521,35 @@ const schema = a.schema({
   listAdminsLambda: a
     .query()
     .returns(a.json())
-    .authorization(allow => [allow.groups(['ADMINS'])]) // Only admins can list admins
-    .handler(a.handler.function(listAdmins))
+    .authorization(allow => [allow.authenticated()]) // Auth check happens in Lambda (domain-based + group-based)
+    .handler(a.handler.function(listAdmins)),
+
+  listUsersLambda: a
+    .query()
+    .arguments({
+      limit: a.integer(),
+      paginationToken: a.string(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth check happens in Lambda (domain-based + group-based)
+    .handler(a.handler.function(listUsers)),
+
+  getSystemStatsLambda: a
+    .query()
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth check happens in Lambda (domain-based + group-based)
+    .handler(a.handler.function(getSystemStats)),
+
+  listAuditLogsLambda: a
+    .query()
+    .arguments({
+      limit: a.integer(),
+      adminUserId: a.string(),
+      targetUserId: a.string(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth check happens in Lambda (domain-based + group-based)
+    .handler(a.handler.function(listAuditLogs))
 });
 
 export type Schema = ClientSchema<typeof schema>;

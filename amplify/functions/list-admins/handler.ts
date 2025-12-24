@@ -13,12 +13,19 @@ export const handler: Schema["listAdminsLambda"]["functionHandler"] = async (eve
     throw new Error("Unauthorized: must be logged in with Cognito");
   }
 
+  // Get user email for domain-based access check
+  const userEmail = (identity as any).email || (identity as any).claims?.email;
   const adminGroups = "groups" in identity ? identity.groups : [];
-  const isAdmin = adminGroups?.includes("ADMINS") || adminGroups?.includes("ADMIN");
-
-  // SECURITY: Only admins can list other admins
-  if (!isAdmin) {
-    throw new Error("Unauthorized: only ADMINS can list admins");
+  const isInAdminGroup = adminGroups?.includes("ADMINS") || adminGroups?.includes("ADMIN");
+  
+  // Check if user is a Modulr employee (@modulr.cloud domain)
+  const isModulrEmployee = userEmail && 
+    typeof userEmail === 'string' && 
+    userEmail.toLowerCase().trim().endsWith('@modulr.cloud');
+  
+  // SECURITY: Only admins (ADMINS group) or Modulr employees can list other admins
+  if (!isInAdminGroup && !isModulrEmployee) {
+    throw new Error("Unauthorized: only ADMINS or Modulr employees (@modulr.cloud) can list admins");
   }
 
   try {
