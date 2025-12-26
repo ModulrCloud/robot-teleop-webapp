@@ -496,6 +496,11 @@ async function checkSessionLock(
   }
 }
 
+/**
+ * Creates a new session for billing and tracking.
+ * Checks for existing active sessions to prevent duplicates (e.g., from React StrictMode).
+ * Returns existing session ID if one is already active for this user+robot combination.
+ */
 async function createSession(
   connectionId: string,
   userId: string,
@@ -503,14 +508,41 @@ async function createSession(
   robotId: string
 ): Promise<string | null> {
   if (!SESSION_TABLE_NAME) {
-    console.warn('[SESSION_CREATE] SESSION_TABLE_NAME not set, skipping session creation');
+    console.warn('[SESSION] Table name not configured, skipping session creation');
     return null;
+  }
+
+  // Check for existing active session for this user+robot to prevent duplicates
+  try {
+    const existing = await db.send(new QueryCommand({
+      TableName: SESSION_TABLE_NAME,
+      IndexName: 'userIdIndex',
+      KeyConditionExpression: 'userId = :userId',
+      FilterExpression: '#status = :active AND robotId = :robotId',
+      ExpressionAttributeNames: { '#status': 'status' },
+      ExpressionAttributeValues: {
+        ':userId': { S: userId },
+        ':active': { S: 'active' },
+        ':robotId': { S: robotId },
+      },
+      Limit: 1,
+    }));
+    
+    if (existing.Items && existing.Items.length > 0) {
+      const existingId = existing.Items[0].id?.S;
+      console.log('[SESSION] Reusing existing active session:', { sessionId: existingId, userId, robotId });
+      return existingId || null;
+    }
+  } catch (err) {
+    console.warn('[SESSION] Failed to check for existing session:', err);
+    // Continue with creation attempt
   }
 
   const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
   const now = new Date().toISOString();
 
   try {
+    // End any other active sessions for this user (allows only one session at a time)
     await endUserSessions(userId);
 
     await db.send(new PutItemCommand({
@@ -531,10 +563,10 @@ async function createSession(
       },
     }));
 
-    console.log('[SESSION_CREATED]', { sessionId, userId, robotId, connectionId });
+    console.log('[SESSION] Created new session:', { sessionId, userId, robotId, connectionId });
     return sessionId;
   } catch (err) {
-    console.error('[SESSION_CREATE_ERROR]', {
+    console.error('[SESSION] Failed to create session:', {
       userId,
       robotId,
       error: err instanceof Error ? err.message : String(err),
@@ -559,7 +591,7 @@ async function endSession(sessionId: string): Promise<void> {
     }));
 
     if (!result.Items?.[0]) {
-      console.warn('[SESSION_END] Session not found:', sessionId);
+      console.warn('[SESSION] Cannot end session - not found:', sessionId);
       return;
     }
 
@@ -584,9 +616,9 @@ async function endSession(sessionId: string): Promise<void> {
       },
     }));
 
-    console.log('[SESSION_ENDED]', { sessionId, durationSeconds });
+    console.log('[SESSION] Ended session:', { sessionId, durationSeconds });
   } catch (err) {
-    console.error('[SESSION_END_ERROR]', {
+    console.error('[SESSION] Failed to end session:', {
       sessionId,
       error: err instanceof Error ? err.message : String(err),
     });
@@ -618,7 +650,7 @@ async function endUserSessions(userId: string): Promise<void> {
       }
     }
   } catch (err) {
-    console.error('[END_USER_SESSIONS_ERROR]', {
+    console.error('[SESSION] Failed to end user sessions:', {
       userId,
       error: err instanceof Error ? err.message : String(err),
     });
@@ -644,12 +676,12 @@ async function endConnectionSessions(connectionId: string): Promise<void> {
     for (const item of result.Items || []) {
       const sessionId = item.id?.S;
       if (sessionId) {
-        console.log('[DISCONNECT_SESSION_END]', { sessionId, connectionId });
+        console.log('[SESSION] Ending session on disconnect:', { sessionId, connectionId });
         await endSession(sessionId);
       }
     }
   } catch (err) {
-    console.error('[END_CONNECTION_SESSIONS_ERROR]', {
+    console.error('[SESSION] Failed to end connection sessions:', {
       connectionId,
       error: err instanceof Error ? err.message : String(err),
     });
@@ -1397,7 +1429,22 @@ async function handleSignal(
         }
         
         const sessionUserId = username || claims.sub;
-        await createSession(sourceConnId, sessionUserId, userEmail, robotId);
+        const sessionId = await createSession(sourceConnId, sessionUserId, userEmail, robotId);
+        
+        if (sessionId) {
+          try {
+            await mgmt.send(new PostToConnectionCommand({
+              ConnectionId: sourceConnId,
+              Data: Buffer.from(JSON.stringify({
+                type: 'session-created',
+                sessionId: sessionId,
+              }), 'utf-8'),
+            }));
+            console.log('[SESSION] Sent session ID to client:', { sessionId, connectionId: sourceConnId });
+          } catch (e) {
+            console.warn('[SESSION] Failed to send session ID to client:', e);
+          }
+        }
       }
     } catch (err) {
       // If the conn is gone, the caller will see a 200 from us but message won't deliver.

@@ -1,12 +1,46 @@
-import { useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { generateClient } from 'aws-amplify/api';
+import { Schema } from '../../amplify/data/resource';
 import "./EndSession.css";
 import { usePageTitle } from "../hooks/usePageTitle";
 
+const client = generateClient<Schema>();
+
+interface LocationState {
+  duration?: number;
+  sessionId?: string | null;
+}
+
 export default function EndSession() {
   usePageTitle();
-  const location = useLocation();
   const navigate = useNavigate();
-  const duration = (location.state as { duration?: number })?.duration || 0;
+  const location = useLocation();
+  
+  const state = location.state as LocationState | null;
+  const clientDuration = state?.duration ?? 0;
+  const sessionId = state?.sessionId;
+  
+  const [serverDuration, setServerDuration] = useState<number | null>(null);
+  
+  useEffect(() => {
+    const fetchServerDuration = async () => {
+      if (!sessionId) return;
+      
+      try {
+        const result = await client.queries.getSessionLambda({ sessionId });
+        if (result.data?.durationSeconds != null) {
+          setServerDuration(result.data.durationSeconds);
+        }
+      } catch (err) {
+        console.error('[END_SESSION] Failed to fetch server duration:', err);
+      }
+    };
+    
+    fetchServerDuration();
+  }, [sessionId]);
+  
+  const displayDuration = serverDuration ?? clientDuration;
 
   const formatDuration = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -28,7 +62,7 @@ export default function EndSession() {
       <div className="session-stats">
         <div className="stat-item">
           <span className="stat-label">Duration</span>
-          <span className="stat-value">{formatDuration(duration)}</span>
+          <span className="stat-value">{formatDuration(displayDuration)}</span>
         </div>
       </div>
 
