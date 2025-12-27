@@ -46,6 +46,11 @@ export const Admin = () => {
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [showUserDetail, setShowUserDetail] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'error' | 'success'; visible: boolean }>({ 
+    message: '', 
+    type: 'error', 
+    visible: false 
+  });
   
   // System stats
   const [systemStats, setSystemStats] = useState<any | null>(null);
@@ -54,11 +59,44 @@ export const Admin = () => {
   // Audit logs
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
+  const [auditLogsPaginationToken, setAuditLogsPaginationToken] = useState<string | null>(null);
   
   // User detail data
   const [userRobots, setUserRobots] = useState<any[]>([]);
   const [userTransactions, setUserTransactions] = useState<any[]>([]);
   const [loadingUserDetail, setLoadingUserDetail] = useState(false);
+  
+  // Credit adjustment
+  const [creditAdjustment, setCreditAdjustment] = useState<string>('');
+  const [creditDescription, setCreditDescription] = useState<string>('');
+  const [adjustingCredits, setAdjustingCredits] = useState(false);
+  
+  // Sanitize and validate credit adjustment input
+  const handleCreditAdjustmentChange = (value: string) => {
+    // Remove any non-numeric characters except minus sign at the start
+    let sanitized = value.replace(/[^\d-]/g, '');
+    
+    // Only allow minus sign at the beginning
+    if (sanitized.includes('-')) {
+      const minusIndex = sanitized.indexOf('-');
+      if (minusIndex !== 0) {
+        sanitized = sanitized.replace(/-/g, '');
+      } else if (sanitized.split('-').length > 2) {
+        // Multiple minus signs, keep only the first one
+        sanitized = '-' + sanitized.replace(/-/g, '');
+      }
+    }
+    
+    // Remove leading zeros (but keep -0 or 0)
+    if (sanitized.length > 1 && sanitized[0] === '0' && sanitized[1] !== '.') {
+      sanitized = sanitized.substring(1);
+    }
+    if (sanitized.length > 2 && sanitized[0] === '-' && sanitized[1] === '0' && sanitized[2] !== '.') {
+      sanitized = '-' + sanitized.substring(2);
+    }
+    
+    setCreditAdjustment(sanitized);
+  };
   
   // Platform Settings
   const [platformMarkup, setPlatformMarkup] = useState<number>(30);
@@ -202,6 +240,7 @@ export const Admin = () => {
         setUsers(usersData.users || []);
         setPaginationToken(usersData.nextToken || null);
         setError(null); // Clear any previous errors
+        logger.log("✅ [DEBUG] Set pagination token:", usersData.nextToken);
         logger.log(`✅ Successfully loaded ${usersData.users?.length || 0} users`);
       } else {
         console.error("❌ [DEBUG] Users data indicates failure:", usersData);
@@ -221,7 +260,121 @@ export const Admin = () => {
   const handleViewUser = async (user: any) => {
     setSelectedUser(user);
     setShowUserDetail(true);
+    // Clear credit adjustment fields when opening modal
+    setCreditAdjustment('');
+    setCreditDescription('');
     await loadUserDetailData(user.username);
+  };
+
+  const handleAdjustCredits = async (userId: string, credits: number) => {
+    if (!user?.email || !hasAdminAccess(user.email)) {
+      setError("Unauthorized: Admin access required");
+      return;
+    }
+
+    if (!credits || credits === 0) {
+      setError("Credit amount cannot be zero");
+      return;
+    }
+
+    setAdjustingCredits(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      logger.log("🔄 Adjusting credits:", { userId, credits, description: creditDescription });
+      
+      const result = await client.mutations.addCreditsLambda({
+        userId,
+        credits,
+        description: creditDescription || undefined,
+      });
+
+      logger.log("📦 Raw result from addCreditsLambda:", result);
+      console.log("📦 Full result object:", JSON.stringify(result, null, 2));
+
+      // Check for errors in the result
+      if (result.errors && result.errors.length > 0) {
+        const errorMessages = result.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ');
+        logger.error("❌ GraphQL errors:", result.errors);
+        setError(`GraphQL Error: ${errorMessages}`);
+        return;
+      }
+
+      let resultData: any = null;
+      if (typeof result.data === 'string') {
+        try {
+          // The data might be double-encoded JSON (string containing JSON string)
+          let parsed = JSON.parse(result.data);
+          // If it's still a string, parse it again
+          if (typeof parsed === 'string') {
+            resultData = JSON.parse(parsed);
+          } else {
+            resultData = parsed;
+          }
+        } catch (e) {
+          logger.error("Failed to parse result.data as JSON:", e, "Raw data:", result.data);
+          setError(`Failed to parse response: ${result.data}`);
+          return;
+        }
+      } else {
+        resultData = result.data;
+      }
+
+      logger.log("✅ Parsed result data:", resultData);
+
+      if (resultData?.success) {
+        const action = credits > 0 ? 'added' : 'deducted';
+        setSuccess(`Successfully ${action} ${Math.abs(credits).toLocaleString()} credits. New balance: ${resultData.newBalance?.toLocaleString() || 'N/A'}`);
+        
+        // Update selected user's credit balance in the UI
+        if (selectedUser) {
+          setSelectedUser({
+            ...selectedUser,
+            credits: resultData.newBalance,
+          });
+        }
+
+        // If the updated user is the current logged-in user, trigger a refresh of their credits in the Navbar
+        if (user?.username && userId === user.username) {
+          // Dispatch a custom event to trigger credit refresh in Navbar
+          window.dispatchEvent(new CustomEvent('creditsUpdated'));
+        }
+
+        // Clear form
+        setCreditAdjustment('');
+        setCreditDescription('');
+
+        // Reload user detail data to refresh transactions
+        await loadUserDetailData(userId);
+        
+        // Reload audit logs to show the new entry
+        await loadAuditLogs();
+
+        setTimeout(() => setSuccess(null), 5000);
+      } else {
+        const errorMsg = resultData?.error || resultData?.message || "Failed to adjust credits";
+        logger.error("❌ Credit adjustment failed:", resultData);
+        setError(errorMsg);
+      }
+    } catch (err) {
+      logger.error("❌ Error adjusting credits:", err);
+      console.error("❌ Full error object:", err);
+      
+      // Extract more detailed error information
+      let errorMessage = "Failed to adjust credits";
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      } else if (typeof err === 'object' && err !== null) {
+        // Try to extract error message from various error formats
+        const errObj = err as any;
+        errorMessage = errObj.message || errObj.error?.message || errObj.errors?.[0]?.message || JSON.stringify(err);
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setAdjustingCredits(false);
+    }
   };
 
   const handleNextPage = () => {
@@ -254,6 +407,43 @@ export const Admin = () => {
     try {
       console.log(`🔄 Changing classification for ${username} to ${newClassification}`);
       
+      // Check for robots BEFORE attempting conversion (only when converting Partner to Client)
+      if (newClassification === 'CLIENT') {
+        console.log(`🔍 Checking for robots before converting ${username} to CLIENT...`);
+        const { data: partners } = await client.models.Partner.list({
+          filter: { cognitoUsername: { eq: username } },
+        });
+        
+        console.log(`📊 Found ${partners?.length || 0} partner record(s) for ${username}`);
+        
+        if (partners && partners.length > 0) {
+          const partnerId = partners[0].id;
+          console.log(`🤖 Checking for robots with partnerId: ${partnerId}`);
+          
+          // Check if this partner has any robots
+          const { data: robots } = await client.models.Robot.list({
+            filter: { partnerId: { eq: partnerId || undefined } },
+          });
+          
+          console.log(`📊 Found ${robots?.length || 0} robot(s) for partner ${partnerId}`);
+          
+          if (robots && robots.length > 0) {
+            const errorMsg = `Cannot convert Partner to Client: This partner has ${robots.length} robot(s) listed. Please delete or transfer all robots before converting.`;
+            console.error(`❌ ${errorMsg}`);
+            setError(errorMsg);
+            // Show toast notification
+            setToast({ message: errorMsg, type: 'error', visible: true });
+            setTimeout(() => {
+              setToast(prev => ({ ...prev, visible: false }));
+              setTimeout(() => setError(null), 300);
+            }, 6000);
+            return;
+          }
+        } else {
+          console.log(`ℹ️ No partner record found for ${username}, skipping robot check`);
+        }
+      }
+      
       // Use setUserGroupLambda to change the Cognito group
       const groupValue = newClassification.toLowerCase() === 'partner' ? 'partner' : 'client';
       const response = await client.mutations.setUserGroupLambda({
@@ -262,6 +452,40 @@ export const Admin = () => {
       });
 
       console.log("✅ setUserGroupLambda response:", response);
+
+      // Parse the response to check for errors
+      let responseData: any = null;
+      if (response.data) {
+        if (typeof response.data === 'string') {
+          try {
+            responseData = JSON.parse(response.data);
+          } catch (e) {
+            responseData = response.data;
+          }
+        } else {
+          responseData = response.data;
+        }
+      }
+
+      // Check if the Lambda returned an error
+      if (responseData?.statusCode && responseData.statusCode !== 200) {
+        let errorMessage = "Failed to change user classification";
+        if (responseData.body) {
+          try {
+            const bodyData = typeof responseData.body === 'string' ? JSON.parse(responseData.body) : responseData.body;
+            errorMessage = bodyData.error || bodyData.message || errorMessage;
+            // Include details if available
+            if (bodyData.details) {
+              errorMessage += `: ${bodyData.details}`;
+            }
+          } catch (e) {
+            errorMessage = responseData.body;
+          }
+        }
+        setError(errorMessage);
+        logger.error("❌ Classification change failed:", responseData);
+        return;
+      }
 
       // Also update the Partner/Client models
       if (newClassification === 'PARTNER') {
@@ -284,6 +508,16 @@ export const Admin = () => {
           await client.models.Client.delete({ id: clients[0].id });
         }
       } else if (newClassification === 'CLIENT') {
+        // Remove from Partner if exists (we already checked for robots above)
+        const { data: partners } = await client.models.Partner.list({
+          filter: { cognitoUsername: { eq: username } },
+        });
+        
+        if (partners && partners.length > 0) {
+          // Safe to delete Partner record (no robots - we checked above)
+          await client.models.Partner.delete({ id: partners[0].id });
+        }
+        
         // Check if Client record exists, create if not
         const { data: clients } = await client.models.Client.list({
           filter: { cognitoUsername: { eq: username } },
@@ -292,13 +526,6 @@ export const Admin = () => {
           await client.models.Client.create({
             cognitoUsername: username,
           });
-        }
-        // Remove from Partner if exists
-        const { data: partners } = await client.models.Partner.list({
-          filter: { cognitoUsername: { eq: username } },
-        });
-        if (partners && partners.length > 0) {
-          await client.models.Partner.delete({ id: partners[0].id });
         }
       }
 
@@ -378,16 +605,19 @@ export const Admin = () => {
     }
   };
 
-  const loadAuditLogs = async () => {
+  const loadAuditLogs = async (token?: string | null) => {
     if (!user?.email || !hasAdminAccess(user.email)) {
       return;
     }
 
     setLoadingAuditLogs(true);
     try {
-      const result = await client.queries.listAuditLogsLambda({ limit: 50 });
+      const result = await client.queries.listAuditLogsLambda({ 
+        limit: 10, // 10 records per page
+        paginationToken: token || undefined,
+      });
       
-      let logsData: { success?: boolean; auditLogs?: any[] } | null = null;
+      let logsData: { success?: boolean; auditLogs?: any[]; nextToken?: string | null } | null = null;
       if (typeof result.data === 'string') {
         try {
           const firstParse = JSON.parse(result.data);
@@ -405,12 +635,26 @@ export const Admin = () => {
 
       if (logsData?.success && logsData.auditLogs) {
         setAuditLogs(logsData.auditLogs);
+        setAuditLogsPaginationToken(logsData.nextToken || null);
       }
     } catch (err) {
       logger.error("Error loading audit logs:", err);
     } finally {
       setLoadingAuditLogs(false);
     }
+  };
+
+  const handleAuditLogsNextPage = () => {
+    if (auditLogsPaginationToken) {
+      loadAuditLogs(auditLogsPaginationToken);
+    }
+  };
+
+  const handleAuditLogsPrevPage = () => {
+    // Note: DynamoDB doesn't support backward pagination easily
+    // For now, just reload from the beginning
+    setAuditLogsPaginationToken(null);
+    loadAuditLogs(null);
   };
 
   const loadUserDetailData = async (username: string) => {
@@ -883,19 +1127,72 @@ export const Admin = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {auditLogs.map((log, index) => (
-                        <tr key={index}>
-                          <td>{log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A'}</td>
-                          <td>
-                            <span className="action-badge">{log.action || 'N/A'}</span>
-                          </td>
-                          <td>{log.adminUserId || 'N/A'}</td>
-                          <td>{log.targetUserId || 'N/A'}</td>
-                          <td>{log.reason || '-'}</td>
-                        </tr>
-                      ))}
+                      {auditLogs.map((log, index) => {
+                        // Format action with details for ADJUST_CREDITS
+                        let actionDisplay = log.action || 'N/A';
+                        if (log.action === 'ADJUST_CREDITS' && log.metadata) {
+                          const creditsAmount = log.metadata.creditsAmount;
+                          if (creditsAmount !== undefined) {
+                            const action = creditsAmount > 0 ? 'Added' : 'Reduced';
+                            actionDisplay = `${action} ${Math.abs(creditsAmount).toLocaleString()} credits`;
+                          }
+                        } else if (log.action === 'DELETE_ROBOT' && log.metadata) {
+                          const robotName = log.metadata.robotName || 'Unknown Robot';
+                          actionDisplay = `Deleted robot "${robotName}"`;
+                        } else if (log.action === 'CHANGE_USER_CLASSIFICATION' && log.metadata) {
+                          const oldClass = log.metadata.oldClassification || 'Unknown';
+                          const newClass = log.metadata.newClassification || 'Unknown';
+                          actionDisplay = `Changed classification: ${oldClass} → ${newClass}`;
+                        }
+                        
+                        return (
+                          <tr key={index}>
+                            <td>{log.timestamp ? new Date(log.timestamp).toLocaleString() : 'N/A'}</td>
+                            <td>
+                              <span className="action-badge">{actionDisplay}</span>
+                              {log.metadata && (
+                                <div className="action-metadata">
+                                  {log.metadata.robotName && log.metadata.robotModel && (
+                                    <span>Model: {log.metadata.robotModel}</span>
+                                  )}
+                                  {log.metadata.oldBalance !== undefined && log.metadata.newBalance !== undefined && (
+                                    <span>Balance: {log.metadata.oldBalance} &rarr; {log.metadata.newBalance}</span>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td>{log.adminEmail || log.adminUserId || 'N/A'}</td>
+                            <td>{log.targetEmail || log.targetUserId || 'N/A'}</td>
+                            <td>{log.reason || '-'}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
+                )}
+                {auditLogs.length > 0 && (
+                  <div className="pagination-controls">
+                    <button
+                      className="admin-button admin-button-secondary"
+                      onClick={handleAuditLogsPrevPage}
+                      disabled={loadingAuditLogs}
+                      title="Reload from beginning"
+                    >
+                      <FontAwesomeIcon icon={faChevronLeft} />
+                      <span>Previous</span>
+                    </button>
+                    <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>
+                      Showing {auditLogs.length} record{auditLogs.length !== 1 ? 's' : ''}
+                    </span>
+                    <button
+                      className="admin-button admin-button-secondary"
+                      onClick={handleAuditLogsNextPage}
+                      disabled={!auditLogsPaginationToken || loadingAuditLogs}
+                    >
+                      <span>Next</span>
+                      <FontAwesomeIcon icon={faChevronRight} />
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -1399,28 +1696,30 @@ export const Admin = () => {
                     </table>
                     
                     {/* Pagination */}
-                    <div className="pagination">
-                      <button
-                        className="admin-button"
-                        onClick={handlePrevPage}
-                        disabled={!paginationToken || loadingUsers}
-                      >
-                        <FontAwesomeIcon icon={faChevronLeft} />
-                        <span>Previous</span>
-                      </button>
-                      <span className="pagination-info">
-                        Showing {users.length} users
-                        {paginationToken && ' (more available)'}
-                      </span>
-                      <button
-                        className="admin-button"
-                        onClick={handleNextPage}
-                        disabled={!paginationToken || loadingUsers}
-                      >
-                        <span>Next</span>
-                        <FontAwesomeIcon icon={faChevronRight} />
-                      </button>
-                    </div>
+                    {users.length > 0 && (
+                      <div className="pagination-controls">
+                        <button
+                          className="admin-button admin-button-secondary"
+                          onClick={handlePrevPage}
+                          disabled={loadingUsers}
+                          title="Reload from beginning"
+                        >
+                          <FontAwesomeIcon icon={faChevronLeft} />
+                          <span>Previous</span>
+                        </button>
+                        <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>
+                          Showing {users.length} user{users.length !== 1 ? 's' : ''}
+                        </span>
+                        <button
+                          className="admin-button admin-button-secondary"
+                          onClick={handleNextPage}
+                          disabled={!paginationToken || loadingUsers}
+                        >
+                          <span>Next</span>
+                          <FontAwesomeIcon icon={faChevronRight} />
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -1482,6 +1781,83 @@ export const Admin = () => {
                   <span>{selectedUser.credits?.toLocaleString() || '0'} credits</span>
                 </div>
               </div>
+
+              {/* Credit Adjustment (Admin Only) */}
+              {user?.email && hasAdminAccess(user.email) && (
+                <div className="user-detail-section">
+                  <h3>Adjust Credits</h3>
+                  <div className="form-row">
+                    <div className="input-group">
+                      <label htmlFor="creditAdjustment">Amount (positive to add, negative to remove)</label>
+                      <input
+                        id="creditAdjustment"
+                        type="text"
+                        inputMode="numeric"
+                        value={creditAdjustment}
+                        onChange={(e) => handleCreditAdjustmentChange(e.target.value)}
+                        placeholder="e.g., 1000 or -500"
+                        disabled={adjustingCredits}
+                        pattern="^-?\d+$"
+                      />
+                    </div>
+                    <div className="input-group">
+                      <label htmlFor="creditDescription">Reason (optional)</label>
+                      <input
+                        id="creditDescription"
+                        type="text"
+                        value={creditDescription}
+                        onChange={(e) => setCreditDescription(e.target.value)}
+                        placeholder="e.g., 'Bonus for testing', 'Refund for issue'"
+                        disabled={adjustingCredits}
+                      />
+                    </div>
+                  </div>
+                  <div className="credit-adjustment-buttons">
+                    <button
+                      className="admin-button admin-button-primary"
+                      onClick={() => {
+                        const sanitizedValue = creditAdjustment.trim();
+                        if (!sanitizedValue) {
+                          setError("Please enter an amount");
+                          return;
+                        }
+                        
+                        const creditsValue = parseInt(sanitizedValue);
+                        if (isNaN(creditsValue) || creditsValue === 0) {
+                          setError("Please enter a valid non-zero number");
+                          return;
+                        }
+                        
+                        handleAdjustCredits(selectedUser.username, creditsValue);
+                      }}
+                      disabled={!creditAdjustment.trim() || adjustingCredits}
+                    >
+                      <FontAwesomeIcon icon={faEdit} />
+                      <span>Update Credits</span>
+                    </button>
+                    <button
+                      className="admin-button admin-button-secondary"
+                      onClick={() => {
+                        setCreditAdjustment('');
+                        setCreditDescription('');
+                      }}
+                      disabled={adjustingCredits}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  {error && selectedUser && (
+                    <div className="credit-adjustment-error" style={{ marginTop: '0.5rem', color: '#f44336', fontSize: '0.85rem' }}>
+                      <FontAwesomeIcon icon={faExclamationTriangle} /> {error}
+                    </div>
+                  )}
+                  {success && selectedUser && (
+                    <div className="credit-adjustment-success" style={{ marginTop: '0.5rem', color: '#4caf50', fontSize: '0.85rem' }}>
+                      <FontAwesomeIcon icon={faCheckCircle} /> {success}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* User's Robots */}
               <div className="user-detail-section">
@@ -1598,10 +1974,10 @@ export const Admin = () => {
                         // TODO: Implement remove user
                         logger.log("Remove user:", selectedUser.username);
                       }}
-                      title="Remove user from platform"
+                      title="Remove user"
                     >
                       <FontAwesomeIcon icon={faTrash} />
-                      <span>Remove User from Platform</span>
+                      <span>Remove User</span>
                     </button>
                   ) : (
                     <div className="info-message">
@@ -1613,6 +1989,14 @@ export const Admin = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast.visible && (
+        <div className={`toast-notification ${toast.type}`}>
+          <FontAwesomeIcon icon={toast.type === 'error' ? faExclamationTriangle : faCheckCircle} />
+          <span>{toast.message}</span>
         </div>
       )}
     </div>

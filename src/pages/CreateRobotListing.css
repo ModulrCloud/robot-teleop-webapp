@@ -152,6 +152,16 @@
   -moz-appearance: textfield;
 }
 
+.form-group input.error {
+  border-color: #f44336;
+  background: rgba(244, 67, 54, 0.1);
+}
+
+.form-group input.error:focus {
+  border-color: #f44336;
+  box-shadow: 0 0 0 3px rgba(244, 67, 54, 0.1);
+}
+
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -1,7 +1,12 @@
 import { DynamoDBClient, DeleteItemCommand, GetItemCommand, QueryCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { Schema } from '../../data/resource';
+import { randomUUID } from 'crypto';
 
 const ddbClient = new DynamoDBClient({});
+const docClient = DynamoDBDocumentClient.from(ddbClient);
+const cognito = new CognitoIdentityProviderClient({});
 
 /**
  * Deletes a robot from DynamoDB.
@@ -19,15 +24,40 @@ export const handler: Schema["deleteRobotLambda"]["functionHandler"] = async (ev
 
   const robotTableName = process.env.ROBOT_TABLE_NAME!;
   const partnerTableName = process.env.PARTNER_TABLE_NAME!;
+  const ADMIN_AUDIT_TABLE = process.env.ADMIN_AUDIT_TABLE;
+  const USER_POOL_ID = process.env.USER_POOL_ID;
 
   if (!robotTableName || !partnerTableName) {
     throw new Error("ROBOT_TABLE_NAME or PARTNER_TABLE_NAME environment variable not set");
   }
 
-  // Check if user is an admin
-  const isAdminUser = (identity.groups || []).some(
+  // Check if user is an admin (groups or email domain)
+  const adminGroups = identity.groups || [];
+  const isInAdminGroup = adminGroups.some(
     (g) => g.toUpperCase() === 'ADMINS' || g.toUpperCase() === 'ADMIN'
   );
+  
+  // Also check email domain for Modulr employees
+  let userEmail: string | undefined;
+  let isModulrEmployee = false;
+  if (USER_POOL_ID && identity.username) {
+    try {
+      const userResponse = await cognito.send(
+        new AdminGetUserCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: identity.username,
+        })
+      );
+      userEmail = userResponse.UserAttributes?.find(attr => attr.Name === 'email')?.Value;
+      isModulrEmployee = !!(userEmail && 
+        typeof userEmail === 'string' && 
+        userEmail.toLowerCase().trim().endsWith('@modulr.cloud'));
+    } catch (error) {
+      console.warn("Could not fetch email from Cognito:", error);
+    }
+  }
+  
+  const isAdminUser = isInAdminGroup || isModulrEmployee;
 
   // Get the robot to verify ownership
   const robotResult = await ddbClient.send(
@@ -43,9 +73,27 @@ export const handler: Schema["deleteRobotLambda"]["functionHandler"] = async (ev
 
   const robotPartnerId = robotResult.Item.partnerId?.S;
   const robotName = robotResult.Item.name?.S || 'Unknown';
+  const robotModel = robotResult.Item.model?.S || null;
 
   if (!robotPartnerId) {
     throw new Error("Robot has no partnerId - data corruption detected");
+  }
+  
+  // Get partner info for audit log (if admin is deleting)
+  let partnerCognitoUsername: string | undefined;
+  if (isAdminUser && partnerTableName) {
+    try {
+      // Get partner record by id (primary key)
+      const partnerResult = await ddbClient.send(
+        new GetItemCommand({
+          TableName: partnerTableName,
+          Key: { id: { S: robotPartnerId } },
+        })
+      );
+      partnerCognitoUsername = partnerResult.Item?.cognitoUsername?.S;
+    } catch (error) {
+      console.warn("Could not fetch partner info for audit log:", error);
+    }
   }
 
   // If not admin, verify the requester is the robot owner
@@ -85,6 +133,36 @@ export const handler: Schema["deleteRobotLambda"]["functionHandler"] = async (ev
   );
 
   console.log(`✅ Successfully deleted robot "${robotName}" (${robotId})`);
+
+  // Create audit log entry if admin deleted the robot
+  if (isAdminUser && ADMIN_AUDIT_TABLE) {
+    try {
+      const adminUserId = identity.username;
+      await docClient.send(
+        new PutCommand({
+          TableName: ADMIN_AUDIT_TABLE,
+          Item: {
+            id: randomUUID(),
+            action: 'DELETE_ROBOT',
+            adminUserId,
+            targetUserId: partnerCognitoUsername || null, // Partner who owned the robot
+            reason: `Admin deleted robot "${robotName}"`,
+            timestamp: new Date().toISOString(),
+            metadata: {
+              robotId,
+              robotName,
+              robotModel,
+              partnerId: robotPartnerId,
+            },
+          },
+        })
+      );
+      console.log(`Audit log entry created for robot deletion by ${adminUserId}`);
+    } catch (auditError) {
+      // Don't fail the deletion if audit logging fails, but log it
+      console.error("Failed to create audit log entry:", auditError);
+    }
+  }
 
   return {
     statusCode: 200,

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../amplify/data/resource';
 import { useAuthStatus } from './useAuthStatus';
@@ -37,7 +37,7 @@ export function useUserCredits(): UserCreditsData {
     });
   }, []);
 
-  const loadCredits = async () => {
+  const loadCredits = useCallback(async () => {
     if (!user?.username) {
       setLoading(false);
       return;
@@ -119,13 +119,26 @@ export function useUserCredits(): UserCreditsData {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.username, exchangeRates]);
 
   // Fetch user credits and currency preference
   useEffect(() => {
     loadCredits();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.username, exchangeRates]);
+  }, [loadCredits]);
+
+  // Listen for credit update events (e.g., when admin adjusts credits for current user)
+  useEffect(() => {
+    const handleCreditsUpdate = () => {
+      console.log("🔄 Custom event 'creditsUpdated' received, refreshing credits...");
+      loadCredits();
+    };
+
+    window.addEventListener('creditsUpdated', handleCreditsUpdate);
+
+    return () => {
+      window.removeEventListener('creditsUpdated', handleCreditsUpdate);
+    };
+  }, [loadCredits]); // Dependency on loadCredits to ensure it's the latest version
 
   // Update formatted balance when credits or currency changes
   useEffect(() => {

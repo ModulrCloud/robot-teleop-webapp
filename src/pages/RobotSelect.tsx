@@ -4,6 +4,7 @@ import CardGrid from "../components/CardGrid";
 import { type CardGridItemProps } from "../components/CardGridItem";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useAuthStatus } from "../hooks/useAuthStatus";
+import { useUserCredits } from "../hooks/useUserCredits";
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from "../components/LoadingWheel";
@@ -11,6 +12,7 @@ import "./RobotSelect.css";
 import { getUrl } from 'aws-amplify/storage';
 import { logger } from '../utils/logger';
 import { formatCreditsAsCurrencySync, fetchExchangeRates } from '../utils/credits';
+import { PurchaseCreditsModal } from '../components/PurchaseCreditsModal';
 
 const client = generateClient<Schema>();
 
@@ -37,6 +39,7 @@ interface RobotData extends CardGridItemProps {
 export default function RobotSelect() {
   usePageTitle();
   const { user } = useAuthStatus();
+  const { credits, refreshCredits } = useUserCredits();
   const [selected, setSelected] = useState<CardGridItemProps[]>([]);
   const [robots, setRobots] = useState<RobotData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -47,6 +50,8 @@ export default function RobotSelect() {
   const [platformMarkup, setPlatformMarkup] = useState<number>(30); // Default 30%
   const [userCurrency, setUserCurrency] = useState<string>('USD');
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
+  const [insufficientFundsError, setInsufficientFundsError] = useState<string | null>(null);
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const hasSelected = selected.length > 0;
   const navigate = useNavigate();
   
@@ -527,13 +532,43 @@ export default function RobotSelect() {
     }
   }, [rawRobotData]);
 
-  const handleNext = () => {
-    if (hasSelected && selected[0]) {
-      const selectedRobot = selected[0];
-      // Navigate to services first, then teleop will get robotId from URL
-      // Or we could go directly to teleop with robotId in URL
-      navigate(`/teleop?robotId=${selectedRobot.id}`);
+  const handleNext = async () => {
+    if (!hasSelected || !selected[0]) return;
+    
+    const selectedRobot = selected[0];
+    setInsufficientFundsError(null);
+    
+    // Get hourly rate from selected robot (stored in the robot data)
+    const hourlyRateCredits = (selectedRobot as any).hourlyRateCredits || 100;
+    
+    // Calculate cost for 1 minute (minimum session time)
+    const durationMinutes = 1;
+    const durationHours = durationMinutes / 60;
+    const baseCostCredits = hourlyRateCredits * durationHours;
+    const platformFeeCredits = baseCostCredits * (platformMarkup / 100);
+    const totalCreditsForMinute = baseCostCredits + platformFeeCredits;
+    
+    // Check if user has enough credits for at least 1 minute
+    if (credits < totalCreditsForMinute) {
+      const formattedCost = formatCreditsAsCurrencySync(
+        totalCreditsForMinute,
+        userCurrency as any,
+        exchangeRates || undefined
+      );
+      const formattedBalance = formatCreditsAsCurrencySync(
+        credits,
+        userCurrency as any,
+        exchangeRates || undefined
+      );
+      setInsufficientFundsError(
+        `Insufficient credits. You need at least ${formattedCost} for a 1-minute session, but you only have ${formattedBalance}. Please top up your account.`
+      );
+      setShowPurchaseModal(true);
+      return;
     }
+    
+    // User has enough credits - proceed to teleop
+    navigate(`/teleop?robotId=${selectedRobot.id}`);
   };
 
   const handleEditRobot = (robot: RobotData, event: React.MouseEvent) => {
@@ -766,6 +801,28 @@ export default function RobotSelect() {
       >
         Start Session
       </button>
+      
+      {insufficientFundsError && (
+        <div className="insufficient-funds-error" style={{
+          marginTop: '1rem',
+          padding: '1rem',
+          background: 'rgba(244, 67, 54, 0.1)',
+          border: '1px solid rgba(244, 67, 54, 0.3)',
+          borderRadius: '8px',
+          color: '#f44336',
+        }}>
+          {insufficientFundsError}
+        </div>
+      )}
+      
+      <PurchaseCreditsModal
+        isOpen={showPurchaseModal}
+        onClose={() => {
+          setShowPurchaseModal(false);
+          setInsufficientFundsError(null);
+          refreshCredits(); // Refresh credits after purchase
+        }}
+      />
     </div>
   );
 }

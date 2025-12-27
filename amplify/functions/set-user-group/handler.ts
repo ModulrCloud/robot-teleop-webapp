@@ -1,8 +1,14 @@
 import type { Schema } from "../../data/resource";
-import { CognitoIdentityProviderClient, AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand, AdminListGroupsForUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand, AdminListGroupsForUserCommand, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { randomUUID } from 'crypto';
 
 const cognito = new CognitoIdentityProviderClient();
+const dynamoClient = new DynamoDBClient({});
+const docClient = DynamoDBDocumentClient.from(dynamoClient);
 const USER_POOL_ID: string = process.env.USER_POOL_ID!;
+const ADMIN_AUDIT_TABLE = process.env.ADMIN_AUDIT_TABLE;
 
 const GROUP_NAME_MAP: Record<string, string> = {
   client: "CLIENTS",
@@ -29,9 +35,20 @@ export const handler: Schema["setUserGroupLambda"]["functionHandler"] = async (e
     const adminGroups = "groups" in identity ? identity.groups : [];
     isAdmin = (adminGroups?.includes("ADMINS") || adminGroups?.includes("ADMIN")) ?? false;
     
-    // Also check email domain
-    const identityAny = identity as any;
-    const userEmail = identityAny.email || identityAny.claims?.email;
+    // Also check email domain - fetch from Cognito to be sure
+    let userEmail: string | undefined;
+    try {
+      const userResponse = await cognito.send(
+        new AdminGetUserCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: identity.username,
+        })
+      );
+      userEmail = userResponse.UserAttributes?.find(attr => attr.Name === 'email')?.Value;
+    } catch (error) {
+      console.warn("Could not fetch email from Cognito:", error);
+    }
+    
     if (userEmail && typeof userEmail === 'string' && userEmail.toLowerCase().trim().endsWith('@modulr.cloud')) {
       isAdmin = true;
     }
@@ -53,7 +70,7 @@ export const handler: Schema["setUserGroupLambda"]["functionHandler"] = async (e
   const groupName = GROUP_NAME_MAP[group];
 
   try {
-    // First, remove user from all existing groups (CLIENTS, PARTNERS)
+    // First, get current groups to track the change
     const groupsResponse = await cognito.send(
       new AdminListGroupsForUserCommand({
         UserPoolId: USER_POOL_ID,
@@ -61,8 +78,13 @@ export const handler: Schema["setUserGroupLambda"]["functionHandler"] = async (e
       })
     );
     
+    // Find the old classification (CLIENTS or PARTNERS)
+    const oldGroups = groupsResponse.Groups || [];
+    const oldGroup = oldGroups.find(g => g.GroupName === 'CLIENTS' || g.GroupName === 'PARTNERS');
+    const oldClassification = oldGroup?.GroupName || null;
+    
     // Remove from CLIENTS and PARTNERS groups
-    for (const userGroup of groupsResponse.Groups || []) {
+    for (const userGroup of oldGroups) {
       if (userGroup.GroupName === 'CLIENTS' || userGroup.GroupName === 'PARTNERS') {
         await cognito.send(
           new AdminRemoveUserFromGroupCommand({
@@ -83,15 +105,53 @@ export const handler: Schema["setUserGroupLambda"]["functionHandler"] = async (e
       })
     );
 
+    // Create audit log entry if admin changed another user's classification
+    if (isAdmin && targetUsername && ADMIN_AUDIT_TABLE) {
+      try {
+        const adminUserId = identity.username;
+        await docClient.send(
+          new PutCommand({
+            TableName: ADMIN_AUDIT_TABLE,
+            Item: {
+              id: randomUUID(),
+              action: 'CHANGE_USER_CLASSIFICATION',
+              adminUserId,
+              targetUserId: userId,
+              reason: `Changed user classification from ${oldClassification || 'none'} to ${groupName}`,
+              timestamp: new Date().toISOString(),
+              metadata: {
+                oldGroup: oldClassification,
+                newGroup: groupName,
+                oldClassification: oldClassification === 'CLIENTS' ? 'CLIENT' : (oldClassification === 'PARTNERS' ? 'PARTNER' : null),
+                newClassification: groupName === 'CLIENTS' ? 'CLIENT' : 'PARTNER',
+              },
+            },
+          })
+        );
+        console.log(`Audit log entry created for classification change by ${adminUserId}`);
+      } catch (auditError) {
+        // Don't fail the group change if audit logging fails, but log it
+        console.error("Failed to create audit log entry:", auditError);
+      }
+    }
+
     return {
       statusCode: 200,
-      body: JSON.stringify({ message: `User ${userId} added to ${group}` }),
+      body: JSON.stringify({ 
+        message: `User ${userId} added to ${group}`,
+        oldClassification: oldClassification === 'CLIENTS' ? 'CLIENT' : (oldClassification === 'PARTNERS' ? 'PARTNER' : null),
+        newClassification: groupName === 'CLIENTS' ? 'CLIENT' : 'PARTNER',
+      }),
     };
   } catch (error) {
     console.error("Error adding user to group:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: "Failed to add user to group" }),
+      body: JSON.stringify({ 
+        error: "Failed to add user to group",
+        details: errorMessage,
+      }),
     };
   }
 }

@@ -51,6 +51,7 @@ export const CreateRobotListing = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState<boolean | undefined>();
+  const [hourlyRateError, setHourlyRateError] = useState<string | null>(null);
 
   const [robotListing, setRobotListing] = useState<RobotListing>({
     robotName: "",
@@ -66,9 +67,8 @@ export const CreateRobotListing = () => {
     longitude: "",
   });
   
-  // Display value in user's currency (converted from credits)
-  // Default: 100 credits = $1.00 USD
-  const [hourlyRateCurrency, setHourlyRateCurrency] = useState<number>(1.00);
+  // Raw input value as string to allow free typing
+  const [hourlyRateInput, setHourlyRateInput] = useState<string>('1.00');
 
   // Image upload state
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -99,7 +99,8 @@ export const CreateRobotListing = () => {
         setCurrencyDisplay('USD');
         setCurrencyCode('USD');
         // Convert default credits to USD for display
-        setHourlyRateCurrency(creditsToCurrencySync(robotListing.hourlyRateCredits, 'USD', exchangeRates));
+        const usdValue = creditsToCurrencySync(robotListing.hourlyRateCredits, 'USD', exchangeRates);
+        setHourlyRateInput(usdValue.toFixed(2));
         return;
       }
 
@@ -131,49 +132,33 @@ export const CreateRobotListing = () => {
         
         // Convert current credits value to new currency for display
         const currencyValue = creditsToCurrencySync(robotListing.hourlyRateCredits, preferredCurrency, exchangeRates);
-        setHourlyRateCurrency(currencyValue);
+        setHourlyRateInput(currencyValue.toFixed(2));
       } catch (err) {
         logger.error("Error loading currency preference:", err);
         // Fallback to USD on error
         setCurrencyDisplay('USD');
         setCurrencyCode('USD');
-        setHourlyRateCurrency(creditsToCurrencySync(robotListing.hourlyRateCredits, 'USD', exchangeRates));
+        const usdValue = creditsToCurrencySync(robotListing.hourlyRateCredits, 'USD', exchangeRates);
+        setHourlyRateInput(usdValue.toFixed(2));
       }
     };
 
     loadCurrency();
   }, [user?.username, exchangeRates]);
 
-  // Update displayed currency value when credits change or currency changes
-  useEffect(() => {
-    if (currencyCode && exchangeRates) {
-      const currencyValue = creditsToCurrencySync(robotListing.hourlyRateCredits, currencyCode, exchangeRates);
-      setHourlyRateCurrency(currencyValue);
-    }
-  }, [robotListing.hourlyRateCredits, currencyCode, exchangeRates]);
+  // Only set initial value once when currency is loaded - don't update constantly
+  // This allows the user to type freely without interference
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = event.target;
     const checked = (event.target as HTMLInputElement).checked;
     
-    // Handle hourly rate input (user enters currency value, we convert to credits)
+    // Handle hourly rate input - just let user type freely, no validation while typing
     if (type === 'number' && name === 'hourlyRateCredits') {
-      // Remove any non-numeric characters except decimal point
-      const sanitized = value.replace(/[^0-9.]/g, '');
-      // Convert to number, default to 0 if empty or invalid
-      const currencyValue = sanitized === '' || sanitized === '.' ? 0 : parseFloat(sanitized);
-      
-      if (!isNaN(currencyValue) && currencyValue >= 0) {
-        // Update displayed currency value
-        setHourlyRateCurrency(currencyValue);
-        
-        // Convert currency value back to credits for storage
-        const creditsValue = currencyToCreditsSync(currencyValue, currencyCode, exchangeRates);
-        setRobotListing(prev => ({
-          ...prev,
-          hourlyRateCredits: creditsValue,
-        }));
-      }
+      // Clear any previous error
+      setHourlyRateError(null);
+      // Allow free typing - store as string
+      setHourlyRateInput(value);
     } else {
       setRobotListing(prev => ({
         ...prev,
@@ -245,6 +230,23 @@ export const CreateRobotListing = () => {
     setSuccess(undefined);
     setUploadError(null);
     setUploadProgress(0);
+    setHourlyRateError(null);
+
+    // Validate hourly rate before proceeding
+    const hourlyRateValue = parseFloat(hourlyRateInput);
+    if (isNaN(hourlyRateValue) || hourlyRateValue < 0) {
+      setHourlyRateError('Enter a valid number');
+      setIsLoading(false);
+      return;
+    }
+
+    // Convert currency value to credits for storage
+    const creditsValue = currencyToCreditsSync(hourlyRateValue, currencyCode, exchangeRates);
+    if (isNaN(creditsValue) || creditsValue < 0) {
+      setHourlyRateError('Enter a valid number');
+      setIsLoading(false);
+      return;
+    }
 
     let imageUrl: string | null = null;
 
@@ -270,7 +272,7 @@ export const CreateRobotListing = () => {
       robotName: robotListing.robotName,
       description: robotListing.description,
       model: robotListing.model,
-      hourlyRateCredits: robotListing.hourlyRateCredits,
+      hourlyRateCredits: creditsValue, // Use the validated and converted value
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
       imageUrl: imageUrl || undefined,
@@ -420,14 +422,20 @@ export const CreateRobotListing = () => {
                 id="hourly-rate" 
                 type="number" 
                 name="hourlyRateCredits"
-                value={hourlyRateCurrency.toFixed(2)}
+                value={hourlyRateInput}
                 onChange={handleInputChange}
                 placeholder="1.00"
                 min="0"
                 step="0.01"
                 required
                 disabled={isLoading}
+                className={hourlyRateError ? 'error' : ''}
               />
+              {hourlyRateError && (
+                <div className="form-error" style={{ color: '#f44336', marginTop: '0.5rem', fontSize: '0.875rem' }}>
+                  {hourlyRateError}
+                </div>
+              )}
               <small className="form-help-text">
                 Set the hourly rate in your preferred currency that clients will pay to use this robot. 
                 The platform will add a markup on top of this rate.

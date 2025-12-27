@@ -77,18 +77,33 @@ export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async 
   }
 
   try {
-    // Get total users count (approximate - Cognito doesn't give exact count easily)
+    // Get total users count by paginating through all users in Cognito
     let totalUsers = 0;
     try {
-      const usersList = await cognito.send(new ListUsersCommand({
-        UserPoolId: USER_POOL_ID,
-        Limit: 1, // Just to check if we can access
-      }));
-      // Note: Cognito doesn't provide total count directly, would need to paginate
-      // For now, we'll use a scan approach or estimate
-      totalUsers = usersList.Users?.length || 0;
+      let paginationToken: string | undefined = undefined;
+      let hasMore = true;
+      
+      do {
+        const usersList: { Users?: any[]; PaginationToken?: string } = await cognito.send(new ListUsersCommand({
+          UserPoolId: USER_POOL_ID,
+          Limit: 60, // Maximum allowed by Cognito
+          PaginationToken: paginationToken,
+        }));
+        
+        // Count users in this batch
+        if (usersList.Users) {
+          totalUsers += usersList.Users.length;
+        }
+        
+        // Check if there are more users to fetch
+        paginationToken = usersList.PaginationToken;
+        hasMore = !!paginationToken;
+      } while (hasMore);
+      
+      console.log(`✅ Total users counted: ${totalUsers}`);
     } catch (error) {
       console.warn("Could not get user count:", error);
+      totalUsers = 0;
     }
 
     // Get total robots count

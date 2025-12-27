@@ -8,6 +8,7 @@ import {
     ScanCommand,
     UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand as DocQueryCommand } from '@aws-sdk/lib-dynamodb';
 import { createHash } from 'crypto';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
@@ -18,11 +19,17 @@ const REVOKED_TOKENS_TABLE = process.env.REVOKED_TOKENS_TABLE!;
 const ROBOT_OPERATOR_TABLE = process.env.ROBOT_OPERATOR_TABLE!;
 const ROBOT_TABLE_NAME = process.env.ROBOT_TABLE_NAME!;
 const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME; // For session lock enforcement
+const USER_CREDITS_TABLE = process.env.USER_CREDITS_TABLE;
+const PLATFORM_SETTINGS_TABLE = process.env.PLATFORM_SETTINGS_TABLE;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!; // HTTPS management API
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 
+// Default platform markup (30%) if not set
+const DEFAULT_PLATFORM_MARKUP_PERCENT = 30;
+
 const db = new DynamoDBClient({});
+const docClient = DynamoDBDocumentClient.from(db); // For UserCredits and PlatformSettings queries
 const mgmt = new ApiGatewayManagementApiClient({ endpoint: WS_MGMT_ENDPOINT});
 
 // Cognito JWKS URL - public keys for verifying JWT signatures
@@ -496,6 +503,119 @@ async function checkSessionLock(
   }
 }
 
+/**
+ * Checks if user has sufficient credits for at least 1 minute of robot usage
+ * Returns { sufficient: boolean, currentCredits: number, requiredCredits: number, error?: string }
+ */
+async function checkUserBalance(
+  userId: string,
+  robotId: string
+): Promise<{ sufficient: boolean; currentCredits: number; requiredCredits: number; error?: string }> {
+  if (!USER_CREDITS_TABLE || !ROBOT_TABLE_NAME) {
+    console.warn('[BALANCE_CHECK] Missing environment variables, skipping balance check');
+    return { sufficient: true, currentCredits: 0, requiredCredits: 0 }; // Allow if tables not configured
+  }
+
+  try {
+    // 1. Get user's current credit balance (using DocumentClient for UserCredits table)
+    let currentCredits = 0;
+    if (USER_CREDITS_TABLE) {
+      const userCreditsResult = await docClient.send(
+        new DocQueryCommand({
+          TableName: USER_CREDITS_TABLE,
+          IndexName: 'userIdIndex',
+          KeyConditionExpression: 'userId = :userId',
+          ExpressionAttributeValues: {
+            ':userId': userId,
+          },
+          Limit: 1,
+        })
+      );
+      currentCredits = userCreditsResult.Items?.[0]?.credits || 0;
+    }
+
+    // 2. Get robot's hourly rate (using low-level API for Robot table)
+    const robotResult = await db.send(new QueryCommand({
+      TableName: ROBOT_TABLE_NAME,
+      IndexName: 'robotIdIndex',
+      KeyConditionExpression: 'robotId = :robotId',
+      ExpressionAttributeValues: {
+        ':robotId': { S: robotId },
+      },
+      Limit: 1,
+    }));
+
+    const robot = robotResult.Items?.[0];
+    if (!robot) {
+      return {
+        sufficient: false,
+        currentCredits,
+        requiredCredits: 0,
+        error: `Robot not found: ${robotId}`,
+      };
+    }
+
+    const hourlyRateCredits = parseFloat(robot.hourlyRateCredits?.N || '100'); // Default 100 credits/hour
+
+    // 3. Get platform markup percentage (using DocumentClient for PlatformSettings table)
+    let platformMarkupPercent = DEFAULT_PLATFORM_MARKUP_PERCENT;
+    if (PLATFORM_SETTINGS_TABLE) {
+      try {
+        const settingsResult = await docClient.send(
+          new DocQueryCommand({
+            TableName: PLATFORM_SETTINGS_TABLE,
+            IndexName: 'settingKeyIndex',
+            KeyConditionExpression: 'settingKey = :key',
+            ExpressionAttributeValues: {
+              ':key': 'platformMarkupPercent',
+            },
+            Limit: 1,
+          })
+        );
+        if (settingsResult.Items?.[0]?.settingValue) {
+          platformMarkupPercent = parseFloat(settingsResult.Items[0].settingValue) || DEFAULT_PLATFORM_MARKUP_PERCENT;
+        }
+      } catch (err) {
+        console.warn('[BALANCE_CHECK] Failed to fetch platform markup, using default:', err);
+      }
+    }
+
+    // 4. Calculate cost for 1 minute (minimum session time)
+    const durationMinutes = 1;
+    const durationHours = durationMinutes / 60;
+    const baseCostCredits = hourlyRateCredits * durationHours;
+    const platformFeeCredits = baseCostCredits * (platformMarkupPercent / 100);
+    const requiredCredits = baseCostCredits + platformFeeCredits;
+
+    const sufficient = currentCredits >= requiredCredits;
+
+    console.log('[BALANCE_CHECK]', {
+      userId,
+      robotId,
+      currentCredits,
+      requiredCredits,
+      hourlyRateCredits,
+      platformMarkupPercent,
+      sufficient,
+    });
+
+    return {
+      sufficient,
+      currentCredits,
+      requiredCredits,
+      error: sufficient ? undefined : `Insufficient credits: have ${currentCredits.toFixed(2)}, need ${requiredCredits.toFixed(2)} for 1 minute`,
+    };
+  } catch (err) {
+    console.error('[BALANCE_CHECK_ERROR]', {
+      userId,
+      robotId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    // On error, allow session creation (fail open) but log the error
+    return { sufficient: true, currentCredits: 0, requiredCredits: 0 };
+  }
+}
+
 async function createSession(
   connectionId: string,
   userId: string,
@@ -505,6 +625,20 @@ async function createSession(
   if (!SESSION_TABLE_NAME) {
     console.warn('[SESSION_CREATE] SESSION_TABLE_NAME not set, skipping session creation');
     return null;
+  }
+
+  // Check user balance before creating session
+  const balanceCheck = await checkUserBalance(userId, robotId);
+  if (!balanceCheck.sufficient) {
+    console.warn('[SESSION_CREATE_BLOCKED]', {
+      userId,
+      robotId,
+      reason: 'insufficient_funds',
+      currentCredits: balanceCheck.currentCredits,
+      requiredCredits: balanceCheck.requiredCredits,
+      error: balanceCheck.error,
+    });
+    return null; // Return null to indicate session creation was blocked
   }
 
   const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -1397,7 +1531,33 @@ async function handleSignal(
         }
         
         const sessionUserId = username || claims.sub;
-        await createSession(sourceConnId, sessionUserId, userEmail, robotId);
+        const sessionId = await createSession(sourceConnId, sessionUserId, userEmail, robotId);
+        
+        // If session creation was blocked due to insufficient funds, send error to client
+        if (!sessionId) {
+          const balanceCheck = await checkUserBalance(sessionUserId, robotId);
+          if (!balanceCheck.sufficient) {
+            try {
+              await postTo(sourceConnId, {
+                type: 'error',
+                error: 'insufficient_funds',
+                message: balanceCheck.error || 'Insufficient credits to start session',
+                currentCredits: balanceCheck.currentCredits,
+                requiredCredits: balanceCheck.requiredCredits,
+              });
+              console.log('[INSUFFICIENT_FUNDS_NOTIFICATION_SENT]', {
+                connectionId: sourceConnId,
+                userId: sessionUserId,
+                robotId,
+              });
+            } catch (err) {
+              console.error('[FAILED_TO_SEND_INSUFFICIENT_FUNDS_ERROR]', {
+                connectionId: sourceConnId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
+        }
       }
     } catch (err) {
       // If the conn is gone, the caller will see a 200 from us but message won't deliver.

@@ -24,6 +24,7 @@ import { listUsers } from './functions/list-users/resource';
 import { getSystemStats } from './functions/get-system-stats/resource';
 import { listAuditLogs } from './functions/list-audit-logs/resource';
 import { processSessionPayment } from './functions/process-session-payment/resource';
+import { deductSessionCredits } from './functions/deduct-session-credits/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -60,6 +61,7 @@ const backend = defineBackend({
   getSystemStats,
   listAuditLogs,
   processSessionPayment,
+  deductSessionCredits,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -115,6 +117,7 @@ const listUsersFunction = backend.listUsers.resources.lambda;
 const getSystemStatsFunction = backend.getSystemStats.resources.lambda;
 const listAuditLogsFunction = backend.listAuditLogs.resources.lambda;
 const processSessionPaymentFunction = backend.processSessionPayment.resources.lambda;
+const deductSessionCreditsFunction = backend.deductSessionCredits.resources.lambda;
 
 // ============================================
 // Signaling Function Resources
@@ -211,7 +214,11 @@ revokedTokensTable.grantReadData(signalingFunction); // Read-only for checking b
 robotOperatorTable.grantReadData(signalingFunction); // Read-only for checking delegations
 tables.Robot.grantReadData(signalingFunction); // Read-only for checking ACLs
 tables.Session.grantReadWriteData(signalingFunction); // Read/write for session management
+tables.UserCredits.grantReadData(signalingFunction); // Read-only for balance checks
+tables.PlatformSettings.grantReadData(signalingFunction); // Read-only for platform markup
 signalingCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
+signalingCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+signalingCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
 
 // Grant DynamoDB permissions to revoke token function
 revokedTokensTable.grantWriteData(revokeTokenLambdaFunction);
@@ -245,6 +252,7 @@ backend.updateRobotLambda.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.ta
 // Delete robot Lambda environment variables
 backend.deleteRobotLambda.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 backend.deleteRobotLambda.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+backend.deleteRobotLambda.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 
 // Manage robot ACL Lambda environment variables
 backend.manageRobotACL.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
@@ -277,7 +285,7 @@ tables.Robot.grantReadData(manageRobotOperatorFunction);
 tables.Partner.grantReadData(manageRobotOperatorFunction);
 
 // Lambda permissions
-userPool.grant(setUserGroupLambdaFunction, 'cognito-idp:AdminAddUserToGroup', 'cognito-idp:AdminRemoveUserFromGroup', 'cognito-idp:ListGroupsForUser');
+userPool.grant(setUserGroupLambdaFunction, 'cognito-idp:AdminAddUserToGroup', 'cognito-idp:AdminRemoveUserFromGroup', 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
 tables.Partner.grantReadData(setRobotLambdaFunction);
 setRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
   actions: ["dynamodb:Query", "dynamodb:GetItem", "dynamodb:Scan"],
@@ -338,8 +346,12 @@ createStripeCheckoutCdkFunction.addEnvironment('FRONTEND_URL', 'http://localhost
 const addCreditsCdkFunction = addCreditsFunction as CdkFunction;
 addCreditsCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
 addCreditsCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
+addCreditsCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+// Note: ADMIN_AUDIT_TABLE will be set after adminAuditTable is created below
 tables.UserCredits.grantReadWriteData(addCreditsFunction);
 tables.CreditTransaction.grantWriteData(addCreditsFunction);
+userPool.grant(addCreditsFunction, 'cognito-idp:AdminGetUser');
+// Note: adminAuditTable.grantWriteData will be set after adminAuditTable is created below
 // Grant permission to query the userIdIndex (needed for looking up by userId)
 addCreditsFunction.addToRolePolicy(new PolicyStatement({
   actions: ["dynamodb:Query"],
@@ -397,7 +409,29 @@ processSessionPaymentFunction.addToRolePolicy(new PolicyStatement({
   ]
 }));
 
-// Admin audit table - tracks all admin assignments/removals
+// Deduct session credits Lambda environment variables and permissions
+const deductSessionCreditsCdkFunction = deductSessionCreditsFunction as CdkFunction;
+deductSessionCreditsCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+deductSessionCreditsCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
+deductSessionCreditsCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
+deductSessionCreditsCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+deductSessionCreditsCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
+tables.UserCredits.grantReadWriteData(deductSessionCreditsFunction);
+tables.CreditTransaction.grantWriteData(deductSessionCreditsFunction);
+tables.Session.grantReadWriteData(deductSessionCreditsFunction);
+tables.Robot.grantReadData(deductSessionCreditsFunction);
+tables.PlatformSettings.grantReadData(deductSessionCreditsFunction);
+// Grant permission to query indexes
+deductSessionCreditsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.UserCredits.tableArn}/index/userIdIndex`,
+    `${tables.Robot.tableArn}/index/robotIdIndex`,
+    `${tables.PlatformSettings.tableArn}/index/settingKeyIndex`,
+  ],
+}));
+
+// Admin audit table - tracks all admin assignments/removals and credit adjustments
 const adminAuditTable = new Table(dataStack, 'AdminAuditTable', {
   partitionKey: { name: 'id', type: AttributeType.STRING },
   billingMode: BillingMode.PAY_PER_REQUEST,
@@ -416,6 +450,19 @@ adminAuditTable.addGlobalSecondaryIndex({
   indexName: 'timestampIndex',
   partitionKey: { name: 'timestamp', type: AttributeType.STRING },
 });
+
+// Grant deleteRobotLambda permissions to adminAuditTable (after table is declared)
+backend.deleteRobotLambda.addEnvironment('ADMIN_AUDIT_TABLE', adminAuditTable.tableName);
+adminAuditTable.grantWriteData(backend.deleteRobotLambda.resources.lambda);
+userPool.grant(backend.deleteRobotLambda.resources.lambda, 'cognito-idp:AdminGetUser');
+
+// Now set ADMIN_AUDIT_TABLE environment variable and permissions for addCredits function
+addCreditsCdkFunction.addEnvironment('ADMIN_AUDIT_TABLE', adminAuditTable.tableName);
+adminAuditTable.grantWriteData(addCreditsFunction);
+
+// Set ADMIN_AUDIT_TABLE environment variable and permissions for setUserGroupLambda
+backend.setUserGroupLambda.addEnvironment('ADMIN_AUDIT_TABLE', adminAuditTable.tableName);
+adminAuditTable.grantWriteData(backend.setUserGroupLambda.resources.lambda);
 
 // Assign admin Lambda environment variables and permissions
 const assignAdminCdkFunction = assignAdminFunction as CdkFunction;

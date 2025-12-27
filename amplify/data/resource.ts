@@ -20,6 +20,7 @@ import { listUsers } from "../functions/list-users/resource";
 import { getSystemStats } from "../functions/get-system-stats/resource";
 import { listAuditLogs } from "../functions/list-audit-logs/resource";
 import { processSessionPayment } from "../functions/process-session-payment/resource";
+import { deductSessionCredits } from "../functions/deduct-session-credits/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -158,15 +159,15 @@ const schema = a.schema({
     allow.groups(['ADMINS']).to(['create', 'read']),
   ]),
 
-  // Admin audit log - tracks all admin assignments/removals
+  // Admin audit log - tracks all admin assignments/removals and credit adjustments
   AdminAudit: a.model({
     id: a.id(),
-    action: a.string().required(), // 'ASSIGN_ADMIN' or 'REMOVE_ADMIN'
+    action: a.string().required(), // 'ASSIGN_ADMIN', 'REMOVE_ADMIN', 'ADJUST_CREDITS', etc.
     adminUserId: a.string().required(), // Who performed the action
-    targetUserId: a.string().required(), // Who was affected
+    targetUserId: a.string(), // Who was affected (optional for some actions)
     reason: a.string(), // Optional reason for the action
     timestamp: a.string().required(), // ISO timestamp
-    metadata: a.json(), // Additional metadata (admin groups, counts, etc.)
+    metadata: a.json(), // Additional metadata (admin groups, counts, credits amount, old/new balance, etc.)
   })
   .secondaryIndexes(index => [
     index("adminUserId").name("adminUserIdIndex"), // Track actions by admin
@@ -310,9 +311,11 @@ const schema = a.schema({
     startedAt: a.datetime().required(),   // When session started
     endedAt: a.datetime(),                // When session ended
     durationSeconds: a.integer(),         // Total duration in seconds
-    status: a.string(),                   // 'active', 'completed', 'disconnected'
+    status: a.string(),                   // 'active', 'completed', 'disconnected', 'insufficient_funds'
     // Cost tracking
-    creditsCharged: a.float(),            // Total credits charged to user (includes markup)
+    creditsCharged: a.float(),            // Total credits charged to user (includes markup) - final total when session ends
+    creditsDeductedSoFar: a.float(),     // Cumulative credits deducted during active session (real-time billing)
+    lastDeductionAt: a.datetime(),        // Timestamp of last per-minute deduction
     partnerEarnings: a.float(),           // Credits earned by partner (after markup)
     platformFee: a.float(),               // Platform markup in credits
     hourlyRateCredits: a.float(),        // Robot's hourly rate at time of session (snapshot)
@@ -468,14 +471,24 @@ const schema = a.schema({
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (checks session ownership)
     .handler(a.handler.function(processSessionPayment)),
 
+  deductSessionCreditsLambda: a
+    .mutation()
+    .arguments({
+      sessionId: a.string().required(), // Session ID to deduct credits for (per-minute)
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (checks session ownership)
+    .handler(a.handler.function(deductSessionCredits)),
+
   addCreditsLambda: a
     .mutation()
     .arguments({
       userId: a.string().required(),
-      credits: a.integer().required(),
+      credits: a.integer().required(), // Can be positive (add) or negative (deduct)
       amountPaid: a.float(),
       currency: a.string(),
       tierId: a.string(),
+      description: a.string(), // Optional description for the credit adjustment
     })
     .returns(a.json())
     .authorization(allow => [allow.authenticated()]) // Authorization is handled in Lambda (checks owner/admin)
@@ -544,6 +557,7 @@ const schema = a.schema({
     .query()
     .arguments({
       limit: a.integer(),
+      paginationToken: a.string(),
       adminUserId: a.string(),
       targetUserId: a.string(),
     })
