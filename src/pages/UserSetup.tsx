@@ -193,11 +193,11 @@ export function UserSetup(_props: PrivateRouteProps) {
             >
               <FontAwesomeIcon icon={faRobot} className="type-icon" />
               <h3>Partner Account</h3>
-              <p>Offer your robots for hire</p>
+              <p>Offer your robots & services</p>
               <ul className="type-features">
-                <li>List your robots</li>
-                <li>Earn from sessions</li>
-                <li>Manage availability</li>
+                <li>List your robots and earn from sessions</li>
+                <li>List your AI/data/compute services</li>
+                <li>Integrate directly during teleop sessions</li>
               </ul>
               {userGroup === 'partner' && <div className="selection-indicator">Selected</div>}
             </div>
