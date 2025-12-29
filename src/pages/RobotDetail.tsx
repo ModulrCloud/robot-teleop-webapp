@@ -12,7 +12,7 @@ import { PurchaseCreditsModal } from '../components/PurchaseCreditsModal';
 import { RobotRating } from '../components/RobotRating';
 import { ReviewsDisplay } from '../components/ReviewsDisplay';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar } from '@fortawesome/free-solid-svg-icons';
+import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar, faCalendarAlt, faClock } from '@fortawesome/free-solid-svg-icons';
 import "./RobotDetail.css";
 
 const client = generateClient<Schema>();
@@ -380,42 +380,73 @@ export default function RobotDetail() {
           </div>
 
           <div className="robot-info-section">
-            <h1 className="robot-detail-name">{robot.name || 'Unnamed Robot'}</h1>
-            
-            {robot.description && (
-              <p className="robot-detail-description">{robot.description}</p>
-            )}
-
-            <div className="robot-detail-meta">
-              <div className="robot-meta-item">
-                <span className="robot-meta-label">Model:</span>
-                <span className="robot-meta-value">{robot.model || 'N/A'}</span>
-              </div>
-
-              <div className="robot-meta-item">
-                <span className="robot-meta-label">Hourly Rate:</span>
-                <span className="robot-meta-value price">{hourlyRateFormatted}/hour</span>
-              </div>
-
-              <div className="robot-meta-item">
-                <span className="robot-meta-label">Status:</span>
-                <span className="robot-meta-value status">
-                  <FontAwesomeIcon icon={statusDisplay.icon} style={{ color: statusDisplay.color, marginRight: '0.5rem' }} />
-                  {statusDisplay.text}
-                </span>
-              </div>
-
-              <div className="robot-meta-item">
-                <FontAwesomeIcon icon={faMapMarkerAlt} className="meta-icon" />
-                <span className="robot-meta-value">{locationDisplay}</span>
-              </div>
-
-              {partner && (
-                <div className="robot-meta-item">
-                  <FontAwesomeIcon icon={faUser} className="meta-icon" />
-                  <span className="robot-meta-value">Partner: {partner.name || 'Unknown'}</span>
-                </div>
+            <div className="robot-info-main">
+              <h1 className="robot-detail-name">{robot.name || 'Unnamed Robot'}</h1>
+              
+              {robot.description && (
+                <p className="robot-detail-description">{robot.description}</p>
               )}
+
+              <div className="robot-detail-meta">
+                <div className="robot-meta-item">
+                  <span className="robot-meta-label">Model:</span>
+                  <span className="robot-meta-value">{robot.model || 'N/A'}</span>
+                </div>
+
+                <div className="robot-meta-item">
+                  <span className="robot-meta-label">Hourly Rate:</span>
+                  <span className="robot-meta-value price">{hourlyRateFormatted}/hour</span>
+                </div>
+
+                <div className="robot-meta-item">
+                  <span className="robot-meta-label">Status:</span>
+                  <span className="robot-meta-value status">
+                    <FontAwesomeIcon icon={statusDisplay.icon} style={{ color: statusDisplay.color, marginRight: '0.5rem' }} />
+                    {statusDisplay.text}
+                  </span>
+                </div>
+
+                <div className="robot-meta-item">
+                  <FontAwesomeIcon icon={faMapMarkerAlt} className="meta-icon" />
+                  <span className="robot-meta-value">{locationDisplay}</span>
+                </div>
+
+                {partner && (
+                  <div className="robot-meta-item">
+                    <FontAwesomeIcon icon={faUser} className="meta-icon" />
+                    <span className="robot-meta-value">Partner: {partner.name || 'Unknown'}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Scheduling Section - Coming Soon */}
+            <div className="robot-scheduling-section">
+              <h2 className="scheduling-title">
+                <FontAwesomeIcon icon={faCalendarAlt} />
+                Schedule Time
+              </h2>
+              <div className="scheduling-placeholder">
+                <FontAwesomeIcon icon={faClock} className="scheduling-icon" />
+                <p className="scheduling-message">
+                  <strong>Coming Soon</strong>
+                  <span>Reserve time slots for this robot in advance. Minimum 15-minute reservations with deposit required.</span>
+                </p>
+                <div className="scheduling-features">
+                  <div className="feature-item">
+                    <FontAwesomeIcon icon={faCalendarAlt} />
+                    <span>Book up to 1 month in advance</span>
+                  </div>
+                  <div className="feature-item">
+                    <FontAwesomeIcon icon={faClock} />
+                    <span>Minimum 15-minute reservation</span>
+                  </div>
+                  <div className="feature-item">
+                    <FontAwesomeIcon icon={faUser} />
+                    <span>Deposit required to secure your slot</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
