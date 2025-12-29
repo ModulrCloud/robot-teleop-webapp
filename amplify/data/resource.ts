@@ -21,6 +21,9 @@ import { getSystemStats } from "../functions/get-system-stats/resource";
 import { listAuditLogs } from "../functions/list-audit-logs/resource";
 import { processSessionPayment } from "../functions/process-session-payment/resource";
 import { deductSessionCredits } from "../functions/deduct-session-credits/resource";
+import { createOrUpdateRating } from "../functions/create-or-update-rating/resource";
+import { listRobotRatings } from "../functions/list-robot-ratings/resource";
+import { createRatingResponse } from "../functions/create-rating-response/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -71,7 +74,8 @@ const schema = a.schema({
   Partner: a.model({
     id: a.id(),
     cognitoUsername: a.string().authorization(allow => [allow.owner()]),
-    name: a.string().required(),
+    name: a.string().required(), // Organization/company name
+    displayName: a.string(), // Personal display name/alias for reviews (optional, defaults to organization name if not set)
     description: a.string().required(),
     publicKey: a.string(),
     averageRating: a.float(),
@@ -100,6 +104,7 @@ const schema = a.schema({
   Client: a.model({
     id: a.id(),
     cognitoUsername: a.string().authorization(allow => [allow.owner()]),
+    displayName: a.string(), // Public display name/alias (optional, defaults to masked email if not set)
     publicKey: a.string(),
     averageRating: a.float(),
     reliabilityScore: a.float(),
@@ -273,6 +278,7 @@ const schema = a.schema({
     country: a.string(),
     latitude: a.float(),
     longitude: a.float(),
+    ratings: a.hasMany('RobotRating', 'robotUuid'), // Relationship to ratings
   })
   .secondaryIndexes(index => [
     index("robotId").name("robotIdIndex"), // For lookups by robotId string (robot-XXXXXXXX)
@@ -328,6 +334,59 @@ const schema = a.schema({
   .authorization((allow) => [
     allow.owner().to(['create', 'read', 'update']),
     allow.groups(['ADMINS']).to(['read', 'delete']),
+  ]),
+
+  // Robot ratings and reviews - one rating + one comment per user per robot
+  RobotRating: a.model({
+    id: a.id(),
+    robotId: a.string().required(),        // Robot's robotId string (robot-XXXXXXXX) - for efficient lookup
+    robotUuid: a.id().required(),         // Robot's UUID (id field) - for relationship to Robot
+    robot: a.belongsTo('Robot', 'robotUuid'), // Relationship to Robot
+    userId: a.string().required(),        // Cognito username of the reviewer (for moderation - only visible to admins)
+    userEmail: a.string(),                // User's email (for moderation - only visible to modulr.cloud employees)
+    userDisplayName: a.string().default("Anonymous"), // Public display name (defaults to "Anonymous" for privacy)
+    rating: a.integer().required(),       // Rating: 1-5 (5 robots instead of stars)
+    comment: a.string(),                  // Optional review comment (can be edited)
+    sessionId: a.string(),                // Reference to the Session that qualified the user to rate
+    sessionDurationSeconds: a.integer(),  // Duration of the qualifying session (must be >= 5 minutes, except modulr.cloud)
+    isModulrEmployee: a.boolean().default(false), // True if reviewer is @modulr.cloud (bypasses session requirement)
+    createdAt: a.datetime().required(),   // When rating was created
+    updatedAt: a.datetime(),              // When rating/comment was last updated
+    responses: a.hasMany('RobotRatingResponse', 'ratingId'), // Partner responses to this rating
+  })
+  .secondaryIndexes(index => [
+    index("robotId").name("robotIdIndex"), // For fetching all ratings for a robot (using robotId string)
+    index("userId").name("userIdIndex"),   // For fetching all ratings by a user
+    // Composite index for enforcing one rating per user per robot
+    // Note: Amplify doesn't support composite unique constraints directly,
+    // so we'll enforce this in the Lambda function
+  ])
+  .authorization((allow) => [
+    allow.authenticated().to(['read']),    // Everyone can read ratings
+    allow.owner().to(['create', 'update']), // Users can create/update their own ratings
+    allow.groups(['ADMINS']).to(['read', 'delete']), // Admins can delete inappropriate ratings
+  ]),
+
+  // Partner responses to ratings
+  RobotRatingResponse: a.model({
+    id: a.id(),
+    ratingId: a.id().required(),           // Reference to the RobotRating
+    rating: a.belongsTo('RobotRating', 'ratingId'),
+    partnerId: a.string().required(),      // Partner's Cognito username who is responding
+    partnerEmail: a.string(),             // Partner's email (for internal use, not displayed publicly)
+    partnerDisplayName: a.string(),        // Partner's public display name/alias (shown in responses)
+    response: a.string().required(),      // Partner's response text
+    createdAt: a.datetime().required(),   // When response was created
+    updatedAt: a.datetime(),              // When response was last updated
+  })
+  .secondaryIndexes(index => [
+    index("ratingId").name("ratingIdIndex"), // For fetching responses to a rating
+    index("partnerId").name("partnerIdIndex"), // For fetching all responses by a partner
+  ])
+  .authorization((allow) => [
+    allow.authenticated().to(['read']),    // Everyone can read responses
+    allow.owner().to(['create', 'update']), // Partners can create/update their own responses
+    allow.groups(['ADMINS']).to(['read', 'delete']), // Admins can delete inappropriate responses
   ]),
 
   setUserGroupLambda: a
@@ -563,7 +622,40 @@ const schema = a.schema({
     })
     .returns(a.json())
     .authorization(allow => [allow.authenticated()]) // Auth check happens in Lambda (domain-based + group-based)
-    .handler(a.handler.function(listAuditLogs))
+    .handler(a.handler.function(listAuditLogs)),
+
+  createOrUpdateRatingLambda: a
+    .mutation()
+    .arguments({
+      robotId: a.string().required(),
+      rating: a.integer().required(), // 1-5 (5 robots instead of stars)
+      comment: a.string(), // Optional review comment
+      sessionId: a.string(), // Required for non-modulr.cloud users (validates 5-minute minimum)
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Authorization handled in Lambda (validates session, enforces one rating per user)
+    .handler(a.handler.function(createOrUpdateRating)),
+
+  listRobotRatingsLambda: a
+    .query()
+    .arguments({
+      robotId: a.string().required(),
+      limit: a.integer(), // Pagination limit (default: 10)
+      nextToken: a.string(), // Pagination token
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Authorization handled in Lambda (filters sensitive data for non-admins)
+    .handler(a.handler.function(listRobotRatings)),
+
+  createRatingResponseLambda: a
+    .mutation()
+    .arguments({
+      ratingId: a.string().required(),
+      response: a.string().required(), // Partner's response text
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Authorization handled in Lambda (validates partner owns the robot)
+    .handler(a.handler.function(createRatingResponse))
 });
 
 export type Schema = ClientSchema<typeof schema>;

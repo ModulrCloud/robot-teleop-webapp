@@ -25,6 +25,9 @@ import { getSystemStats } from './functions/get-system-stats/resource';
 import { listAuditLogs } from './functions/list-audit-logs/resource';
 import { processSessionPayment } from './functions/process-session-payment/resource';
 import { deductSessionCredits } from './functions/deduct-session-credits/resource';
+import { createOrUpdateRating } from './functions/create-or-update-rating/resource';
+import { listRobotRatings } from './functions/list-robot-ratings/resource';
+import { createRatingResponse } from './functions/create-rating-response/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -62,6 +65,9 @@ const backend = defineBackend({
   listAuditLogs,
   processSessionPayment,
   deductSessionCredits,
+  createOrUpdateRating,
+  listRobotRatings,
+  createRatingResponse,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -118,6 +124,9 @@ const getSystemStatsFunction = backend.getSystemStats.resources.lambda;
 const listAuditLogsFunction = backend.listAuditLogs.resources.lambda;
 const processSessionPaymentFunction = backend.processSessionPayment.resources.lambda;
 const deductSessionCreditsFunction = backend.deductSessionCredits.resources.lambda;
+const createOrUpdateRatingFunction = backend.createOrUpdateRating.resources.lambda;
+const listRobotRatingsFunction = backend.listRobotRatings.resources.lambda;
+const createRatingResponseFunction = backend.createRatingResponse.resources.lambda;
 
 // ============================================
 // Signaling Function Resources
@@ -430,6 +439,73 @@ deductSessionCreditsFunction.addToRolePolicy(new PolicyStatement({
     `${tables.PlatformSettings.tableArn}/index/settingKeyIndex`,
   ],
 }));
+
+// Create or update rating Lambda environment variables and permissions
+const createOrUpdateRatingCdkFunction = createOrUpdateRatingFunction as CdkFunction;
+createOrUpdateRatingCdkFunction.addEnvironment('ROBOT_RATING_TABLE', tables.RobotRating.tableName);
+createOrUpdateRatingCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+createOrUpdateRatingCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
+createOrUpdateRatingCdkFunction.addEnvironment('CLIENT_TABLE_NAME', tables.Client.tableName);
+createOrUpdateRatingCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+createOrUpdateRatingCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.RobotRating.grantReadWriteData(createOrUpdateRatingFunction);
+tables.Robot.grantReadWriteData(createOrUpdateRatingFunction); // Read for lookup, Write for updating averageRating
+tables.Session.grantReadData(createOrUpdateRatingFunction);
+tables.Client.grantReadData(createOrUpdateRatingFunction);
+tables.Partner.grantReadData(createOrUpdateRatingFunction);
+// Grant permission to query indexes
+createOrUpdateRatingFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.Robot.tableArn}/index/robotIdIndex`,
+    `${tables.RobotRating.tableArn}/index/robotIdIndex`,
+    `${tables.Client.tableArn}/index/cognitoUsernameIndex`,
+    `${tables.Partner.tableArn}/index/cognitoUsernameIndex`,
+  ],
+}));
+// Grant Cognito permission to get user email
+userPool.grant(createOrUpdateRatingFunction, 'cognito-idp:AdminGetUser');
+
+// List robot ratings Lambda environment variables and permissions
+const listRobotRatingsCdkFunction = listRobotRatingsFunction as CdkFunction;
+listRobotRatingsCdkFunction.addEnvironment('ROBOT_RATING_TABLE', tables.RobotRating.tableName);
+listRobotRatingsCdkFunction.addEnvironment('ROBOT_RATING_RESPONSE_TABLE', tables.RobotRatingResponse.tableName);
+listRobotRatingsCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.RobotRating.grantReadData(listRobotRatingsFunction);
+tables.RobotRatingResponse.grantReadData(listRobotRatingsFunction);
+// Grant permission to query indexes
+listRobotRatingsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.RobotRating.tableArn}/index/robotIdIndex`,
+    `${tables.RobotRatingResponse.tableArn}/index/ratingIdIndex`,
+  ],
+}));
+// Grant Cognito permission to get user email (for admin check)
+userPool.grant(listRobotRatingsFunction, 'cognito-idp:AdminGetUser');
+
+// Create rating response Lambda environment variables and permissions
+const createRatingResponseCdkFunction = createRatingResponseFunction as CdkFunction;
+createRatingResponseCdkFunction.addEnvironment('ROBOT_RATING_TABLE', tables.RobotRating.tableName);
+createRatingResponseCdkFunction.addEnvironment('ROBOT_RATING_RESPONSE_TABLE', tables.RobotRatingResponse.tableName);
+createRatingResponseCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+createRatingResponseCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+createRatingResponseCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.RobotRating.grantReadData(createRatingResponseFunction);
+tables.RobotRatingResponse.grantReadWriteData(createRatingResponseFunction);
+tables.Robot.grantReadData(createRatingResponseFunction);
+tables.Partner.grantReadData(createRatingResponseFunction);
+// Grant permission to query indexes
+createRatingResponseFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.Robot.tableArn}/index/robotIdIndex`,
+    `${tables.RobotRatingResponse.tableArn}/index/ratingIdIndex`,
+    `${tables.Partner.tableArn}/index/cognitoUsernameIndex`,
+  ],
+}));
+// Grant Cognito permission to get partner email
+userPool.grant(createRatingResponseFunction, 'cognito-idp:AdminGetUser');
 
 // Admin audit table - tracks all admin assignments/removals and credit adjustments
 const adminAuditTable = new Table(dataStack, 'AdminAuditTable', {

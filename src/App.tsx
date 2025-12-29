@@ -6,6 +6,7 @@ import {
   Route,
 } from "react-router-dom";
 import RobotSelect from "./pages/RobotSelect";
+import RobotDetail from "./pages/RobotDetail";
 import ServiceSelect from "./pages/ServiceSelect";
 import SignIn from "./pages/SignIn";
 import Teleop from "./pages/Teleop";
@@ -132,6 +133,12 @@ function App() {
             <Route path='/robots' element={
               <PrivateRoute>
                 <RobotSelect />
+              </PrivateRoute>
+            }
+            />
+            <Route path='/robot/:robotId' element={
+              <PrivateRoute>
+                <RobotDetail />
               </PrivateRoute>
             }
             />

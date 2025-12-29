@@ -324,6 +324,60 @@
   justify-content: flex-end;
 }
 
+.display-name-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.display-name-edit input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
+  font-family: inherit;
+  font-size: 1rem;
+  transition: border-color 0.3s;
+}
+
+.display-name-edit input:focus {
+  outline: none;
+  border-color: #ffcc00;
+}
+
+.display-name-edit input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.display-name-hint {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0;
+  font-style: italic;
+}
+
+.display-name-display {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.display-name-display p {
+  margin: 0;
+  flex: 1;
+}
+
+.display-name-edit-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
 .btn-save-small,
 .btn-cancel-small {
   padding: 0.5rem 1rem;
