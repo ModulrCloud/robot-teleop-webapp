@@ -41,6 +41,7 @@ export default function RobotSelect() {
   const [robots, setRobots] = useState<RobotData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingRobotId, setDeletingRobotId] = useState<string | null>(null);
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [platformMarkup, setPlatformMarkup] = useState<number>(30); // Default 30%
@@ -48,6 +49,8 @@ export default function RobotSelect() {
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
   const navigate = useNavigate();
   
+  // Check if user can edit robots (Partners or Admins)
+  const canEditRobots = user?.group === 'PARTNERS' || user?.group === 'ADMINS';
 
   // Load platform markup and user currency preference
   useEffect(() => {
@@ -539,6 +542,75 @@ export default function RobotSelect() {
     navigate(`/edit-robot?robotId=${robot.uuid}&mode=view`);
   };
 
+  const handleEditRobot = (robot: RobotData, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent card selection when clicking edit
+    
+    if (!robot.uuid) {
+      logger.error('Cannot edit robot: missing UUID');
+      return;
+    }
+    
+    navigate(`/edit-robot?robotId=${robot.uuid}`);
+  };
+
+  const handleDeleteRobot = async (robot: RobotData, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent card selection when clicking delete
+    
+    if (!robot.uuid) {
+      logger.error('Cannot delete robot: missing UUID');
+      return;
+    }
+
+    const robotName = robot.title || 'Unknown Robot';
+    const confirmMessage = `Are you sure you want to delete "${robotName}"? This action cannot be undone.`;
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      setDeletingRobotId(robot.uuid);
+      logger.log(`🗑️ Attempting to delete robot: ${robotName} (${robot.uuid})`);
+      
+      const result = await client.mutations.deleteRobotLambda({ robotId: robot.uuid });
+      
+      logger.log('📊 Delete robot response:', {
+        hasData: !!result.data,
+        hasErrors: !!result.errors,
+        data: result.data,
+        errors: result.errors,
+      });
+      
+      let resultData: { success?: boolean; error?: string; message?: string } | null = null;
+      if (typeof result.data === 'string') {
+        try {
+          const firstParse = JSON.parse(result.data);
+          resultData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+        } catch (e) {
+          resultData = { success: false };
+        }
+      } else {
+        resultData = result.data as typeof resultData;
+      }
+
+      if (resultData?.success) {
+        logger.log('✅ Robot deleted successfully');
+        // Remove robot from local state
+        setRobots(prev => prev.filter(r => r.uuid !== robot.uuid));
+        // Show success message
+        alert(`Robot "${robotName}" has been deleted successfully.`);
+      } else {
+        const errorMessage = resultData?.error || resultData?.message || 'Failed to delete robot';
+        logger.error('❌ Failed to delete robot:', errorMessage);
+        alert(errorMessage || 'Failed to delete robot. Please check the console for details.');
+      }
+    } catch (err) {
+      logger.error('❌ Exception deleting robot:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete robot';
+      alert(errorMessage);
+    } finally {
+      setDeletingRobotId(null);
+    }
+  };
 
   const loadMoreRobots = async () => {
     if (!nextToken || isLoading) return;

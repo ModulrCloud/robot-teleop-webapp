@@ -259,7 +259,6 @@ export function useWebRTC(options: WebRTCOptions) {
           return;
         }
 
-<<<<<<< HEAD
         // Handle insufficient funds error from signaling handler
         if (msg.type === 'error' && msg.error === 'insufficient_funds') {
           logger.warn('[BROWSER] Insufficient funds to start session:', msg.message);

@@ -8,7 +8,6 @@ import { deleteRobotLambda } from "../functions/delete-robot/resource";
 import { manageRobotACL } from "../functions/manage-robot-acl/resource";
 import { listAccessibleRobots } from "../functions/list-accessible-robots/resource";
 import { getRobotStatus } from "../functions/get-robot-status/resource";
-<<<<<<< HEAD
 import { createStripeCheckout } from "../functions/create-stripe-checkout/resource";
 import { addCredits } from "../functions/add-credits/resource";
 import { verifyStripePayment } from "../functions/verify-stripe-payment/resource";

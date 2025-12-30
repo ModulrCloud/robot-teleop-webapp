@@ -127,7 +127,6 @@ const deleteRobotLambdaFunction = backend.deleteRobotLambda.resources.lambda;
 const manageRobotACLFunction = backend.manageRobotACL.resources.lambda;
 const listAccessibleRobotsFunction = backend.listAccessibleRobots.resources.lambda;
 const getRobotStatusFunction = backend.getRobotStatus.resources.lambda;
-<<<<<<< HEAD
 const createStripeCheckoutFunction = backend.createStripeCheckout.resources.lambda;
 const addCreditsFunction = backend.addCredits.resources.lambda;
 const verifyStripePaymentFunction = backend.verifyStripePayment.resources.lambda;
@@ -365,7 +364,6 @@ listAccessibleRobotsFunction.addToRolePolicy(new PolicyStatement({
   ]
 }));
 
-<<<<<<< HEAD
 // Stripe checkout Lambda - no additional permissions needed (just uses Stripe API)
 const createStripeCheckoutCdkFunction = createStripeCheckoutFunction as CdkFunction;
 createStripeCheckoutCdkFunction.addEnvironment('FRONTEND_URL', 'http://localhost:5173'); // Can be overridden in production
