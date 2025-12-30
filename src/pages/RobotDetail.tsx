@@ -11,8 +11,10 @@ import { formatCreditsAsCurrencySync, fetchExchangeRates } from '../utils/credit
 import { PurchaseCreditsModal } from '../components/PurchaseCreditsModal';
 import { RobotRating } from '../components/RobotRating';
 import { ReviewsDisplay } from '../components/ReviewsDisplay';
+import { RobotSchedulingModal } from '../components/RobotSchedulingModal';
+import { UserReservations } from '../components/UserReservations';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar, faCalendarAlt, faClock } from '@fortawesome/free-solid-svg-icons';
+import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar, faCalendarAlt } from '@fortawesome/free-solid-svg-icons';
 import "./RobotDetail.css";
 
 const client = generateClient<Schema>();
@@ -55,6 +57,8 @@ export default function RobotDetail() {
   const [partnerIdForResponse, setPartnerIdForResponse] = useState<string | null>(null);
   const [recentSessionId, setRecentSessionId] = useState<string | null>(null);
   const [ratingsRefreshKey, setRatingsRefreshKey] = useState(0);
+  const [showSchedulingModal, setShowSchedulingModal] = useState(false);
+  const [reservationsRefreshKey, setReservationsRefreshKey] = useState(0);
 
   // Load platform settings and user currency
   useEffect(() => {
@@ -420,34 +424,25 @@ export default function RobotDetail() {
               </div>
             </div>
 
-            {/* Scheduling Section - Coming Soon */}
-            <div className="robot-scheduling-section">
-              <h2 className="scheduling-title">
-                <FontAwesomeIcon icon={faCalendarAlt} />
-                Schedule Time
-              </h2>
-              <div className="scheduling-placeholder">
-                <FontAwesomeIcon icon={faClock} className="scheduling-icon" />
-                <p className="scheduling-message">
-                  <strong>Coming Soon</strong>
-                  <span>Reserve time slots for this robot in advance. Minimum 15-minute reservations with deposit required.</span>
+            {/* Scheduling Section */}
+            {robot && robot.robotId && (
+              <div className="robot-scheduling-section">
+                <h2>
+                  <FontAwesomeIcon icon={faCalendarAlt} />
+                  Schedule Time
+                </h2>
+                <p className="scheduling-description">
+                  Reserve time slots for this robot in advance. Minimum 15-minute reservations with deposit required.
                 </p>
-                <div className="scheduling-features">
-                  <div className="feature-item">
-                    <FontAwesomeIcon icon={faCalendarAlt} />
-                    <span>Book up to 1 month in advance</span>
-                  </div>
-                  <div className="feature-item">
-                    <FontAwesomeIcon icon={faClock} />
-                    <span>Minimum 15-minute reservation</span>
-                  </div>
-                  <div className="feature-item">
-                    <FontAwesomeIcon icon={faUser} />
-                    <span>Deposit required to secure your slot</span>
-                  </div>
-                </div>
+                <button
+                  className="schedule-button"
+                  onClick={() => setShowSchedulingModal(true)}
+                >
+                  <FontAwesomeIcon icon={faCalendarAlt} />
+                  Schedule Robot Time
+                </button>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -505,6 +500,32 @@ export default function RobotDetail() {
           )}
         </div>
       </div>
+
+      {/* User Reservations Section */}
+      {robot && robot.robotId && user && (
+        <UserReservations
+          robotId={robot.robotId}
+          userCurrency={userCurrency}
+          exchangeRates={exchangeRates || undefined}
+          refreshTrigger={reservationsRefreshKey}
+        />
+      )}
+
+      <RobotSchedulingModal
+        isOpen={showSchedulingModal}
+        onClose={() => setShowSchedulingModal(false)}
+        robotId={robot?.robotId || ''}
+        robotUuid={robot?.id}
+        hourlyRateCredits={robot?.hourlyRateCredits || 100}
+        platformMarkup={platformMarkup}
+        userCurrency={userCurrency}
+        exchangeRates={exchangeRates || undefined}
+        userCredits={credits}
+        onReservationCreated={() => {
+          refreshCredits();
+          setReservationsRefreshKey(prev => prev + 1);
+        }}
+      />
 
       <PurchaseCreditsModal
         isOpen={showPurchaseModal}

@@ -24,6 +24,13 @@ import { deductSessionCredits } from "../functions/deduct-session-credits/resour
 import { createOrUpdateRating } from "../functions/create-or-update-rating/resource";
 import { listRobotRatings } from "../functions/list-robot-ratings/resource";
 import { createRatingResponse } from "../functions/create-rating-response/resource";
+import { createRobotReservation } from "../functions/create-robot-reservation/resource";
+import { listRobotReservations } from "../functions/list-robot-reservations/resource";
+import { cancelRobotReservation } from "../functions/cancel-robot-reservation/resource";
+import { checkRobotAvailability } from "../functions/check-robot-availability/resource";
+import { manageRobotAvailability } from "../functions/manage-robot-availability/resource";
+import { processRobotReservationRefunds } from "../functions/process-robot-reservation-refunds/resource";
+import { listPartnerPayouts } from "../functions/list-partner-payouts/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -237,16 +244,18 @@ const schema = a.schema({
     id: a.id(),
     partnerId: a.string().required(), // Partner's Cognito user ID
     partnerEmail: a.string(), // Partner's email for display
-    sessionId: a.string(), // Reference to the Session that generated this payout
+    sessionId: a.string(), // Reference to the Session that generated this payout (optional)
+    reservationId: a.string(), // Reference to the Reservation that generated this payout (optional)
     robotId: a.string().required(), // Robot that generated the earnings
     robotName: a.string(), // Robot name for display
     creditsEarned: a.float().required(), // Credits earned by partner (after markup)
     platformFee: a.float().required(), // Platform markup deducted
     totalCreditsCharged: a.float().required(), // Total credits charged to user
-    durationSeconds: a.integer().required(), // Session duration
+    durationSeconds: a.integer(), // Session duration (optional for reservations)
+    durationMinutes: a.integer(), // Reservation duration in minutes (optional)
     status: a.string().required(), // 'pending', 'paid', 'cancelled'
     payoutDate: a.datetime(), // When payout was processed (if paid)
-    createdAt: a.datetime().required(), // When session completed
+    createdAt: a.datetime().required(), // When payout was created
   })
   .secondaryIndexes(index => [
     index("partnerId").name("partnerIdIndex"), // For partner earnings view
@@ -279,6 +288,8 @@ const schema = a.schema({
     latitude: a.float(),
     longitude: a.float(),
     ratings: a.hasMany('RobotRating', 'robotUuid'), // Relationship to ratings
+    reservations: a.hasMany('RobotReservation', 'robotUuid'), // Relationship to reservations
+    availability: a.hasMany('RobotAvailability', 'robotUuid'), // Relationship to availability blocks
   })
   .secondaryIndexes(index => [
     index("robotId").name("robotIdIndex"), // For lookups by robotId string (robot-XXXXXXXX)
@@ -387,6 +398,76 @@ const schema = a.schema({
     allow.authenticated().to(['read']),    // Everyone can read responses
     allow.owner().to(['create', 'update']), // Partners can create/update their own responses
     allow.groups(['ADMINS']).to(['read', 'delete']), // Admins can delete inappropriate responses
+  ]),
+
+  // Robot availability - partners can block dates/times when robots are unavailable
+  RobotAvailability: a.model({
+    id: a.id(),
+    robotId: a.string().required(),        // Robot's robotId string (robot-XXXXXXXX) - for efficient lookup
+    robotUuid: a.id().required(),         // Robot's UUID (id field) - for relationship
+    robot: a.belongsTo('Robot', 'robotUuid'), // Relationship to Robot
+    partnerId: a.string().required(),     // Partner's Cognito username who owns the robot
+    startTime: a.datetime().required(),   // When the availability block starts
+    endTime: a.datetime().required(),     // When the availability block ends
+    reason: a.string(),                    // Optional reason for the block (e.g., "Maintenance", "Private use")
+    isRecurring: a.boolean().default(false), // If true, this is a recurring block (e.g., every Monday 9-5)
+    recurrencePattern: a.string(),         // JSON string describing recurrence (e.g., {"type": "weekly", "days": [1], "endDate": "2024-12-31"})
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime(),
+  })
+  .secondaryIndexes(index => [
+    index("robotId").name("robotIdIndex"), // For fetching availability for a robot
+    index("partnerId").name("partnerIdIndex"), // For fetching all availability blocks by a partner
+    index("startTime").name("startTimeIndex"), // For querying by time range
+  ])
+  .authorization((allow) => [
+    allow.authenticated().to(['read']),    // Everyone can read availability (to check if robot is available)
+    allow.owner().to(['create', 'update', 'delete']), // Partners can manage their own robot availability
+    allow.groups(['ADMINS']).to(['read', 'update', 'delete']), // Admins can manage all availability
+  ]),
+
+  // Robot reservations - users can book robots in advance
+  RobotReservation: a.model({
+    id: a.id(),
+    robotId: a.string().required(),        // Robot's robotId string (robot-XXXXXXXX) - for efficient lookup
+    robotUuid: a.id().required(),         // Robot's UUID (id field) - for relationship
+    robot: a.belongsTo('Robot', 'robotUuid'), // Relationship to Robot
+    userId: a.string().required(),        // Cognito username of the user making the reservation
+    userEmail: a.string(),                 // User's email for display
+    partnerId: a.string().required(),     // Partner's Cognito username who owns the robot
+    startTime: a.datetime().required(),   // When the reservation starts
+    endTime: a.datetime().required(),     // When the reservation ends
+    durationMinutes: a.integer().required(), // Duration in minutes (minimum 15)
+    status: a.string().required(),        // 'pending', 'confirmed', 'active', 'completed', 'cancelled', 'refunded'
+    // Pricing
+    depositCredits: a.float().required(),  // Deposit paid (at least 1 minute's cost)
+    totalCostCredits: a.float().required(), // Total cost for the reservation (calculated at booking time)
+    hourlyRateCredits: a.float().required(), // Robot's hourly rate at time of booking (snapshot)
+    platformMarkupPercent: a.float().required(), // Platform markup at time of booking (snapshot)
+    // Refund tracking
+    refundedCredits: a.float().default(0), // Credits refunded if robot was offline during reservation
+    refundReason: a.string(),              // Reason for refund (e.g., "Robot offline during reservation time")
+    refundedAt: a.datetime(),               // When refund was processed
+    // Session tracking
+    sessionId: a.string(),                 // If reservation was converted to an active session
+    // Notifications
+    reminderSent: a.boolean().default(false), // Whether reminder notification was sent to partner
+    reminderSentAt: a.datetime(),          // When reminder was sent
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime(),
+  })
+  .secondaryIndexes(index => [
+    index("robotId").name("robotIdIndex"), // For fetching reservations for a robot
+    index("userId").name("userIdIndex"),   // For fetching user's reservations
+    index("partnerId").name("partnerIdIndex"), // For fetching partner's robot reservations
+    index("startTime").name("startTimeIndex"), // For querying by time range
+    index("status").name("statusIndex"),   // For filtering by status
+  ])
+  .authorization((allow) => [
+    allow.owner().to(['create', 'read', 'update']), // Users can create and view their own reservations
+    allow.groups(['ADMINS']).to(['read', 'update', 'delete']), // Admins can manage all reservations
+    // Partners can read reservations for their robots (for visibility)
+    // This is handled via a Lambda function since we need to check robot ownership
   ]),
 
   setUserGroupLambda: a
@@ -655,7 +736,95 @@ const schema = a.schema({
     })
     .returns(a.json())
     .authorization(allow => [allow.authenticated()]) // Authorization handled in Lambda (validates partner owns the robot)
-    .handler(a.handler.function(createRatingResponse))
+    .handler(a.handler.function(createRatingResponse)),
+
+  // Robot Reservation Management
+  createRobotReservationLambda: a
+    .mutation()
+    .arguments({
+      robotId: a.string().required(), // Robot's robotId string (robot-XXXXXXXX)
+      startTime: a.string().required(), // ISO datetime string
+      endTime: a.string().required(), // ISO datetime string
+      durationMinutes: a.integer().required(), // Duration in minutes (minimum 15)
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (validates user has sufficient credits, checks availability)
+    .handler(a.handler.function(createRobotReservation)),
+
+  listRobotReservationsLambda: a
+    .query()
+    .arguments({
+      robotId: a.string(), // Optional: filter by robot
+      userId: a.string(), // Optional: filter by user (only if requester is admin or the user themselves)
+      partnerId: a.string(), // Optional: filter by partner (only if requester is admin or the partner themselves)
+      status: a.string(), // Optional: filter by status ('pending', 'confirmed', 'active', 'completed', 'cancelled', 'refunded')
+      startTime: a.string(), // Optional: filter reservations starting after this time (ISO datetime)
+      endTime: a.string(), // Optional: filter reservations ending before this time (ISO datetime)
+      limit: a.integer(), // Pagination limit (default: 20)
+      nextToken: a.string(), // Pagination token
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (filters by user/partner ownership)
+    .handler(a.handler.function(listRobotReservations)),
+
+  cancelRobotReservationLambda: a
+    .mutation()
+    .arguments({
+      reservationId: a.string().required(), // Reservation ID to cancel
+      reason: a.string(), // Optional reason for cancellation
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (validates user owns reservation or is admin)
+    .handler(a.handler.function(cancelRobotReservation)),
+
+  checkRobotAvailabilityLambda: a
+    .query()
+    .arguments({
+      robotId: a.string().required(), // Robot's robotId string
+      startTime: a.string().required(), // ISO datetime string
+      endTime: a.string().required(), // ISO datetime string
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda
+    .handler(a.handler.function(checkRobotAvailability)),
+
+  manageRobotAvailabilityLambda: a
+    .mutation()
+    .arguments({
+      robotId: a.string().required(), // Robot's robotId string
+      action: a.string().required(), // 'create', 'update', or 'delete'
+      availabilityId: a.string(), // Required for 'update' and 'delete'
+      startTime: a.string(), // Required for 'create' and 'update' (ISO datetime)
+      endTime: a.string(), // Required for 'create' and 'update' (ISO datetime)
+      reason: a.string(), // Optional reason for the availability block
+      isRecurring: a.boolean(), // Optional: if true, this is a recurring block
+      recurrencePattern: a.string(), // Optional: JSON string describing recurrence
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (validates partner owns robot)
+    .handler(a.handler.function(manageRobotAvailability)),
+
+  processRobotReservationRefundsLambda: a
+    .mutation()
+    .arguments({
+      checkAllReservations: a.boolean(), // Optional: if true, checks all confirmed/active reservations (admin only)
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.groups(['ADMINS'])]) // Only admins can trigger refund processing
+    .handler(a.handler.function(processRobotReservationRefunds)),
+
+  listPartnerPayoutsLambda: a
+    .query()
+    .arguments({
+      partnerId: a.string(), // Optional: filter by partner
+      robotId: a.string(), // Optional: filter by robot
+      status: a.string(), // Optional: filter by status ('pending', 'paid', 'cancelled')
+      limit: a.integer(), // Optional: pagination limit (default: 50)
+      nextToken: a.string(), // Optional: pagination token
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (admins see all, partners see own)
+    .handler(a.handler.function(listPartnerPayouts)),
 });
 
 export type Schema = ClientSchema<typeof schema>;

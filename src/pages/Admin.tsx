@@ -61,6 +61,12 @@ export const Admin = () => {
   const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
   const [auditLogsPaginationToken, setAuditLogsPaginationToken] = useState<string | null>(null);
   
+  // Payouts
+  const [payouts, setPayouts] = useState<any[]>([]);
+  const [loadingPayouts, setLoadingPayouts] = useState(false);
+  const [payoutsPaginationToken, setPayoutsPaginationToken] = useState<string | null>(null);
+  const [payoutStatusFilter, setPayoutStatusFilter] = useState<string>('pending');
+  
   // User detail data
   const [userRobots, setUserRobots] = useState<any[]>([]);
   const [userTransactions, setUserTransactions] = useState<any[]>([]);
@@ -657,6 +663,69 @@ export const Admin = () => {
     loadAuditLogs(null);
   };
 
+  const loadPayouts = async (token?: string | null, status?: string) => {
+    if (!user?.email || !hasAdminAccess(user.email)) {
+      return;
+    }
+
+    setLoadingPayouts(true);
+    try {
+      const result = await client.queries.listPartnerPayoutsLambda({ 
+        limit: 50,
+        status: status || payoutStatusFilter || undefined,
+        nextToken: token || undefined,
+      });
+      
+      let payoutsData: { success?: boolean; payouts?: any[]; nextToken?: string | null } | null = null;
+      if (typeof result.data === 'string') {
+        try {
+          const firstParse = JSON.parse(result.data);
+          if (typeof firstParse === 'string') {
+            payoutsData = JSON.parse(firstParse);
+          } else {
+            payoutsData = firstParse;
+          }
+        } catch (e) {
+          payoutsData = { success: false };
+        }
+      } else {
+        payoutsData = result.data as typeof payoutsData;
+      }
+
+      if (payoutsData?.success && payoutsData.payouts) {
+        setPayouts(payoutsData.payouts);
+        setPayoutsPaginationToken(payoutsData.nextToken || null);
+      } else {
+        setPayouts([]);
+        setPayoutsPaginationToken(null);
+      }
+    } catch (err) {
+      logger.error("Failed to load payouts:", err);
+      setError("Failed to load payouts");
+      setPayouts([]);
+    } finally {
+      setLoadingPayouts(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user?.email && hasAdminAccess(user.email)) {
+      loadPayouts(null, payoutStatusFilter);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payoutStatusFilter]);
+
+  const handlePayoutsNextPage = () => {
+    if (payoutsPaginationToken) {
+      loadPayouts(payoutsPaginationToken, payoutStatusFilter);
+    }
+  };
+
+  const handlePayoutsPrevPage = () => {
+    setPayoutsPaginationToken(null);
+    loadPayouts(null, payoutStatusFilter);
+  };
+
   const loadUserDetailData = async (username: string) => {
     if (!username) return;
 
@@ -1193,6 +1262,117 @@ export const Admin = () => {
                       <FontAwesomeIcon icon={faChevronRight} />
                     </button>
                   </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Payout Management Section */}
+        <div className="admin-section">
+          <div className="section-header">
+            <FontAwesomeIcon icon={faDollarSign} className="section-icon" />
+            <h2>Payout Management</h2>
+          </div>
+          <div className="section-content">
+            <p className="section-description">
+              View and manage partner payouts. Process payouts when they reach $100 (10,000 credits) or more.
+            </p>
+            
+            <div className="payout-filters" style={{ marginBottom: '1rem' }}>
+              <label style={{ marginRight: '1rem', color: 'rgba(255, 255, 255, 0.7)' }}>
+                Filter by Status:
+              </label>
+              <select
+                value={payoutStatusFilter}
+                onChange={(e) => {
+                  setPayoutStatusFilter(e.target.value);
+                  setPayoutsPaginationToken(null);
+                }}
+                style={{
+                  padding: '0.5rem',
+                  borderRadius: '0.5rem',
+                  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  color: '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="pending">Pending</option>
+                <option value="paid">Paid</option>
+                <option value="cancelled">Cancelled</option>
+                <option value="">All</option>
+              </select>
+            </div>
+            
+            {loadingPayouts ? (
+              <div className="loading-state">
+                <p>Loading payouts...</p>
+              </div>
+            ) : (
+              <div className="payouts-list">
+                {payouts.length === 0 ? (
+                  <div className="empty-state">
+                    <FontAwesomeIcon icon={faInfoCircle} />
+                    <p>No payouts found.</p>
+                  </div>
+                ) : (
+                  <>
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Partner</th>
+                          <th>Robot</th>
+                          <th>Earnings</th>
+                          <th>Platform Fee</th>
+                          <th>Total Charged</th>
+                          <th>Status</th>
+                          <th>Type</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {payouts.map((payout, index) => (
+                          <tr key={payout.id || index}>
+                            <td>{payout.createdAt ? new Date(payout.createdAt).toLocaleDateString() : 'N/A'}</td>
+                            <td>{payout.partnerEmail || payout.partnerId || 'N/A'}</td>
+                            <td>{payout.robotName || payout.robotId || 'N/A'}</td>
+                            <td>${payout.creditsEarnedDollars?.toFixed(2) || '0.00'}</td>
+                            <td>${payout.platformFeeDollars?.toFixed(2) || '0.00'}</td>
+                            <td>${payout.totalCreditsChargedDollars?.toFixed(2) || '0.00'}</td>
+                            <td>
+                              <span className={`status-badge ${payout.status || 'pending'}`}>
+                                {payout.status || 'pending'}
+                              </span>
+                            </td>
+                            <td>{payout.reservationId ? 'Reservation' : payout.sessionId ? 'Session' : 'N/A'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {payouts.length > 0 && (
+                      <div className="pagination-controls">
+                        <button
+                          className="admin-button admin-button-secondary"
+                          onClick={handlePayoutsPrevPage}
+                          disabled={loadingPayouts || !payoutsPaginationToken}
+                          title="Previous page"
+                        >
+                          <FontAwesomeIcon icon={faChevronLeft} />
+                          Previous
+                        </button>
+                        <button
+                          className="admin-button admin-button-secondary"
+                          onClick={handlePayoutsNextPage}
+                          disabled={loadingPayouts || !payoutsPaginationToken}
+                          title="Next page"
+                        >
+                          Next
+                          <FontAwesomeIcon icon={faChevronRight} />
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

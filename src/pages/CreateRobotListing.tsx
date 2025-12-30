@@ -20,7 +20,8 @@ import {
   faPlane,
   faWater,
   faCloudUploadAlt,
-  faTimes
+  faTimes,
+  faCalendarAlt
 } from '@fortawesome/free-solid-svg-icons';
 
 const ROBOT_MODELS = [
@@ -611,6 +612,34 @@ export const CreateRobotListing = () => {
               Latitude and longitude are optional but useful for distance-based searches. 
               You can find coordinates using <a href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer">Google Maps</a>.
             </p>
+          </div>
+
+          <div className="form-section">
+            <h3>
+              <FontAwesomeIcon icon={faCalendarAlt} style={{ marginRight: '0.5rem' }} />
+              Robot Availability
+            </h3>
+            <div style={{ 
+              background: 'rgba(255, 183, 0, 0.1)', 
+              border: '1px solid rgba(255, 183, 0, 0.3)', 
+              borderRadius: '8px', 
+              padding: '1.5rem',
+              marginTop: '1rem'
+            }}>
+              <p style={{ 
+                color: 'rgba(255, 255, 255, 0.9)', 
+                margin: 0,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.75rem'
+              }}>
+                <FontAwesomeIcon icon={faInfoCircle} style={{ color: '#17a2b8', marginTop: '0.25rem', flexShrink: 0 }} />
+                <span>
+                  You can manage robot availability (block dates/times when your robot is unavailable) after creating the robot. 
+                  Once your robot is created, you'll be able to set availability blocks from the Edit Robot page.
+                </span>
+              </p>
+            </div>
           </div>
 
           <div className="form-actions">

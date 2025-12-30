@@ -104,12 +104,25 @@ export function useAuthStatus(): AuthStatus {
         const currentUser = await getCurrentUser();
         logger.log('✅ Current user:', { username: currentUser.username });
         
-        const attrs = await fetchUserAttributes();
-        logger.log('✅ User attributes:', { 
-          name: attrs.name, 
-          email: attrs.email,
-          allAttributes: attrs,
-        });
+        // Fetch user attributes - wrap in try-catch to handle Cognito API errors gracefully
+        // These can occur if the token is expired or there's a network issue
+        let attrs;
+        try {
+          attrs = await fetchUserAttributes();
+          logger.log('✅ User attributes:', { 
+            name: attrs.name, 
+            email: attrs.email,
+            allAttributes: attrs,
+          });
+        } catch (attrError) {
+          // Log but don't throw - we can still proceed with username
+          logger.warn('⚠️ Failed to fetch user attributes (non-blocking):', attrError);
+          // Create minimal attributes object with just username
+          attrs = {
+            name: null,
+            email: null,
+          };
+        }
         
         // Fetch auth session - wrap in try-catch to handle Cognito Identity errors gracefully
         // These errors are common in development (React Strict Mode) and are usually non-blocking

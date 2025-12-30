@@ -12,6 +12,7 @@ const ROBOT_TABLE_NAME = process.env.ROBOT_TABLE_NAME!;
 const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME!;
 const USER_CREDITS_TABLE = process.env.USER_CREDITS_TABLE!;
 const CREDIT_TRANSACTIONS_TABLE = process.env.CREDIT_TRANSACTIONS_TABLE!;
+const PARTNER_PAYOUT_TABLE = process.env.PARTNER_PAYOUT_TABLE!;
 
 export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async (event) => {
   console.log("Get System Stats request:", JSON.stringify(event, null, 2));
@@ -151,7 +152,26 @@ export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async 
         return sum + (item.pricePaid || 0);
       }, 0);
     } catch (error) {
-      console.warn("Could not calculate revenue:", error);
+      console.warn("Could not calculate revenue from transactions:", error);
+    }
+
+    // Add platform fees from PartnerPayout table (this is the platform's actual earnings)
+    try {
+      const payoutsScan = await docClient.send(
+        new ScanCommand({
+          TableName: PARTNER_PAYOUT_TABLE,
+        })
+      );
+      
+      const platformFees = (payoutsScan.Items || []).reduce((sum, item) => {
+        return sum + (item.platformFee || 0);
+      }, 0);
+      
+      // Convert credits to dollars and add to revenue
+      totalRevenue += platformFees / 100;
+      console.log(`✅ Added platform fees: $${(platformFees / 100).toFixed(2)}`);
+    } catch (error) {
+      console.warn("Could not calculate platform fees from payouts:", error);
     }
 
     // Get active sessions count

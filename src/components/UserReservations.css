@@ -1,0 +1,134 @@
+.user-reservations {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 183, 0, 0.2);
+  border-radius: 12px;
+  padding: 2rem;
+  margin-top: 2rem;
+}
+
+.user-reservations h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #ffb700;
+  margin: 0 0 1.5rem 0;
+}
+
+.reservations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.reservation-card {
+  background: rgba(26, 26, 26, 0.8);
+  border: 1px solid rgba(255, 183, 0, 0.3);
+  border-radius: 8px;
+  padding: 1.5rem;
+  transition: all 0.2s ease;
+}
+
+.reservation-card:hover {
+  border-color: rgba(255, 183, 0, 0.5);
+  background: rgba(26, 26, 26, 0.9);
+}
+
+.reservation-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.reservation-time {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #fff;
+}
+
+.reservation-time svg {
+  color: #ffb700;
+  font-size: 1.1rem;
+}
+
+.reservation-time div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.reservation-time strong {
+  color: #ffb700;
+  font-size: 1.05rem;
+}
+
+.reservation-time span {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+}
+
+.reservation-details {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.reservation-details .duration {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+}
+
+.status {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.status-pending {
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
+  border: 1px solid rgba(255, 193, 7, 0.3);
+}
+
+.status-confirmed {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+  border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.status-active {
+  background: rgba(33, 150, 243, 0.2);
+  color: #2196f3;
+  border: 1px solid rgba(33, 150, 243, 0.3);
+}
+
+.reservation-cost {
+  display: flex;
+  gap: 1.5rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+}
+
+.reservation-cost span {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .reservation-details {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .reservation-cost {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+}
+

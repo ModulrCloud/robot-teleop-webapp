@@ -254,21 +254,50 @@
 
 /* Scheduling Section */
 .robot-scheduling-section {
-  background: rgba(26, 26, 26, 0.8);
-  border: 1px solid rgba(255, 183, 0, 0.3);
-  border-radius: 8px;
-  padding: 1.5rem;
-  height: fit-content;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 183, 0, 0.2);
+  border-radius: 12px;
+  padding: 2rem;
+  margin-top: 2rem;
 }
 
-.scheduling-title {
-  color: #ffb700;
-  margin: 0 0 1rem 0;
-  font-size: 1.25rem;
-  font-weight: 600;
+.robot-scheduling-section h2 {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #ffb700;
+  margin: 0 0 1rem 0;
+}
+
+.scheduling-description {
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0 0 1.5rem 0;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.schedule-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 2rem;
+  background: linear-gradient(135deg, #ffb700 0%, #ffa000 100%);
+  color: #1a1a1a;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(255, 183, 0, 0.3);
+}
+
+.schedule-button:hover {
+  background: linear-gradient(135deg, #ffa000 0%, #ff8f00 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(255, 183, 0, 0.4);
 }
 
 .scheduling-placeholder {

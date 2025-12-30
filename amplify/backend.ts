@@ -28,6 +28,13 @@ import { deductSessionCredits } from './functions/deduct-session-credits/resourc
 import { createOrUpdateRating } from './functions/create-or-update-rating/resource';
 import { listRobotRatings } from './functions/list-robot-ratings/resource';
 import { createRatingResponse } from './functions/create-rating-response/resource';
+import { createRobotReservation } from './functions/create-robot-reservation/resource';
+import { listRobotReservations } from './functions/list-robot-reservations/resource';
+import { cancelRobotReservation } from './functions/cancel-robot-reservation/resource';
+import { checkRobotAvailability } from './functions/check-robot-availability/resource';
+import { manageRobotAvailability } from './functions/manage-robot-availability/resource';
+import { processRobotReservationRefunds } from './functions/process-robot-reservation-refunds/resource';
+import { listPartnerPayouts } from './functions/list-partner-payouts/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -68,6 +75,13 @@ const backend = defineBackend({
   createOrUpdateRating,
   listRobotRatings,
   createRatingResponse,
+  createRobotReservation,
+  listRobotReservations,
+  cancelRobotReservation,
+  checkRobotAvailability,
+  manageRobotAvailability,
+  processRobotReservationRefunds,
+  listPartnerPayouts,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -507,6 +521,149 @@ createRatingResponseFunction.addToRolePolicy(new PolicyStatement({
 // Grant Cognito permission to get partner email
 userPool.grant(createRatingResponseFunction, 'cognito-idp:AdminGetUser');
 
+// ============================================
+// Robot Reservation Lambda Functions
+// ============================================
+
+const createRobotReservationFunction = backend.createRobotReservation.resources.lambda;
+const listRobotReservationsFunction = backend.listRobotReservations.resources.lambda;
+const cancelRobotReservationFunction = backend.cancelRobotReservation.resources.lambda;
+const checkRobotAvailabilityFunction = backend.checkRobotAvailability.resources.lambda;
+const manageRobotAvailabilityFunction = backend.manageRobotAvailability.resources.lambda;
+
+// Create Robot Reservation Lambda environment variables and permissions
+const createRobotReservationCdkFunction = createRobotReservationFunction as CdkFunction;
+createRobotReservationCdkFunction.addEnvironment('ROBOT_RESERVATION_TABLE', tables.RobotReservation.tableName);
+createRobotReservationCdkFunction.addEnvironment('ROBOT_AVAILABILITY_TABLE', tables.RobotAvailability.tableName);
+createRobotReservationCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+createRobotReservationCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+createRobotReservationCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
+createRobotReservationCdkFunction.addEnvironment('PARTNER_PAYOUT_TABLE', tables.PartnerPayout.tableName);
+createRobotReservationCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.RobotReservation.grantReadWriteData(createRobotReservationFunction);
+tables.RobotAvailability.grantReadData(createRobotReservationFunction);
+tables.Robot.grantReadData(createRobotReservationFunction);
+tables.UserCredits.grantReadWriteData(createRobotReservationFunction);
+tables.PlatformSettings.grantReadData(createRobotReservationFunction);
+tables.PartnerPayout.grantWriteData(createRobotReservationFunction);
+// Grant permission to query indexes
+createRobotReservationFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.Robot.tableArn}/index/robotIdIndex`,
+    `${tables.RobotReservation.tableArn}/index/robotIdIndex`,
+    `${tables.RobotAvailability.tableArn}/index/robotIdIndex`,
+    `${tables.UserCredits.tableArn}/index/userIdIndex`,
+    `${tables.PlatformSettings.tableArn}/index/settingKeyIndex`,
+  ],
+}));
+// Grant Cognito permission to get user email
+userPool.grant(createRobotReservationFunction, 'cognito-idp:AdminGetUser');
+
+// List Robot Reservations Lambda environment variables and permissions
+const listRobotReservationsCdkFunction = listRobotReservationsFunction as CdkFunction;
+listRobotReservationsCdkFunction.addEnvironment('ROBOT_RESERVATION_TABLE', tables.RobotReservation.tableName);
+listRobotReservationsCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+listRobotReservationsCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.RobotReservation.grantReadData(listRobotReservationsFunction);
+tables.Robot.grantReadData(listRobotReservationsFunction);
+// Grant permission to query indexes
+listRobotReservationsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query", "dynamodb:Scan"],
+  resources: [
+    `${tables.RobotReservation.tableArn}/index/robotIdIndex`,
+    `${tables.RobotReservation.tableArn}/index/userIdIndex`,
+    `${tables.RobotReservation.tableArn}/index/partnerIdIndex`,
+    `${tables.Robot.tableArn}/index/robotIdIndex`,
+  ],
+}));
+// Grant Cognito permission to get user groups (for admin check)
+userPool.grant(listRobotReservationsFunction, 'cognito-idp:AdminGetUser');
+
+// Cancel Robot Reservation Lambda environment variables and permissions
+const cancelRobotReservationCdkFunction = cancelRobotReservationFunction as CdkFunction;
+cancelRobotReservationCdkFunction.addEnvironment('ROBOT_RESERVATION_TABLE', tables.RobotReservation.tableName);
+cancelRobotReservationCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+cancelRobotReservationCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.RobotReservation.grantReadWriteData(cancelRobotReservationFunction);
+tables.UserCredits.grantReadWriteData(cancelRobotReservationFunction);
+// Grant Cognito permission to get user groups (for admin check)
+userPool.grant(cancelRobotReservationFunction, 'cognito-idp:AdminGetUser');
+
+// Check Robot Availability Lambda environment variables and permissions
+const checkRobotAvailabilityCdkFunction = checkRobotAvailabilityFunction as CdkFunction;
+checkRobotAvailabilityCdkFunction.addEnvironment('ROBOT_RESERVATION_TABLE', tables.RobotReservation.tableName);
+checkRobotAvailabilityCdkFunction.addEnvironment('ROBOT_AVAILABILITY_TABLE', tables.RobotAvailability.tableName);
+tables.RobotReservation.grantReadData(checkRobotAvailabilityFunction);
+tables.RobotAvailability.grantReadData(checkRobotAvailabilityFunction);
+// Grant permission to query indexes
+checkRobotAvailabilityFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.RobotReservation.tableArn}/index/robotIdIndex`,
+    `${tables.RobotAvailability.tableArn}/index/robotIdIndex`,
+  ],
+}));
+
+// Manage Robot Availability Lambda environment variables and permissions
+const manageRobotAvailabilityCdkFunction = manageRobotAvailabilityFunction as CdkFunction;
+manageRobotAvailabilityCdkFunction.addEnvironment('ROBOT_AVAILABILITY_TABLE', tables.RobotAvailability.tableName);
+manageRobotAvailabilityCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+manageRobotAvailabilityCdkFunction.addEnvironment('ROBOT_RESERVATION_TABLE', tables.RobotReservation.tableName);
+manageRobotAvailabilityCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.RobotAvailability.grantReadWriteData(manageRobotAvailabilityFunction);
+tables.Robot.grantReadData(manageRobotAvailabilityFunction);
+tables.RobotReservation.grantReadData(manageRobotAvailabilityFunction);
+// Grant permission to query indexes
+manageRobotAvailabilityFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.Robot.tableArn}/index/robotIdIndex`,
+    `${tables.RobotAvailability.tableArn}/index/robotIdIndex`,
+    `${tables.RobotReservation.tableArn}/index/robotIdIndex`,
+  ],
+}));
+// Grant Cognito permission to get user groups (for admin check)
+userPool.grant(manageRobotAvailabilityFunction, 'cognito-idp:AdminGetUser');
+
+// Process Robot Reservation Refunds Lambda environment variables and permissions
+const processRobotReservationRefundsFunction = backend.processRobotReservationRefunds.resources.lambda;
+const processRobotReservationRefundsCdkFunction = processRobotReservationRefundsFunction as CdkFunction;
+processRobotReservationRefundsCdkFunction.addEnvironment('ROBOT_RESERVATION_TABLE', tables.RobotReservation.tableName);
+processRobotReservationRefundsCdkFunction.addEnvironment('ROBOT_PRESENCE_TABLE', robotPresenceTable.tableName);
+processRobotReservationRefundsCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+processRobotReservationRefundsCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.RobotReservation.grantReadWriteData(processRobotReservationRefundsFunction);
+robotPresenceTable.grantReadData(processRobotReservationRefundsFunction);
+tables.UserCredits.grantReadWriteData(processRobotReservationRefundsFunction);
+// Grant permission to query indexes
+processRobotReservationRefundsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.RobotReservation.tableArn}/index/statusIndex`,
+  ],
+}));
+// Grant Cognito permission to get user groups (for admin check)
+userPool.grant(processRobotReservationRefundsFunction, 'cognito-idp:AdminGetUser');
+
+// List Partner Payouts Lambda environment variables and permissions
+const listPartnerPayoutsFunction = backend.listPartnerPayouts.resources.lambda;
+const listPartnerPayoutsCdkFunction = listPartnerPayoutsFunction as CdkFunction;
+listPartnerPayoutsCdkFunction.addEnvironment('PARTNER_PAYOUT_TABLE', tables.PartnerPayout.tableName);
+listPartnerPayoutsCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.PartnerPayout.grantReadData(listPartnerPayoutsFunction);
+// Grant permission to query indexes
+listPartnerPayoutsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query", "dynamodb:Scan"],
+  resources: [
+    `${tables.PartnerPayout.tableArn}/index/partnerIdIndex`,
+    `${tables.PartnerPayout.tableArn}/index/statusIndex`,
+    `${tables.PartnerPayout.tableArn}/index/createdAtIndex`,
+  ],
+}));
+// Grant Cognito permission to get user info
+userPool.grant(listPartnerPayoutsFunction, 'cognito-idp:AdminGetUser');
+
 // Admin audit table - tracks all admin assignments/removals and credit adjustments
 const adminAuditTable = new Table(dataStack, 'AdminAuditTable', {
   partitionKey: { name: 'id', type: AttributeType.STRING },
@@ -586,11 +743,13 @@ getSystemStatsCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableN
 getSystemStatsCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
 getSystemStatsCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
 getSystemStatsCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
+getSystemStatsCdkFunction.addEnvironment('PARTNER_PAYOUT_TABLE', tables.PartnerPayout.tableName);
 userPool.grant(getSystemStatsFunction, 'cognito-idp:ListUsers', 'cognito-idp:AdminGetUser');
 tables.Robot.grantReadData(getSystemStatsFunction);
 tables.Session.grantReadData(getSystemStatsFunction);
 tables.UserCredits.grantReadData(getSystemStatsFunction);
 tables.CreditTransaction.grantReadData(getSystemStatsFunction);
+tables.PartnerPayout.grantReadData(getSystemStatsFunction);
 
 // List audit logs Lambda environment variables and permissions
 const listAuditLogsCdkFunction = listAuditLogsFunction as CdkFunction;
