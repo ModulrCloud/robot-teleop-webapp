@@ -9,6 +9,7 @@ export interface WebRTCStatus {
   videoStream: MediaStream | null;
   robotBusy: boolean;
   busyUser: string | null;
+  sessionId: string | null;
 }
 
 export interface WebRTCOptions {
@@ -44,6 +45,46 @@ class WebRTCRosBridge {
   }
 }
 
+// =============================================================================
+// Connection Lock
+// Prevents duplicate WebSocket connections during React StrictMode remounts.
+// The lock auto-expires after a timeout to handle edge cases.
+// =============================================================================
+
+const CONNECTION_LOCK_TIMEOUT_MS = 3000;
+
+let connectionLockActive = false;
+let connectionLockTimer: ReturnType<typeof setTimeout> | null = null;
+
+function acquireConnectionLock(): boolean {
+  if (connectionLockActive) {
+    return false;
+  }
+  
+  if (connectionLockTimer) {
+    clearTimeout(connectionLockTimer);
+  }
+  
+  connectionLockActive = true;
+  
+  // Auto-release lock after timeout as a safety net
+  connectionLockTimer = setTimeout(() => {
+    logger.warn('[WEBRTC] Connection lock auto-released after timeout');
+    connectionLockActive = false;
+    connectionLockTimer = null;
+  }, CONNECTION_LOCK_TIMEOUT_MS);
+  
+  return true;
+}
+
+function releaseConnectionLock(): void {
+  connectionLockActive = false;
+  if (connectionLockTimer) {
+    clearTimeout(connectionLockTimer);
+    connectionLockTimer = null;
+  }
+}
+
 export function useWebRTC(options: WebRTCOptions) {
   const { wsUrl, myId, robotId = 'robot1' } = options;
   const [status, setStatus] = useState<WebRTCStatus>({
@@ -53,6 +94,7 @@ export function useWebRTC(options: WebRTCOptions) {
     videoStream: null,
     robotBusy: false,
     busyUser: null,
+    sessionId: null,
   });
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -63,8 +105,13 @@ export function useWebRTC(options: WebRTCOptions) {
   const welcomeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const webrtcConnectedRef = useRef<boolean>(false);
   const myIdRef = useRef<string>(myId || ''); // Store actual connection ID
+  const isThisInstanceConnecting = useRef<boolean>(false); // Track if this instance initiated the connection
 
   const cleanup = useCallback(() => {
+    // Note: Connection lock is intentionally NOT released here.
+    // Lock release is handled by acquireConnectionLock timeout or explicit releaseConnectionLock calls.
+    // This prevents React StrictMode double-mounting from creating duplicate connections.
+    isThisInstanceConnecting.current = false;
     if (connectionTimeoutRef.current) {
       clearTimeout(connectionTimeoutRef.current);
       connectionTimeoutRef.current = null;
@@ -89,11 +136,18 @@ export function useWebRTC(options: WebRTCOptions) {
   }, []);
 
   const connect = useCallback(async () => {
+    // Acquire connection lock to prevent duplicate connections
+    if (!acquireConnectionLock()) {
+      logger.debug('[WEBRTC] Connection already in progress, skipping duplicate attempt');
+      return;
+    }
+    isThisInstanceConnecting.current = true;
+
     if (pcRef.current || wsRef.current) {
       cleanup();
     }
 
-    setStatus({ connecting: true, connected: false, error: null, videoStream: null, robotBusy: false, busyUser: null });
+    setStatus({ connecting: true, connected: false, error: null, videoStream: null, robotBusy: false, busyUser: null, sessionId: null });
 
     try {
       // Get JWT token for WebSocket authentication
@@ -102,15 +156,17 @@ export function useWebRTC(options: WebRTCOptions) {
         const session = await fetchAuthSession();
         token = session.tokens?.idToken?.toString();
       } catch (authError) {
-        logger.warn('Failed to get auth token for WebSocket:', authError);
+        logger.warn('[WEBRTC] Failed to get auth token:', authError);
+        releaseConnectionLock();
+        isThisInstanceConnecting.current = false;
         setStatus(prev => ({ ...prev, connecting: false, error: 'Authentication required' }));
         return;
       }
 
       // Append token to WebSocket URL if we have one
       const urlWithToken = token ? `${wsUrl}?token=${encodeURIComponent(token)}` : wsUrl;
-      logger.log('[BROWSER] Connecting to WebSocket:', wsUrl);
-      logger.log('[BROWSER] Target robot:', robotId);
+      logger.log('[WEBRTC] Connecting to WebSocket:', wsUrl);
+      logger.log('[WEBRTC] Target robot:', robotId);
       const ws = new WebSocket(urlWithToken);
       wsRef.current = ws;
 
@@ -119,7 +175,7 @@ export function useWebRTC(options: WebRTCOptions) {
       // Set timeout for WebSocket connection (10 seconds)
       connectionTimeoutRef.current = setTimeout(() => {
         if (!connectionEstablished && ws.readyState !== WebSocket.OPEN) {
-          logger.error('[BROWSER] WebSocket connection timeout');
+          logger.error('[WEBRTC] WebSocket connection timeout');
           setStatus(prev => ({ 
             ...prev, 
             connecting: false, 
@@ -130,7 +186,9 @@ export function useWebRTC(options: WebRTCOptions) {
       }, 10000); // 10 second timeout
 
       ws.onerror = (error) => {
-        logger.error('[BROWSER] WebSocket error:', error);
+        logger.error('[WEBRTC] WebSocket error:', error);
+        releaseConnectionLock();
+        isThisInstanceConnecting.current = false;
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
@@ -139,14 +197,14 @@ export function useWebRTC(options: WebRTCOptions) {
       };
 
       ws.onclose = (event) => {
-        logger.log('[BROWSER] WebSocket closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
+        logger.log('[WEBRTC] WebSocket closed:', { code: event.code, reason: event.reason, wasClean: event.wasClean });
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
         // Only set error if connection closed before being established
         if (!connectionEstablished) {
-          logger.error('[BROWSER] Connection closed before establishing');
+          logger.error('[WEBRTC] Connection closed before establishing');
           setStatus(prev => ({ 
             ...prev, 
             connecting: false, 
@@ -160,7 +218,7 @@ export function useWebRTC(options: WebRTCOptions) {
       };
 
       ws.onopen = async () => {
-        logger.log('[BROWSER] WebSocket opened, sending ready message...');
+        logger.log('[WEBRTC] WebSocket opened, sending ready message...');
         connectionEstablished = true;
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
@@ -172,7 +230,7 @@ export function useWebRTC(options: WebRTCOptions) {
         
         // Set timeout for welcome message (15 seconds)
         welcomeTimeoutRef.current = setTimeout(() => {
-          logger.error('[BROWSER] Welcome message timeout');
+          logger.error('[WEBRTC] Welcome message timeout');
           setStatus(prev => ({ 
             ...prev, 
             connecting: false, 
@@ -185,10 +243,10 @@ export function useWebRTC(options: WebRTCOptions) {
       // Handle all messages including welcome
       ws.onmessage = async (event) => {
         const msg = JSON.parse(event.data);
-        logger.log('[BROWSER] Received message from server:', msg.type);
+        logger.log('[WEBRTC] Received message from server:', msg.type);
 
         if (msg.type === 'session-locked') {
-          logger.warn('[BROWSER] Robot is locked by another user:', msg.lockedBy);
+          logger.warn('[WEBRTC] Robot is locked by another user:', msg.lockedBy);
           setStatus(prev => ({
             ...prev,
             connecting: false,
@@ -201,6 +259,7 @@ export function useWebRTC(options: WebRTCOptions) {
           return;
         }
 
+<<<<<<< HEAD
         // Handle insufficient funds error from signaling handler
         if (msg.type === 'error' && msg.error === 'insufficient_funds') {
           logger.warn('[BROWSER] Insufficient funds to start session:', msg.message);
@@ -214,6 +273,15 @@ export function useWebRTC(options: WebRTCOptions) {
           cleanup();
           return;
         }
+        
+        if (msg.type === 'session-created' && msg.sessionId) {
+          logger.log('[WEBRTC] Session created with ID:', msg.sessionId);
+          setStatus(prev => ({
+            ...prev,
+            sessionId: msg.sessionId,
+          }));
+          return;
+        }
 
         // Handle welcome message with our connection ID
         if (msg.type === 'welcome' && msg.connectionId) {
@@ -222,11 +290,11 @@ export function useWebRTC(options: WebRTCOptions) {
             welcomeTimeoutRef.current = null;
           }
           
-          logger.log('[BROWSER] Received connection ID:', msg.connectionId);
+          logger.log('[WEBRTC] Received connection ID:', msg.connectionId);
           myIdRef.current = msg.connectionId;
           
           // Now start WebRTC connection
-          logger.log('[BROWSER] Creating RTCPeerConnection for robot:', robotId);
+          logger.log('[WEBRTC] Creating RTCPeerConnection for robot:', robotId);
           const pc = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
           });
@@ -236,7 +304,7 @@ export function useWebRTC(options: WebRTCOptions) {
           webrtcConnectedRef.current = false;
           webrtcTimeoutRef.current = setTimeout(() => {
             if (!webrtcConnectedRef.current) {
-              logger.error('[BROWSER] WebRTC connection timeout - robot may be offline');
+              logger.error('[WEBRTC] WebRTC connection timeout - robot may be offline');
               setStatus(prev => ({ 
                 ...prev, 
                 connecting: false, 
@@ -248,7 +316,7 @@ export function useWebRTC(options: WebRTCOptions) {
 
           pc.onicecandidate = (event) => {
             if (event.candidate && ws.readyState === WebSocket.OPEN) {
-              logger.log('[BROWSER] Sending ICE candidate to robot:', robotId);
+              logger.log('[WEBRTC] Sending ICE candidate to robot:', robotId);
               ws.send(
                 JSON.stringify({
                   type: 'candidate',
@@ -261,12 +329,14 @@ export function useWebRTC(options: WebRTCOptions) {
           };
 
           pc.ontrack = (event) => {
-            logger.log('[BROWSER] Received video track from robot!');
+            logger.log('[WEBRTC] Received video track from robot!');
             webrtcConnectedRef.current = true;
             if (webrtcTimeoutRef.current) {
               clearTimeout(webrtcTimeoutRef.current);
               webrtcTimeoutRef.current = null;
             }
+            releaseConnectionLock();
+            logger.log('[WEBRTC] Video stream received, connection established');
             const stream = event.streams[0];
             setStatus(prev => ({
               ...prev,
@@ -279,16 +349,16 @@ export function useWebRTC(options: WebRTCOptions) {
 
           const channel = pc.createDataChannel('control');
           channel.onopen = async () => {
-            logger.log('[BROWSER] Data channel opened');
+            logger.log('[WEBRTC] Data channel opened');
             rosBridgeRef.current = new WebRTCRosBridge(channel);
           };
 
           pc.addTransceiver('video', { direction: 'recvonly' });
 
-          logger.log('[BROWSER] Creating WebRTC offer...');
+          logger.log('[WEBRTC] Creating WebRTC offer...');
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
-          logger.log('[BROWSER] Offer created, sending to robot:', robotId);
+          logger.log('[WEBRTC] Offer created, sending to robot:', robotId);
 
           const offerMessage = {
             to: robotId,
@@ -296,7 +366,7 @@ export function useWebRTC(options: WebRTCOptions) {
             type: 'offer',
             sdp: pc.localDescription?.sdp,
           };
-          logger.log('[BROWSER] Sending offer message:', { 
+          logger.log('[WEBRTC] Sending offer message:', { 
             to: offerMessage.to, 
             from: offerMessage.from, 
             type: offerMessage.type,
@@ -304,7 +374,7 @@ export function useWebRTC(options: WebRTCOptions) {
           });
           
           ws.send(JSON.stringify(offerMessage));
-          logger.log('[BROWSER] Offer sent! Waiting for answer from robot...');
+          logger.log('[WEBRTC] Offer sent! Waiting for answer from robot...');
           return;
         }
 
@@ -313,19 +383,19 @@ export function useWebRTC(options: WebRTCOptions) {
         if (!pc) return;
 
         if (msg.type === 'answer' && msg.sdp) {
-          logger.log('[BROWSER] Received answer from robot, setting remote description...');
+          logger.log('[WEBRTC] Received answer from robot, setting remote description...');
           try {
             await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
-            logger.log('[BROWSER] Remote description set successfully');
+            logger.log('[WEBRTC] Remote description set successfully');
           } catch (e) {
-            logger.error('[BROWSER] Error setting remote description:', e);
+            logger.error('[WEBRTC] Error setting remote description:', e);
           }
         } else if (msg.type === 'candidate' && msg.candidate) {
           try {
             await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-            logger.log('[BROWSER] Added ICE candidate from robot');
+            logger.log('[WEBRTC] Added ICE candidate from robot');
           } catch (e) {
-            logger.error('[BROWSER] Error adding ICE candidate:', e);
+            logger.error('[WEBRTC] Error adding ICE candidate:', e);
           }
         }
       };

@@ -82,10 +82,24 @@ export function UserSetup(_props: PrivateRouteProps) {
       await fetchAuthSession({ forceRefresh: true });
 
       if (userGroup === "partner") {
+        const allPartners = await client.models.Partner.list({ limit: 100 });
+        const emailPrefix = user?.email?.split('@')[0] || '';
+        const existingPartner = allPartners.data?.find(p => 
+          p.cognitoUsername === user?.username ||
+          p.cognitoUsername === user?.email ||
+          (emailPrefix && p.cognitoUsername?.includes(emailPrefix))
+        );
+        
+        if (existingPartner) {
+          const from = location.state?.from || "/";
+          navigate(from, { replace: true });
+          return;
+        }
         const createPartnerResp = await client.models.Partner.create({
           cognitoUsername: user?.username,
           name: partnerDetails.name.trim(),
           description: partnerDetails.description.trim(),
+          isPublicProfile: false,
         });
 
         if (createPartnerResp.errors) {
@@ -179,11 +193,11 @@ export function UserSetup(_props: PrivateRouteProps) {
             >
               <FontAwesomeIcon icon={faRobot} className="type-icon" />
               <h3>Partner Account</h3>
-              <p>Offer your robots for hire</p>
+              <p>Offer your robots & services</p>
               <ul className="type-features">
-                <li>List your robots</li>
-                <li>Earn from sessions</li>
-                <li>Manage availability</li>
+                <li>List your robots and earn from sessions</li>
+                <li>List your AI/data/compute services</li>
+                <li>Integrate directly during teleop sessions</li>
               </ul>
               {userGroup === 'partner' && <div className="selection-indicator">Selected</div>}
             </div>

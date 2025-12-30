@@ -190,10 +190,12 @@ export default function ServiceSelect() {
                       {partner.averageRating.toFixed(1)}
                     </span>
                   )}
-                  <span className="meta-item">
-                    <FontAwesomeIcon icon={faRobot} />
-                    {partner.robotCount} robots
-                  </span>
+                  {partner.companyType === 'Robot Provider' && partner.robotCount > 0 && (
+                    <span className="meta-item">
+                      <FontAwesomeIcon icon={faRobot} />
+                      {partner.robotCount} robots
+                    </span>
+                  )}
                 </div>
               </div>
 

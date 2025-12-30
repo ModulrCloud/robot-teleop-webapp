@@ -41,7 +41,6 @@ export default function RobotSelect() {
   const [robots, setRobots] = useState<RobotData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [deletingRobotId, setDeletingRobotId] = useState<string | null>(null);
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [platformMarkup, setPlatformMarkup] = useState<number>(30); // Default 30%
@@ -49,8 +48,6 @@ export default function RobotSelect() {
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
   const navigate = useNavigate();
   
-  // Check if user can edit robots (Partners or Admins)
-  const canEditRobots = user?.group === 'PARTNERS' || user?.group === 'ADMINS';
 
   // Load platform markup and user currency preference
   useEffect(() => {
@@ -531,101 +528,17 @@ export default function RobotSelect() {
     navigate(`/robot/${robot.id}`);
   };
 
-  const handleEditRobot = (robot: RobotData, event: React.MouseEvent) => {
-    event.stopPropagation(); // Prevent card selection when clicking edit
+  const handleViewRobot = (robot: RobotData, event: React.MouseEvent) => {
+    event.stopPropagation();
     
     if (!robot.uuid) {
-      logger.error('Cannot edit robot: missing UUID');
+      logger.error('Cannot view robot: missing UUID');
       return;
     }
     
-    // Navigate to edit page with robot UUID
-    navigate(`/edit-robot?robotId=${robot.uuid}`);
+    navigate(`/edit-robot?robotId=${robot.uuid}&mode=view`);
   };
 
-  const handleDeleteRobot = async (robot: RobotData, event: React.MouseEvent) => {
-    event.stopPropagation(); // Prevent card selection when clicking delete
-    
-    if (!robot.uuid) {
-      logger.error('Cannot delete robot: missing UUID');
-      return;
-    }
-
-    const robotName = robot.title;
-    if (!confirm(`Are you sure you want to delete "${robotName}"? This action cannot be undone.`)) {
-      return;
-    }
-
-    try {
-      setDeletingRobotId(robot.uuid);
-      logger.log(`🗑️ Attempting to delete robot: ${robotName} (${robot.uuid})`);
-      
-      const result = await client.mutations.deleteRobotLambda({ robotId: robot.uuid });
-      
-      logger.log('📊 Delete robot response:', {
-        hasData: !!result.data,
-        hasErrors: !!result.errors,
-        data: result.data,
-        errors: result.errors,
-      });
-      
-      // Check for GraphQL errors first
-      if (result.errors && result.errors.length > 0) {
-        logger.error('❌ GraphQL errors:', result.errors);
-        const errorMessages = result.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ');
-        throw new Error(errorMessages);
-      }
-      
-      // Check the response status
-      if (result.data?.statusCode === 200) {
-        // Remove the robot from the list
-        setRobots(robots.filter(r => r.uuid !== robot.uuid));
-        setSelected(selected.filter(s => s.id !== robot.id));
-        logger.log(`✅ Robot "${robotName}" deleted successfully`);
-      } else {
-        // Try to parse error message from body
-        let errorMessage = 'Failed to delete robot';
-        if (result.data?.body) {
-          try {
-            const errorBody = JSON.parse(result.data.body);
-            errorMessage = errorBody.message || errorBody.error || errorMessage;
-          } catch {
-            errorMessage = result.data.body;
-          }
-        }
-        logger.error('❌ Delete failed with status:', result.data?.statusCode, 'body:', result.data?.body);
-        throw new Error(errorMessage);
-      }
-    } catch (error: any) {
-      logger.error('❌ Exception deleting robot:', {
-        error,
-        message: error.message,
-        errors: error.errors,
-        fullError: error,
-      });
-      
-      // Check if it's a "function not found" error (schema not regenerated)
-      if (error.message?.includes('is not a function') || error.message?.includes('deleteRobotLambda')) {
-        alert('Delete feature not available yet. Please restart your Amplify sandbox to deploy the new delete function.');
-      } else {
-        // Extract the actual error message - avoid double-wrapping
-        let errorMessage = error.message || 'Unknown error';
-        
-        // Remove redundant "Failed to delete robot:" prefix if it exists
-        errorMessage = errorMessage.replace(/^Failed to delete robot:\s*/i, '').trim();
-        
-        // If we still have a generic message, try to get details from errors array
-        if ((errorMessage === 'Failed to delete robot' || errorMessage === 'Unknown error') && error.errors) {
-          errorMessage = error.errors[0]?.message || errorMessage;
-        }
-        
-        // Show the actual error message without redundant prefix
-        alert(errorMessage || 'Failed to delete robot. Please check the console for details.');
-      }
-    } finally {
-      setDeletingRobotId(null);
-    }
-  };
 
   const loadMoreRobots = async () => {
     if (!nextToken || isLoading) return;
@@ -732,6 +645,7 @@ export default function RobotSelect() {
             selected={selected}
             setSelected={setSelected}
             onItemClick={handleRobotClick}
+            onView={handleViewRobot}
             onEdit={canEditRobots ? handleEditRobot : undefined}
             onDelete={canEditRobots ? handleDeleteRobot : undefined}
             deletingItemId={deletingRobotId}

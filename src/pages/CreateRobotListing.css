@@ -582,3 +582,72 @@
 .form-group input[type="email"]::placeholder {
   color: rgba(255, 255, 255, 0.4);
 }
+
+.form-group.has-error input,
+.form-group.has-error textarea {
+  border-color: #ef4444;
+}
+
+.field-error {
+  color: #ef4444;
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+}
+
+/* View-only robot details styles */
+.robot-view-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.view-section {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.view-section h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffc107;
+  margin: 0 0 1rem 0;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.view-row {
+  display: flex;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.view-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.view-label {
+  flex: 0 0 140px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.9rem;
+}
+
+.view-value {
+  flex: 1;
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+@media (max-width: 600px) {
+  .view-row {
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  
+  .view-label {
+    flex: none;
+    font-size: 0.8rem;
+  }
+}

@@ -8,6 +8,7 @@ import { deleteRobotLambda } from "../functions/delete-robot/resource";
 import { manageRobotACL } from "../functions/manage-robot-acl/resource";
 import { listAccessibleRobots } from "../functions/list-accessible-robots/resource";
 import { getRobotStatus } from "../functions/get-robot-status/resource";
+<<<<<<< HEAD
 import { createStripeCheckout } from "../functions/create-stripe-checkout/resource";
 import { addCredits } from "../functions/add-credits/resource";
 import { verifyStripePayment } from "../functions/verify-stripe-payment/resource";
@@ -31,6 +32,7 @@ import { checkRobotAvailability } from "../functions/check-robot-availability/re
 import { manageRobotAvailability } from "../functions/manage-robot-availability/resource";
 import { processRobotReservationRefunds } from "../functions/process-robot-reservation-refunds/resource";
 import { listPartnerPayouts } from "../functions/list-partner-payouts/resource";
+import { getSessionLambda } from "../functions/get-session/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -39,8 +41,20 @@ const LambdaResult = a.customType({
 
 const RobotStatus = a.customType({
   isOnline: a.boolean(),
-  lastSeen: a.integer(), // Optional by default in custom types
-  status: a.string(), // Optional by default in custom types
+  lastSeen: a.integer(),
+  status: a.string(),
+});
+
+const SessionResult = a.customType({
+  id: a.string(),
+  userId: a.string(),
+  userEmail: a.string(),
+  robotId: a.string(),
+  robotName: a.string(),
+  startedAt: a.string(),
+  endedAt: a.string(),
+  durationSeconds: a.integer(),
+  status: a.string(),
 });
 
 const schema = a.schema({
@@ -577,7 +591,7 @@ const schema = a.schema({
   getRobotStatusLambda: a
     .query()
     .arguments({
-      robotId: a.string().required(), // robotId (robot-XXXXXXXX format)
+      robotId: a.string().required(),
     })
     .returns(RobotStatus)
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (checks ACL)
@@ -825,6 +839,15 @@ const schema = a.schema({
     .returns(a.json())
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (admins see all, partners see own)
     .handler(a.handler.function(listPartnerPayouts)),
+
+  getSessionLambda: a
+    .query()
+    .arguments({
+      sessionId: a.string(),
+    })
+    .returns(SessionResult)
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(getSessionLambda)),
 });
 
 export type Schema = ClientSchema<typeof schema>;

@@ -35,6 +35,7 @@ import { checkRobotAvailability } from './functions/check-robot-availability/res
 import { manageRobotAvailability } from './functions/manage-robot-availability/resource';
 import { processRobotReservationRefunds } from './functions/process-robot-reservation-refunds/resource';
 import { listPartnerPayouts } from './functions/list-partner-payouts/resource';
+import { getSessionLambda } from './functions/get-session/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -82,6 +83,7 @@ const backend = defineBackend({
   manageRobotAvailability,
   processRobotReservationRefunds,
   listPartnerPayouts,
+  getSessionLambda,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -125,6 +127,7 @@ const deleteRobotLambdaFunction = backend.deleteRobotLambda.resources.lambda;
 const manageRobotACLFunction = backend.manageRobotACL.resources.lambda;
 const listAccessibleRobotsFunction = backend.listAccessibleRobots.resources.lambda;
 const getRobotStatusFunction = backend.getRobotStatus.resources.lambda;
+<<<<<<< HEAD
 const createStripeCheckoutFunction = backend.createStripeCheckout.resources.lambda;
 const addCreditsFunction = backend.addCredits.resources.lambda;
 const verifyStripePaymentFunction = backend.verifyStripePayment.resources.lambda;
@@ -141,6 +144,7 @@ const deductSessionCreditsFunction = backend.deductSessionCredits.resources.lamb
 const createOrUpdateRatingFunction = backend.createOrUpdateRating.resources.lambda;
 const listRobotRatingsFunction = backend.listRobotRatings.resources.lambda;
 const createRatingResponseFunction = backend.createRatingResponse.resources.lambda;
+const getSessionLambdaFunction = backend.getSessionLambda.resources.lambda;
 
 // ============================================
 // Signaling Function Resources
@@ -361,6 +365,7 @@ listAccessibleRobotsFunction.addToRolePolicy(new PolicyStatement({
   ]
 }));
 
+<<<<<<< HEAD
 // Stripe checkout Lambda - no additional permissions needed (just uses Stripe API)
 const createStripeCheckoutCdkFunction = createStripeCheckoutFunction as CdkFunction;
 createStripeCheckoutCdkFunction.addEnvironment('FRONTEND_URL', 'http://localhost:5173'); // Can be overridden in production
@@ -764,4 +769,15 @@ listAuditLogsFunction.addToRolePolicy(new PolicyStatement({
     `${adminAuditTable.tableArn}/index/adminUserIdIndex`,
     `${adminAuditTable.tableArn}/index/targetUserIdIndex`,
   ],
+}));
+
+// Get session Lambda configuration
+const getSessionCdkFunction = getSessionLambdaFunction as CdkFunction;
+getSessionCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
+tables.Session.grantReadData(getSessionLambdaFunction);
+getSessionLambdaFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.Session.tableArn}/index/userIdIndex`
+  ]
 }));
