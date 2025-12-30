@@ -104,23 +104,48 @@ export function useAuthStatus(): AuthStatus {
         const currentUser = await getCurrentUser();
         logger.log('✅ Current user:', { username: currentUser.username });
         
-        const attrs = await fetchUserAttributes();
-        logger.log('✅ User attributes:', { 
-          name: attrs.name, 
-          email: attrs.email,
-          allAttributes: attrs,
-        });
+        // Fetch user attributes - wrap in try-catch to handle Cognito API errors gracefully
+        // These can occur if the token is expired or there's a network issue
+        let attrs;
+        try {
+          attrs = await fetchUserAttributes();
+          logger.log('✅ User attributes:', { 
+            name: attrs.name, 
+            email: attrs.email,
+            allAttributes: attrs,
+          });
+        } catch (attrError) {
+          // Log but don't throw - we can still proceed with username
+          logger.warn('⚠️ Failed to fetch user attributes (non-blocking):', attrError);
+          // Create minimal attributes object with just username
+          attrs = {
+            name: null,
+            email: null,
+          };
+        }
         
-        const session = await fetchAuthSession();
-        logger.log('✅ Auth session:', {
-          isValid: !!session.tokens,
-          hasAccessToken: !!session.tokens?.accessToken,
-          hasIdToken: !!session.tokens?.idToken,
-          accessTokenPayload: session.tokens?.accessToken?.payload,
-          idTokenPayload: session.tokens?.idToken?.payload,
-        });
+        // Fetch auth session - wrap in try-catch to handle Cognito Identity errors gracefully
+        // These errors are common in development (React Strict Mode) and are usually non-blocking
+        let session;
+        try {
+          session = await fetchAuthSession();
+          logger.log('✅ Auth session:', {
+            isValid: !!session.tokens,
+            hasAccessToken: !!session.tokens?.accessToken,
+            hasIdToken: !!session.tokens?.idToken,
+            accessTokenPayload: session.tokens?.accessToken?.payload,
+            idTokenPayload: session.tokens?.idToken?.payload,
+          });
+        } catch (sessionError) {
+          // Cognito Identity errors (400 Bad Request) are common in development
+          // They occur when trying to get AWS credentials and are usually non-blocking
+          // Log but don't throw - the app can still function without Identity Pool credentials
+          logger.log('⚠️ Auth session fetch warning (non-blocking):', sessionError);
+          // Create a minimal session object to prevent errors downstream
+          session = { tokens: null };
+        }
         
-        const groups = session.tokens?.accessToken?.payload['cognito:groups'];
+        const groups = session.tokens?.accessToken?.payload?.['cognito:groups'];
         const group = highestPriorityGroup(groups as string[] | undefined);
         logger.log('✅ User groups:', { groups, highestPriority: group });
 

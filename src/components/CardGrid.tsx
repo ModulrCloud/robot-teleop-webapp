@@ -16,13 +16,20 @@ interface CardGridProps {
   editingItemId?: string | number | null;
   onDelete?: (item: Omit<CardGridItemProps, 'onClick'>, event: React.MouseEvent) => void;
   deletingItemId?: string | number | null;
+  onItemClick?: (item: Omit<CardGridItemProps, 'onClick'>) => void; // Custom click handler (overrides selection)
 }
 
-export function CardGrid({ items, columns = 3, multiple, selected, setSelected, onView, onEdit, editingItemId, onDelete, deletingItemId }: CardGridProps) {
+export function CardGrid({ items, columns = 3, multiple, selected, setSelected, onView, onEdit, editingItemId, onDelete, deletingItemId, onItemClick }: CardGridProps) {
 
   const itemRefs = useRef<Record<string | number, CardGridItemHandle | null>>({})
 
   const onCardClick = useCallback((item: Omit<CardGridItemProps, 'onClick'>) => {
+    // If custom click handler is provided, use it instead of selection logic
+    if (onItemClick) {
+      onItemClick(item);
+      return;
+    }
+
     const clickedRef = itemRefs.current[item.id]
 
     if (!multiple) {
@@ -40,7 +47,7 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
       clickedRef?.setSelected(true)
       setSelected([...selected, item])
     }
-  }, [multiple, selected, setSelected])
+  }, [multiple, selected, setSelected, onItemClick])
 
   const cards = useMemo(() => items.map(item => (
     <div key={item.id} style={{ position: 'relative', height: '100%' }}>

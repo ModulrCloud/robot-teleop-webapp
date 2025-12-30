@@ -127,9 +127,9 @@ export default function RobotSetup() {
           <div className="error-message">
             <FontAwesomeIcon icon={faInfoCircle} />
             <p>No robot ID provided. Please go back and select a robot.</p>
-            <button onClick={() => navigate('/create-robot-listing')} className="btn-primary">
+            <button onClick={() => navigate('/my-robots')} className="btn-primary">
               <FontAwesomeIcon icon={faArrowLeft} />
-              Back to Robot Listings
+              Back to My Robots
             </button>
           </div>
         </div>
@@ -671,9 +671,9 @@ print("Connection closed after 10 seconds")`}
             </div>
 
             <div className="setup-actions">
-              <button onClick={() => navigate('/robots')} className="btn-secondary">
+              <button onClick={() => navigate('/my-robots')} className="btn-secondary">
                 <FontAwesomeIcon icon={faArrowLeft} />
-                Back to Robots
+                Back to My Robots
               </button>
               <button onClick={() => navigate('/create-robot-listing')} className="btn-primary">
                 <FontAwesomeIcon icon={faRobot} />

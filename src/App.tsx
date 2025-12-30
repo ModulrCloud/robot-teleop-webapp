@@ -6,6 +6,7 @@ import {
   Route,
 } from "react-router-dom";
 import RobotSelect from "./pages/RobotSelect";
+import RobotDetail from "./pages/RobotDetail";
 import ServiceSelect from "./pages/ServiceSelect";
 import SignIn from "./pages/SignIn";
 import Teleop from "./pages/Teleop";
@@ -18,6 +19,8 @@ import { UserProfile } from "./pages/UserProfile";
 import { SessionHistory } from "./pages/SessionHistory";
 import { AppLayout } from "./components/AppLayout";
 import { Settings } from "./pages/Settings";
+import { Credits } from "./pages/Credits";
+import { Admin } from "./pages/Admin";
 import RobotSetup from "./pages/RobotSetup";
 import { EditRobot } from "./pages/EditRobot";
 import MyRobots from "./pages/MyRobots";
@@ -133,6 +136,12 @@ function App() {
               </PrivateRoute>
             }
             />
+            <Route path='/robot/:robotId' element={
+              <PrivateRoute>
+                <RobotDetail />
+              </PrivateRoute>
+            }
+            />
             <Route path='/services' element={
               <PrivateRoute>
                 <ServiceSelect />
@@ -160,6 +169,18 @@ function App() {
             <Route path='/settings' element={
               <PrivateRoute>
                 <Settings />
+              </PrivateRoute>
+            } 
+            />
+            <Route path='/credits' element={
+              <PrivateRoute>
+                <Credits />
+              </PrivateRoute>
+            } 
+            />
+            <Route path='/admin' element={
+              <PrivateRoute>
+                <Admin />
               </PrivateRoute>
             } 
             />

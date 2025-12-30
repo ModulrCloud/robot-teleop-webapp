@@ -4,6 +4,9 @@ import Joystick, { type JoystickChange } from "../components/Joystick";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { useWebRTC } from "../hooks/useWebRTC";
 import { useGamepad } from "../hooks/useGamepad";
+import { useUserCredits } from "../hooks/useUserCredits";
+import { generateClient } from 'aws-amplify/api';
+import type { Schema } from '../../amplify/data/resource';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faClock,
@@ -15,12 +18,17 @@ import {
   faRightFromBracket,
   faCheckCircle,
   faLock,
-  faUserLock
+  faUserLock,
+  faCoins,
+  faExclamationTriangle
 } from '@fortawesome/free-solid-svg-icons';
 import "./Teleop.css";
 import { usePageTitle } from "../hooks/usePageTitle";
 import outputs from '../../amplify_outputs.json';
 import { logger } from '../utils/logger';
+import { PurchaseCreditsModal } from '../components/PurchaseCreditsModal';
+
+const client = generateClient<Schema>();
 
 export default function Teleop() {
   usePageTitle();
@@ -34,6 +42,11 @@ export default function Teleop() {
   const [controlMode, setControlMode] = useState<'joystick' | 'gamepad'>('joystick');
   const [gamepadDetected, setGamepadDetected] = useState(false);
   const sendIntervalMs = 100; // 10 Hz
+  const { credits, refreshCredits } = useUserCredits();
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [insufficientFunds, setInsufficientFunds] = useState(false);
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
+  const lastDeductionTimeRef = useRef<number | null>(null);
 
 
   // Read WebSocket URL from amplify_outputs.json (AWS signaling server)
@@ -65,7 +78,30 @@ export default function Teleop() {
   useEffect(() => {
     if (status.connected && sessionStartTimeRef.current === null) {
       sessionStartTimeRef.current = Date.now();
+      lastDeductionTimeRef.current = Date.now();
       logger.log('Session started for robot:', robotId);
+      
+      // Find the active session ID
+      const findSessionId = async () => {
+        try {
+          const { getCurrentUser } = await import('aws-amplify/auth');
+          const currentUser = await getCurrentUser();
+          const { data: sessions } = await client.models.Session.list({
+            filter: {
+              userId: { eq: currentUser.username },
+              status: { eq: 'active' },
+              robotId: { eq: robotId },
+            },
+          });
+          if (sessions && sessions.length > 0) {
+            setSessionId(sessions[0].id || null);
+            logger.log('Found session ID:', sessions[0].id);
+          }
+        } catch (err) {
+          logger.error('Failed to find session ID:', err);
+        }
+      };
+      findSessionId();
     }
   }, [status.connected, robotId]);
 
@@ -77,6 +113,52 @@ export default function Teleop() {
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Per-minute credit deduction timer
+  useEffect(() => {
+    if (!status.connected || !sessionId || insufficientFunds) return;
+
+    const deductionInterval = setInterval(async () => {
+      if (!sessionId || !status.connected) return;
+
+      try {
+        const result = await client.mutations.deductSessionCreditsLambda({
+          sessionId,
+        });
+
+        if (result.data) {
+          const response = typeof result.data === 'string' 
+            ? JSON.parse(result.data) 
+            : result.data;
+          
+          if (response.statusCode === 200) {
+            const body = typeof response.body === 'string' 
+              ? JSON.parse(response.body) 
+              : response.body;
+            
+            logger.log('Credits deducted:', body);
+            lastDeductionTimeRef.current = Date.now();
+            await refreshCredits();
+          } else if (response.statusCode === 402) {
+            // Insufficient funds
+            const body = typeof response.body === 'string' 
+              ? JSON.parse(response.body) 
+              : response.body;
+            
+            logger.error('Insufficient funds:', body);
+            setInsufficientFunds(true);
+            stopRobot();
+            disconnect();
+            setShowPurchaseModal(true);
+          }
+        }
+      } catch (err) {
+        logger.error('Error deducting credits:', err);
+      }
+    }, 60000); // Every 60 seconds (1 minute)
+
+    return () => clearInterval(deductionInterval);
+  }, [status.connected, sessionId, insufficientFunds, refreshCredits, stopRobot, disconnect]);
 
   useEffect(() => {
     const checkGamepad = () => {
@@ -231,6 +313,49 @@ export default function Teleop() {
             </div>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (insufficientFunds) {
+    return (
+      <div className="teleop-container">
+        <div className="robot-busy-modal">
+          <div className="busy-content">
+            <FontAwesomeIcon icon={faExclamationTriangle} className="busy-icon" style={{ color: '#ff9800' }} />
+            <h2>Insufficient Credits</h2>
+            <p className="busy-message">
+              Your session has been paused due to insufficient credits. Please top up your account to continue.
+            </p>
+            <div className="busy-actions">
+              <button 
+                className="retry-btn"
+                onClick={() => setShowPurchaseModal(true)}
+              >
+                <FontAwesomeIcon icon={faCoins} />
+                Purchase Credits
+              </button>
+              <button 
+                className="back-btn"
+                onClick={() => navigate('/robots')}
+              >
+                Return to Robots
+              </button>
+            </div>
+          </div>
+        </div>
+        <PurchaseCreditsModal
+          isOpen={showPurchaseModal}
+          onClose={async () => {
+            setShowPurchaseModal(false);
+            await refreshCredits();
+            // If user has enough credits now, allow them to continue
+            // Otherwise they'll need to start a new session
+            if (credits > 0) {
+              setInsufficientFunds(false);
+            }
+          }}
+        />
       </div>
     );
   }

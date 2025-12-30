@@ -10,6 +10,7 @@ import { LoadingWheel } from "../components/LoadingWheel";
 import "./RobotSelect.css";
 import { getUrl } from 'aws-amplify/storage';
 import { logger } from '../utils/logger';
+import { formatCreditsAsCurrencySync, fetchExchangeRates } from '../utils/credits';
 
 const client = generateClient<Schema>();
 
@@ -36,15 +37,62 @@ interface RobotData extends CardGridItemProps {
 export default function RobotSelect() {
   usePageTitle();
   const { user } = useAuthStatus();
-  const [selected, setSelected] = useState<CardGridItemProps[]>([]);
+  const [selected, setSelected] = useState<CardGridItemProps[]>([]); // Keep for CardGrid compatibility
   const [robots, setRobots] = useState<RobotData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingRobotId, setDeletingRobotId] = useState<string | null>(null);
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  const hasSelected = selected.length > 0;
+  const [platformMarkup, setPlatformMarkup] = useState<number>(30); // Default 30%
+  const [userCurrency, setUserCurrency] = useState<string>('USD');
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
   const navigate = useNavigate();
   
+  // Check if user can edit robots (Partners or Admins)
+  const canEditRobots = user?.group === 'PARTNERS' || user?.group === 'ADMINS';
+
+  // Load platform markup and user currency preference
+  useEffect(() => {
+    const loadPlatformSettings = async () => {
+      try {
+        // Load platform markup
+        const { data: settings } = await client.models.PlatformSettings.list({
+          filter: { settingKey: { eq: 'platformMarkupPercent' } },
+        });
+        if (settings && settings.length > 0) {
+          const markupValue = parseFloat(settings[0].settingValue || '30');
+          setPlatformMarkup(markupValue);
+        }
+
+        // Load user's currency preference
+        if (user?.username) {
+          // Check Partner first, then Client
+          const { data: partners } = await client.models.Partner.list({
+            filter: { cognitoUsername: { eq: user.username } },
+          });
+          if (partners && partners.length > 0 && partners[0].preferredCurrency) {
+            setUserCurrency(partners[0].preferredCurrency.toUpperCase());
+          } else {
+            const { data: clients } = await client.models.Client.list({
+              filter: { cognitoUsername: { eq: user.username } },
+            });
+            if (clients && clients.length > 0 && clients[0].preferredCurrency) {
+              setUserCurrency(clients[0].preferredCurrency.toUpperCase());
+            }
+          }
+        }
+
+        // Fetch exchange rates
+        const rates = await fetchExchangeRates();
+        setExchangeRates(rates);
+      } catch (err) {
+        logger.error("Error loading platform settings:", err);
+      }
+    };
+
+    loadPlatformSettings();
+  }, [user?.username]);
 
   useEffect(() => {
     const loadRobots = async () => {
@@ -352,6 +400,28 @@ export default function RobotSelect() {
                 logger.log(`[ROBOT_IMAGE] Robot "${robot.name || 'Unnamed'}": model="${robot.model}", image="${getRobotImage(robot.model, robot.imageUrl)}"`);
               }
               
+              // Calculate hourly rate (partner rate + platform fee)
+              let hourlyRateDisplay: string | undefined = undefined;
+              
+              if (robot.hourlyRateCredits !== null && robot.hourlyRateCredits !== undefined && robot.hourlyRateCredits > 0) {
+                // Partner's base rate in credits
+                const baseRateCredits = robot.hourlyRateCredits;
+                
+                // Calculate total rate with platform markup
+                // Formula: totalRate = baseRate * (1 + markupPercent / 100)
+                const totalRateCredits = baseRateCredits * (1 + platformMarkup / 100);
+                
+                // Convert to user's currency for display
+                const formattedRate = formatCreditsAsCurrencySync(
+                  totalRateCredits,
+                  userCurrency as any,
+                  exchangeRates || undefined
+                );
+                
+                hourlyRateDisplay = `${formattedRate}/hour`;
+              } else if (robot.hourlyRateCredits === 0) {
+                hourlyRateDisplay = "Free";
+              }
               return {
                 id: (robot.robotId || robot.id) as string, // Use robotId (string) for connection, fallback to id
                 uuid: robot.id || undefined, // Store the actual UUID for deletion
@@ -361,6 +431,7 @@ export default function RobotSelect() {
                 imageUrl: getRobotImage(robot.model, robot.imageUrl),
                 rawImageUrl: robot.imageUrl,
                 disabled: !canAccess, // Gray out if user can't access
+                hourlyRate: hourlyRateDisplay,
               };
             });
           
@@ -422,8 +493,12 @@ export default function RobotSelect() {
       }
     };
 
-    loadRobots();
-  }, []);
+    // Only load robots if we have platform settings loaded (or at least defaults)
+    // This ensures we can calculate prices correctly
+    if (platformMarkup && userCurrency && exchangeRates !== null) {
+      loadRobots();
+    }
+  }, [platformMarkup, userCurrency, exchangeRates]);
 
   const [resolvedImages, setResolvedImages] = useState<Record<string, string>>({});
   const [rawRobotData, setRawRobotData] = useState<any[]>([]);
@@ -451,13 +526,9 @@ export default function RobotSelect() {
     }
   }, [rawRobotData]);
 
-  const handleNext = () => {
-    if (hasSelected && selected[0]) {
-      const selectedRobot = selected[0];
-      // Navigate to services first, then teleop will get robotId from URL
-      // Or we could go directly to teleop with robotId in URL
-      navigate(`/teleop?robotId=${selectedRobot.id}`);
-    }
+  const handleRobotClick = (robot: CardGridItemProps) => {
+    // Navigate to robot detail page
+    navigate(`/robot/${robot.id}`);
   };
 
   const handleViewRobot = (robot: RobotData, event: React.MouseEvent) => {
@@ -471,6 +542,75 @@ export default function RobotSelect() {
     navigate(`/edit-robot?robotId=${robot.uuid}&mode=view`);
   };
 
+  const handleEditRobot = (robot: RobotData, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent card selection when clicking edit
+    
+    if (!robot.uuid) {
+      logger.error('Cannot edit robot: missing UUID');
+      return;
+    }
+    
+    navigate(`/edit-robot?robotId=${robot.uuid}`);
+  };
+
+  const handleDeleteRobot = async (robot: RobotData, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent card selection when clicking delete
+    
+    if (!robot.uuid) {
+      logger.error('Cannot delete robot: missing UUID');
+      return;
+    }
+
+    const robotName = robot.title || 'Unknown Robot';
+    const confirmMessage = `Are you sure you want to delete "${robotName}"? This action cannot be undone.`;
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      setDeletingRobotId(robot.uuid);
+      logger.log(`🗑️ Attempting to delete robot: ${robotName} (${robot.uuid})`);
+      
+      const result = await client.mutations.deleteRobotLambda({ robotId: robot.uuid });
+      
+      logger.log('📊 Delete robot response:', {
+        hasData: !!result.data,
+        hasErrors: !!result.errors,
+        data: result.data,
+        errors: result.errors,
+      });
+      
+      let resultData: { success?: boolean; error?: string; message?: string } | null = null;
+      if (typeof result.data === 'string') {
+        try {
+          const firstParse = JSON.parse(result.data);
+          resultData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+        } catch (e) {
+          resultData = { success: false };
+        }
+      } else {
+        resultData = result.data as typeof resultData;
+      }
+
+      if (resultData?.success) {
+        logger.log('✅ Robot deleted successfully');
+        // Remove robot from local state
+        setRobots(prev => prev.filter(r => r.uuid !== robot.uuid));
+        // Show success message
+        alert(`Robot "${robotName}" has been deleted successfully.`);
+      } else {
+        const errorMessage = resultData?.error || resultData?.message || 'Failed to delete robot';
+        logger.error('❌ Failed to delete robot:', errorMessage);
+        alert(errorMessage || 'Failed to delete robot. Please check the console for details.');
+      }
+    } catch (err) {
+      logger.error('❌ Exception deleting robot:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete robot';
+      alert(errorMessage);
+    } finally {
+      setDeletingRobotId(null);
+    }
+  };
 
   const loadMoreRobots = async () => {
     if (!nextToken || isLoading) return;
@@ -576,7 +716,11 @@ export default function RobotSelect() {
             multiple={false}
             selected={selected}
             setSelected={setSelected}
+            onItemClick={handleRobotClick}
             onView={handleViewRobot}
+            onEdit={canEditRobots ? handleEditRobot : undefined}
+            onDelete={canEditRobots ? handleDeleteRobot : undefined}
+            deletingItemId={deletingRobotId}
           />
       {hasMore && (
         <button
@@ -597,13 +741,6 @@ export default function RobotSelect() {
           {isLoading ? 'Loading...' : 'Load More Robots'}
         </button>
       )}
-      <button
-        className="next-services-button"
-        onClick={handleNext}
-        disabled={!hasSelected}
-      >
-        Start Session
-      </button>
     </div>
   );
 }

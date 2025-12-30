@@ -259,6 +259,20 @@ export function useWebRTC(options: WebRTCOptions) {
           return;
         }
 
+        // Handle insufficient funds error from signaling handler
+        if (msg.type === 'error' && msg.error === 'insufficient_funds') {
+          logger.warn('[BROWSER] Insufficient funds to start session:', msg.message);
+          setStatus(prev => ({
+            ...prev,
+            connecting: false,
+            connected: false,
+            error: msg.message || 'Insufficient credits to start session. Please top up your account.',
+            robotBusy: false,
+          }));
+          cleanup();
+          return;
+        }
+        
         if (msg.type === 'session-created' && msg.sessionId) {
           logger.log('[WEBRTC] Session created with ID:', msg.sessionId);
           setStatus(prev => ({

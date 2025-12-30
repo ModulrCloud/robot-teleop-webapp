@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuthStatus } from "./hooks/useAuthStatus";
+import { useUserCredits } from "./hooks/useUserCredits";
+import { hasAdminAccess } from "./utils/admin";
+import { PurchaseCreditsModal } from "./components/PurchaseCreditsModal";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faHome,
@@ -13,15 +16,20 @@ import {
   faGlobe,
   faList,
   faBuilding,
-  faHandshake
+  faHandshake,
+  faCoins,
+  faWallet,
+  faShieldAlt
 } from '@fortawesome/free-solid-svg-icons';
 import "./Navbar.css";
 import { formatGroupName, capitalizeName } from "./utils/formatters";
 
 export default function Navbar() {
   const { isLoggedIn, signOut, user } = useAuthStatus();
+  const { formattedBalance, loading: creditsLoading } = useUserCredits();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
 
@@ -113,17 +121,30 @@ export default function Navbar() {
 
         <div className="navbar-actions">
           {isLoggedIn ? (
-            <div className="user-menu-wrapper" ref={menuRef}>
+            <>
+              {/* Credits Balance Display - Clickable to open purchase modal */}
               <button 
-                className="user-menu-button"
-                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="credits-balance"
+                onClick={() => setShowPurchaseModal(true)}
+                title="Click to purchase credits"
               >
-                <div className="user-avatar">
-                  {user?.email?.[0].toUpperCase() || 'U'}
-                </div>
-                <span className="user-name">{capitalizeName(user?.email?.split('@')[0]) || 'User'}</span>
-                <FontAwesomeIcon icon={faChevronDown} className="dropdown-icon" />
+                <FontAwesomeIcon icon={faCoins} className="credits-icon" />
+                <span className="credits-amount">
+                  {creditsLoading ? '...' : formattedBalance}
+                </span>
               </button>
+              
+              <div className="user-menu-wrapper" ref={menuRef}>
+                <button 
+                  className="user-menu-button"
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                >
+                  <div className="user-avatar">
+                    {user?.email?.[0].toUpperCase() || 'U'}
+                  </div>
+                  <span className="user-name">{capitalizeName(user?.email?.split('@')[0]) || 'User'}</span>
+                  <FontAwesomeIcon icon={faChevronDown} className="dropdown-icon" />
+                </button>
 
               {showUserMenu && (
                 <div className="user-dropdown">
@@ -156,6 +177,26 @@ export default function Navbar() {
                     <FontAwesomeIcon icon={faCog} />
                     <span>Settings</span>
                   </Link>
+                  <Link to="/credits" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
+                    <FontAwesomeIcon icon={faCoins} />
+                    <span>Credits</span>
+                  </Link>
+                  {hasAdminAccess(user?.email, user?.group ? [user.group] : undefined) && (
+                    <Link to="/admin" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
+                      <FontAwesomeIcon icon={faShieldAlt} />
+                      <span>Admin</span>
+                    </Link>
+                  )}
+                  <button 
+                    className="dropdown-item" 
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      setShowPurchaseModal(true);
+                    }}
+                  >
+                    <FontAwesomeIcon icon={faWallet} />
+                    <span>Purchase Credits</span>
+                  </button>
                   <div className="dropdown-divider"></div>
                   <button className="dropdown-item danger" onClick={handleSignOut}>
                     <FontAwesomeIcon icon={faRightFromBracket} />
@@ -163,7 +204,8 @@ export default function Navbar() {
                   </button>
                 </div>
               )}
-            </div>
+              </div>
+            </>
           ) : (
             <Link to="/signin" className="sign-in-button">
               Sign In
@@ -225,6 +267,12 @@ export default function Navbar() {
           </button>
         </div>
       )}
+
+      {/* Purchase Credits Modal */}
+      <PurchaseCreditsModal 
+        isOpen={showPurchaseModal} 
+        onClose={() => setShowPurchaseModal(false)} 
+      />
     </nav>
   );
 }

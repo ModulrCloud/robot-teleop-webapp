@@ -1,0 +1,276 @@
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+  faTimes,
+  faCoins,
+  faCheck,
+  faStar,
+} from '@fortawesome/free-solid-svg-icons';
+import { useUserCredits } from '../hooks/useUserCredits';
+import { formatCurrency } from '../utils/credits';
+import { generateClient } from 'aws-amplify/api';
+import type { Schema } from '../../amplify/data/resource';
+import { useAuthStatus } from '../hooks/useAuthStatus';
+import { logger } from '../utils/logger';
+import './PurchaseCreditsModal.css';
+
+const client = generateClient<Schema>();
+
+interface PurchaseCreditsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+interface CreditTier {
+  id: string;
+  name: string;
+  price: number;
+  credits: number;
+  bonusCredits: number;
+  isPopular?: boolean;
+  isOnSale?: boolean;
+  salePrice?: number;
+}
+
+// Default tiers (will be replaced with dynamic data from CreditTier model later)
+const DEFAULT_TIERS: CreditTier[] = [
+  {
+    id: '20',
+    name: 'Starter Pack',
+    price: 20.00,
+    credits: 2000,
+    bonusCredits: 0,
+  },
+  {
+    id: '50',
+    name: 'Pro Pack',
+    price: 50.00,
+    credits: 5000,
+    bonusCredits: 500,
+    isPopular: true,
+  },
+  {
+    id: '100',
+    name: 'Elite Pack',
+    price: 100.00,
+    credits: 10000,
+    bonusCredits: 1500,
+  },
+];
+
+export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalProps) {
+  const { currency, formattedBalance } = useUserCredits();
+  const { user } = useAuthStatus();
+  const [selectedTier, setSelectedTier] = useState<string | null>(null);
+  const [tiers] = useState<CreditTier[]>(DEFAULT_TIERS);
+  const [error, setError] = useState<string>('');
+
+  // Close on Escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
+
+  const handlePurchase = async (tierId: string) => {
+    if (!user?.username) {
+      setError('You must be logged in to purchase credits');
+      return;
+    }
+
+    setSelectedTier(tierId);
+    setError('');
+
+    try {
+      logger.log('Creating Stripe checkout session for tier:', tierId);
+      
+      const result = await client.mutations.createStripeCheckoutLambda({
+        tierId,
+        userId: user.username,
+      });
+
+      console.log('🔍 [STRIPE] Full response object:', result);
+      console.log('🔍 [STRIPE] result.data:', result.data);
+      console.log('🔍 [STRIPE] typeof result.data:', typeof result.data);
+      console.log('🔍 [STRIPE] result.data as string:', JSON.stringify(result.data));
+
+      // Parse the JSON response - GraphQL mutations returning a.json() return a string
+      let checkoutData: { checkoutUrl?: string; sessionId?: string };
+      
+      if (typeof result.data === 'string') {
+        console.log('🔍 [STRIPE] Parsing as string...');
+        try {
+          const firstParse = JSON.parse(result.data);
+          console.log('✅ [STRIPE] First parse result:', firstParse);
+          console.log('🔍 [STRIPE] First parse type:', typeof firstParse);
+          
+          // Check if the first parse is still a string (double encoding)
+          if (typeof firstParse === 'string') {
+            console.log('⚠️ [STRIPE] Still a string after first parse, parsing again...');
+            checkoutData = JSON.parse(firstParse);
+            console.log('✅ [STRIPE] Second parse successful:', checkoutData);
+          } else {
+            checkoutData = firstParse;
+            console.log('✅ [STRIPE] Using first parse result');
+          }
+        } catch (e) {
+          console.error('❌ [STRIPE] Parse failed:', e);
+          console.error('❌ [STRIPE] Raw data:', result.data);
+          throw new Error('Invalid response format from server');
+        }
+      } else if (result.data && typeof result.data === 'object') {
+        console.log('🔍 [STRIPE] Using data as object directly');
+        checkoutData = result.data as { checkoutUrl?: string; sessionId?: string };
+      } else {
+        console.error('❌ [STRIPE] Unexpected response format:', result);
+        throw new Error('Unexpected response format from server');
+      }
+
+      const checkoutUrl = checkoutData?.checkoutUrl;
+      const sessionId = checkoutData?.sessionId;
+
+      console.log('🔍 [STRIPE] Final checkoutData:', checkoutData);
+      console.log('🔍 [STRIPE] checkoutUrl:', checkoutUrl);
+      console.log('🔍 [STRIPE] sessionId:', sessionId);
+
+      if (!checkoutUrl) {
+        logger.error('No checkoutUrl in response. Full data:', checkoutData);
+        throw new Error('No checkout URL returned from server');
+      }
+
+      // Redirect to Stripe Checkout
+      window.location.href = checkoutUrl;
+    } catch (err) {
+      logger.error('Error creating Stripe checkout:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create checkout session');
+      setSelectedTier(null);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  // Render modal using portal to body to avoid z-index/overflow issues
+  return createPortal(
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="modal-header">
+          <div className="modal-header-left">
+            <FontAwesomeIcon icon={faCoins} className="modal-icon" />
+            <div>
+              <h2>Purchase Credits</h2>
+              <p className="modal-subtitle">Your current balance: {formattedBalance}</p>
+            </div>
+          </div>
+          <button className="modal-close" onClick={onClose} aria-label="Close">
+            <FontAwesomeIcon icon={faTimes} />
+          </button>
+        </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="modal-error" style={{ 
+            padding: '12px', 
+            margin: '0 24px', 
+            backgroundColor: '#f44336', 
+            color: 'white', 
+            borderRadius: '4px',
+            marginBottom: '16px'
+          }}>
+            {error}
+          </div>
+        )}
+
+        {/* Tiers Grid */}
+        <div className="modal-body">
+          <div className="tiers-grid">
+            {tiers.map((tier) => {
+              const totalCredits = tier.credits + tier.bonusCredits;
+              const displayPrice = tier.isOnSale && tier.salePrice 
+                ? tier.salePrice 
+                : tier.price;
+              
+              return (
+                <div
+                  key={tier.id}
+                  className={`tier-card ${tier.isPopular ? 'popular' : ''} ${selectedTier === tier.id ? 'selected' : ''}`}
+                >
+                  {tier.isPopular && (
+                    <div className="popular-badge">
+                      <FontAwesomeIcon icon={faStar} />
+                      <span>Most Popular</span>
+                    </div>
+                  )}
+                  {tier.isOnSale && (
+                    <div className="sale-badge">On Sale</div>
+                  )}
+                  
+                  <div className="tier-header">
+                    <h3>{tier.name}</h3>
+                    <div className="tier-price">
+                      {formatCurrency(displayPrice, currency)}
+                    </div>
+                  </div>
+
+                  <div className="tier-credits">
+                    <div className="credits-main">
+                      <FontAwesomeIcon icon={faCoins} />
+                      <span className="credits-amount">{tier.credits.toLocaleString()}</span>
+                      <span className="credits-label">Credits</span>
+                    </div>
+                    {tier.bonusCredits > 0 && (
+                      <div className="credits-bonus">
+                        <FontAwesomeIcon icon={faCheck} />
+                        <span>+{tier.bonusCredits.toLocaleString()} Bonus</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="tier-total">
+                    <span className="total-label">Total:</span>
+                    <span className="total-credits">{totalCredits.toLocaleString()} Credits</span>
+                  </div>
+
+                  <button
+                    className="tier-button"
+                    onClick={() => handlePurchase(tier.id)}
+                    disabled={selectedTier === tier.id}
+                  >
+                    {selectedTier === tier.id ? 'Processing...' : 'Purchase'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="modal-footer">
+          <p className="modal-note">
+            <FontAwesomeIcon icon={faCoins} />
+            <span>Credits never expire. Use them for teleoperation sessions.</span>
+          </p>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+

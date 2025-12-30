@@ -91,6 +91,41 @@
 }
 
 /* User Menu */
+/* Credits Balance Display */
+.credits-balance {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 183, 0, 0.1);
+  border: 1px solid rgba(255, 183, 0, 0.3);
+  border-radius: 6px;
+  color: var(--yellow, #ffb700);
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-right: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.credits-balance:hover {
+  background: rgba(255, 183, 0, 0.2);
+  border-color: rgba(255, 183, 0, 0.5);
+  transform: translateY(-1px);
+}
+
+.credits-icon {
+  font-size: 1rem;
+}
+
+.credits-amount {
+  font-family: 'Inter', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .navbar-actions {
   display: flex;
   align-items: center;

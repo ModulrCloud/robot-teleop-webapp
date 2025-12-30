@@ -6,8 +6,11 @@ import { uploadData, getUrl } from 'aws-amplify/storage';
 import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
 import { usePageTitle } from "../hooks/usePageTitle";
+import { useAuthStatus } from "../hooks/useAuthStatus";
+import { getCurrencyInfo, creditsToCurrencySync, currencyToCreditsSync, fetchExchangeRates, type CurrencyCode } from '../utils/credits';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
+import { RobotAvailabilityManager } from '../components/RobotAvailabilityManager';
 import { 
   faRobot, 
   faCheckCircle, 
@@ -30,10 +33,25 @@ const ROBOT_MODELS = [
   { value: "submarine", label: "Submarine", icon: faWater },
 ];
 
+// Get default robot image based on model
+const getDefaultRobotImage = (model: string): string => {
+  const modelImages: Record<string, string> = {
+    'humanoid': '/humaniod.png',
+    'drone': '/drone.png',
+    'rover': '/rover.webp',
+    'arm': '/robot_arm.webp',
+    'submarine': '/submarine.png',
+    'racer': '/racer.png',
+  };
+  
+  return modelImages[model.toLowerCase()] || '/humaniod.png';
+};
+
 type RobotListing = {
   robotName: string;
   description: string;
   model: string;
+  hourlyRateCredits: number;
   enableAccessControl: boolean;
   allowedUserEmails: string; // Comma-separated or newline-separated emails
   city: string;
@@ -66,6 +84,7 @@ export const EditRobot = () => {
     robotName: "",
     description: "",
     model: ROBOT_MODELS[0].value,
+    hourlyRateCredits: 100,
     enableAccessControl: false,
     allowedUserEmails: "",
     city: "",
@@ -82,6 +101,78 @@ export const EditRobot = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { user } = useAuthStatus();
+  const [currencyDisplay, setCurrencyDisplay] = useState<string>('USD');
+  const [currencyCode, setCurrencyCode] = useState<CurrencyCode>('USD');
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number> | undefined>();
+  const [hourlyRateCurrency, setHourlyRateCurrency] = useState<number>(1.00);
+
+  // Fetch exchange rates on mount
+  useEffect(() => {
+    fetchExchangeRates().then(rates => {
+      setExchangeRates(rates);
+    }).catch(err => {
+      console.warn('Failed to fetch exchange rates:', err);
+    });
+  }, []);
+
+  // Load user's preferred currency for display
+  // Partners may also have a Client record for currency preferences
+  useEffect(() => {
+    const loadCurrency = async () => {
+      if (!user?.username) {
+        setCurrencyDisplay('USD');
+        setCurrencyCode('USD');
+        return;
+      }
+
+      try {
+        // Check Partner record first (if user is a partner)
+        const { data: partners } = await client.models.Partner.list({
+          filter: { cognitoUsername: { eq: user.username } },
+        });
+
+        let preferredCurrency: CurrencyCode = 'USD';
+        
+        if (partners && partners.length > 0) {
+          // User is a partner - use Partner record's currency preference
+          preferredCurrency = (partners[0]?.preferredCurrency || "USD").toUpperCase() as CurrencyCode;
+        } else {
+          // User is a client - check Client record
+          const { data: clients } = await client.models.Client.list({
+            filter: { cognitoUsername: { eq: user.username } },
+          });
+          const clientRecord = clients?.[0];
+          preferredCurrency = (clientRecord?.preferredCurrency || "USD").toUpperCase() as CurrencyCode;
+        }
+        
+        setCurrencyCode(preferredCurrency);
+        
+        const currencyInfo = getCurrencyInfo(preferredCurrency);
+        // Show currency code (USD, EUR, etc.) or "?" if currency info is invalid
+        setCurrencyDisplay(currencyInfo.symbol === '?' ? '?' : preferredCurrency);
+        
+        // Convert current credits value to new currency for display
+        const currencyValue = creditsToCurrencySync(robotListing.hourlyRateCredits, preferredCurrency, exchangeRates);
+        setHourlyRateCurrency(currencyValue);
+      } catch (err) {
+        logger.error("Error loading currency preference:", err);
+        // Fallback to USD on error
+        setCurrencyDisplay('USD');
+        setCurrencyCode('USD');
+      }
+    };
+
+    loadCurrency();
+  }, [user?.username, exchangeRates, robotListing.hourlyRateCredits]);
+
+  // Update displayed currency value when credits change or currency changes
+  useEffect(() => {
+    if (currencyCode && exchangeRates && robotListing.hourlyRateCredits) {
+      const currencyValue = creditsToCurrencySync(robotListing.hourlyRateCredits, currencyCode, exchangeRates);
+      setHourlyRateCurrency(currencyValue);
+    }
+  }, [robotListing.hourlyRateCredits, currencyCode, exchangeRates]);
 
   // Load robot data
   useEffect(() => {
@@ -129,6 +220,7 @@ export const EditRobot = () => {
           robotName: name,
           description: robotData.description || "",
           model: modelValue,
+          hourlyRateCredits: robotData.hourlyRateCredits || 100,
           enableAccessControl: allowedUsers.length > 0,
           allowedUserEmails: additionalUsers.join('\n'),
           city: robotData.city || "",
@@ -147,10 +239,15 @@ export const EditRobot = () => {
               setImagePreview(result.url.toString());
             } catch (err) {
               logger.error('Error loading existing image:', err);
+              // If loading fails, show default image
+              setImagePreview(getDefaultRobotImage(modelValue));
             }
           } else {
             setImagePreview(robotData.imageUrl);
           }
+        } else {
+          // No image provided, use default based on model
+          setImagePreview(getDefaultRobotImage(modelValue));
         }
       } catch (err) {
         logger.error('Error loading robot:', err);
@@ -203,10 +300,36 @@ export const EditRobot = () => {
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = event.target;
     const checked = (event.target as HTMLInputElement).checked;
-    setRobotListing(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
+    
+    // Handle hourly rate input (user enters currency value, we convert to credits)
+    if (type === 'number' && name === 'hourlyRateCredits') {
+      // Remove any non-numeric characters except decimal point
+      const sanitized = value.replace(/[^0-9.]/g, '');
+      // Convert to number, default to 0 if empty or invalid
+      const currencyValue = sanitized === '' || sanitized === '.' ? 0 : parseFloat(sanitized);
+      
+      if (!isNaN(currencyValue) && currencyValue >= 0) {
+        // Update displayed currency value
+        setHourlyRateCurrency(currencyValue);
+        
+        // Convert currency value back to credits for storage
+        const creditsValue = currencyToCreditsSync(currencyValue, currencyCode, exchangeRates);
+        setRobotListing(prev => ({
+          ...prev,
+          hourlyRateCredits: creditsValue,
+        }));
+      }
+    } else {
+      setRobotListing(prev => ({
+        ...prev,
+        [name]: type === 'checkbox' ? checked : value,
+      }));
+      
+      // If model changed and no custom image is set, update preview to default
+      if (name === 'model' && !imageFile && !existingImageKey) {
+        setImagePreview(getDefaultRobotImage(value));
+      }
+    }
   };
 
   const handleFileSelect = (file: File) => {
@@ -237,10 +360,11 @@ export const EditRobot = () => {
 
   const clearImage = () => {
     setImageFile(null);
-    setImagePreview(null);
     setExistingImageKey(null);
     setUploadError(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    // Show default image based on current model
+    setImagePreview(getDefaultRobotImage(robotListing.model));
   };
 
   const uploadImage = async (): Promise<string | null> => {
@@ -287,6 +411,12 @@ export const EditRobot = () => {
       }
     }
 
+    // If no image is provided and no existing image, don't include imageUrl in update
+    // The default robot image will be used based on the model
+    if (!imageUrl || imageUrl.trim() === '') {
+      imageUrl = undefined;
+    }
+
     // Parse email list (split by comma or newline, trim, filter empty)
     const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
       ? robotListing.allowedUserEmails
@@ -307,9 +437,10 @@ export const EditRobot = () => {
       robotName: robotListing.robotName,
       description: robotListing.description,
       model: modelToSend,
+      hourlyRateCredits: robotListing.hourlyRateCredits,
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
-      imageUrl: imageUrl || undefined,
+      ...(imageUrl ? { imageUrl } : {}), // Only include imageUrl if it has a value
       city: robotListing.city || undefined,
       state: robotListing.state || undefined,
       country: robotListing.country || undefined,
@@ -648,6 +779,28 @@ export const EditRobot = () => {
                 {robotListing.description.length}/280 characters
               </div>
             </div>
+
+            <div className="form-group">
+              <label htmlFor="hourly-rate">
+                Hourly Rate ({currencyDisplay}) <span className="required">*</span>
+              </label>
+              <input 
+                id="hourly-rate" 
+                type="number" 
+                name="hourlyRateCredits"
+                value={hourlyRateCurrency.toFixed(2)}
+                onChange={handleInputChange}
+                placeholder="1.00"
+                min="0"
+                step="0.01"
+                required
+                disabled={isLoading}
+              />
+              <small className="form-help-text">
+                Set the hourly rate in your preferred currency that clients will pay to use this robot. 
+                The platform will add a markup on top of this rate.
+              </small>
+            </div>
           </div>
 
           <div className="form-section">
@@ -682,9 +835,11 @@ export const EditRobot = () => {
               ) : (
                 <div className="preview-container">
                   <img src={imagePreview} alt="Preview" />
-                  <button type="button" className="remove-image" onClick={clearImage}>
-                    <FontAwesomeIcon icon={faTimes} />
-                  </button>
+                  {(imageFile || existingImageKey) && (
+                    <button type="button" className="remove-image" onClick={clearImage}>
+                      <FontAwesomeIcon icon={faTimes} />
+                    </button>
+                  )}
                   {uploadProgress > 0 && uploadProgress < 100 && (
                     <div className="upload-progress">
                       <div className="progress-bar" style={{ width: `${uploadProgress}%` }} />
@@ -822,6 +977,15 @@ export const EditRobot = () => {
               You can find coordinates using <a href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer">Google Maps</a>.
             </p>
           </div>
+
+          {robotIdForStatus && (
+            <div className="form-section">
+              <RobotAvailabilityManager 
+                robotId={robotIdForStatus}
+                robotUuid={robotId || undefined}
+              />
+            </div>
+          )}
 
           <div className="form-actions">
             <button 

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './CreateRobotListing.css';
 import { generateClient } from 'aws-amplify/api';
@@ -6,6 +6,8 @@ import { uploadData } from 'aws-amplify/storage';
 import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
 import { usePageTitle } from "../hooks/usePageTitle";
+import { useAuthStatus } from "../hooks/useAuthStatus";
+import { getCurrencyInfo, creditsToCurrencySync, currencyToCreditsSync, fetchExchangeRates, type CurrencyCode } from '../utils/credits';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
 import { 
@@ -18,7 +20,8 @@ import {
   faPlane,
   faWater,
   faCloudUploadAlt,
-  faTimes
+  faTimes,
+  faCalendarAlt
 } from '@fortawesome/free-solid-svg-icons';
 
 const ROBOT_MODELS = [
@@ -32,6 +35,7 @@ type RobotListing = {
   robotName: string;
   description: string;
   model: string;
+  hourlyRateCredits: number;
   enableAccessControl: boolean;
   allowedUserEmails: string; // Comma-separated or newline-separated emails
   city: string;
@@ -48,11 +52,13 @@ export const CreateRobotListing = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState<boolean | undefined>();
+  const [hourlyRateError, setHourlyRateError] = useState<string | null>(null);
 
   const [robotListing, setRobotListing] = useState<RobotListing>({
     robotName: "",
     description: "",
     model: ROBOT_MODELS[0].value,
+    hourlyRateCredits: 100, // Default 100 credits/hour (stored internally)
     enableAccessControl: false,
     allowedUserEmails: "",
     city: "",
@@ -61,6 +67,9 @@ export const CreateRobotListing = () => {
     latitude: "",
     longitude: "",
   });
+  
+  // Raw input value as string to allow free typing
+  const [hourlyRateInput, setHourlyRateInput] = useState<string>('1.00');
 
   // Image upload state
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -69,14 +78,94 @@ export const CreateRobotListing = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { user } = useAuthStatus();
+  const [currencyDisplay, setCurrencyDisplay] = useState<string>('USD');
+  const [currencyCode, setCurrencyCode] = useState<CurrencyCode>('USD');
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number> | undefined>();
+
+  // Fetch exchange rates on mount
+  useEffect(() => {
+    fetchExchangeRates().then(rates => {
+      setExchangeRates(rates);
+    }).catch(err => {
+      console.warn('Failed to fetch exchange rates:', err);
+    });
+  }, []);
+
+  // Load user's preferred currency for display
+  // Check Partner record first (for partners), then Client record (for clients)
+  useEffect(() => {
+    const loadCurrency = async () => {
+      if (!user?.username) {
+        setCurrencyDisplay('USD');
+        setCurrencyCode('USD');
+        // Convert default credits to USD for display
+        const usdValue = creditsToCurrencySync(robotListing.hourlyRateCredits, 'USD', exchangeRates);
+        setHourlyRateInput(usdValue.toFixed(2));
+        return;
+      }
+
+      try {
+        // Check Partner record first (if user is a partner)
+        const { data: partners } = await client.models.Partner.list({
+          filter: { cognitoUsername: { eq: user.username } },
+        });
+
+        let preferredCurrency: CurrencyCode = 'USD';
+        
+        if (partners && partners.length > 0) {
+          // User is a partner - use Partner record's currency preference
+          preferredCurrency = (partners[0]?.preferredCurrency || "USD").toUpperCase() as CurrencyCode;
+        } else {
+          // User is a client - check Client record
+          const { data: clients } = await client.models.Client.list({
+            filter: { cognitoUsername: { eq: user.username } },
+          });
+          const clientRecord = clients?.[0];
+          preferredCurrency = (clientRecord?.preferredCurrency || "USD").toUpperCase() as CurrencyCode;
+        }
+        
+        setCurrencyCode(preferredCurrency);
+        
+        const currencyInfo = getCurrencyInfo(preferredCurrency);
+        // Show currency code (USD, EUR, etc.) or "?" if currency info is invalid
+        setCurrencyDisplay(currencyInfo.symbol === '?' ? '?' : preferredCurrency);
+        
+        // Convert current credits value to new currency for display
+        const currencyValue = creditsToCurrencySync(robotListing.hourlyRateCredits, preferredCurrency, exchangeRates);
+        setHourlyRateInput(currencyValue.toFixed(2));
+      } catch (err) {
+        logger.error("Error loading currency preference:", err);
+        // Fallback to USD on error
+        setCurrencyDisplay('USD');
+        setCurrencyCode('USD');
+        const usdValue = creditsToCurrencySync(robotListing.hourlyRateCredits, 'USD', exchangeRates);
+        setHourlyRateInput(usdValue.toFixed(2));
+      }
+    };
+
+    loadCurrency();
+  }, [user?.username, exchangeRates]);
+
+  // Only set initial value once when currency is loaded - don't update constantly
+  // This allows the user to type freely without interference
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = event.target;
     const checked = (event.target as HTMLInputElement).checked;
-    setRobotListing(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
+    
+    // Handle hourly rate input - just let user type freely, no validation while typing
+    if (type === 'number' && name === 'hourlyRateCredits') {
+      // Clear any previous error
+      setHourlyRateError(null);
+      // Allow free typing - store as string
+      setHourlyRateInput(value);
+    } else {
+      setRobotListing(prev => ({
+        ...prev,
+        [name]: type === 'checkbox' ? checked : value,
+      }));
+    }
   };
 
   const handleFileSelect = (file: File) => {
@@ -142,6 +231,23 @@ export const CreateRobotListing = () => {
     setSuccess(undefined);
     setUploadError(null);
     setUploadProgress(0);
+    setHourlyRateError(null);
+
+    // Validate hourly rate before proceeding
+    const hourlyRateValue = parseFloat(hourlyRateInput);
+    if (isNaN(hourlyRateValue) || hourlyRateValue < 0) {
+      setHourlyRateError('Enter a valid number');
+      setIsLoading(false);
+      return;
+    }
+
+    // Convert currency value to credits for storage
+    const creditsValue = currencyToCreditsSync(hourlyRateValue, currencyCode, exchangeRates);
+    if (isNaN(creditsValue) || creditsValue < 0) {
+      setHourlyRateError('Enter a valid number');
+      setIsLoading(false);
+      return;
+    }
 
     let imageUrl: string | null = null;
 
@@ -167,6 +273,7 @@ export const CreateRobotListing = () => {
       robotName: robotListing.robotName,
       description: robotListing.description,
       model: robotListing.model,
+      hourlyRateCredits: creditsValue, // Use the validated and converted value
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
       imageUrl: imageUrl || undefined,
@@ -210,6 +317,7 @@ export const CreateRobotListing = () => {
       robotName: "",
       description: "",
       model: ROBOT_MODELS[0].value,
+      hourlyRateCredits: 100,
       enableAccessControl: false,
       allowedUserEmails: "",
       city: "",
@@ -305,6 +413,34 @@ export const CreateRobotListing = () => {
               <div className={`char-count ${robotListing.description.length >= 280 ? 'char-count-limit' : ''}`}>
                 {robotListing.description.length}/280 characters
               </div>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="hourly-rate">
+                Hourly Rate ({currencyDisplay}) <span className="required">*</span>
+              </label>
+              <input 
+                id="hourly-rate" 
+                type="number" 
+                name="hourlyRateCredits"
+                value={hourlyRateInput}
+                onChange={handleInputChange}
+                placeholder="1.00"
+                min="0"
+                step="0.01"
+                required
+                disabled={isLoading}
+                className={hourlyRateError ? 'error' : ''}
+              />
+              {hourlyRateError && (
+                <div className="form-error" style={{ color: '#f44336', marginTop: '0.5rem', fontSize: '0.875rem' }}>
+                  {hourlyRateError}
+                </div>
+              )}
+              <small className="form-help-text">
+                Set the hourly rate in your preferred currency that clients will pay to use this robot. 
+                The platform will add a markup on top of this rate.
+              </small>
             </div>
 
             {/* Image Upload Section */}
@@ -476,6 +612,34 @@ export const CreateRobotListing = () => {
               Latitude and longitude are optional but useful for distance-based searches. 
               You can find coordinates using <a href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer">Google Maps</a>.
             </p>
+          </div>
+
+          <div className="form-section">
+            <h3>
+              <FontAwesomeIcon icon={faCalendarAlt} style={{ marginRight: '0.5rem' }} />
+              Robot Availability
+            </h3>
+            <div style={{ 
+              background: 'rgba(255, 183, 0, 0.1)', 
+              border: '1px solid rgba(255, 183, 0, 0.3)', 
+              borderRadius: '8px', 
+              padding: '1.5rem',
+              marginTop: '1rem'
+            }}>
+              <p style={{ 
+                color: 'rgba(255, 255, 255, 0.9)', 
+                margin: 0,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.75rem'
+              }}>
+                <FontAwesomeIcon icon={faInfoCircle} style={{ color: '#17a2b8', marginTop: '0.25rem', flexShrink: 0 }} />
+                <span>
+                  You can manage robot availability (block dates/times when your robot is unavailable) after creating the robot. 
+                  Once your robot is created, you'll be able to set availability blocks from the Edit Robot page.
+                </span>
+              </p>
+            </div>
           </div>
 
           <div className="form-actions">
