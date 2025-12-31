@@ -20,14 +20,14 @@
 }
 
 /* Stats Summary */
-.stats-summary {
+.session-history-page .stats-summary {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 1rem;
   margin-bottom: 2rem;
 }
 
-.stat-card {
+.session-history-page .stats-summary .stat-card {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -37,7 +37,7 @@
   border-radius: 12px;
 }
 
-.stat-icon {
+.session-history-page .stats-summary .stat-icon {
   width: 40px;
   height: 40px;
   display: flex;
@@ -49,18 +49,18 @@
   flex-shrink: 0;
 }
 
-.stat-content {
+.session-history-page .stats-summary .stat-content {
   min-width: 0;
 }
 
-.stat-value {
+.session-history-page .stats-summary .stat-value {
   font-size: 1.25rem;
   font-weight: 700;
   color: #fff;
   line-height: 1.2;
 }
 
-.stat-label {
+.session-history-page .stats-summary .stat-label {
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.5);
   margin-top: 0.125rem;
@@ -176,7 +176,7 @@
 }
 
 @media (max-width: 600px) {
-  .stats-summary {
+  .session-history-page .stats-summary {
     grid-template-columns: repeat(2, 1fr);
   }
 
