@@ -35,6 +35,7 @@ import { checkRobotAvailability } from './functions/check-robot-availability/res
 import { manageRobotAvailability } from './functions/manage-robot-availability/resource';
 import { processRobotReservationRefunds } from './functions/process-robot-reservation-refunds/resource';
 import { listPartnerPayouts } from './functions/list-partner-payouts/resource';
+import { processPayout } from './functions/process-payout/resource';
 import { getSessionLambda } from './functions/get-session/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
@@ -83,6 +84,7 @@ const backend = defineBackend({
   manageRobotAvailability,
   processRobotReservationRefunds,
   listPartnerPayouts,
+  processPayout,
   getSessionLambda,
 });
 
@@ -158,6 +160,11 @@ const connTable = new Table(dataStack, 'ConnectionsTable', {
   partitionKey: { name: 'connectionId', type: AttributeType.STRING },
   billingMode: BillingMode.PAY_PER_REQUEST,
   removalPolicy: RemovalPolicy.DESTROY, // For sandbox/dev
+});
+// Add GSI for monitoringRobotId lookups (for finding all connections monitoring a robot)
+connTable.addGlobalSecondaryIndex({
+  indexName: 'monitoringRobotIdIndex',
+  partitionKey: { name: 'monitoringRobotId', type: AttributeType.STRING },
 });
 
 const robotPresenceTable = new Table(dataStack, 'RobotPresenceTable', {
@@ -242,6 +249,14 @@ tables.Robot.grantReadData(signalingFunction); // Read-only for checking ACLs
 tables.Session.grantReadWriteData(signalingFunction); // Read/write for session management
 tables.UserCredits.grantReadData(signalingFunction); // Read-only for balance checks
 tables.PlatformSettings.grantReadData(signalingFunction); // Read-only for platform markup
+// Grant permission to query GSIs
+signalingFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${connTable.tableArn}/index/monitoringRobotIdIndex`,
+    `${tables.Session.tableArn}/index/connectionIdIndex`,
+  ],
+}));
 signalingCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
 signalingCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
 signalingCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
@@ -779,3 +794,13 @@ getSessionLambdaFunction.addToRolePolicy(new PolicyStatement({
     `${tables.Session.tableArn}/index/userIdIndex`
   ]
 }));
+
+// Process Payout Lambda configuration
+const processPayoutFunction = backend.processPayout.resources.lambda;
+const processPayoutCdkFunction = processPayoutFunction as CdkFunction;
+processPayoutCdkFunction.addEnvironment('PARTNER_PAYOUT_TABLE', tables.PartnerPayout.tableName);
+processPayoutCdkFunction.addEnvironment('ADMIN_AUDIT_TABLE', adminAuditTable.tableName);
+processPayoutCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.PartnerPayout.grantReadWriteData(processPayoutFunction);
+adminAuditTable.grantWriteData(processPayoutFunction);
+userPool.grant(processPayoutFunction, 'cognito-idp:AdminGetUser');

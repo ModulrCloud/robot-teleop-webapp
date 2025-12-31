@@ -230,6 +230,50 @@
   color: #fff;
 }
 
+/* Payout filter and sort dropdowns */
+.payout-filters select {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 8px !important;
+  color: #fff !important;
+  padding: 0.5rem 0.75rem !important;
+  font-size: 0.9rem !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffc107' d='M6 9L1 4h10z'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.75rem center !important;
+  background-size: 12px !important;
+  padding-right: 2.5rem !important;
+}
+
+.payout-filters select:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 193, 7, 0.5) !important;
+}
+
+.payout-filters select:focus {
+  outline: none !important;
+  border-color: #ffc107 !important;
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.2) !important;
+  background-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.payout-filters select option {
+  background: #1a1a1a !important;
+  color: #fff !important;
+  padding: 0.5rem !important;
+}
+
+.payout-filters select option:hover,
+.payout-filters select option:checked {
+  background: rgba(255, 193, 7, 0.2) !important;
+  color: #ffc107 !important;
+}
+
 .admin-table tr:hover {
   background: rgba(255, 255, 255, 0.03);
 }

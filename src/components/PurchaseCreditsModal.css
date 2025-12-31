@@ -143,6 +143,37 @@
   background: rgba(255, 183, 0, 0.15);
 }
 
+.tier-card.enterprise {
+  border-color: rgba(255, 183, 0, 0.4);
+  background: rgba(255, 183, 0, 0.1);
+}
+
+.tier-enterprise-message {
+  text-align: center;
+  padding: 2rem 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.tier-enterprise-message p {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 1rem;
+  margin: 0 0 0.75rem 0;
+}
+
+.enterprise-email {
+  color: var(--yellow, #ffb700);
+  font-size: 1.25rem;
+  font-weight: 700;
+  text-decoration: none;
+  display: inline-block;
+  transition: all 0.2s ease;
+}
+
+.enterprise-email:hover {
+  color: #ffd700;
+  text-decoration: underline;
+}
+
 .popular-badge {
   position: absolute;
   top: -12px;

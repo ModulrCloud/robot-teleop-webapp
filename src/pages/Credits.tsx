@@ -300,6 +300,8 @@ export const Credits = () => {
       
       let verifyData: {
         success?: boolean;
+        error?: string;
+        paymentStatus?: string;
         userId?: string;
         tierId?: string;
         credits?: number;
@@ -323,8 +325,19 @@ export const Credits = () => {
       }
 
 
-      if (!verifyData.success || !verifyData.credits) {
-        throw new Error("Payment verification failed");
+      // Check if payment was declined or failed
+      if (!verifyData.success) {
+        const errorMsg = verifyData.error || "Payment was declined. Please check your payment method and try again.";
+        setError(errorMsg);
+        // Clean up URL parameters
+        setSearchParams({});
+        // Show error for 10 seconds
+        setTimeout(() => setError(""), 10000);
+        return;
+      }
+
+      if (!verifyData.credits) {
+        throw new Error("Payment verification failed: No credits information received");
       }
 
       logger.log("✅ [PAYMENT] Payment verified:", verifyData);
@@ -367,11 +380,30 @@ export const Credits = () => {
       setTimeout(() => setSuccess(""), 5000);
     } catch (err) {
       logger.error("❌ [PAYMENT] Error processing payment:", err);
-      setError(
-        err instanceof Error 
-          ? `Failed to process payment: ${err.message}` 
-          : "Failed to process payment. Please contact support if credits were charged."
-      );
+      
+      // Provide user-friendly error messages
+      let errorMessage = "Failed to process payment. Please contact support if credits were charged.";
+      
+      if (err instanceof Error) {
+        const errMsg = err.message.toLowerCase();
+        if (errMsg.includes('declined') || errMsg.includes('payment not completed')) {
+          errorMessage = "Your payment was declined. Please check your payment method and try again, or contact your bank for assistance.";
+        } else if (errMsg.includes('insufficient funds')) {
+          errorMessage = "Insufficient funds. Please use a different payment method or add funds to your account.";
+        } else if (errMsg.includes('expired')) {
+          errorMessage = "Your payment method has expired. Please update your payment information and try again.";
+        } else if (errMsg.includes('invalid')) {
+          errorMessage = "Invalid payment method. Please check your card details and try again.";
+        } else {
+          errorMessage = `Payment error: ${err.message}`;
+        }
+      }
+      
+      setError(errorMessage);
+      // Clean up URL parameters
+      setSearchParams({});
+      // Show error for 10 seconds
+      setTimeout(() => setError(""), 10000);
     }
   };
 

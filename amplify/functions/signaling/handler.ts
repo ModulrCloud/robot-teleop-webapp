@@ -378,12 +378,12 @@ async function canAccessRobot(robotId: string, claims: Claims, userEmailOrUserna
 
     try {
         // Find the robot by robotId (string) in the Robot table
-        // Since there's no index on robotId, we need to scan (less efficient but works)
-        // In production, consider adding a GSI on robotId for better performance
-        const scanResult = await db.send(
-            new ScanCommand({
+        // Use GSI (robotIdIndex) for fast, direct lookup instead of scanning entire table
+        const queryResult = await db.send(
+            new QueryCommand({
                 TableName: ROBOT_TABLE_NAME,
-                FilterExpression: 'robotId = :robotId',
+                IndexName: 'robotIdIndex', // Use GSI for efficient lookup
+                KeyConditionExpression: 'robotId = :robotId',
                 ExpressionAttributeValues: {
                     ':robotId': { S: robotId },
                 },
@@ -391,7 +391,7 @@ async function canAccessRobot(robotId: string, claims: Claims, userEmailOrUserna
             })
         );
         
-        const robotItem = scanResult.Items?.[0];
+        const robotItem = queryResult.Items?.[0];
 
         if (!robotItem) {
             // Robot not found in Robot table - might be a legacy robot or not registered
@@ -428,9 +428,10 @@ async function canAccessRobot(robotId: string, claims: Claims, userEmailOrUserna
         console.log(`User ${userEmailOrUsername || claims.email || claims.sub} not in ACL for robot ${robotId}`);
         return false;
     } catch (error) {
-        console.warn('Failed to check robot ACL:', error);
-        // Fail open - if we can't check ACL, allow access (availability over security)
-        return true;
+        console.error('Failed to check robot ACL:', error);
+        // Fail closed - if we can't check ACL, deny access for security
+        // Log the error for debugging but don't expose internal details to user
+        return false;
     }
 }
 
@@ -796,9 +797,12 @@ async function endConnectionSessions(connectionId: string): Promise<void> {
   if (!SESSION_TABLE_NAME) return;
 
   try {
-    const result = await db.send(new ScanCommand({
+    // Use GSI (connectionIdIndex) for fast, direct lookup instead of scanning entire table
+    const result = await db.send(new QueryCommand({
       TableName: SESSION_TABLE_NAME,
-      FilterExpression: 'connectionId = :connId AND #status = :active',
+      IndexName: 'connectionIdIndex', // Use GSI for efficient lookup
+      KeyConditionExpression: 'connectionId = :connId',
+      FilterExpression: '#status = :active', // Filter for active sessions only
       ExpressionAttributeNames: {
         '#status': 'status',
       },
@@ -1071,6 +1075,20 @@ async function handleMonitor(
       robotId,
       userId: claims.sub,
     });
+    
+    // Send error message to client through WebSocket (not just HTTP 403)
+    // This ensures the user sees a clear error message
+    try {
+      await postTo(connectionId, {
+        type: 'error',
+        error: 'access_denied',
+        message: 'You are not authorized to monitor this robot. The robot owner may have restricted access to specific users. Please contact the robot owner if you believe this is an error.',
+        robotId: robotId,
+      });
+    } catch (e) {
+      console.warn('Failed to send access denied message to client:', e);
+    }
+    
     return { statusCode: 403, body: 'Access denied: You are not authorized to monitor this robot' };
   }
 
@@ -1130,13 +1148,13 @@ async function handleMonitor(
 // Helper function to get all monitoring connections for a robot
 async function getMonitoringConnections(robotId: string): Promise<string[]> {
   try {
-    // Scan ConnectionsTable for connections monitoring this robot
-    // Note: This is a scan operation. For better performance, consider adding a GSI on monitoringRobotId
+    // Use GSI (monitoringRobotIdIndex) for fast, direct lookup instead of scanning entire table
     console.log('[MONITOR_QUERY_START]', { robotId });
     const result = await db.send(
-      new ScanCommand({
+      new QueryCommand({
         TableName: CONN_TABLE,
-        FilterExpression: 'monitoringRobotId = :robotId',
+        IndexName: 'monitoringRobotIdIndex', // Use GSI for efficient lookup
+        KeyConditionExpression: 'monitoringRobotId = :robotId',
         ExpressionAttributeValues: {
           ':robotId': { S: robotId },
         },
@@ -1363,6 +1381,20 @@ async function handleSignal(
     if (!hasAccess) {
       const userIdentifier = userEmailOrUsername || (claims as Claims).email || claims.sub || 'unknown';
       console.log(`Access denied: User ${userIdentifier} attempted to access robot ${robotId}`);
+      
+      // Send error message to client through WebSocket (not just HTTP 403)
+      // This ensures the user sees a clear error message
+      try {
+        await postTo(sourceConnId, {
+          type: 'error',
+          error: 'access_denied',
+          message: 'You are not authorized to access this robot. The robot owner may have restricted access to specific users. Please contact the robot owner if you believe this is an error.',
+          robotId: robotId,
+        });
+      } catch (e) {
+        console.warn('Failed to send access denied message to client:', e);
+      }
+      
       return { statusCode: 403, body: 'Access denied: You are not authorized to access this robot' };
     }
 
