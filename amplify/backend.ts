@@ -37,12 +37,18 @@ import { processRobotReservationRefunds } from './functions/process-robot-reserv
 import { listPartnerPayouts } from './functions/list-partner-payouts/resource';
 import { processPayout } from './functions/process-payout/resource';
 import { getSessionLambda } from './functions/get-session/resource';
+import { cleanupStaleConnections } from './functions/cleanup-stale-connections/resource';
+import { triggerConnectionCleanup } from './functions/trigger-connection-cleanup/resource';
+import { getActiveRobots } from './functions/get-active-robots/resource';
+import { manageCreditTier } from './functions/manage-credit-tier/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
 import { WebSocketLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
-import { RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { RemovalPolicy, Stack, Duration } from 'aws-cdk-lib';
 import { Function as CdkFunction } from 'aws-cdk-lib/aws-lambda';
+import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
+import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 
 /**
  * @see https://docs.amplify.aws/react/build-a-backend/ to add storage, functions, and more
@@ -86,6 +92,10 @@ const backend = defineBackend({
   listPartnerPayouts,
   processPayout,
   getSessionLambda,
+  cleanupStaleConnections,
+  triggerConnectionCleanup,
+  getActiveRobots,
+  manageCreditTier,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -165,6 +175,11 @@ const connTable = new Table(dataStack, 'ConnectionsTable', {
 connTable.addGlobalSecondaryIndex({
   indexName: 'monitoringRobotIdIndex',
   partitionKey: { name: 'monitoringRobotId', type: AttributeType.STRING },
+});
+// Add GSI for timestamp lookups (for cleanup job to find stale connections efficiently)
+connTable.addGlobalSecondaryIndex({
+  indexName: 'timestampIndex',
+  partitionKey: { name: 'ts', type: AttributeType.NUMBER },
 });
 
 const robotPresenceTable = new Table(dataStack, 'RobotPresenceTable', {
@@ -382,6 +397,15 @@ listAccessibleRobotsFunction.addToRolePolicy(new PolicyStatement({
 // Stripe checkout Lambda - no additional permissions needed (just uses Stripe API)
 const createStripeCheckoutCdkFunction = createStripeCheckoutFunction as CdkFunction;
 createStripeCheckoutCdkFunction.addEnvironment('FRONTEND_URL', 'http://localhost:5173'); // Can be overridden in production
+createStripeCheckoutCdkFunction.addEnvironment('CREDIT_TIER_TABLE', tables.CreditTier.tableName);
+tables.CreditTier.grantReadData(createStripeCheckoutFunction);
+// Grant permission to query the tierIdIndex GSI
+createStripeCheckoutFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.CreditTier.tableArn}/index/tierIdIndex`,
+  ],
+}));
 
 // Add credits Lambda environment variables and permissions
 const addCreditsCdkFunction = addCreditsFunction as CdkFunction;
@@ -804,3 +828,97 @@ processPayoutCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 tables.PartnerPayout.grantReadWriteData(processPayoutFunction);
 adminAuditTable.grantWriteData(processPayoutFunction);
 userPool.grant(processPayoutFunction, 'cognito-idp:AdminGetUser');
+
+// ============================================
+// Connection Cleanup Lambda Function
+// ============================================
+
+const cleanupStaleConnectionsFunction = backend.cleanupStaleConnections.resources.lambda;
+const cleanupStaleConnectionsCdkFunction = cleanupStaleConnectionsFunction as CdkFunction;
+
+// Set environment variables
+cleanupStaleConnectionsCdkFunction.addEnvironment('CONN_TABLE', connTable.tableName);
+cleanupStaleConnectionsCdkFunction.addEnvironment('ROBOT_PRESENCE_TABLE', robotPresenceTable.tableName);
+cleanupStaleConnectionsCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
+// Construct WebSocket Management API endpoint (same as signaling function)
+const wsMgmtEndpoint = `https://${wsApi.apiId}.execute-api.${dataStack.region}.amazonaws.com/${wsStage.stageName}`;
+cleanupStaleConnectionsCdkFunction.addEnvironment('WS_MGMT_ENDPOINT', wsMgmtEndpoint);
+
+// Grant permissions
+connTable.grantReadWriteData(cleanupStaleConnectionsFunction);
+robotPresenceTable.grantReadWriteData(cleanupStaleConnectionsFunction);
+tables.Session.grantReadWriteData(cleanupStaleConnectionsFunction);
+
+// Grant permission to query the connectionIdIndex GSI
+cleanupStaleConnectionsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.Session.tableArn}/index/connectionIdIndex`,
+  ],
+}));
+
+// Grant permission to send messages via WebSocket Management API
+cleanupStaleConnectionsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["execute-api:ManageConnections"],
+  resources: [`arn:aws:execute-api:${dataStack.region}:${dataStack.account}:${wsApi.apiId}/*/*`],
+}));
+
+// Create EventBridge rule to trigger cleanup every hour
+const cleanupRule = new Rule(backend.stack, 'CleanupStaleConnectionsRule', {
+  schedule: Schedule.rate(Duration.hours(1)), // Run every hour
+  description: 'Trigger cleanup of stale WebSocket connections',
+});
+
+// Add Lambda as target
+cleanupRule.addTarget(new LambdaFunction(cleanupStaleConnectionsFunction));
+
+// ============================================
+// Trigger Connection Cleanup Lambda Function
+// ============================================
+
+const triggerConnectionCleanupFunction = backend.triggerConnectionCleanup.resources.lambda;
+const triggerConnectionCleanupCdkFunction = triggerConnectionCleanupFunction as CdkFunction;
+
+// Set environment variable with cleanup function name
+triggerConnectionCleanupCdkFunction.addEnvironment(
+  'CLEANUP_FUNCTION_NAME',
+  cleanupStaleConnectionsFunction.functionName
+);
+
+// Grant permission to invoke cleanup function
+cleanupStaleConnectionsFunction.grantInvoke(triggerConnectionCleanupFunction);
+
+// ============================================
+// Get Active Robots Lambda Function
+// ============================================
+
+const getActiveRobotsFunction = backend.getActiveRobots.resources.lambda;
+const getActiveRobotsCdkFunction = getActiveRobotsFunction as CdkFunction;
+
+// Set environment variables
+getActiveRobotsCdkFunction.addEnvironment('ROBOT_PRESENCE_TABLE', robotPresenceTable.tableName);
+getActiveRobotsCdkFunction.addEnvironment('CONN_TABLE', connTable.tableName);
+getActiveRobotsCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+
+// Grant read permissions
+robotPresenceTable.grantReadData(getActiveRobotsFunction);
+connTable.grantReadData(getActiveRobotsFunction);
+
+// Grant Cognito permission to get user email
+userPool.grant(getActiveRobotsFunction, 'cognito-idp:AdminGetUser');
+
+// Manage Credit Tier Lambda
+const manageCreditTierFunction = backend.manageCreditTier.resources.lambda;
+const manageCreditTierCdkFunction = manageCreditTierFunction as CdkFunction;
+
+// Set environment variables
+manageCreditTierCdkFunction.addEnvironment('CREDIT_TIER_TABLE', tables.CreditTier.tableName);
+manageCreditTierCdkFunction.addEnvironment('ADMIN_AUDIT_TABLE', adminAuditTable.tableName);
+manageCreditTierCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+
+// Grant DynamoDB permissions
+tables.CreditTier.grantReadWriteData(manageCreditTierFunction);
+adminAuditTable.grantWriteData(manageCreditTierFunction);
+
+// Grant Cognito permission to get user email
+userPool.grant(manageCreditTierFunction, 'cognito-idp:AdminGetUser');

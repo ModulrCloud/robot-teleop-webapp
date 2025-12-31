@@ -90,6 +90,22 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
 
     const hourlyRateCredits = robot.hourlyRateCredits || 100; // Default 100 credits/hour
 
+    // If robot is free (0 hourly rate), skip credit deduction
+    if (hourlyRateCredits === 0) {
+      console.log("Robot is free (0 hourly rate), skipping credit deduction", { sessionId, robotId });
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          success: true,
+          message: "Robot is free - no credits deducted",
+          sessionId,
+          creditsDeducted: 0,
+          totalDeductedSoFar: creditsDeductedSoFar,
+          remainingCredits: 0, // We don't need to check user credits for free robots
+        }),
+      };
+    }
+
     // 3. Get platform markup percentage
     let platformMarkupPercent = DEFAULT_PLATFORM_MARKUP_PERCENT;
     try {

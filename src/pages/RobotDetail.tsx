@@ -20,7 +20,11 @@ import "./RobotDetail.css";
 const client = generateClient<Schema>();
 
 const getRobotImage = (model: string, imageUrl?: string): string => {
-  if (imageUrl) return imageUrl;
+  // Only use imageUrl if it's already a full URL (http/https) or a local path (/)
+  // Don't use S3 keys as-is - they need to be resolved first
+  if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('/'))) {
+    return imageUrl;
+  }
   
   const modelImages: Record<string, string> = {
     'humanoid': '/humaniod.png',
@@ -133,15 +137,22 @@ export default function RobotDetail() {
 
         // Load robot image
         if (robotData.imageUrl) {
-          try {
-            const imageUrl = await getUrl({
-              key: robotData.imageUrl,
-              options: { expiresIn: 3600 },
-            });
-            setRobotImage(imageUrl.url.toString());
-          } catch (err) {
-            logger.warn('Failed to load robot image:', err);
-            setRobotImage(getRobotImage(robotData.model || 'humanoid'));
+          // Check if it's already a URL or local path
+          if (robotData.imageUrl.startsWith('http') || robotData.imageUrl.startsWith('/')) {
+            setRobotImage(robotData.imageUrl);
+          } else {
+            // It's an S3 key - resolve it
+            try {
+              const imageUrl = await getUrl({
+                path: robotData.imageUrl,
+                options: { expiresIn: 3600 },
+              });
+              setRobotImage(imageUrl.url.toString());
+            } catch (err) {
+              logger.warn('Failed to load robot image from S3:', err);
+              // Fall back to model-based default
+              setRobotImage(getRobotImage(robotData.model || 'humanoid'));
+            }
           }
         } else {
           setRobotImage(getRobotImage(robotData.model || 'humanoid'));

@@ -71,7 +71,8 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
   const { currency, formattedBalance } = useUserCredits();
   const { user } = useAuthStatus();
   const [selectedTier, setSelectedTier] = useState<string | null>(null);
-  const [tiers] = useState<CreditTier[]>(DEFAULT_TIERS);
+  const [tiers, setTiers] = useState<CreditTier[]>([]);
+  const [loadingTiers, setLoadingTiers] = useState(true);
   const [error, setError] = useState<string>('');
 
   // Close on Escape key
@@ -95,6 +96,63 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
     return () => {
       document.body.style.overflow = 'unset';
     };
+  }, [isOpen]);
+
+  // Load credit tiers from database
+  useEffect(() => {
+    const loadTiers = async () => {
+      if (!isOpen) return; // Only load when modal is open
+      
+      setLoadingTiers(true);
+      try {
+        const { data: tiersList } = await client.models.CreditTier.list();
+        
+        if (tiersList && tiersList.length > 0) {
+          // Filter active tiers, sort by displayOrder, and convert to CreditTier format
+          // Only take first 3 tiers to enforce limit
+          const activeTiers = tiersList
+            .filter(tier => tier.isActive !== false)
+            .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0))
+            .slice(0, 3) // Enforce 3-tier limit
+            .map((tier, index) => ({
+              id: tier.tierId || tier.id || '',
+              name: tier.name || '',
+              price: tier.basePrice || 0,
+              credits: tier.baseCredits || 0,
+              bonusCredits: tier.bonusCredits || 0,
+              // Mark middle tier (2nd of 3) as popular by default, or can be configured later
+              isPopular: index === 1 && tiersList.length >= 2,
+              isOnSale: tier.isOnSale || false,
+              salePrice: tier.salePrice || undefined,
+              isEnterprise: false,
+            }));
+
+          // Add Enterprise tier at the end (always available)
+          const allTiers = [
+            ...activeTiers,
+            {
+              id: 'enterprise',
+              name: 'Enterprise',
+              isEnterprise: true,
+              contactEmail: 'Sales@modulr.cloud',
+            },
+          ];
+
+          setTiers(allTiers);
+        } else {
+          // Fallback to defaults if no tiers in database
+          setTiers(DEFAULT_TIERS);
+        }
+      } catch (err) {
+        logger.error('Error loading credit tiers:', err);
+        // Fallback to defaults on error
+        setTiers(DEFAULT_TIERS);
+      } finally {
+        setLoadingTiers(false);
+      }
+    };
+
+    loadTiers();
   }, [isOpen]);
 
   const handlePurchase = async (tierId: string) => {
@@ -216,97 +274,105 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
 
         {/* Tiers Grid */}
         <div className="modal-body">
-          <div className="tiers-grid">
-            {tiers.map((tier) => {
-              // Handle Enterprise tier differently
-              if (tier.isEnterprise) {
+          {loadingTiers ? (
+            <div style={{ textAlign: 'center', padding: '3rem', color: 'rgba(255, 255, 255, 0.6)' }}>
+              Loading credit tiers...
+            </div>
+          ) : (
+            <>
+              {/* Standard Payment Options - 3 wide grid */}
+              <div className="tiers-grid">
+            {tiers
+              .filter(tier => !tier.isEnterprise)
+              .map((tier) => {
+                const totalCredits = (tier.credits || 0) + (tier.bonusCredits || 0);
+                const displayPrice = tier.isOnSale && tier.salePrice 
+                  ? tier.salePrice 
+                  : tier.price;
+                
                 return (
                   <div
                     key={tier.id}
-                    className={`tier-card enterprise ${selectedTier === tier.id ? 'selected' : ''}`}
+                    className={`tier-card ${tier.isPopular ? 'popular' : ''} ${selectedTier === tier.id ? 'selected' : ''}`}
                   >
+                    {tier.isPopular && (
+                      <div className="popular-badge">
+                        <FontAwesomeIcon icon={faStar} />
+                        <span>Most Popular</span>
+                      </div>
+                    )}
+                    {tier.isOnSale && (
+                      <div className="sale-badge">On Sale</div>
+                    )}
+                    
                     <div className="tier-header">
                       <h3>{tier.name}</h3>
+                      <div className="tier-price">
+                        {displayPrice ? formatCurrency(displayPrice, currency) : ''}
+                      </div>
                     </div>
 
-                    <div className="tier-enterprise-message">
-                      <p>Please contact</p>
-                      <a 
-                        href={`mailto:${tier.contactEmail}?subject=Enterprise Credit Package Inquiry`}
-                        className="enterprise-email"
-                      >
-                        {tier.contactEmail}
-                      </a>
+                    <div className="tier-credits">
+                      <div className="credits-main">
+                        <FontAwesomeIcon icon={faCoins} />
+                        <span className="credits-amount">{(tier.credits || 0).toLocaleString()}</span>
+                        <span className="credits-label">Credits</span>
+                      </div>
+                      {(tier.bonusCredits || 0) > 0 && (
+                        <div className="credits-bonus">
+                          <FontAwesomeIcon icon={faCheck} />
+                          <span>+{(tier.bonusCredits || 0).toLocaleString()} Bonus</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="tier-total">
+                      <span className="total-label">Total:</span>
+                      <span className="total-credits">{totalCredits.toLocaleString()} Credits</span>
                     </div>
 
                     <button
                       className="tier-button"
                       onClick={() => handlePurchase(tier.id)}
+                      disabled={selectedTier === tier.id}
                     >
-                      Contact Sales
+                      {selectedTier === tier.id ? 'Processing...' : 'Purchase'}
                     </button>
                   </div>
                 );
-              }
+              })}
+          </div>
 
-              // Regular tier rendering
-              const totalCredits = (tier.credits || 0) + (tier.bonusCredits || 0);
-              const displayPrice = tier.isOnSale && tier.salePrice 
-                ? tier.salePrice 
-                : tier.price;
-              
-              return (
-                <div
-                  key={tier.id}
-                  className={`tier-card ${tier.isPopular ? 'popular' : ''} ${selectedTier === tier.id ? 'selected' : ''}`}
-                >
-                  {tier.isPopular && (
-                    <div className="popular-badge">
-                      <FontAwesomeIcon icon={faStar} />
-                      <span>Most Popular</span>
-                    </div>
-                  )}
-                  {tier.isOnSale && (
-                    <div className="sale-badge">On Sale</div>
-                  )}
-                  
-                  <div className="tier-header">
-                    <h3>{tier.name}</h3>
-                    <div className="tier-price">
-                      {displayPrice ? formatCurrency(displayPrice, currency) : ''}
+          {/* Enterprise Option - Full width bar at bottom */}
+          {tiers.find(tier => tier.isEnterprise) && (() => {
+            const enterpriseTier = tiers.find(tier => tier.isEnterprise)!;
+            return (
+              <div className="enterprise-bar">
+                <div className="enterprise-content">
+                  <div className="enterprise-info">
+                    <h3>{enterpriseTier.name}</h3>
+                    <div className="enterprise-message">
+                      <span>Please contact</span>
+                      <a 
+                        href={`mailto:${enterpriseTier.contactEmail}?subject=Enterprise Credit Package Inquiry`}
+                        className="enterprise-email"
+                      >
+                        {enterpriseTier.contactEmail}
+                      </a>
                     </div>
                   </div>
-
-                  <div className="tier-credits">
-                    <div className="credits-main">
-                      <FontAwesomeIcon icon={faCoins} />
-                      <span className="credits-amount">{(tier.credits || 0).toLocaleString()}</span>
-                      <span className="credits-label">Credits</span>
-                    </div>
-                    {(tier.bonusCredits || 0) > 0 && (
-                      <div className="credits-bonus">
-                        <FontAwesomeIcon icon={faCheck} />
-                        <span>+{(tier.bonusCredits || 0).toLocaleString()} Bonus</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="tier-total">
-                    <span className="total-label">Total:</span>
-                    <span className="total-credits">{totalCredits.toLocaleString()} Credits</span>
-                  </div>
-
                   <button
-                    className="tier-button"
-                    onClick={() => handlePurchase(tier.id)}
-                    disabled={selectedTier === tier.id}
+                    className="enterprise-button"
+                    onClick={() => handlePurchase(enterpriseTier.id)}
                   >
-                    {selectedTier === tier.id ? 'Processing...' : 'Purchase'}
+                    Contact Sales
                   </button>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            );
+          })()}
+            </>
+          )}
         </div>
 
         {/* Footer */}

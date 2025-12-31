@@ -28,6 +28,8 @@ import {
   faEdit,
   faSave,
   faBan,
+  faBroom,
+  faSync,
 } from "@fortawesome/free-solid-svg-icons";
 import { logger } from "../utils/logger";
 import "./Admin.css";
@@ -79,6 +81,11 @@ export const Admin = () => {
   const [creditDescription, setCreditDescription] = useState<string>('');
   const [adjustingCredits, setAdjustingCredits] = useState(false);
   
+  // Active robots and cleanup
+  const [activeRobots, setActiveRobots] = useState<any | null>(null);
+  const [loadingActiveRobots, setLoadingActiveRobots] = useState(false);
+  const [triggeringCleanup, setTriggeringCleanup] = useState(false);
+  
   // Sanitize and validate credit adjustment input
   const handleCreditAdjustmentChange = (value: string) => {
     // Remove any non-numeric characters except minus sign at the start
@@ -112,6 +119,12 @@ export const Admin = () => {
   const [savingMarkup, setSavingMarkup] = useState(false);
   const [markupSettingId, setMarkupSettingId] = useState<string | null>(null);
   
+  // Low Credits Warning Setting
+  const [lowCreditsWarningMinutes, setLowCreditsWarningMinutes] = useState<number>(1);
+  const [loadingWarningSetting, setLoadingWarningSetting] = useState(false);
+  const [savingWarningSetting, setSavingWarningSetting] = useState(false);
+  const [warningSettingId, setWarningSettingId] = useState<string | null>(null);
+  
   // Credit Tiers
   const [creditTiers, setCreditTiers] = useState<any[]>([]);
   const [loadingTiers, setLoadingTiers] = useState(false);
@@ -142,8 +155,10 @@ export const Admin = () => {
       
       // Load each section independently so errors don't block others
       loadSystemStats().catch(err => logger.error("Failed to load system stats:", err));
+      loadActiveRobots().catch(err => logger.error("Failed to load active robots:", err));
       loadAuditLogs().catch(err => logger.error("Failed to load audit logs:", err));
       loadPlatformMarkup().catch(err => logger.error("Failed to load platform markup:", err));
+      loadLowCreditsWarningSetting().catch(err => logger.error("Failed to load low credits warning setting:", err));
       loadCreditTiers().catch(err => logger.error("Failed to load credit tiers:", err));
       loadUsers().catch(err => {
         logger.error("Failed to load users:", err);
@@ -613,6 +628,99 @@ export const Admin = () => {
     }
   };
 
+  const loadActiveRobots = async () => {
+    if (!user?.email || !hasAdminAccess(user.email)) {
+      return;
+    }
+
+    setLoadingActiveRobots(true);
+    try {
+      logger.log("🔍 Calling getActiveRobotsLambda...");
+      const result = await client.queries.getActiveRobotsLambda();
+      logger.log("📊 Raw result from getActiveRobotsLambda:", result);
+      
+      // Check for GraphQL errors first
+      if (result.errors && result.errors.length > 0) {
+        logger.error("GraphQL errors in getActiveRobotsLambda:", result.errors);
+        setError(`Failed to load active robots: ${result.errors.map((e: any) => e.message).join(', ')}`);
+        return;
+      }
+      
+      let robotsData: any = null;
+      if (typeof result.data === 'string') {
+        try {
+          const firstParse = JSON.parse(result.data);
+          robotsData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+        } catch (e) {
+          logger.error("Failed to parse active robots response:", e);
+          robotsData = null;
+        }
+      } else {
+        robotsData = result.data;
+      }
+
+      logger.log("📈 Parsed active robots data:", robotsData);
+      if (robotsData) {
+        setActiveRobots(robotsData);
+      } else {
+        logger.warn("No active robots data returned");
+      }
+    } catch (err) {
+      logger.error("Error loading active robots:", err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      logger.error("Full error details:", { error: err, message: errorMessage });
+      // Don't set error state for this - it's not critical, just log it
+      // setError(`Failed to load active robots: ${errorMessage}`);
+    } finally {
+      setLoadingActiveRobots(false);
+    }
+  };
+
+  const handleTriggerCleanup = async () => {
+    if (!user?.email || !hasAdminAccess(user.email)) {
+      setError("Unauthorized: Admin access required");
+      return;
+    }
+
+    setTriggeringCleanup(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const result = await client.mutations.triggerConnectionCleanupLambda();
+      
+      let cleanupResult: any = null;
+      if (typeof result.data === 'string') {
+        try {
+          const firstParse = JSON.parse(result.data);
+          cleanupResult = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+        } catch (e) {
+          logger.error("Failed to parse cleanup response:", e);
+        }
+      } else {
+        cleanupResult = result.data;
+      }
+
+      if (cleanupResult?.result?.stats) {
+        const stats = cleanupResult.result.stats;
+        setSuccess(
+          `Cleanup completed! Scanned: ${stats.totalConnections || 0}, ` +
+          `Stale: ${stats.staleConnections || 0}, ` +
+          `Cleaned: ${stats.cleanedConnections || 0} connections`
+        );
+        // Reload active robots to reflect cleanup
+        await loadActiveRobots();
+      } else {
+        setSuccess("Cleanup triggered successfully");
+      }
+    } catch (err) {
+      logger.error("Error triggering cleanup:", err);
+      setError(`Failed to trigger cleanup: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setTriggeringCleanup(false);
+    }
+  };
+
   const loadAuditLogs = async (token?: string | null) => {
     if (!user?.email || !hasAdminAccess(user.email)) {
       return;
@@ -1039,6 +1147,86 @@ export const Admin = () => {
     }
   };
 
+  const loadLowCreditsWarningSetting = async () => {
+    if (!user?.email || !hasAdminAccess(user.email)) {
+      return;
+    }
+
+    setLoadingWarningSetting(true);
+    try {
+      const { data: settings } = await client.models.PlatformSettings.list({
+        filter: { settingKey: { eq: 'lowCreditsWarningMinutes' } },
+      });
+
+      if (settings && settings.length > 0) {
+        const warningValue = parseFloat(settings[0].settingValue || '1');
+        setLowCreditsWarningMinutes(warningValue);
+        setWarningSettingId(settings[0].id);
+      } else {
+        // Default to 1 minute if not set
+        setLowCreditsWarningMinutes(1);
+      }
+    } catch (err) {
+      logger.error("Error loading low credits warning setting:", err);
+    } finally {
+      setLoadingWarningSetting(false);
+    }
+  };
+
+  const saveLowCreditsWarningSetting = async () => {
+    if (!user?.email || !hasAdminAccess(user.email)) {
+      return;
+    }
+
+    setSavingWarningSetting(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const warningValue = lowCreditsWarningMinutes.toString();
+      const now = new Date().toISOString();
+
+      if (warningSettingId) {
+        // Update existing setting
+        const { errors } = await client.models.PlatformSettings.update({
+          id: warningSettingId,
+          settingValue: warningValue,
+          updatedBy: user.username || user.email || 'admin',
+          updatedAt: now,
+        });
+
+        if (errors) {
+          setError("Failed to update low credits warning setting");
+        } else {
+          setSuccess("Low credits warning setting updated successfully!");
+          setTimeout(() => setSuccess(null), 3000);
+        }
+      } else {
+        // Create new setting
+        const { errors } = await client.models.PlatformSettings.create({
+          settingKey: 'lowCreditsWarningMinutes',
+          settingValue: warningValue,
+          description: 'Number of minutes of credits remaining before showing low credits warning to users',
+          updatedBy: user.username || user.email || 'admin',
+          updatedAt: now,
+        });
+
+        if (errors) {
+          setError("Failed to create low credits warning setting");
+        } else {
+          setSuccess("Low credits warning setting created successfully!");
+          setTimeout(() => setSuccess(null), 3000);
+          loadLowCreditsWarningSetting(); // Reload to get the ID
+        }
+      }
+    } catch (err) {
+      logger.error("Error saving low credits warning setting:", err);
+      setError("An error occurred while saving low credits warning setting");
+    } finally {
+      setSavingWarningSetting(false);
+    }
+  };
+
   const savePlatformMarkup = async () => {
     if (!user?.email || !hasAdminAccess(user.email)) {
       return;
@@ -1133,6 +1321,16 @@ export const Admin = () => {
     }
   };
 
+  // Helper function to generate tierId from basePrice
+  const generateTierId = (basePrice: number): string => {
+    // If price is a whole number, return it as string (e.g., 20 -> "20")
+    // Otherwise, return the price with 2 decimal places (e.g., 19.99 -> "19.99")
+    if (basePrice % 1 === 0) {
+      return basePrice.toString();
+    }
+    return basePrice.toFixed(2);
+  };
+
   const initializeDefaultTiers = async () => {
     if (!user?.email || !hasAdminAccess(user.email)) {
       return;
@@ -1142,7 +1340,7 @@ export const Admin = () => {
       const now = new Date().toISOString();
       const defaultTiers = [
         {
-          tierId: '20',
+          tierId: generateTierId(20.00),
           name: 'Starter Pack',
           basePrice: 20.00,
           baseCredits: 2000,
@@ -1152,7 +1350,7 @@ export const Admin = () => {
           description: 'Perfect for getting started',
         },
         {
-          tierId: '50',
+          tierId: generateTierId(50.00),
           name: 'Pro Pack',
           basePrice: 50.00,
           baseCredits: 5000,
@@ -1162,7 +1360,7 @@ export const Admin = () => {
           description: 'Great value with bonus credits',
         },
         {
-          tierId: '100',
+          tierId: generateTierId(100.00),
           name: 'Elite Pack',
           basePrice: 100.00,
           baseCredits: 10000,
@@ -1193,7 +1391,22 @@ export const Admin = () => {
   };
 
   const saveCreditTier = async (tier: any) => {
+    console.log('[saveCreditTier] Called with tier:', tier);
+    console.log('[saveCreditTier] User:', user?.email);
+    console.log('[saveCreditTier] Has admin access:', user?.email ? hasAdminAccess(user.email) : false);
+    
     if (!user?.email || !hasAdminAccess(user.email)) {
+      const errorMsg = "Unauthorized: Admin access required. Only @modulr.cloud email addresses can manage credit tiers.";
+      console.log('[saveCreditTier] Setting error:', errorMsg);
+      setError(errorMsg);
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
+    // Enforce 3-tier limit when creating new tier
+    if (!tier.id && creditTiers.length >= 3) {
+      setError("Maximum of 3 credit tiers allowed. Please delete an existing tier before adding a new one.");
+      setTimeout(() => setError(null), 5000);
       return;
     }
 
@@ -1202,9 +1415,14 @@ export const Admin = () => {
     setSuccess(null);
 
     try {
+      console.log('[saveCreditTier] Starting save process...');
       const now = new Date().toISOString();
+      // Auto-generate tierId from basePrice (use existing tierId if updating)
+      const tierId = tier.id ? tier.tierId : generateTierId(tier.basePrice);
+      console.log('[saveCreditTier] Generated tierId:', tierId);
+      
       const tierData = {
-        tierId: tier.tierId,
+        tierId: tierId,
         name: tier.name,
         basePrice: tier.basePrice,
         baseCredits: tier.baseCredits,
@@ -1214,41 +1432,165 @@ export const Admin = () => {
         displayOrder: tier.displayOrder || 0,
         updatedAt: now,
       };
+      console.log('[saveCreditTier] Tier data to save:', tierData);
 
       if (tier.id) {
         // Update existing tier
-        const { errors } = await client.models.CreditTier.update({
-          id: tier.id,
-          ...tierData,
+        console.log('[saveCreditTier] Calling update mutation...');
+        const result = await client.mutations.manageCreditTierLambda({
+          action: 'update',
+          tierId: tier.id,
+          tierData: JSON.stringify(tierData),
         });
+        console.log('[saveCreditTier] Update result:', result);
 
-        if (errors) {
-          setError("Failed to update credit tier");
+        if (result.errors && result.errors.length > 0) {
+          console.error('[saveCreditTier] GraphQL errors:', result.errors);
+          const errorMessages = result.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ');
+          setError(`Failed to update credit tier: ${errorMessages}`);
+          setTimeout(() => setError(null), 5000);
+          setSavingMarkup(false);
+          return;
+        }
+
+        if (!result.data) {
+          console.error('[saveCreditTier] No data returned from mutation');
+          setError('Failed to update credit tier: No data returned');
+          setTimeout(() => setError(null), 5000);
+          setSavingMarkup(false);
+          return;
+        }
+
+        console.log('[saveCreditTier] Parsing result data...');
+        console.log('[saveCreditTier] result.data type:', typeof result.data);
+        console.log('[saveCreditTier] result.data:', result.data);
+        
+        // GraphQL may double-encode JSON strings, so we need to parse twice if needed
+        let resultData: any;
+        if (typeof result.data === 'string') {
+          try {
+            // First parse - might be a JSON string
+            const firstParse = JSON.parse(result.data);
+            // If the first parse is still a string, parse again
+            if (typeof firstParse === 'string') {
+              resultData = JSON.parse(firstParse);
+            } else {
+              resultData = firstParse;
+            }
+          } catch (e) {
+            console.error('[saveCreditTier] Error parsing result.data:', e);
+            throw new Error('Failed to parse result data');
+          }
         } else {
+          resultData = result.data;
+        }
+        
+        console.log('[saveCreditTier] Parsed result data:', resultData);
+        console.log('[saveCreditTier] resultData.success:', resultData.success);
+        console.log('[saveCreditTier] resultData.success type:', typeof resultData.success);
+        
+        if (resultData.success === true || resultData.success === 'true') {
+          console.log('[saveCreditTier] Update successful! Clearing edit state and reloading...');
+          // Clear editing state immediately so edit dialog disappears
+          setEditingTier(null);
           setSuccess("Credit tier updated successfully!");
           setTimeout(() => setSuccess(null), 3000);
-          setEditingTier(null);
-          loadCreditTiers();
+          // Reload tiers immediately
+          await loadCreditTiers();
+          console.log('[saveCreditTier] Tiers reloaded, setting saving to false');
+          setSavingMarkup(false);
+        } else {
+          console.error('[saveCreditTier] Update failed. resultData:', resultData);
+          console.error('[saveCreditTier] resultData.success:', resultData.success);
+          console.error('[saveCreditTier] resultData.message:', resultData.message);
+          setError(`Failed to update credit tier: ${resultData.message || 'Unknown error'}`);
+          setTimeout(() => setError(null), 5000);
+          setSavingMarkup(false);
         }
       } else {
-        // Create new tier
-        const { errors } = await client.models.CreditTier.create({
-          ...tierData,
-          createdAt: now,
-        });
+        // Create new tier - check limit again before creating
+        if (creditTiers.length >= 3) {
+          setError("Maximum of 3 credit tiers allowed. Please delete an existing tier before adding a new one.");
+          setTimeout(() => setError(null), 5000);
+          setSavingMarkup(false);
+          return;
+        }
 
-        if (errors) {
-          setError("Failed to create credit tier");
+        console.log('[saveCreditTier] Creating tier in database...');
+        const result = await client.mutations.manageCreditTierLambda({
+          action: 'create',
+          tierData: JSON.stringify({
+            ...tierData,
+            createdAt: now,
+          }),
+        });
+        console.log('[saveCreditTier] Create result:', result);
+
+        if (result.errors && result.errors.length > 0) {
+          console.error('[saveCreditTier] GraphQL errors:', result.errors);
+          const errorMessages = result.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ');
+          setError(`Failed to create credit tier: ${errorMessages}`);
+          setTimeout(() => setError(null), 5000);
+          setSavingMarkup(false);
+          return;
+        }
+
+        if (!result.data) {
+          console.error('[saveCreditTier] No data returned from mutation');
+          setError('Failed to create credit tier: No data returned');
+          setTimeout(() => setError(null), 5000);
+          setSavingMarkup(false);
+          return;
+        }
+
+        console.log('[saveCreditTier] Parsing result data...');
+        console.log('[saveCreditTier] result.data type:', typeof result.data);
+        console.log('[saveCreditTier] result.data:', result.data);
+        
+        // GraphQL may double-encode JSON strings, so we need to parse twice if needed
+        let resultData: any;
+        if (typeof result.data === 'string') {
+          try {
+            // First parse - might be a JSON string
+            const firstParse = JSON.parse(result.data);
+            // If the first parse is still a string, parse again
+            if (typeof firstParse === 'string') {
+              resultData = JSON.parse(firstParse);
+            } else {
+              resultData = firstParse;
+            }
+          } catch (e) {
+            console.error('[saveCreditTier] Error parsing result.data:', e);
+            throw new Error('Failed to parse result data');
+          }
         } else {
+          resultData = result.data;
+        }
+        
+        console.log('[saveCreditTier] Parsed result data:', resultData);
+        console.log('[saveCreditTier] resultData.success:', resultData.success);
+        
+        if (resultData.success === true || resultData.success === 'true') {
+          console.log('[saveCreditTier] Create successful! Clearing form and reloading...');
+          // Clear form immediately so user sees it disappear
+          setNewTier(null);
           setSuccess("Credit tier created successfully!");
           setTimeout(() => setSuccess(null), 3000);
-          setNewTier(null);
-          loadCreditTiers();
+          // Reload tiers immediately to show the new tier in the list
+          await loadCreditTiers();
+          console.log('[saveCreditTier] Tiers reloaded, setting saving to false');
+          setSavingMarkup(false);
+        } else {
+          console.error('[saveCreditTier] Create failed:', resultData.message);
+          setError(`Failed to create credit tier: ${resultData.message || 'Unknown error'}`);
+          setTimeout(() => setError(null), 5000);
+          setSavingMarkup(false);
         }
       }
     } catch (err) {
       logger.error("Error saving credit tier:", err);
-      setError("An error occurred while saving credit tier");
+      setError(`An error occurred while saving credit tier: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setTimeout(() => setError(null), 5000);
     } finally {
       setSavingMarkup(false);
     }
@@ -1274,14 +1616,51 @@ export const Admin = () => {
         return;
       }
 
-      const { errors } = await client.models.CreditTier.delete({ id: tierId });
+      const result = await client.mutations.manageCreditTierLambda({
+        action: 'delete',
+        tierId: tierId,
+      });
 
-      if (errors) {
-        setError("Failed to delete credit tier");
+      if (result.errors && result.errors.length > 0) {
+        const errorMessages = result.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ');
+        setError(`Failed to delete credit tier: ${errorMessages}`);
+        setTimeout(() => setError(null), 5000);
+        return;
+      }
+
+      if (!result.data) {
+        setError('Failed to delete credit tier: No data returned');
+        setTimeout(() => setError(null), 5000);
+        setSavingMarkup(false);
+        return;
+      }
+
+      // GraphQL may double-encode JSON strings, so we need to parse twice if needed
+      let resultData: any;
+      if (typeof result.data === 'string') {
+        try {
+          const firstParse = JSON.parse(result.data);
+          resultData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+        } catch (e) {
+          logger.error("Error parsing delete result:", e);
+          setError('Failed to parse delete result');
+          setTimeout(() => setError(null), 5000);
+          setSavingMarkup(false);
+          return;
+        }
       } else {
+        resultData = result.data;
+      }
+      
+      if (resultData.success === true || resultData.success === 'true') {
         setSuccess("Credit tier deleted successfully!");
         setTimeout(() => setSuccess(null), 3000);
-        loadCreditTiers();
+        await loadCreditTiers();
+        setSavingMarkup(false);
+      } else {
+        setError(`Failed to delete credit tier: ${resultData.message || 'Unknown error'}`);
+        setTimeout(() => setError(null), 5000);
+        setSavingMarkup(false);
       }
     } catch (err) {
       logger.error("Error deleting credit tier:", err);
@@ -1393,6 +1772,17 @@ export const Admin = () => {
                   <div className="stat-content">
                     <div className="stat-value">{systemStats.totalCredits?.toLocaleString() || '0'}</div>
                     <div className="stat-label">Total Credits</div>
+                  </div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-icon">
+                    <FontAwesomeIcon icon={faRobot} style={{ color: '#ffc107' }} />
+                  </div>
+                  <div className="stat-content">
+                    <div className="stat-value">
+                      {loadingActiveRobots ? '...' : (activeRobots?.activeRobots ?? 'N/A')}
+                    </div>
+                    <div className="stat-label">Active Robots</div>
                   </div>
                 </div>
                 <div className="stat-card">
@@ -1517,6 +1907,37 @@ export const Admin = () => {
                 )}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Connection Cleanup Section */}
+        <div className="admin-section">
+          <div className="section-header">
+            <FontAwesomeIcon icon={faBroom} className="section-icon" />
+            <h2>Connection Cleanup</h2>
+          </div>
+          <div className="section-content">
+            <p className="section-description">
+              Manually trigger cleanup of stale WebSocket connections. The cleanup job automatically runs every hour,
+              but you can trigger it manually if needed. This removes dead connections and updates robot online status.
+            </p>
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginTop: '1rem' }}>
+              <button
+                className="admin-button admin-button-primary"
+                onClick={handleTriggerCleanup}
+                disabled={triggeringCleanup}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+              >
+                <FontAwesomeIcon icon={triggeringCleanup ? faSync : faBroom} spin={triggeringCleanup} />
+                {triggeringCleanup ? 'Running Cleanup...' : 'Trigger Cleanup Now'}
+              </button>
+              {activeRobots && (
+                <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.9rem' }}>
+                  <strong>Active:</strong> {activeRobots.activeRobots || 0} robots, {activeRobots.totalConnections || 0} total connections
+                  {activeRobots.clientConnections > 0 && ` (${activeRobots.clientConnections} clients, ${activeRobots.monitorConnections || 0} monitors)`}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1751,21 +2172,104 @@ export const Admin = () => {
               </div>
             </div>
 
+            {/* Low Credits Warning Setting */}
+            <div className="platform-setting-card">
+              <h3>Low Credits Warning Threshold</h3>
+              <p className="setting-description">
+                Number of minutes of credits remaining before users see a warning notification. This helps users know when they need to top up their account.
+              </p>
+              <div className="setting-input-group">
+                <label className="markup-input-label">
+                  Warning Threshold (minutes):
+                  <div className="markup-input-wrapper">
+                    <div className="duration-input-wrapper">
+                      <input
+                        type="number"
+                        min="0.5"
+                        max="60"
+                        step="0.5"
+                        value={lowCreditsWarningMinutes}
+                        onChange={(e) => setLowCreditsWarningMinutes(parseFloat(e.target.value) || 1)}
+                        disabled={loadingWarningSetting || savingWarningSetting}
+                        className="markup-input"
+                      />
+                      <div className="spinner-buttons">
+                        <button
+                          type="button"
+                          className="spinner-btn spinner-up"
+                          onClick={() => setLowCreditsWarningMinutes(Math.min(60, lowCreditsWarningMinutes + 0.5))}
+                          disabled={loadingWarningSetting || savingWarningSetting || lowCreditsWarningMinutes >= 60}
+                          aria-label="Increase threshold"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          className="spinner-btn spinner-down"
+                          onClick={() => setLowCreditsWarningMinutes(Math.max(0.5, lowCreditsWarningMinutes - 0.5))}
+                          disabled={loadingWarningSetting || savingWarningSetting || lowCreditsWarningMinutes <= 0.5}
+                          aria-label="Decrease threshold"
+                        >
+                          ▼
+                        </button>
+                      </div>
+                    </div>
+                    <span className="input-suffix">min</span>
+                  </div>
+                </label>
+                <button
+                  className="admin-button"
+                  onClick={saveLowCreditsWarningSetting}
+                  disabled={loadingWarningSetting || savingWarningSetting}
+                >
+                  {savingWarningSetting ? (
+                    <>
+                      <FontAwesomeIcon icon={faCog} spin />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FontAwesomeIcon icon={faSave} />
+                      <span>Save Warning Threshold</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
             {/* Credit Tiers Management */}
             <div className="platform-setting-card">
               <div className="setting-header-row">
-                <h3>Credit Tiers</h3>
+                <div>
+                  <h3>Credit Tiers</h3>
+                  <span style={{ 
+                    fontSize: '0.85rem', 
+                    color: creditTiers.length >= 3 ? 'rgba(255, 183, 0, 0.9)' : 'rgba(255, 255, 255, 0.6)',
+                    fontWeight: creditTiers.length >= 3 ? 600 : 400
+                  }}>
+                    {creditTiers.length} / 3 tiers
+                  </span>
+                </div>
                 <button
                   className="admin-button"
-                  onClick={() => setNewTier({
-                    tierId: '',
-                    name: '',
-                    basePrice: 0,
-                    baseCredits: 0,
-                    bonusCredits: 0,
-                    isActive: true,
-                    displayOrder: creditTiers.length + 1,
-                  })}
+                  onClick={() => {
+                    // Enforce 3-tier limit
+                    if (creditTiers.length >= 3) {
+                      setError("Maximum of 3 credit tiers allowed. Please delete an existing tier before adding a new one.");
+                      setTimeout(() => setError(null), 5000);
+                      return;
+                    }
+                    setNewTier({
+                      name: '',
+                      basePrice: 0,
+                      baseCredits: 0,
+                      bonusCredits: 0,
+                      isActive: true,
+                      displayOrder: creditTiers.length + 1,
+                    });
+                  }}
+                  disabled={creditTiers.length >= 3}
+                  title={creditTiers.length >= 3 ? "Maximum of 3 tiers allowed" : "Add new credit tier"}
                 >
                   <FontAwesomeIcon icon={faPlus} />
                   <span>Add New Tier</span>
@@ -1773,6 +2277,9 @@ export const Admin = () => {
               </div>
               <p className="setting-description">
                 Manage credit purchase tiers. Users can buy credits in these predefined packages with optional bonus credits.
+                <strong style={{ display: 'block', marginTop: '0.5rem', color: 'rgba(255, 183, 0, 0.9)' }}>
+                  Maximum of 3 tiers allowed. These will be displayed in a 3-wide grid in the purchase modal.
+                </strong>
               </p>
 
               {loadingTiers ? (
@@ -1786,15 +2293,6 @@ export const Admin = () => {
                       <h4>New Credit Tier</h4>
                       <div className="tier-form">
                         <div className="form-row">
-                          <label>
-                            Tier ID (unique):
-                            <input
-                              type="text"
-                              value={newTier.tierId}
-                              onChange={(e) => setNewTier({ ...newTier, tierId: e.target.value })}
-                              placeholder="e.g., '20', '50', '100'"
-                            />
-                          </label>
                           <label>
                             Display Name:
                             <input
@@ -1813,8 +2311,14 @@ export const Admin = () => {
                               min="0"
                               step="0.01"
                               value={newTier.basePrice}
-                              onChange={(e) => setNewTier({ ...newTier, basePrice: parseFloat(e.target.value) || 0 })}
+                              onChange={(e) => {
+                                const price = parseFloat(e.target.value) || 0;
+                                setNewTier({ ...newTier, basePrice: price });
+                              }}
                             />
+                            <small style={{ display: 'block', marginTop: '0.25rem', color: 'rgba(255, 255, 255, 0.6)' }}>
+                              Tier ID will be auto-generated from price: {newTier.basePrice > 0 ? generateTierId(newTier.basePrice) : '—'}
+                            </small>
                           </label>
                           <label>
                             Base Credits:
@@ -1870,8 +2374,18 @@ export const Admin = () => {
                         <div className="tier-actions">
                           <button
                             className="admin-button"
-                            onClick={() => saveCreditTier(newTier)}
-                            disabled={savingMarkup || !newTier.tierId || !newTier.name}
+                            onClick={async () => {
+                              console.log('[Button Click] Create Tier clicked');
+                              console.log('[Button Click] newTier:', newTier);
+                              try {
+                                await saveCreditTier(newTier);
+                              } catch (err) {
+                                console.error('[Button Click] Error in saveCreditTier:', err);
+                                setError(`Unexpected error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+                                setTimeout(() => setError(null), 5000);
+                              }
+                            }}
+                            disabled={savingMarkup || !newTier.basePrice || newTier.basePrice <= 0 || !newTier.name}
                           >
                             <FontAwesomeIcon icon={faSave} />
                             <span>Create Tier</span>
@@ -1902,18 +2416,10 @@ export const Admin = () => {
                             <div className="tier-form">
                               <div className="form-row">
                                 <label>
-                                  Tier ID:
-                                  <input
-                                    type="text"
-                                    value={tier.tierId}
-                                    onChange={(e) => {
-                                      const updated = creditTiers.map(t => 
-                                        t.id === tier.id ? { ...t, tierId: e.target.value } : t
-                                      );
-                                      setCreditTiers(updated);
-                                    }}
-                                    disabled
-                                  />
+                                  Tier ID: <strong style={{ color: 'rgba(255, 183, 0, 0.9)' }}>{tier.tierId}</strong>
+                                  <small style={{ display: 'block', marginTop: '0.25rem', color: 'rgba(255, 255, 255, 0.6)' }}>
+                                    (Auto-generated from price, cannot be changed)
+                                  </small>
                                 </label>
                                 <label>
                                   Display Name:

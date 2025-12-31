@@ -368,6 +368,8 @@ export const Credits = () => {
       
       if (user?.username) {
         await refreshCredits(); // Refresh the balance from useUserCredits hook
+        // Trigger custom event for navbar update
+        window.dispatchEvent(new CustomEvent('creditsUpdated'));
       } else {
       }
       await loadCreditsData(); // Refresh auto-top-up settings
