@@ -259,16 +259,37 @@ export function useWebRTC(options: WebRTCOptions) {
           return;
         }
 
-        // Handle insufficient funds error from signaling handler
-        if (msg.type === 'error' && msg.error === 'insufficient_funds') {
-          logger.warn('[BROWSER] Insufficient funds to start session:', msg.message);
-          setStatus(prev => ({
-            ...prev,
-            connecting: false,
-            connected: false,
-            error: msg.message || 'Insufficient credits to start session. Please top up your account.',
-            robotBusy: false,
-          }));
+        // Handle error messages from signaling handler
+        if (msg.type === 'error') {
+          if (msg.error === 'insufficient_funds') {
+            logger.warn('[BROWSER] Insufficient funds to start session:', msg.message);
+            setStatus(prev => ({
+              ...prev,
+              connecting: false,
+              connected: false,
+              error: msg.message || 'Insufficient credits to start session. Please top up your account.',
+              robotBusy: false,
+            }));
+          } else if (msg.error === 'access_denied') {
+            logger.warn('[BROWSER] Access denied to robot:', msg.message);
+            setStatus(prev => ({
+              ...prev,
+              connecting: false,
+              connected: false,
+              error: msg.message || 'You are not authorized to access this robot. The robot owner may have restricted access to specific users.',
+              robotBusy: false,
+            }));
+          } else {
+            // Generic error handling
+            logger.warn('[BROWSER] Error from server:', msg.message);
+            setStatus(prev => ({
+              ...prev,
+              connecting: false,
+              connected: false,
+              error: msg.message || 'An error occurred. Please try again.',
+              robotBusy: false,
+            }));
+          }
           cleanup();
           return;
         }

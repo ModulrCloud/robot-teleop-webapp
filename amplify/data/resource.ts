@@ -31,6 +31,7 @@ import { checkRobotAvailability } from "../functions/check-robot-availability/re
 import { manageRobotAvailability } from "../functions/manage-robot-availability/resource";
 import { processRobotReservationRefunds } from "../functions/process-robot-reservation-refunds/resource";
 import { listPartnerPayouts } from "../functions/list-partner-payouts/resource";
+import { processPayout } from "../functions/process-payout/resource";
 import { getSessionLambda } from "../functions/get-session/resource";
 
 const LambdaResult = a.customType({
@@ -338,6 +339,7 @@ const schema = a.schema({
     robotId: a.string().required(),       // Robot's robotId (robot-XXXXXXXX)
     robotName: a.string(),                // Robot name for display
     partnerId: a.string(),                // Partner who owns the robot
+    connectionId: a.string(),             // WebSocket connection ID (for cleanup on disconnect)
     startedAt: a.datetime().required(),   // When session started
     endedAt: a.datetime(),                // When session ended
     durationSeconds: a.integer(),         // Total duration in seconds
@@ -353,7 +355,8 @@ const schema = a.schema({
   .secondaryIndexes(index => [
     index("userId").name("userIdIndex"),
     index("partnerId").name("partnerIdIndex"),
-    index("robotId").name("robotIdIndex")
+    index("robotId").name("robotIdIndex"),
+    index("connectionId").name("connectionIdIndex") // GSI for fast lookup by connection ID (for cleanup on disconnect)
   ])
   .authorization((allow) => [
     allow.owner().to(['create', 'read', 'update']),
@@ -838,6 +841,15 @@ const schema = a.schema({
     .returns(a.json())
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (admins see all, partners see own)
     .handler(a.handler.function(listPartnerPayouts)),
+
+  processPayoutLambda: a
+    .mutation()
+    .arguments({
+      payoutIds: a.string().array().required(), // Array of payout IDs to process
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (admins only)
+    .handler(a.handler.function(processPayout)),
 
   getSessionLambda: a
     .query()

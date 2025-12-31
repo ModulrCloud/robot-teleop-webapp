@@ -25,12 +25,14 @@ interface PurchaseCreditsModalProps {
 interface CreditTier {
   id: string;
   name: string;
-  price: number;
-  credits: number;
-  bonusCredits: number;
+  price?: number;
+  credits?: number;
+  bonusCredits?: number;
   isPopular?: boolean;
   isOnSale?: boolean;
   salePrice?: number;
+  isEnterprise?: boolean;
+  contactEmail?: string;
 }
 
 // Default tiers (will be replaced with dynamic data from CreditTier model later)
@@ -56,6 +58,12 @@ const DEFAULT_TIERS: CreditTier[] = [
     price: 100.00,
     credits: 10000,
     bonusCredits: 1500,
+  },
+  {
+    id: 'enterprise',
+    name: 'Enterprise',
+    isEnterprise: true,
+    contactEmail: 'Sales@modulr.cloud',
   },
 ];
 
@@ -92,6 +100,14 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
   const handlePurchase = async (tierId: string) => {
     if (!user?.username) {
       setError('You must be logged in to purchase credits');
+      return;
+    }
+
+    const tier = tiers.find(t => t.id === tierId);
+    
+    // Handle Enterprise tier - open email client
+    if (tier?.isEnterprise && tier.contactEmail) {
+      window.location.href = `mailto:${tier.contactEmail}?subject=Enterprise Credit Package Inquiry`;
       return;
     }
 
@@ -202,7 +218,39 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
         <div className="modal-body">
           <div className="tiers-grid">
             {tiers.map((tier) => {
-              const totalCredits = tier.credits + tier.bonusCredits;
+              // Handle Enterprise tier differently
+              if (tier.isEnterprise) {
+                return (
+                  <div
+                    key={tier.id}
+                    className={`tier-card enterprise ${selectedTier === tier.id ? 'selected' : ''}`}
+                  >
+                    <div className="tier-header">
+                      <h3>{tier.name}</h3>
+                    </div>
+
+                    <div className="tier-enterprise-message">
+                      <p>Please contact</p>
+                      <a 
+                        href={`mailto:${tier.contactEmail}?subject=Enterprise Credit Package Inquiry`}
+                        className="enterprise-email"
+                      >
+                        {tier.contactEmail}
+                      </a>
+                    </div>
+
+                    <button
+                      className="tier-button"
+                      onClick={() => handlePurchase(tier.id)}
+                    >
+                      Contact Sales
+                    </button>
+                  </div>
+                );
+              }
+
+              // Regular tier rendering
+              const totalCredits = (tier.credits || 0) + (tier.bonusCredits || 0);
               const displayPrice = tier.isOnSale && tier.salePrice 
                 ? tier.salePrice 
                 : tier.price;
@@ -225,20 +273,20 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
                   <div className="tier-header">
                     <h3>{tier.name}</h3>
                     <div className="tier-price">
-                      {formatCurrency(displayPrice, currency)}
+                      {displayPrice ? formatCurrency(displayPrice, currency) : ''}
                     </div>
                   </div>
 
                   <div className="tier-credits">
                     <div className="credits-main">
                       <FontAwesomeIcon icon={faCoins} />
-                      <span className="credits-amount">{tier.credits.toLocaleString()}</span>
+                      <span className="credits-amount">{(tier.credits || 0).toLocaleString()}</span>
                       <span className="credits-label">Credits</span>
                     </div>
-                    {tier.bonusCredits > 0 && (
+                    {(tier.bonusCredits || 0) > 0 && (
                       <div className="credits-bonus">
                         <FontAwesomeIcon icon={faCheck} />
-                        <span>+{tier.bonusCredits.toLocaleString()} Bonus</span>
+                        <span>+{(tier.bonusCredits || 0).toLocaleString()} Bonus</span>
                       </div>
                     )}
                   </div>

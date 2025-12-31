@@ -31,7 +31,19 @@ export const handler: Schema["verifyStripePaymentLambda"]["functionHandler"] = a
 
     // Verify payment was successful
     if (session.payment_status !== 'paid') {
-      throw new Error(`Payment not completed. Status: ${session.payment_status}`);
+      // Return detailed error information for declined/failed payments
+      const errorMessage = session.payment_status === 'unpaid' 
+        ? 'Payment was declined. Please check your payment method and try again.'
+        : session.payment_status === 'no_payment_required'
+        ? 'No payment was required for this session.'
+        : `Payment not completed. Status: ${session.payment_status}`;
+      
+      return JSON.stringify({
+        success: false,
+        error: errorMessage,
+        paymentStatus: session.payment_status,
+        sessionId: session.id,
+      });
     }
 
     // Verify the userId in metadata matches the authenticated user
