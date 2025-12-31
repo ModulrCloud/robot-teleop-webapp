@@ -1,31 +1,16 @@
 import type { Schema } from "../../data/resource";
 import Stripe from 'stripe';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2025-12-15.clover',
 });
 
-// Hardcoded tiers (will be replaced with database lookup later)
-const TIERS: Record<string, { name: string; price: number; credits: number; bonusCredits: number }> = {
-  '20': {
-    name: 'Starter Pack',
-    price: 20.00,
-    credits: 2000,
-    bonusCredits: 0,
-  },
-  '50': {
-    name: 'Pro Pack',
-    price: 50.00,
-    credits: 5000,
-    bonusCredits: 500,
-  },
-  '100': {
-    name: 'Elite Pack',
-    price: 100.00,
-    credits: 10000,
-    bonusCredits: 1500,
-  },
-};
+const dynamoClient = new DynamoDBClient({});
+const docClient = DynamoDBDocumentClient.from(dynamoClient);
+
+const CREDIT_TIER_TABLE = process.env.CREDIT_TIER_TABLE!;
 
 export const handler: Schema["createStripeCheckoutLambda"]["functionHandler"] = async (event) => {
   console.log("Create Stripe Checkout request:", JSON.stringify(event, null, 2));
@@ -46,15 +31,52 @@ export const handler: Schema["createStripeCheckoutLambda"]["functionHandler"] = 
     throw new Error("Unauthorized: userId does not match authenticated user");
   }
 
-  const tier = TIERS[tierId];
-  if (!tier) {
-    throw new Error(`Invalid tier ID: ${tierId}`);
-  }
-
+  // Query tier from database using tierIdIndex GSI
   try {
+    const queryResponse = await docClient.send(
+      new QueryCommand({
+        TableName: CREDIT_TIER_TABLE,
+        IndexName: 'tierIdIndex',
+        KeyConditionExpression: 'tierId = :tierId',
+        ExpressionAttributeValues: {
+          ':tierId': tierId,
+        },
+        Limit: 1,
+      })
+    );
+
+    const tierRecord = queryResponse.Items?.[0];
+    
+    if (!tierRecord) {
+      throw new Error(`Tier not found: ${tierId}`);
+    }
+
+    // Check if tier is active
+    if (tierRecord.isActive === false) {
+      throw new Error(`Tier is not active: ${tierId}`);
+    }
+
+    // Calculate final price (use sale price if on sale and sale is active)
+    const now = new Date().toISOString();
+    const isSaleActive = tierRecord.isOnSale === true &&
+      tierRecord.salePrice != null &&
+      (!tierRecord.saleStartDate || tierRecord.saleStartDate <= now) &&
+      (!tierRecord.saleEndDate || tierRecord.saleEndDate >= now);
+
+    const finalPrice = isSaleActive ? tierRecord.salePrice : tierRecord.basePrice;
+    const totalCredits = tierRecord.baseCredits + 
+      (isSaleActive && tierRecord.saleBonusCredits ? tierRecord.saleBonusCredits : 0) +
+      (tierRecord.bonusCredits || 0);
+
+    const tier = {
+      name: tierRecord.name,
+      price: finalPrice,
+      credits: tierRecord.baseCredits,
+      bonusCredits: (isSaleActive && tierRecord.saleBonusCredits ? tierRecord.saleBonusCredits : 0) + (tierRecord.bonusCredits || 0),
+    };
+
     // Get the frontend URL from environment or use a default
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const totalCredits = tier.credits + tier.bonusCredits;
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -76,7 +98,7 @@ export const handler: Schema["createStripeCheckoutLambda"]["functionHandler"] = 
         userId: userId,
         tierId: tierId,
         credits: totalCredits.toString(),
-        amountPaid: tier.price.toString(),
+        amountPaid: finalPrice.toString(),
         currency: 'USD',
       },
       success_url: `${frontendUrl}/credits?success=true&session_id={CHECKOUT_SESSION_ID}`,

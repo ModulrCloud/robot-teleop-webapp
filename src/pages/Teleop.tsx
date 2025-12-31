@@ -5,6 +5,7 @@ import { LoadingWheel } from "../components/LoadingWheel";
 import { useWebRTC } from "../hooks/useWebRTC";
 import { useGamepad } from "../hooks/useGamepad";
 import { useUserCredits } from "../hooks/useUserCredits";
+import { useToast } from "../hooks/useToast";
 import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../amplify/data/resource';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -43,10 +44,17 @@ export default function Teleop() {
   const [gamepadDetected, setGamepadDetected] = useState(false);
   const sendIntervalMs = 100; // 10 Hz
   const { credits, refreshCredits } = useUserCredits();
+  const { toast, showToast } = useToast();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [insufficientFunds, setInsufficientFunds] = useState(false);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const lastDeductionTimeRef = useRef<number | null>(null);
+  
+  // Low credits warning state
+  const [lowCreditsWarningMinutes, setLowCreditsWarningMinutes] = useState<number>(1);
+  const [sessionHourlyRate, setSessionHourlyRate] = useState<number | null>(null);
+  const [platformMarkup, setPlatformMarkup] = useState<number>(30);
+  const warningShownRef = useRef<boolean>(false);
 
 
   // Read WebSocket URL from amplify_outputs.json (AWS signaling server)
@@ -81,7 +89,7 @@ export default function Teleop() {
       lastDeductionTimeRef.current = Date.now();
       logger.log('Session started for robot:', robotId);
       
-      // Find the active session ID
+      // Find the active session ID and load settings
       const findSessionId = async () => {
         try {
           const { getCurrentUser } = await import('aws-amplify/auth');
@@ -94,14 +102,50 @@ export default function Teleop() {
             },
           });
           if (sessions && sessions.length > 0) {
-            setSessionId(sessions[0].id || null);
-            logger.log('Found session ID:', sessions[0].id);
+            const session = sessions[0];
+            setSessionId(session.id || null);
+            // Get hourly rate from session (snapshot at session start)
+            if (session.hourlyRateCredits) {
+              setSessionHourlyRate(session.hourlyRateCredits);
+            }
+            logger.log('Found session ID:', session.id);
           }
         } catch (err) {
           logger.error('Failed to find session ID:', err);
         }
       };
+      
+      // Load low credits warning setting
+      const loadWarningSetting = async () => {
+        try {
+          const { data: settings } = await client.models.PlatformSettings.list({
+            filter: { settingKey: { eq: 'lowCreditsWarningMinutes' } },
+          });
+          if (settings && settings.length > 0) {
+            setLowCreditsWarningMinutes(parseFloat(settings[0].settingValue || '1'));
+          }
+        } catch (err) {
+          logger.error('Failed to load warning setting:', err);
+        }
+      };
+      
+      // Load platform markup
+      const loadPlatformMarkup = async () => {
+        try {
+          const { data: settings } = await client.models.PlatformSettings.list({
+            filter: { settingKey: { eq: 'platformMarkupPercent' } },
+          });
+          if (settings && settings.length > 0) {
+            setPlatformMarkup(parseFloat(settings[0].settingValue || '30'));
+          }
+        } catch (err) {
+          logger.error('Failed to load platform markup:', err);
+        }
+      };
+      
       findSessionId();
+      loadWarningSetting();
+      loadPlatformMarkup();
     }
   }, [status.connected, robotId]);
 
@@ -113,6 +157,13 @@ export default function Teleop() {
     }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // Reset warning flag when session starts
+  useEffect(() => {
+    if (status.connected && sessionId) {
+      warningShownRef.current = false;
+    }
+  }, [status.connected, sessionId]);
 
   // Per-minute credit deduction timer
   useEffect(() => {
@@ -138,7 +189,44 @@ export default function Teleop() {
             
             logger.log('Credits deducted:', body);
             lastDeductionTimeRef.current = Date.now();
+            // Refresh credits and notify navbar
             await refreshCredits();
+            // Trigger custom event for navbar update
+            window.dispatchEvent(new CustomEvent('creditsUpdated'));
+            
+            // Check for low credits warning
+            // Use remainingCredits from the response (most accurate)
+            if (body.remainingCredits !== undefined && body.remainingCredits > 0 && sessionHourlyRate && platformMarkup) {
+              // Calculate cost per minute
+              const hourlyRateCredits = sessionHourlyRate;
+              const durationHours = 1 / 60; // 1 minute
+              const baseCostCredits = hourlyRateCredits * durationHours;
+              const platformFeeCredits = baseCostCredits * (platformMarkup / 100);
+              const costPerMinute = baseCostCredits + platformFeeCredits;
+              
+              // Calculate remaining minutes
+              const remainingCredits = body.remainingCredits;
+              const remainingMinutes = remainingCredits / costPerMinute;
+              
+              // Show warning if below threshold and haven't shown it yet this session
+              if (remainingMinutes <= lowCreditsWarningMinutes && remainingMinutes > 0 && !warningShownRef.current) {
+                const minutesText = remainingMinutes < 1 
+                  ? 'less than 1 minute' 
+                  : remainingMinutes < 2
+                  ? 'about 1 minute'
+                  : `${Math.floor(remainingMinutes)} minutes`;
+                
+                showToast(
+                  `Low credits warning: You have approximately ${minutesText} of session time remaining. Please top up your account to continue.`,
+                  'warning',
+                  10000
+                );
+                warningShownRef.current = true;
+              } else if (remainingMinutes > lowCreditsWarningMinutes) {
+                // Reset warning flag if credits are back above threshold
+                warningShownRef.current = false;
+              }
+            }
           } else if (response.statusCode === 402) {
             // Insufficient funds
             const body = typeof response.body === 'string' 
@@ -146,6 +234,22 @@ export default function Teleop() {
               : response.body;
             
             logger.error('Insufficient funds:', body);
+            
+            // Refresh credits to show updated balance (should be 0 or very low)
+            await refreshCredits();
+            // Trigger custom event for navbar update
+            window.dispatchEvent(new CustomEvent('creditsUpdated'));
+            
+            // Show toast notification
+            showToast(
+              'Session terminated due to insufficient credits. Please top up your account to continue.',
+              'error',
+              8000
+            );
+            
+            // Reset warning flag
+            warningShownRef.current = false;
+            
             setInsufficientFunds(true);
             stopRobot();
             disconnect();
@@ -349,6 +453,8 @@ export default function Teleop() {
           onClose={async () => {
             setShowPurchaseModal(false);
             await refreshCredits();
+            // Trigger custom event for navbar update
+            window.dispatchEvent(new CustomEvent('creditsUpdated'));
             // If user has enough credits now, allow them to continue
             // Otherwise they'll need to start a new session
             if (credits > 0) {
@@ -356,6 +462,21 @@ export default function Teleop() {
             }
           }}
         />
+
+        {/* Toast Notification */}
+        {toast.visible && (
+          <div className={`toast-notification ${toast.type}`}>
+            <FontAwesomeIcon 
+              icon={
+                toast.type === 'error' ? faExclamationTriangle :
+                toast.type === 'success' ? faCheckCircle :
+                toast.type === 'warning' ? faCircleExclamation :
+                faCheckCircle
+              } 
+            />
+            <span>{toast.message}</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -583,6 +704,36 @@ export default function Teleop() {
           </button>
         </div>
       </div>
+
+      <PurchaseCreditsModal
+        isOpen={showPurchaseModal}
+        onClose={async () => {
+          setShowPurchaseModal(false);
+          await refreshCredits();
+          // Trigger custom event for navbar update
+          window.dispatchEvent(new CustomEvent('creditsUpdated'));
+          // If user has enough credits now, allow them to continue
+          // Otherwise they'll need to start a new session
+          if (credits > 0) {
+            setInsufficientFunds(false);
+          }
+        }}
+      />
+
+      {/* Toast Notification */}
+      {toast.visible && (
+        <div className={`toast-notification ${toast.type}`}>
+          <FontAwesomeIcon 
+            icon={
+              toast.type === 'error' ? faExclamationTriangle :
+              toast.type === 'success' ? faCheckCircle :
+              toast.type === 'warning' ? faCircleExclamation :
+              faCheckCircle
+            } 
+          />
+          <span>{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }

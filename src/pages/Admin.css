@@ -777,20 +777,89 @@
   gap: 0.5rem;
 }
 
+/* Duration input wrapper for spinner buttons */
+.duration-input-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
 .markup-input {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px 0 0 6px;
+  padding: 0.5rem 0.75rem;
+  padding-right: 2.5rem;
   color: #fff;
-  font-size: 1rem;
-  width: 120px;
+  font-size: 0.95rem;
+  width: 100px;
+  -moz-appearance: textfield;
+}
+
+.markup-input::-webkit-inner-spin-button,
+.markup-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .markup-input:focus {
   outline: none;
-  border-color: #ffc107;
-  background: rgba(255, 255, 255, 0.15);
+  border-color: #ffb700;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.markup-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Spinner buttons - Modulr yellow theme */
+.spinner-buttons {
+  display: flex;
+  flex-direction: column;
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0 6px 6px 0;
+  overflow: hidden;
+}
+
+.spinner-btn {
+  flex: 1;
+  background: rgba(255, 183, 0, 0.1);
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ffb700;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  line-height: 1;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.spinner-btn:last-child {
+  border-bottom: none;
+}
+
+.spinner-btn:hover:not(:disabled) {
+  background: rgba(255, 183, 0, 0.2);
+  color: #ffa000;
+}
+
+.spinner-btn:active:not(:disabled) {
+  background: rgba(255, 183, 0, 0.3);
+}
+
+.spinner-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .input-suffix {

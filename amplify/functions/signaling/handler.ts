@@ -170,105 +170,194 @@ async function verifyCognitoJWT(token: string | null | undefined): Promise<Claim
     }
 }
 
-// Normalize message to this implementation
-function normalizeMessage(raw: RawMessage): InboundMessage {
-  if (!raw || typeof raw !== 'object') return {};
+/**
+ * Extracts and normalizes the message type from a raw message.
+ * Maps legacy 'candidate' to 'ice-candidate' for backward compatibility.
+ */
+function extractMessageType(raw: RawMessage): MessageType | undefined {
+  if (typeof raw.type !== 'string') return undefined;
+  
+  const t = raw.type.toLowerCase();
+  if (t === 'candidate') {
+    return 'ice-candidate'; // map legacy name to internal name
+  } else if (
+    t === 'offer' ||
+    t === 'answer' ||
+    t === 'register' ||
+    t === 'takeover' ||
+    t === 'ice-candidate' ||
+    t === 'monitor'
+  ) {
+    return t as MessageType;
+  }
+  
+  return undefined;
+}
 
-  let type: MessageType | undefined;
-    if (typeof raw.type === 'string') {
-    const t = raw.type.toLowerCase();
-    if (t === 'candidate') {
-      type = 'ice-candidate'; // map legacy name to internal name
-    } else if (
-      t === 'offer' ||
-      t === 'answer' ||
-      t === 'register' ||
-      t === 'takeover' ||
-      t === 'ice-candidate' ||
-      t === 'monitor'
-    ) {
-      type = t as MessageType;
-    }
+/**
+ * Extracts the robotId from a raw message.
+ * 
+ * Strategy:
+ * 1. Explicit 'robotId' field (preferred)
+ * 2. For 'register' messages: 'from' field contains robotId
+ * 3. For WebRTC messages (offer/answer/candidate):
+ *    - Check if 'to' field starts with "robot-" (client-to-robot)
+ *    - Check if 'from' field starts with "robot-" (robot-to-client)
+ *    - Fallback to 'to' or 'from' if they exist
+ * 
+ * Examples:
+ * - Rust agent: { type: "register", from: "robot-id" }
+ * - Rust agent: { type: "offer", from: "robot-id", to: "client-id", sdp: "..." }
+ * - Browser: { type: "offer", to: "robot-id", from: "browser1", sdp: "..." }
+ */
+function extractRobotId(raw: RawMessage, type: MessageType | undefined): string | undefined {
+  // Preferred: explicit 'robotId' field
+  if (typeof raw.robotId === 'string' && raw.robotId.trim().length > 0) {
+    return raw.robotId.trim();
   }
 
-  // ---- robotId ----
-  // Preferred: explicit 'robotId' (Robot.id / UUID).
-  // For robot messages: 'from' field contains robotId
-  // For client messages: 'to' field contains robotId
-  //   - Rust agent sends: { type: "register", from: "robot-id" }
-  //   - Rust agent sends: { type: "offer", from: "robot-id", to: "client-id", sdp: "..." }
-  //   - Browser sends: { type: "offer", to: "robot-id", from: "browser1", sdp: "..." }
-  let robotId: string | undefined;
-  if (typeof raw.robotId === 'string' && raw.robotId.trim().length > 0) {
-    robotId = raw.robotId.trim();
-  } else if (type === 'register') {
-    // Registration messages always come from robots: { type: "register", from: "robot-id" }
+  // Registration messages always come from robots
+  if (type === 'register') {
     if (typeof raw.from === 'string' && raw.from.trim().length > 0) {
-      robotId = raw.from.trim();
+      return raw.from.trim();
     }
-  } else if (type === 'offer' || type === 'answer' || type === 'candidate' || type === 'ice-candidate') {
-    // For offer/answer/candidate messages, we need to determine if it's client-to-robot or robot-to-client
-    // Strategy: Check if 'to' field looks like a robotId (starts with "robot-"), if so, it's client-to-robot
-    // Otherwise, check if 'from' field looks like a robotId, if so, it's robot-to-client
+    return undefined;
+  }
+
+  // For WebRTC signaling messages, determine direction and extract robotId
+  if (type === 'offer' || type === 'answer' || type === 'candidate' || type === 'ice-candidate') {
     const toField = typeof raw.to === 'string' ? raw.to.trim() : '';
     const fromField = typeof raw.from === 'string' ? raw.from.trim() : '';
     
-    // Check 'to' field first - if it starts with "robot-", it's likely the robotId (client-to-robot message)
+    // Check 'to' field first - if it starts with "robot-", it's likely the robotId (client-to-robot)
     if (toField.startsWith('robot-')) {
-      robotId = toField;
-    } else if (fromField.startsWith('robot-')) {
-      // If 'from' starts with "robot-", it's likely the robotId (robot-to-client message)
-      robotId = fromField;
-    } else if (toField.length > 0) {
-      // Fallback: use 'to' if it exists (for client-to-robot messages where robotId doesn't start with "robot-")
-      robotId = toField;
-    } else if (fromField.length > 0) {
-      // Last resort: use 'from' (for robot-to-client messages where robotId doesn't start with "robot-")
-      robotId = fromField;
+      return toField;
+    }
+    
+    // If 'from' starts with "robot-", it's likely the robotId (robot-to-client)
+    if (fromField.startsWith('robot-')) {
+      return fromField;
+    }
+    
+    // Fallback: use 'to' if it exists (for client-to-robot messages where robotId doesn't start with "robot-")
+    if (toField.length > 0) {
+      return toField;
+    }
+    
+    // Last resort: use 'from' (for robot-to-client messages where robotId doesn't start with "robot-")
+    if (fromField.length > 0) {
+      return fromField;
     }
   }
 
-  // ---- payload ----
-  // Preferred: 'payload' object.
-  // Also fold in 'sdp' and 'candidate' if present (Mike's WebRTC messages).
+  return undefined;
+}
+
+/**
+ * Extracts and combines payload data from a raw message.
+ * 
+ * Combines:
+ * - Explicit 'payload' object (preferred)
+ * - Top-level 'sdp' field (for WebRTC SDP offers/answers)
+ * - Top-level 'candidate' field (for ICE candidates)
+ * 
+ * This supports both formats:
+ * - Payload-wrapped: { payload: { sdp: "...", candidate: "..." } }
+ * - Top-level: { sdp: "...", candidate: "..." }
+ */
+function extractPayload(raw: RawMessage): Record<string, unknown> | undefined {
   let payload: Record<string, unknown> | undefined;
+  
+  // Start with explicit payload object if present
   if (raw.payload && typeof raw.payload === 'object') {
     payload = { ...raw.payload };
   }
 
+  // Fold in top-level 'sdp' field (Mike's WebRTC format)
   if (raw.sdp) {
     payload = payload ?? {};
     payload.sdp = raw.sdp;
   }
+
+  // Fold in top-level 'candidate' field (Mike's WebRTC format)
   if (raw.candidate) {
     payload = payload ?? {};
     payload.candidate = raw.candidate;
   }
 
-  // ---- target / clientConnectionId ----
-  const target =
-    typeof raw.target === 'string'
-      ? (raw.target.toLowerCase() as Target)
-      : undefined;
+  return payload;
+}
 
-  // Extract clientConnectionId:
-  // 1. Explicit clientConnectionId field
-  // 2. For robot-to-client messages: 'to' field contains client connection ID
-  //    (Rust format: { type: "answer", from: "robot-id", to: "client-connection-id" })
-  let clientConnectionId: string | undefined;
+/**
+ * Extracts the target direction from a raw message.
+ * Target indicates whether message is intended for 'robot' or 'client'.
+ */
+function extractTarget(raw: RawMessage): Target | undefined {
+  if (typeof raw.target === 'string') {
+    return raw.target.toLowerCase() as Target;
+  }
+  return undefined;
+}
+
+/**
+ * Extracts the client connection ID from a raw message.
+ * 
+ * Strategy:
+ * 1. Explicit 'clientConnectionId' field (preferred)
+ * 2. For robot-to-client messages: 'to' field contains client connection ID
+ *    - Only valid if 'from' matches the extracted robotId (confirms message is from robot)
+ * 
+ * Example (Rust format):
+ * { type: "answer", from: "robot-id", to: "client-connection-id" }
+ */
+function extractClientConnectionId(
+  raw: RawMessage,
+  type: MessageType | undefined,
+  robotId: string | undefined
+): string | undefined {
+  // Preferred: explicit clientConnectionId field
   if (typeof raw.clientConnectionId === 'string') {
-    clientConnectionId = raw.clientConnectionId.trim();
-  } else if (
-    typeof raw.to === 'string' && 
+    return raw.clientConnectionId.trim();
+  }
+
+  // For robot-to-client WebRTC messages, 'to' field is the client connection ID
+  // Only use this if:
+  // 1. Message type is a WebRTC signaling message
+  // 2. We have a robotId
+  // 3. 'from' field matches the robotId (confirms message is from robot)
+  if (
+    typeof raw.to === 'string' &&
     raw.to.trim().length > 0 &&
     (type === 'offer' || type === 'answer' || type === 'candidate' || type === 'ice-candidate') &&
-    robotId && // If we have a robotId, this might be from robot
-    typeof raw.from === 'string' && raw.from.trim() === robotId // Confirm 'from' matches robotId
+    robotId &&
+    typeof raw.from === 'string' &&
+    raw.from.trim() === robotId
   ) {
-    // For robot-to-client messages, 'to' field is the client connection ID
-    // Only use this if 'from' matches the robotId we extracted (confirms message is from robot)
-    clientConnectionId = raw.to.trim();
+    return raw.to.trim();
   }
+
+  return undefined;
+}
+
+/**
+ * Normalizes a raw message into the internal InboundMessage format.
+ * 
+ * This function handles multiple message formats and normalizes them into a consistent
+ * structure. It supports both legacy formats and current formats for backward compatibility.
+ * 
+ * @param raw - The raw message object (can be any shape)
+ * @returns Normalized InboundMessage with type, robotId, target, clientConnectionId, and payload
+ */
+function normalizeMessage(raw: RawMessage): InboundMessage {
+  if (!raw || typeof raw !== 'object') {
+    return {};
+  }
+
+  const type = extractMessageType(raw);
+  const robotId = extractRobotId(raw, type);
+  const payload = extractPayload(raw);
+  const target = extractTarget(raw);
+  const clientConnectionId = extractClientConnectionId(raw, type, robotId);
 
   return {
     type,
@@ -276,6 +365,56 @@ function normalizeMessage(raw: RawMessage): InboundMessage {
     target,
     clientConnectionId,
     payload,
+  };
+}
+
+/**
+ * Creates a standardized error response for API Gateway.
+ * 
+ * All error responses follow a consistent format:
+ * - statusCode: HTTP status code
+ * - body: JSON string with 'error' message and optional details
+ * - headers: Content-Type set to application/json
+ * 
+ * @param statusCode - HTTP status code (e.g., 400, 401, 403, 404, 500)
+ * @param message - Human-readable error message
+ * @param details - Optional additional error details (will be merged into response)
+ * @returns Standardized error response object
+ * 
+ * @example
+ * return errorResponse(400, 'robotId required');
+ * return errorResponse(403, 'Access denied', { robotId: 'robot-123' });
+ */
+function errorResponse(
+  statusCode: number,
+  message: string,
+  details?: Record<string, unknown>
+): APIGatewayProxyResult {
+  return {
+    statusCode,
+    body: JSON.stringify({
+      error: message,
+      ...details,
+    }),
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  };
+}
+
+/**
+ * Creates a standardized success response for API Gateway.
+ * 
+ * @param body - Optional response body (defaults to empty string)
+ * @returns Standardized success response object
+ */
+function successResponse(body: string | object = ''): APIGatewayProxyResult {
+  return {
+    statusCode: 200,
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+    },
   };
 }
 
@@ -395,15 +534,32 @@ async function canAccessRobot(robotId: string, claims: Claims, userEmailOrUserna
 
         if (!robotItem) {
             // Robot not found in Robot table - might be a legacy robot or not registered
-            // For now, allow access (fail open)
-            console.warn(`Robot ${robotId} not found in Robot table, allowing access`);
+            // For now, allow access (fail open for backward compatibility)
+            console.warn(`[ACL_CHECK] Robot ${robotId} not found in Robot table, allowing access (legacy robot)`);
             return true;
         }
 
-        const allowedUsers = robotItem.allowedUsers?.SS || [];
+        // Check if robot has an ACL field
+        // If allowedUsers field doesn't exist, robot is open access (no ACL configured)
+        if (!robotItem.allowedUsers) {
+            console.log(`[ACL_CHECK] Robot ${robotId} has no ACL field - open access`);
+            return true;
+        }
+
+        // Get the allowedUsers StringSet (SS) from DynamoDB
+        // Handle both SS (StringSet) and other possible formats
+        let allowedUsers: string[] = [];
+        if (robotItem.allowedUsers.SS) {
+            // Standard StringSet format
+            allowedUsers = robotItem.allowedUsers.SS;
+        } else if (Array.isArray(robotItem.allowedUsers)) {
+            // Fallback: if it's already an array
+            allowedUsers = robotItem.allowedUsers;
+        }
         
         // If ACL is empty/null, robot is open access
         if (allowedUsers.length === 0) {
+            console.log(`[ACL_CHECK] Robot ${robotId} has empty ACL - open access`);
             return true;
         }
 
@@ -418,20 +574,38 @@ async function canAccessRobot(robotId: string, claims: Claims, userEmailOrUserna
 
         const normalizedAllowedUsers = allowedUsers.map(u => u.toLowerCase());
         
+        console.log(`[ACL_CHECK] Checking access for robot ${robotId}:`, {
+            userIdentifiers,
+            allowedUsers: normalizedAllowedUsers,
+        });
+        
         for (const identifier of userIdentifiers) {
             if (normalizedAllowedUsers.includes(identifier.toLowerCase())) {
+                console.log(`[ACL_CHECK] User ${identifier} found in ACL for robot ${robotId}`);
                 return true;
             }
         }
 
         // User is not in ACL
-        console.log(`User ${userEmailOrUsername || claims.email || claims.sub} not in ACL for robot ${robotId}`);
+        console.log(`[ACL_CHECK] User ${userEmailOrUsername || claims.email || claims.sub} not in ACL for robot ${robotId}`);
         return false;
     } catch (error) {
-        console.error('Failed to check robot ACL:', error);
-        // Fail closed - if we can't check ACL, deny access for security
-        // Log the error for debugging but don't expose internal details to user
-        return false;
+        // Log detailed error for debugging
+        console.error('[ACL_CHECK_ERROR] Failed to check robot ACL:', {
+            robotId,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+        });
+        
+        // IMPORTANT: If we can't check the ACL due to an error, we need to decide:
+        // - Fail closed (deny) = more secure but blocks legitimate users if there's a bug
+        // - Fail open (allow) = less secure but better UX for legacy robots or temporary issues
+        // 
+        // For now, we'll fail open for robots that might not be in the table yet,
+        // but log the error so we can investigate. This prevents blocking legitimate access
+        // when there are infrastructure issues or robots that haven't been migrated yet.
+        console.warn(`[ACL_CHECK] Error checking ACL for robot ${robotId}, allowing access (fail open for backward compatibility)`);
+        return true; // Fail open to prevent blocking legitimate access
     }
 }
 
@@ -558,6 +732,12 @@ async function checkUserBalance(
     }
 
     const hourlyRateCredits = parseFloat(robot.hourlyRateCredits?.N || '100'); // Default 100 credits/hour
+
+    // If robot is free (0 hourly rate), skip credit check
+    if (hourlyRateCredits === 0) {
+      console.log('[BALANCE_CHECK] Robot is free (0 hourly rate), skipping credit check', { robotId });
+      return { sufficient: true, currentCredits, requiredCredits: 0 };
+    }
 
     // 3. Get platform markup percentage (using DocumentClient for PlatformSettings table)
     let platformMarkupPercent = DEFAULT_PLATFORM_MARKUP_PERCENT;
@@ -893,7 +1073,7 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
             reason: 'Invalid or missing token',
             hasToken: !!token,
         });
-        return {statusCode: 401, body: 'unauthorized'};
+        return errorResponse(401, 'Unauthorized');
     }
 
     try {
@@ -969,7 +1149,7 @@ async function handleRegister(
       reason: 'robotId required',
       receivedMessage: msg,
     });
-    return { statusCode: 400, body: 'robotId required' };
+    return errorResponse(400, 'robotId required');
   }
 
   const caller = claims.sub!;
@@ -1001,7 +1181,7 @@ async function handleRegister(
   } catch (e: any) {
     const code = e?.name || e?.Code || e?.code;
     if (code === 'ConditionalCheckFailedException' && !admin) {
-      return { statusCode: 409, body: 'Robot is already registered by another owner' };
+      return errorResponse(409, 'Robot is already registered by another owner');
     }
     if (code === 'ConditionalCheckFailedException' && admin) {
       // Admin may force-claim
@@ -1025,7 +1205,7 @@ async function handleRegister(
         error: String(e),
         errorCode: e?.name || e?.Code || e?.code,
       });
-      return { statusCode: 500, body: 'DynamoDB error' };
+      return errorResponse(500, 'DynamoDB error');
     }
   }
   
@@ -1064,7 +1244,7 @@ async function handleMonitor(
   const connectionId = event.requestContext.connectionId!;
   
   if (!robotId) {
-    return { statusCode: 400, body: 'robotId required for monitoring' };
+    return errorResponse(400, 'robotId required for monitoring');
   }
 
   // Verify user has access to monitor this robot (must be owner, admin, or have ACL access)
@@ -1089,7 +1269,7 @@ async function handleMonitor(
       console.warn('Failed to send access denied message to client:', e);
     }
     
-    return { statusCode: 403, body: 'Access denied: You are not authorized to monitor this robot' };
+    return errorResponse(403, 'Access denied: You are not authorized to monitor this robot');
   }
 
     // Store monitoring subscription in ConnectionsTable
@@ -1139,7 +1319,7 @@ async function handleMonitor(
       robotId,
       error: String(e),
     });
-    return { statusCode: 500, body: 'Failed to subscribe to monitoring' };
+    return errorResponse(500, 'Failed to subscribe to monitoring');
   }
 
   return { statusCode: 200, body: '' };
@@ -1228,7 +1408,7 @@ async function handleTakeover(
   msg: InboundMessage,
 ): Promise<APIGatewayProxyResult> {
   const robotId = msg.robotId?.trim();
-  if (!robotId) return { statusCode: 400, body: 'robotId required' };
+  if (!robotId) return errorResponse(400, 'robotId required');
 
   // Need owner + connection to notify
   const got = await db.send(new GetItemCommand({
@@ -1241,7 +1421,7 @@ async function handleTakeover(
   const robotConn = got.Item?.connectionId?.S;
 
   if (!owner || !robotConn) {
-    return { statusCode: 404, body: 'robot offline' };
+    return errorResponse(404, 'robot offline');
   }
 
   const caller = claims.sub ?? '';
@@ -1250,7 +1430,7 @@ async function handleTakeover(
   // Check if caller is owner, admin, or delegated operator
   const isAuthorized = await isOwnerOrAdmin(robotId, claims);
   if (!isAuthorized) {
-    return { statusCode: 403, body: 'forbidden' };
+    return errorResponse(403, 'forbidden');
   }
 
   await mgmt.send(new PostToConnectionCommand({
@@ -1295,7 +1475,7 @@ async function handleSignal(
       type,
       message: JSON.stringify(msg),
     });
-    return { statusCode: 400, body: 'Invalid Signal' };
+    return errorResponse(400, 'Invalid Signal');
   }
 
   // Get source connection ID (needed for logging and ACL checks)
@@ -1357,7 +1537,7 @@ async function handleSignal(
   }
   
   if (target !== 'robot' && target !== 'client') {
-    return { statusCode: 400, body: 'invalid target' };
+    return errorResponse(400, 'invalid target');
   }
 
   // If target is robot, check ACL before allowing access
@@ -1395,7 +1575,7 @@ async function handleSignal(
         console.warn('Failed to send access denied message to client:', e);
       }
       
-      return { statusCode: 403, body: 'Access denied: You are not authorized to access this robot' };
+      return errorResponse(403, 'Access denied: You are not authorized to access this robot');
     }
 
     // Server-side session lock enforcement
@@ -1424,13 +1604,9 @@ async function handleSignal(
           console.warn('[SESSION_LOCK_NOTIFY_ERROR]', e);
         }
         
-        return { 
-          statusCode: 423,
-          body: JSON.stringify({
-            error: 'Robot is currently controlled by another user',
-            lockedBy: sessionLock.userEmail || sessionLock.userId,
-          })
-        };
+        return errorResponse(423, 'Robot is currently controlled by another user', {
+          lockedBy: sessionLock.userEmail || sessionLock.userId,
+        });
       }
     }
   }
@@ -1477,7 +1653,7 @@ async function handleSignal(
     }));
     const robotConn = robotItem.Item?.connectionId?.S;
     if (!robotConn) {
-      return { statusCode: 404, body: 'target offline' };
+      return errorResponse(404, 'target offline');
     }
     targetConn = robotConn;
   }
@@ -1765,7 +1941,7 @@ export async function handler(
           hasToken: !!token,
           reason: 'No claims from connection table and token verification failed',
         });
-        return { statusCode: 401, body: 'Unauthorized' };
+        return errorResponse(401, 'Unauthorized');
       }
     }
   }
@@ -1775,7 +1951,7 @@ export async function handler(
   try {
     raw = JSON.parse(event.body ?? '{}');
   } catch {
-    return { statusCode: 400, body: 'Invalid JSON' };
+    return errorResponse(400, 'Invalid JSON');
   }
 
   // Normalize to our canonical shape
@@ -1803,7 +1979,7 @@ export async function handler(
       return { statusCode: 200, body: 'ok' };
     } catch (e) {
       console.error('Failed to send welcome:', e);
-      return { statusCode: 500, body: 'failed to send welcome' };
+      return errorResponse(500, 'failed to send welcome');
     }
   }
 
@@ -1848,5 +2024,5 @@ export async function handler(
     rawBody: event.body,
   });
 
-  return { statusCode: 400, body: 'Unknown message type' };
+  return errorResponse(400, 'Unknown message type');
 }

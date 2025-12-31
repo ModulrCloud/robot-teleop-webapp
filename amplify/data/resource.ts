@@ -33,6 +33,9 @@ import { processRobotReservationRefunds } from "../functions/process-robot-reser
 import { listPartnerPayouts } from "../functions/list-partner-payouts/resource";
 import { processPayout } from "../functions/process-payout/resource";
 import { getSessionLambda } from "../functions/get-session/resource";
+import { triggerConnectionCleanup } from "../functions/trigger-connection-cleanup/resource";
+import { getActiveRobots } from "../functions/get-active-robots/resource";
+import { manageCreditTier } from "../functions/manage-credit-tier/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -693,6 +696,17 @@ const schema = a.schema({
     .authorization(allow => [allow.authenticated()]) // Auth check happens in Lambda (domain-based + group-based)
     .handler(a.handler.function(listAdmins)),
 
+  manageCreditTierLambda: a
+    .mutation()
+    .arguments({
+      action: a.string().required(), // 'create', 'update', or 'delete'
+      tierId: a.string(), // Required for 'update' and 'delete'
+      tierData: a.json(), // Required for 'create' and 'update'
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth check happens in Lambda (domain-based + group-based)
+    .handler(a.handler.function(manageCreditTier)),
+
   listUsersLambda: a
     .query()
     .arguments({
@@ -859,6 +873,18 @@ const schema = a.schema({
     .returns(SessionResult)
     .authorization(allow => [allow.authenticated()])
     .handler(a.handler.function(getSessionLambda)),
+
+  triggerConnectionCleanupLambda: a
+    .mutation()
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (admins only)
+    .handler(a.handler.function(triggerConnectionCleanup)),
+
+  getActiveRobotsLambda: a
+    .query()
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (admins only)
+    .handler(a.handler.function(getActiveRobots)),
 });
 
 export type Schema = ClientSchema<typeof schema>;

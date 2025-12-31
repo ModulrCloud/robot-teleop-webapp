@@ -15,7 +15,11 @@ import { formatCreditsAsCurrencySync, fetchExchangeRates } from '../utils/credit
 const client = generateClient<Schema>();
 
 const getRobotImage = (model: string, imageUrl?: string): string => {
-  if (imageUrl) return imageUrl;
+  // Only use imageUrl if it's already a full URL (http/https) or a local path (/)
+  // Don't use S3 keys as-is - they need to be resolved first
+  if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('/'))) {
+    return imageUrl;
+  }
   
   const modelImages: Record<string, string> = {
     'humanoid': '/humaniod.png',
@@ -32,6 +36,7 @@ const getRobotImage = (model: string, imageUrl?: string): string => {
 // Extended robot data to include the UUID for deletion
 interface RobotData extends CardGridItemProps {
   uuid?: string; // The actual Robot.id (UUID) for deletion
+  model?: string; // Robot model type (e.g., 'humanoid', 'rover', 'drone', 'submarine')
 }
 
 export default function RobotSelect() {
@@ -428,8 +433,9 @@ export default function RobotSelect() {
                 title: robot.name || 'Unnamed Robot',
                 description: description,
                 location: location, // Location on separate line
-                imageUrl: getRobotImage(robot.model, robot.imageUrl),
-                rawImageUrl: robot.imageUrl,
+                // Use model-based default image initially - S3 keys will be resolved in resolveImages
+                imageUrl: getRobotImage(robot.model),
+                rawImageUrl: robot.imageUrl, // Store S3 key for later resolution
                 disabled: !canAccess, // Gray out if user can't access
                 hourlyRate: hourlyRateDisplay,
               };
@@ -508,13 +514,20 @@ export default function RobotSelect() {
       const images: Record<string, string> = {};
       for (const robot of rawRobotData) {
         const key = (robot as any).rawImageUrl;
+        // Only resolve S3 keys (not URLs or local paths)
         if (key && !key.startsWith('http') && !key.startsWith('/')) {
           try {
             const result = await getUrl({ path: key });
             images[robot.id] = result.url.toString();
-          } catch {
-            images[robot.id] = '';
+            logger.log(`[IMAGE_RESOLVED] Robot ${robot.id}: ${key} -> ${result.url.toString()}`);
+          } catch (err) {
+            logger.warn(`[IMAGE_RESOLVE_FAILED] Robot ${robot.id}, key: ${key}`, err);
+            // Don't set empty string - let it fall back to model-based image
+            // Only set if we successfully resolved it
           }
+        } else if (key && (key.startsWith('http') || key.startsWith('/'))) {
+          // Already a URL or local path - use it directly
+          images[robot.id] = key;
         }
       }
       if (Object.keys(images).length > 0) {
@@ -658,7 +671,8 @@ export default function RobotSelect() {
               uuid: robot.id || undefined,
               title: robot.name || 'Unnamed Robot',
               description: description,
-              imageUrl: resolvedImages[robot.id] || getRobotImage(robot.model, robot.imageUrl),
+              // Use resolved image if available, otherwise fall back to model-based default
+              imageUrl: resolvedImages[robot.id] || getRobotImage(robot.model),
             };
           });
         
@@ -711,7 +725,11 @@ export default function RobotSelect() {
     <div className="robot-select-container">
       <h2>Select Robot</h2>
           <CardGrid
-            items={robots.map(robot => ({ ...robot, imageUrl: resolvedImages[robot.id] || robot.imageUrl }))}
+            items={robots.map(robot => ({ 
+              ...robot, 
+              // Use resolved image if available, otherwise use the robot's imageUrl (which should be model-based default)
+              imageUrl: resolvedImages[robot.id] || robot.imageUrl || getRobotImage(robot.model || 'humanoid')
+            }))}
             columns={3}
             multiple={false}
             selected={selected}

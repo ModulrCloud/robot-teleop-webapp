@@ -92,6 +92,46 @@ export const handler: Schema["processSessionPaymentLambda"]["functionHandler"] =
 
     const hourlyRateCredits = robot.hourlyRateCredits || 100; // Default 100 credits/hour
 
+    // If robot is free (0 hourly rate), skip all credit operations
+    if (hourlyRateCredits === 0) {
+      console.log("Robot is free (0 hourly rate), skipping credit deduction and payment processing", {
+        sessionId,
+        robotId,
+        durationSeconds,
+      });
+
+      // Update session with zero costs
+      await docClient.send(
+        new UpdateCommand({
+          TableName: SESSION_TABLE_NAME,
+          Key: { id: sessionId },
+          UpdateExpression: 'SET #status = :status, creditsCharged = :credits, partnerEarnings = :earnings, platformFee = :fee, updatedAt = :now',
+          ExpressionAttributeNames: {
+            '#status': 'status',
+          },
+          ExpressionAttributeValues: {
+            ':status': 'completed',
+            ':credits': 0,
+            ':earnings': 0,
+            ':fee': 0,
+            ':now': new Date().toISOString(),
+          },
+        })
+      );
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          success: true,
+          message: "Robot is free - no credits charged",
+          sessionId,
+          creditsCharged: 0,
+          partnerEarnings: 0,
+          platformFee: 0,
+        }),
+      };
+    }
+
     // 3. Get platform markup percentage
     let platformMarkupPercent = DEFAULT_PLATFORM_MARKUP_PERCENT;
     try {
