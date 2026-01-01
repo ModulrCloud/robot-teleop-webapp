@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
+import { logger } from '../utils/logger';
 import "./EndSession.css";
 import { usePageTitle } from "../hooks/usePageTitle";
 
@@ -33,7 +34,7 @@ export default function EndSession() {
           setServerDuration(result.data.durationSeconds);
         }
       } catch (err) {
-        console.error('[END_SESSION] Failed to fetch server duration:', err);
+        logger.error('[END_SESSION] Failed to fetch server duration:', err);
       }
     };
     

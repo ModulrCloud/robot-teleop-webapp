@@ -3,6 +3,7 @@ import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../amplify/data/resource';
 import { useAuthStatus } from './useAuthStatus';
 import { getCredits, formatCreditsAsCurrencySync, fetchExchangeRates, type CurrencyCode } from '../utils/credits';
+import { logger } from '../utils/logger';
 
 const client = generateClient<Schema>();
 
@@ -33,7 +34,7 @@ export function useUserCredits(): UserCreditsData {
     fetchExchangeRates().then(rates => {
       setExchangeRates(rates);
     }).catch(err => {
-      console.warn('Failed to fetch exchange rates:', err);
+      logger.warn('Failed to fetch exchange rates:', err);
     });
   }, []);
 
@@ -104,7 +105,7 @@ export function useUserCredits(): UserCreditsData {
         }
       } catch (currencyError) {
         // If currency lookup fails, continue with null (will show "?" fallback)
-        console.warn('Failed to load currency preference:', currencyError);
+        logger.warn('Failed to load currency preference:', currencyError);
       }
 
       setCurrency(preferredCurrency || 'USD'); // Fallback to USD for state, but pass null to formatter for "?" display
@@ -129,7 +130,7 @@ export function useUserCredits(): UserCreditsData {
   // Listen for credit update events (e.g., when admin adjusts credits for current user)
   useEffect(() => {
     const handleCreditsUpdate = () => {
-      console.log("🔄 Custom event 'creditsUpdated' received, refreshing credits...");
+      logger.debug("🔄 Custom event 'creditsUpdated' received, refreshing credits...");
       loadCredits();
     };
 

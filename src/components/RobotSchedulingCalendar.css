@@ -75,7 +75,7 @@
 .scheduling-calendar .calendar-grid {
   display: grid !important;
   grid-template-columns: 80px repeat(7, 1fr) !important;
-  gap: 1px;
+  gap: 0;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
@@ -121,13 +121,14 @@
   padding-right: 0.75rem;
   font-size: 0.85rem;
   color: rgba(255, 255, 255, 0.6);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: none;
 }
 
 .time-slot.hour-label {
   height: 15px;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .time-slot.quarter-slot {
@@ -135,10 +136,20 @@
   border-bottom: none;
 }
 
+/* Hourly separator for time slots (every 4th segment) */
+.time-slot.quarter-slot:nth-child(4n) {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
 .scheduling-calendar .day-column {
   background: rgba(26, 26, 26, 0.6);
   display: flex;
   flex-direction: column;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.scheduling-calendar .day-column:last-child {
+  border-right: none;
 }
 
 .day-header {
@@ -218,8 +229,8 @@
 
 .time-cell {
   height: 15px; /* Each 15-minute segment is 15px */
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  border-right: 1px solid rgba(255, 255, 255, 0.03);
+  border-bottom: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
   cursor: pointer;
   transition: all 0.15s ease;
   position: relative;
@@ -229,23 +240,22 @@
 }
 
 .time-cell.quarter-cell {
-  border-right: 1px solid rgba(255, 255, 255, 0.04);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Add visual separator every hour (every 4 segments) */
+/* Keep hourly separator for easy time distinction (every 4th segment = 1 hour) */
 .time-cell.quarter-cell:nth-child(4n) {
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .time-cell:hover:not(.blocked) {
   background: rgba(255, 183, 0, 0.1);
-  border-color: rgba(255, 183, 0, 0.3);
+  border: none;
 }
 
 .time-cell.selected {
   background: rgba(255, 183, 0, 0.25);
-  border-color: #ffb700;
-  border-width: 1px;
+  border: none;
 }
 
 .time-cell.hovered:not(.blocked):not(.selected):not(.dragging) {

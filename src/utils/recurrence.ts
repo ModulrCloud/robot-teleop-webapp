@@ -2,6 +2,8 @@
  * Utility functions for handling recurring availability patterns
  */
 
+import { logger } from './logger';
+
 export interface RecurrencePattern {
   type: 'weekly';
   daysOfWeek: number[]; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
@@ -118,7 +120,7 @@ export function parseRecurrencePattern(patternString: string | null | undefined)
       };
     }
   } catch (e) {
-    console.error('Failed to parse recurrence pattern:', e);
+    logger.error('Failed to parse recurrence pattern:', e);
   }
   
   return null;
