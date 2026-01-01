@@ -173,17 +173,17 @@ export const Admin = () => {
   // Debug function to check Client and Partner models directly
   const debugClientAndPartnerModels = async () => {
     try {
-      console.log("🔍 [DEBUG] Checking Client model...");
+      logger.debug("🔍 [DEBUG] Checking Client model...");
       const { data: clients, errors: clientErrors } = await client.models.Client.list();
-      console.log("📊 [DEBUG] Client model results:", {
+      logger.debug("📊 [DEBUG] Client model results:", {
         count: clients?.length || 0,
         clients: clients,
         errors: clientErrors,
       });
 
-      console.log("🔍 [DEBUG] Checking Partner model...");
+      logger.debug("🔍 [DEBUG] Checking Partner model...");
       const { data: partners, errors: partnerErrors } = await client.models.Partner.list();
-      console.log("📊 [DEBUG] Partner model results:", {
+      logger.debug("📊 [DEBUG] Partner model results:", {
         count: partners?.length || 0,
         partners: partners,
         errors: partnerErrors,
@@ -192,11 +192,11 @@ export const Admin = () => {
       // Log all cognitoUsernames
       const allClientUsernames = clients?.map(c => c.cognitoUsername).filter(Boolean) || [];
       const allPartnerUsernames = partners?.map(p => p.cognitoUsername).filter(Boolean) || [];
-      console.log("👥 [DEBUG] All Client cognitoUsernames:", allClientUsernames);
-      console.log("👥 [DEBUG] All Partner cognitoUsernames:", allPartnerUsernames);
-      console.log("👥 [DEBUG] Total unique users:", new Set([...allClientUsernames, ...allPartnerUsernames]).size);
+      logger.debug("👥 [DEBUG] All Client cognitoUsernames:", allClientUsernames);
+      logger.debug("👥 [DEBUG] All Partner cognitoUsernames:", allPartnerUsernames);
+      logger.debug("👥 [DEBUG] Total unique users:", new Set([...allClientUsernames, ...allPartnerUsernames]).size);
     } catch (err) {
-      console.error("❌ [DEBUG] Error checking Client/Partner models:", err);
+      logger.error("❌ [DEBUG] Error checking Client/Partner models:", err);
     }
   };
 
@@ -215,15 +215,14 @@ export const Admin = () => {
         limit: 50,
         paginationToken: token || undefined,
       });
-      console.log("🔍 [DEBUG] Raw listUsersLambda response:", JSON.stringify(result, null, 2));
+      logger.debug("🔍 [DEBUG] Raw listUsersLambda response:", JSON.stringify(result, null, 2));
       logger.log("✅ listUsersLambda response:", result);
       
       // Parse the JSON response
       let usersData: { success?: boolean; users?: any[]; nextToken?: string | null } | null = null;
       
       if (!result || !result.data) {
-        console.error("❌ [DEBUG] No data in response:", result);
-        logger.error("❌ No data in response:", result);
+        logger.error("❌ [DEBUG] No data in response:", result);
         setError("Failed to load users: No response from server");
         return;
       }
@@ -237,8 +236,7 @@ export const Admin = () => {
             usersData = firstParse;
           }
         } catch (e) {
-          console.error("❌ [DEBUG] Failed to parse JSON response:", e, "Raw data:", result.data);
-          logger.error("❌ Failed to parse JSON response:", e, "Raw data:", result.data);
+          logger.error("❌ [DEBUG] Failed to parse JSON response:", e, "Raw data:", result.data);
           setError("Failed to load users: Invalid JSON response");
           return;
         }
@@ -246,33 +244,30 @@ export const Admin = () => {
         usersData = result.data as any;
       }
 
-      console.log("📊 [DEBUG] Parsed users data:", JSON.stringify(usersData, null, 2));
+      logger.debug("📊 [DEBUG] Parsed users data:", JSON.stringify(usersData, null, 2));
       logger.log("📊 Parsed users data:", usersData);
 
       if (!usersData) {
-        console.error("❌ [DEBUG] Users data is null or undefined");
-        logger.error("❌ Users data is null or undefined");
+        logger.error("❌ [DEBUG] Users data is null or undefined");
         setError("Failed to load users: No data returned from server");
         return;
       }
 
       if (usersData.success !== false) {
         // Success
-        console.log("✅ [DEBUG] Setting users:", usersData.users?.length || 0, "users");
-        console.log("✅ [DEBUG] Users array:", JSON.stringify(usersData.users, null, 2));
+        logger.debug("✅ [DEBUG] Setting users:", usersData.users?.length || 0, "users");
+        logger.debug("✅ [DEBUG] Users array:", JSON.stringify(usersData.users, null, 2));
         setUsers(usersData.users || []);
         setPaginationToken(usersData.nextToken || null);
         setError(null); // Clear any previous errors
         logger.log("✅ [DEBUG] Set pagination token:", usersData.nextToken);
         logger.log(`✅ Successfully loaded ${usersData.users?.length || 0} users`);
       } else {
-        console.error("❌ [DEBUG] Users data indicates failure:", usersData);
-        logger.error("❌ Users data indicates failure:", usersData);
+        logger.error("❌ [DEBUG] Users data indicates failure:", usersData);
         setError("Failed to load users: Server returned error");
       }
     } catch (err) {
-      console.error("❌ [DEBUG] Error loading users:", err);
-      logger.error("❌ Error loading users:", err);
+      logger.error("❌ [DEBUG] Error loading users:", err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(`Failed to load users: ${errorMessage}`);
     } finally {
@@ -314,7 +309,7 @@ export const Admin = () => {
       });
 
       logger.log("📦 Raw result from addCreditsLambda:", result);
-      console.log("📦 Full result object:", JSON.stringify(result, null, 2));
+      logger.debug("📦 Full result object:", JSON.stringify(result, null, 2));
 
       // Check for errors in the result
       if (result.errors && result.errors.length > 0) {
@@ -382,7 +377,7 @@ export const Admin = () => {
       }
     } catch (err) {
       logger.error("❌ Error adjusting credits:", err);
-      console.error("❌ Full error object:", err);
+      logger.error("❌ Full error object:", err);
       
       // Extract more detailed error information
       let errorMessage = "Failed to adjust credits";
@@ -428,31 +423,31 @@ export const Admin = () => {
     setSuccess(null);
 
     try {
-      console.log(`🔄 Changing classification for ${username} to ${newClassification}`);
+      logger.log(`🔄 Changing classification for ${username} to ${newClassification}`);
       
       // Check for robots BEFORE attempting conversion (only when converting Partner to Client)
       if (newClassification === 'CLIENT') {
-        console.log(`🔍 Checking for robots before converting ${username} to CLIENT...`);
+        logger.debug(`🔍 Checking for robots before converting ${username} to CLIENT...`);
         const { data: partners } = await client.models.Partner.list({
           filter: { cognitoUsername: { eq: username } },
         });
         
-        console.log(`📊 Found ${partners?.length || 0} partner record(s) for ${username}`);
+        logger.debug(`📊 Found ${partners?.length || 0} partner record(s) for ${username}`);
         
         if (partners && partners.length > 0) {
           const partnerId = partners[0].id;
-          console.log(`🤖 Checking for robots with partnerId: ${partnerId}`);
+          logger.debug(`🤖 Checking for robots with partnerId: ${partnerId}`);
           
           // Check if this partner has any robots
           const { data: robots } = await client.models.Robot.list({
             filter: { partnerId: { eq: partnerId || undefined } },
           });
           
-          console.log(`📊 Found ${robots?.length || 0} robot(s) for partner ${partnerId}`);
+          logger.debug(`📊 Found ${robots?.length || 0} robot(s) for partner ${partnerId}`);
           
           if (robots && robots.length > 0) {
             const errorMsg = `Cannot convert Partner to Client: This partner has ${robots.length} robot(s) listed. Please delete or transfer all robots before converting.`;
-            console.error(`❌ ${errorMsg}`);
+            logger.error(`❌ ${errorMsg}`);
             setError(errorMsg);
             // Show toast notification
             setToast({ message: errorMsg, type: 'error', visible: true });
@@ -463,7 +458,7 @@ export const Admin = () => {
             return;
           }
         } else {
-          console.log(`ℹ️ No partner record found for ${username}, skipping robot check`);
+          logger.debug(`ℹ️ No partner record found for ${username}, skipping robot check`);
         }
       }
       
@@ -474,7 +469,7 @@ export const Admin = () => {
         targetUsername: username, // Admin can change other users' groups
       });
 
-      console.log("✅ setUserGroupLambda response:", response);
+      logger.log("✅ setUserGroupLambda response:", response);
 
       // Parse the response to check for errors
       let responseData: any = null;
@@ -558,27 +553,26 @@ export const Admin = () => {
       // Reload users to reflect the change
       await loadUsers(paginationToken || null);
     } catch (err) {
-      console.error("❌ Error changing classification:", err);
-      logger.error("Error changing user classification:", err);
+      logger.error("❌ Error changing classification:", err);
       setError(`Failed to change classification: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
   const loadSystemStats = async () => {
-    console.log("🔍 [SYSTEM STATS] loadSystemStats called");
+    logger.debug("🔍 [SYSTEM STATS] loadSystemStats called");
     
     if (!user?.email || !hasAdminAccess(user.email)) {
-      console.warn("⚠️ [SYSTEM STATS] No admin access, skipping");
+      logger.warn("⚠️ [SYSTEM STATS] No admin access, skipping");
       return;
     }
 
-    console.log("✅ [SYSTEM STATS] Admin access confirmed, loading stats...");
+    logger.debug("✅ [SYSTEM STATS] Admin access confirmed, loading stats...");
     setLoadingStats(true);
     try {
-      console.log("🔍 [SYSTEM STATS] Calling getSystemStatsLambda...");
+      logger.debug("🔍 [SYSTEM STATS] Calling getSystemStatsLambda...");
       logger.log("🔍 Calling getSystemStatsLambda...");
       const result = await client.queries.getSystemStatsLambda();
-      console.log("📊 [SYSTEM STATS] Raw result from Lambda:", result);
+      logger.debug("📊 [SYSTEM STATS] Raw result from Lambda:", result);
       logger.log("📊 Raw result from getSystemStatsLambda:", result);
       
       let statsData: { success?: boolean; stats?: any } | null = null;
@@ -598,7 +592,7 @@ export const Admin = () => {
         statsData = result.data as typeof statsData;
       }
 
-      console.log("📈 [SYSTEM STATS] Parsed stats data:", statsData);
+      logger.debug("📈 [SYSTEM STATS] Parsed stats data:", statsData);
       logger.log("📈 Parsed stats data:", statsData);
 
       if (statsData?.success && statsData.stats) {
@@ -610,18 +604,16 @@ export const Admin = () => {
           totalCredits: statsData.stats.totalCredits ?? 0,
           activeSessions: statsData.stats.activeSessions ?? 0,
         };
-        console.log("✅ [SYSTEM STATS] Final stats object:", stats);
-        console.log("✅ [SYSTEM STATS] Total Robots value:", stats.totalRobots, "Type:", typeof stats.totalRobots);
+        logger.debug("✅ [SYSTEM STATS] Final stats object:", stats);
+        logger.debug("✅ [SYSTEM STATS] Total Robots value:", stats.totalRobots, "Type:", typeof stats.totalRobots);
         logger.log("✅ Setting system stats:", stats);
         setSystemStats(stats);
       } else {
-        console.error("❌ [SYSTEM STATS] Invalid response:", statsData);
-        logger.error("❌ Failed to load system stats - invalid response:", statsData);
+        logger.error("❌ [SYSTEM STATS] Invalid response:", statsData);
         setError("Failed to load system statistics");
       }
     } catch (err) {
-      console.error("❌ [SYSTEM STATS] Error:", err);
-      logger.error("❌ Error loading system stats:", err);
+      logger.error("❌ [SYSTEM STATS] Error:", err);
       setError(`Failed to load system statistics: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setLoadingStats(false);
@@ -1391,13 +1383,13 @@ export const Admin = () => {
   };
 
   const saveCreditTier = async (tier: any) => {
-    console.log('[saveCreditTier] Called with tier:', tier);
-    console.log('[saveCreditTier] User:', user?.email);
-    console.log('[saveCreditTier] Has admin access:', user?.email ? hasAdminAccess(user.email) : false);
+    logger.debug('[saveCreditTier] Called with tier:', tier);
+    logger.debug('[saveCreditTier] User:', user?.email);
+    logger.debug('[saveCreditTier] Has admin access:', user?.email ? hasAdminAccess(user.email) : false);
     
     if (!user?.email || !hasAdminAccess(user.email)) {
       const errorMsg = "Unauthorized: Admin access required. Only @modulr.cloud email addresses can manage credit tiers.";
-      console.log('[saveCreditTier] Setting error:', errorMsg);
+      logger.debug('[saveCreditTier] Setting error:', errorMsg);
       setError(errorMsg);
       setTimeout(() => setError(null), 5000);
       return;
@@ -1415,11 +1407,11 @@ export const Admin = () => {
     setSuccess(null);
 
     try {
-      console.log('[saveCreditTier] Starting save process...');
+      logger.debug('[saveCreditTier] Starting save process...');
       const now = new Date().toISOString();
       // Auto-generate tierId from basePrice (use existing tierId if updating)
       const tierId = tier.id ? tier.tierId : generateTierId(tier.basePrice);
-      console.log('[saveCreditTier] Generated tierId:', tierId);
+      logger.debug('[saveCreditTier] Generated tierId:', tierId);
       
       const tierData = {
         tierId: tierId,
@@ -1432,20 +1424,20 @@ export const Admin = () => {
         displayOrder: tier.displayOrder || 0,
         updatedAt: now,
       };
-      console.log('[saveCreditTier] Tier data to save:', tierData);
+      logger.debug('[saveCreditTier] Tier data to save:', tierData);
 
       if (tier.id) {
         // Update existing tier
-        console.log('[saveCreditTier] Calling update mutation...');
+        logger.debug('[saveCreditTier] Calling update mutation...');
         const result = await client.mutations.manageCreditTierLambda({
           action: 'update',
           tierId: tier.id,
           tierData: JSON.stringify(tierData),
         });
-        console.log('[saveCreditTier] Update result:', result);
+        logger.debug('[saveCreditTier] Update result:', result);
 
         if (result.errors && result.errors.length > 0) {
-          console.error('[saveCreditTier] GraphQL errors:', result.errors);
+          logger.error('[saveCreditTier] GraphQL errors:', result.errors);
           const errorMessages = result.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ');
           setError(`Failed to update credit tier: ${errorMessages}`);
           setTimeout(() => setError(null), 5000);
@@ -1454,16 +1446,16 @@ export const Admin = () => {
         }
 
         if (!result.data) {
-          console.error('[saveCreditTier] No data returned from mutation');
+          logger.error('[saveCreditTier] No data returned from mutation');
           setError('Failed to update credit tier: No data returned');
           setTimeout(() => setError(null), 5000);
           setSavingMarkup(false);
           return;
         }
 
-        console.log('[saveCreditTier] Parsing result data...');
-        console.log('[saveCreditTier] result.data type:', typeof result.data);
-        console.log('[saveCreditTier] result.data:', result.data);
+        logger.debug('[saveCreditTier] Parsing result data...');
+        logger.debug('[saveCreditTier] result.data type:', typeof result.data);
+        logger.debug('[saveCreditTier] result.data:', result.data);
         
         // GraphQL may double-encode JSON strings, so we need to parse twice if needed
         let resultData: any;
@@ -1478,31 +1470,31 @@ export const Admin = () => {
               resultData = firstParse;
             }
           } catch (e) {
-            console.error('[saveCreditTier] Error parsing result.data:', e);
+            logger.error('[saveCreditTier] Error parsing result.data:', e);
             throw new Error('Failed to parse result data');
           }
         } else {
           resultData = result.data;
         }
         
-        console.log('[saveCreditTier] Parsed result data:', resultData);
-        console.log('[saveCreditTier] resultData.success:', resultData.success);
-        console.log('[saveCreditTier] resultData.success type:', typeof resultData.success);
+        logger.debug('[saveCreditTier] Parsed result data:', resultData);
+        logger.debug('[saveCreditTier] resultData.success:', resultData.success);
+        logger.debug('[saveCreditTier] resultData.success type:', typeof resultData.success);
         
         if (resultData.success === true || resultData.success === 'true') {
-          console.log('[saveCreditTier] Update successful! Clearing edit state and reloading...');
+          logger.debug('[saveCreditTier] Update successful! Clearing edit state and reloading...');
           // Clear editing state immediately so edit dialog disappears
           setEditingTier(null);
           setSuccess("Credit tier updated successfully!");
           setTimeout(() => setSuccess(null), 3000);
           // Reload tiers immediately
           await loadCreditTiers();
-          console.log('[saveCreditTier] Tiers reloaded, setting saving to false');
+          logger.debug('[saveCreditTier] Tiers reloaded, setting saving to false');
           setSavingMarkup(false);
         } else {
-          console.error('[saveCreditTier] Update failed. resultData:', resultData);
-          console.error('[saveCreditTier] resultData.success:', resultData.success);
-          console.error('[saveCreditTier] resultData.message:', resultData.message);
+          logger.error('[saveCreditTier] Update failed. resultData:', resultData);
+          logger.error('[saveCreditTier] resultData.success:', resultData.success);
+          logger.error('[saveCreditTier] resultData.message:', resultData.message);
           setError(`Failed to update credit tier: ${resultData.message || 'Unknown error'}`);
           setTimeout(() => setError(null), 5000);
           setSavingMarkup(false);
@@ -1516,7 +1508,7 @@ export const Admin = () => {
           return;
         }
 
-        console.log('[saveCreditTier] Creating tier in database...');
+        logger.debug('[saveCreditTier] Creating tier in database...');
         const result = await client.mutations.manageCreditTierLambda({
           action: 'create',
           tierData: JSON.stringify({
@@ -1524,10 +1516,10 @@ export const Admin = () => {
             createdAt: now,
           }),
         });
-        console.log('[saveCreditTier] Create result:', result);
+        logger.debug('[saveCreditTier] Create result:', result);
 
         if (result.errors && result.errors.length > 0) {
-          console.error('[saveCreditTier] GraphQL errors:', result.errors);
+          logger.error('[saveCreditTier] GraphQL errors:', result.errors);
           const errorMessages = result.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ');
           setError(`Failed to create credit tier: ${errorMessages}`);
           setTimeout(() => setError(null), 5000);
@@ -1536,16 +1528,16 @@ export const Admin = () => {
         }
 
         if (!result.data) {
-          console.error('[saveCreditTier] No data returned from mutation');
+          logger.error('[saveCreditTier] No data returned from mutation');
           setError('Failed to create credit tier: No data returned');
           setTimeout(() => setError(null), 5000);
           setSavingMarkup(false);
           return;
         }
 
-        console.log('[saveCreditTier] Parsing result data...');
-        console.log('[saveCreditTier] result.data type:', typeof result.data);
-        console.log('[saveCreditTier] result.data:', result.data);
+        logger.debug('[saveCreditTier] Parsing result data...');
+        logger.debug('[saveCreditTier] result.data type:', typeof result.data);
+        logger.debug('[saveCreditTier] result.data:', result.data);
         
         // GraphQL may double-encode JSON strings, so we need to parse twice if needed
         let resultData: any;
@@ -1560,28 +1552,28 @@ export const Admin = () => {
               resultData = firstParse;
             }
           } catch (e) {
-            console.error('[saveCreditTier] Error parsing result.data:', e);
+            logger.error('[saveCreditTier] Error parsing result.data:', e);
             throw new Error('Failed to parse result data');
           }
         } else {
           resultData = result.data;
         }
         
-        console.log('[saveCreditTier] Parsed result data:', resultData);
-        console.log('[saveCreditTier] resultData.success:', resultData.success);
+        logger.debug('[saveCreditTier] Parsed result data:', resultData);
+        logger.debug('[saveCreditTier] resultData.success:', resultData.success);
         
         if (resultData.success === true || resultData.success === 'true') {
-          console.log('[saveCreditTier] Create successful! Clearing form and reloading...');
+          logger.debug('[saveCreditTier] Create successful! Clearing form and reloading...');
           // Clear form immediately so user sees it disappear
           setNewTier(null);
           setSuccess("Credit tier created successfully!");
           setTimeout(() => setSuccess(null), 3000);
           // Reload tiers immediately to show the new tier in the list
           await loadCreditTiers();
-          console.log('[saveCreditTier] Tiers reloaded, setting saving to false');
+          logger.debug('[saveCreditTier] Tiers reloaded, setting saving to false');
           setSavingMarkup(false);
         } else {
-          console.error('[saveCreditTier] Create failed:', resultData.message);
+          logger.error('[saveCreditTier] Create failed:', resultData.message);
           setError(`Failed to create credit tier: ${resultData.message || 'Unknown error'}`);
           setTimeout(() => setError(null), 5000);
           setSavingMarkup(false);
@@ -2375,12 +2367,12 @@ export const Admin = () => {
                           <button
                             className="admin-button"
                             onClick={async () => {
-                              console.log('[Button Click] Create Tier clicked');
-                              console.log('[Button Click] newTier:', newTier);
+                              logger.debug('[Button Click] Create Tier clicked');
+                              logger.debug('[Button Click] newTier:', newTier);
                               try {
                                 await saveCreditTier(newTier);
                               } catch (err) {
-                                console.error('[Button Click] Error in saveCreditTier:', err);
+                                logger.error('[Button Click] Error in saveCreditTier:', err);
                                 setError(`Unexpected error: ${err instanceof Error ? err.message : 'Unknown error'}`);
                                 setTimeout(() => setError(null), 5000);
                               }

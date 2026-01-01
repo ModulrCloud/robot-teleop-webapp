@@ -180,49 +180,49 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
         userId: user.username,
       });
 
-      console.log('🔍 [STRIPE] Full response object:', result);
-      console.log('🔍 [STRIPE] result.data:', result.data);
-      console.log('🔍 [STRIPE] typeof result.data:', typeof result.data);
-      console.log('🔍 [STRIPE] result.data as string:', JSON.stringify(result.data));
+      logger.debug('🔍 [STRIPE] Full response object:', result);
+      logger.debug('🔍 [STRIPE] result.data:', result.data);
+      logger.debug('🔍 [STRIPE] typeof result.data:', typeof result.data);
+      logger.debug('🔍 [STRIPE] result.data as string:', JSON.stringify(result.data));
 
       // Parse the JSON response - GraphQL mutations returning a.json() return a string
       let checkoutData: { checkoutUrl?: string; sessionId?: string };
       
       if (typeof result.data === 'string') {
-        console.log('🔍 [STRIPE] Parsing as string...');
+        logger.debug('🔍 [STRIPE] Parsing as string...');
         try {
           const firstParse = JSON.parse(result.data);
-          console.log('✅ [STRIPE] First parse result:', firstParse);
-          console.log('🔍 [STRIPE] First parse type:', typeof firstParse);
+          logger.debug('✅ [STRIPE] First parse result:', firstParse);
+          logger.debug('🔍 [STRIPE] First parse type:', typeof firstParse);
           
           // Check if the first parse is still a string (double encoding)
           if (typeof firstParse === 'string') {
-            console.log('⚠️ [STRIPE] Still a string after first parse, parsing again...');
+            logger.debug('⚠️ [STRIPE] Still a string after first parse, parsing again...');
             checkoutData = JSON.parse(firstParse);
-            console.log('✅ [STRIPE] Second parse successful:', checkoutData);
+            logger.debug('✅ [STRIPE] Second parse successful:', checkoutData);
           } else {
             checkoutData = firstParse;
-            console.log('✅ [STRIPE] Using first parse result');
+            logger.debug('✅ [STRIPE] Using first parse result');
           }
         } catch (e) {
-          console.error('❌ [STRIPE] Parse failed:', e);
-          console.error('❌ [STRIPE] Raw data:', result.data);
+          logger.error('❌ [STRIPE] Parse failed:', e);
+          logger.error('❌ [STRIPE] Raw data:', result.data);
           throw new Error('Invalid response format from server');
         }
       } else if (result.data && typeof result.data === 'object') {
-        console.log('🔍 [STRIPE] Using data as object directly');
+        logger.debug('🔍 [STRIPE] Using data as object directly');
         checkoutData = result.data as { checkoutUrl?: string; sessionId?: string };
       } else {
-        console.error('❌ [STRIPE] Unexpected response format:', result);
+        logger.error('❌ [STRIPE] Unexpected response format:', result);
         throw new Error('Unexpected response format from server');
       }
 
       const checkoutUrl = checkoutData?.checkoutUrl;
       const sessionId = checkoutData?.sessionId;
 
-      console.log('🔍 [STRIPE] Final checkoutData:', checkoutData);
-      console.log('🔍 [STRIPE] checkoutUrl:', checkoutUrl);
-      console.log('🔍 [STRIPE] sessionId:', sessionId);
+      logger.debug('🔍 [STRIPE] Final checkoutData:', checkoutData);
+      logger.debug('🔍 [STRIPE] checkoutUrl:', checkoutUrl);
+      logger.debug('🔍 [STRIPE] sessionId:', sessionId);
 
       if (!checkoutUrl) {
         logger.error('No checkoutUrl in response. Full data:', checkoutData);

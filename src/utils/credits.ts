@@ -2,6 +2,8 @@
  * Utility functions for handling credits safely
  */
 
+import { logger } from './logger';
+
 /**
  * Safely gets credits value, handling null, undefined, NaN, or invalid values
  * @param userCredits - The credits value from database (can be null, undefined, number, etc.)
@@ -100,7 +102,7 @@ export async function fetchExchangeRates(): Promise<Record<string, number>> {
     
     return rates;
   } catch (error) {
-    console.warn('Failed to fetch exchange rates, using cached or default rates:', error);
+    logger.warn('Failed to fetch exchange rates, using cached or default rates:', error);
     
     // Fallback to cached rates if available
     if (exchangeRateCache) {

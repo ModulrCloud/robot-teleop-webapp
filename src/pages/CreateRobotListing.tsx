@@ -88,7 +88,7 @@ export const CreateRobotListing = () => {
     fetchExchangeRates().then(rates => {
       setExchangeRates(rates);
     }).catch(err => {
-      console.warn('Failed to fetch exchange rates:', err);
+      logger.warn('Failed to fetch exchange rates:', err);
     });
   }, []);
 
