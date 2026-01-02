@@ -728,13 +728,11 @@ adminAuditTable.addGlobalSecondaryIndex({
 // GSI for efficient timestamp-based queries
 // Uses constant partition key "AUDIT" + timestamp as sort key
 // This allows Query (cheap) instead of Scan (expensive)
-// STAGE 1: Temporarily commented out to allow old timestampIndex removal
-// STAGE 2: Uncomment this after Stage 1 deployment completes
-// adminAuditTable.addGlobalSecondaryIndex({
-//   indexName: 'timestampIndexV2',
-//   partitionKey: { name: 'logType', type: AttributeType.STRING }, // Constant: "AUDIT"
-//   sortKey: { name: 'timestamp', type: AttributeType.STRING }, // ISO timestamp for sorting
-// });
+adminAuditTable.addGlobalSecondaryIndex({
+  indexName: 'timestampIndexV2',
+  partitionKey: { name: 'logType', type: AttributeType.STRING }, // Constant: "AUDIT"
+  sortKey: { name: 'timestamp', type: AttributeType.STRING }, // ISO timestamp for sorting
+});
 
 // Grant deleteRobotLambda permissions to adminAuditTable (after table is declared)
 backend.deleteRobotLambda.addEnvironment('ADMIN_AUDIT_TABLE', adminAuditTable.tableName);
@@ -815,8 +813,7 @@ listAuditLogsFunction.addToRolePolicy(new PolicyStatement({
   resources: [
     `${adminAuditTable.tableArn}/index/adminUserIdIndex`,
     `${adminAuditTable.tableArn}/index/targetUserIdIndex`,
-    // STAGE 1: Temporarily commented out - uncomment in Stage 2
-    // `${adminAuditTable.tableArn}/index/timestampIndexV2`, // New efficient GSI
+    `${adminAuditTable.tableArn}/index/timestampIndexV2`, // New efficient GSI
     adminAuditTable.tableArn, // For fallback Scan
   ],
 }));
@@ -981,13 +978,12 @@ cleanupAuditLogsCdkFunction.addEnvironment('ADMIN_AUDIT_TABLE', adminAuditTable.
 adminAuditTable.grantReadWriteData(cleanupAuditLogsFunction);
 
 // Grant permission to query the timestampIndexV2 GSI
-// STAGE 1: Temporarily commented out - uncomment in Stage 2
-// cleanupAuditLogsFunction.addToRolePolicy(new PolicyStatement({
-//   actions: ["dynamodb:Query"],
-//   resources: [
-//     `${adminAuditTable.tableArn}/index/timestampIndexV2`,
-//   ],
-// }));
+cleanupAuditLogsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${adminAuditTable.tableArn}/index/timestampIndexV2`,
+  ],
+}));
 
 // Create EventBridge rule to trigger cleanup monthly (on the 1st at 2 AM UTC)
 const auditCleanupRule = new Rule(backend.stack, 'CleanupAuditLogsRule', {
