@@ -13,10 +13,10 @@ import {
   faChevronDown,
   faRightFromBracket,
   faCog,
-  faGlobe,
   faList,
   faBuilding,
   faHandshake,
+  faUsers,
   faCoins,
   faWallet,
   faShieldAlt
@@ -57,17 +57,6 @@ export default function Navbar() {
           <img src="/logo-large.png" alt="Modulr" />
         </Link>
 
-        <a 
-          href="https://www.modulr.cloud" 
-          target="_blank" 
-          rel="noopener noreferrer" 
-          className="navbar-external-link"
-          title="Visit Modulr Website"
-        >
-          <FontAwesomeIcon icon={faGlobe} />
-          <span>Website</span>
-        </a>
-
         {isLoggedIn && (
           <div className="navbar-links">
             <Link 
@@ -106,6 +95,13 @@ export default function Navbar() {
             >
               <FontAwesomeIcon icon={faClockRotateLeft} />
               <span>Sessions</span>
+            </Link>
+            <Link 
+              to="/social" 
+              className={`nav-link ${isActive('/social') ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faUsers} />
+              <span>Social</span>
             </Link>
             {user?.group === "PARTNERS" && (
               <Link 
@@ -250,6 +246,10 @@ export default function Navbar() {
           <Link to="/sessions" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
             <FontAwesomeIcon icon={faClockRotateLeft} />
             <span>Sessions</span>
+          </Link>
+          <Link to="/social" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
+            <FontAwesomeIcon icon={faUsers} />
+            <span>Social</span>
           </Link>
           {user?.group === "PARTNERS" && (
             <Link to="/create-robot-listing" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
