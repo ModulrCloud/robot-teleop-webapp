@@ -158,9 +158,9 @@ const schema = a.schema({
     index("userId").name("userIdIndex"), // For quick lookups
   ])
   .authorization((allow) => [
-    // Authenticated users can read (filtering by userId happens in app code)
-    allow.authenticated().to(['read']),
-    // Only ADMINS can create/update (Modulr control)
+    // SECURITY: Removed allow.authenticated().to(['read']) - users can read other users' credits via GraphQL
+    // All user credit reads now go through getUserCreditsLambda which enforces ownership
+    // Only ADMINS can access via GraphQL (for admin operations)
     allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
   ]),
 
@@ -196,12 +196,14 @@ const schema = a.schema({
     targetUserId: a.string(), // Who was affected (optional for some actions)
     reason: a.string(), // Optional reason for the action
     timestamp: a.string().required(), // ISO timestamp
+    logType: a.string(), // 'AUDIT' - for GSI timestampIndexV2 (partition key)
     metadata: a.json(), // Additional metadata (admin groups, counts, credits amount, old/new balance, etc.)
   })
   .secondaryIndexes(index => [
     index("adminUserId").name("adminUserIdIndex"), // Track actions by admin
     index("targetUserId").name("targetUserIdIndex"), // Track actions on user
-    index("timestamp").name("timestampIndex"), // Sort by time
+    // Note: timestampIndexV2 is defined in backend.ts (CDK) because it requires partition + sort key
+    // The old timestampIndex is removed - new GSI uses logType (partition) + timestamp (sort)
   ])
   .authorization((allow) => [
     // Only ADMINS can read and create audit logs (creates happen via assignAdmin/removeAdmin Lambdas)

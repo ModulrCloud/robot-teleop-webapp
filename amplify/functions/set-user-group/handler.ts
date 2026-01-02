@@ -1,8 +1,8 @@
 import type { Schema } from "../../data/resource";
 import { CognitoIdentityProviderClient, AdminAddUserToGroupCommand, AdminRemoveUserFromGroupCommand, AdminListGroupsForUserCommand, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { randomUUID } from 'crypto';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { createAuditLog } from '../shared/audit-log';
 
 const cognito = new CognitoIdentityProviderClient();
 const dynamoClient = new DynamoDBClient({});
@@ -106,33 +106,20 @@ export const handler: Schema["setUserGroupLambda"]["functionHandler"] = async (e
     );
 
     // Create audit log entry if admin changed another user's classification
-    if (isAdmin && targetUsername && ADMIN_AUDIT_TABLE) {
-      try {
-        const adminUserId = identity.username;
-        await docClient.send(
-          new PutCommand({
-            TableName: ADMIN_AUDIT_TABLE,
-            Item: {
-              id: randomUUID(),
-              action: 'CHANGE_USER_CLASSIFICATION',
-              adminUserId,
-              targetUserId: userId,
-              reason: `Changed user classification from ${oldClassification || 'none'} to ${groupName}`,
-              timestamp: new Date().toISOString(),
-              metadata: {
-                oldGroup: oldClassification,
-                newGroup: groupName,
-                oldClassification: oldClassification === 'CLIENTS' ? 'CLIENT' : (oldClassification === 'PARTNERS' ? 'PARTNER' : null),
-                newClassification: groupName === 'CLIENTS' ? 'CLIENT' : 'PARTNER',
-              },
-            },
-          })
-        );
-        console.log(`Audit log entry created for classification change by ${adminUserId}`);
-      } catch (auditError) {
-        // Don't fail the group change if audit logging fails, but log it
-        console.error("Failed to create audit log entry:", auditError);
-      }
+    if (isAdmin && targetUsername) {
+      const adminUserId = identity.username;
+      await createAuditLog(docClient, {
+        action: 'CHANGE_USER_CLASSIFICATION',
+        adminUserId,
+        targetUserId: userId,
+        reason: `Changed user classification from ${oldClassification || 'none'} to ${groupName}`,
+        metadata: {
+          oldGroup: oldClassification,
+          newGroup: groupName,
+          oldClassification: oldClassification === 'CLIENTS' ? 'CLIENT' : (oldClassification === 'PARTNERS' ? 'PARTNER' : null),
+          newClassification: groupName === 'CLIENTS' ? 'CLIENT' : 'PARTNER',
+        },
+      });
     }
 
     return {

@@ -41,6 +41,7 @@ import { cleanupStaleConnections } from './functions/cleanup-stale-connections/r
 import { triggerConnectionCleanup } from './functions/trigger-connection-cleanup/resource';
 import { getActiveRobots } from './functions/get-active-robots/resource';
 import { manageCreditTier } from './functions/manage-credit-tier/resource';
+import { cleanupAuditLogs } from './functions/cleanup-audit-logs/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -96,6 +97,7 @@ const backend = defineBackend({
   triggerConnectionCleanup,
   getActiveRobots,
   manageCreditTier,
+  cleanupAuditLogs,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -721,9 +723,13 @@ adminAuditTable.addGlobalSecondaryIndex({
   indexName: 'targetUserIdIndex',
   partitionKey: { name: 'targetUserId', type: AttributeType.STRING },
 });
+// GSI for efficient timestamp-based queries
+// Uses constant partition key "AUDIT" + timestamp as sort key
+// This allows Query (cheap) instead of Scan (expensive)
 adminAuditTable.addGlobalSecondaryIndex({
-  indexName: 'timestampIndex',
-  partitionKey: { name: 'timestamp', type: AttributeType.STRING },
+  indexName: 'timestampIndexV2',
+  partitionKey: { name: 'logType', type: AttributeType.STRING }, // Constant: "AUDIT"
+  sortKey: { name: 'timestamp', type: AttributeType.STRING }, // ISO timestamp for sorting
 });
 
 // Grant deleteRobotLambda permissions to adminAuditTable (after table is declared)
@@ -801,10 +807,12 @@ adminAuditTable.grantReadData(listAuditLogsFunction);
 userPool.grant(listAuditLogsFunction, 'cognito-idp:AdminGetUser');
 // Grant permission to query the indexes
 listAuditLogsFunction.addToRolePolicy(new PolicyStatement({
-  actions: ["dynamodb:Query"],
+  actions: ["dynamodb:Query", "dynamodb:Scan"],
   resources: [
     `${adminAuditTable.tableArn}/index/adminUserIdIndex`,
     `${adminAuditTable.tableArn}/index/targetUserIdIndex`,
+    `${adminAuditTable.tableArn}/index/timestampIndexV2`, // New efficient GSI
+    adminAuditTable.tableArn, // For fallback Scan
   ],
 }));
 
@@ -922,3 +930,33 @@ adminAuditTable.grantWriteData(manageCreditTierFunction);
 
 // Grant Cognito permission to get user email
 userPool.grant(manageCreditTierFunction, 'cognito-idp:AdminGetUser');
+
+// ============================================
+// Cleanup Audit Logs Lambda Function
+// ============================================
+
+const cleanupAuditLogsFunction = backend.cleanupAuditLogs.resources.lambda;
+const cleanupAuditLogsCdkFunction = cleanupAuditLogsFunction as CdkFunction;
+
+// Set environment variables
+cleanupAuditLogsCdkFunction.addEnvironment('ADMIN_AUDIT_TABLE', adminAuditTable.tableName);
+
+// Grant permissions
+adminAuditTable.grantReadWriteData(cleanupAuditLogsFunction);
+
+// Grant permission to query the timestampIndexV2 GSI
+cleanupAuditLogsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${adminAuditTable.tableArn}/index/timestampIndexV2`,
+  ],
+}));
+
+// Create EventBridge rule to trigger cleanup monthly (on the 1st at 2 AM UTC)
+const auditCleanupRule = new Rule(backend.stack, 'CleanupAuditLogsRule', {
+  schedule: Schedule.cron({ minute: '0', hour: '2', day: '1', month: '*', year: '*' }), // Monthly on 1st at 2 AM UTC
+  description: 'Trigger cleanup of old audit logs (keep last 5000 records)',
+});
+
+// Add Lambda as target
+auditCleanupRule.addTarget(new LambdaFunction(cleanupAuditLogsFunction));

@@ -1,8 +1,8 @@
 import type { Schema } from "../../data/resource";
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, UpdateCommand, PutCommand, BatchGetCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, UpdateCommand, BatchGetCommand } from '@aws-sdk/lib-dynamodb';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
-import { randomUUID } from 'crypto';
+import { createAuditLog } from '../shared/audit-log';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -129,38 +129,24 @@ export const handler: Schema["processPayoutLambda"]["functionHandler"] = async (
         );
 
         // Create audit log entry
-        if (ADMIN_AUDIT_TABLE) {
-          try {
-            await docClient.send(
-              new PutCommand({
-                TableName: ADMIN_AUDIT_TABLE,
-                Item: {
-                  id: randomUUID(),
-                  action: 'PROCESS_PAYOUT',
-                  adminUserId: adminUsername,
-                  adminEmail: adminEmail || adminUsername,
-                  targetUserId: payout.partnerId,
-                  reason: `Processed payout for ${payout.robotName || payout.robotId}`,
-                  timestamp: new Date().toISOString(),
-                  metadata: {
-                    payoutId: payout.id,
-                    partnerId: payout.partnerId,
-                    partnerEmail: payout.partnerEmail,
-                    robotId: payout.robotId,
-                    robotName: payout.robotName,
-                    creditsEarned: payout.creditsEarned,
-                    platformFee: payout.platformFee,
-                    totalCreditsCharged: payout.totalCreditsCharged,
-                    payoutDate,
-                  },
-                },
-              })
-            );
-          } catch (auditError) {
-            console.error(`Failed to create audit log for payout ${payout.id}:`, auditError);
-            // Don't fail the payout processing if audit logging fails
-          }
-        }
+        await createAuditLog(docClient, {
+          action: 'PROCESS_PAYOUT',
+          adminUserId: adminUsername,
+          targetUserId: payout.partnerId,
+          reason: `Processed payout for ${payout.robotName || payout.robotId}`,
+          metadata: {
+            adminEmail: adminEmail || adminUsername,
+            payoutId: payout.id,
+            partnerId: payout.partnerId,
+            partnerEmail: payout.partnerEmail,
+            robotId: payout.robotId,
+            robotName: payout.robotName,
+            creditsEarned: payout.creditsEarned,
+            platformFee: payout.platformFee,
+            totalCreditsCharged: payout.totalCreditsCharged,
+            payoutDate,
+          },
+        });
 
         processedPayouts.push({
           id: payout.id,

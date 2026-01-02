@@ -138,79 +138,117 @@ export const handler: Schema["listAuditLogsLambda"]["functionHandler"] = async (
       auditLogs = queryResult.Items || [];
       nextToken = encodePaginationToken(queryResult.LastEvaluatedKey);
     } else {
-      // For Scan without filters, DynamoDB doesn't maintain global sort order
-      // We need to fetch all items, sort them globally, then paginate in memory
-      // This is a workaround until we can use a proper GSI with timestamp as sort key
+      // Use GSI with logType="AUDIT" as partition key and timestamp as sort key
+      // This allows efficient Query instead of expensive Scan
+      // Query only reads the items we need (10-50 per page) instead of scanning entire table
       
-      // Fetch all audit logs (with reasonable limit to avoid performance issues)
-      // We fetch all items and sort globally, then paginate in memory
-      // This ensures proper global sort order across all pages
-      const MAX_SCAN_ITEMS = 1000; // Limit to prevent excessive reads
-      let allItems: any[] = [];
-      let lastKey: any = undefined;
-      let scanCount = 0;
-      const maxScans = 10; // Safety limit
-      
-      // Always fetch all items (ignore pagination token for scanning)
-      // The token will be used for page number after sorting
-      do {
-        const scanResult = await docClient.send(
-          new ScanCommand({
-            TableName: ADMIN_AUDIT_TABLE,
-            Limit: 100, // Scan in batches of 100
-            ExclusiveStartKey: lastKey,
-          })
-        );
+      try {
+        const queryParams: any = {
+          TableName: ADMIN_AUDIT_TABLE,
+          IndexName: 'timestampIndexV2', // New GSI with logType + timestamp
+          KeyConditionExpression: 'logType = :logType',
+          ExpressionAttributeValues: {
+            ':logType': 'AUDIT',
+          },
+          Limit: limitValue || 10,
+          ScanIndexForward: false, // Most recent first (descending by timestamp)
+        };
+
+        // Handle pagination token
+        if (paginationToken) {
+          const parsedToken = parsePaginationToken(paginationToken);
+          if (parsedToken?.lastEvaluatedKey) {
+            queryParams.ExclusiveStartKey = parsedToken.lastEvaluatedKey;
+          }
+        }
+
+        const queryResult = await docClient.send(new QueryCommand(queryParams));
+        auditLogs = queryResult.Items || [];
         
-        if (scanResult.Items) {
-          allItems = allItems.concat(scanResult.Items);
+        // If GSI query returns 0 results, fall back to Scan to find old records without logType
+        // This handles the migration period where old records don't have logType field
+        if (auditLogs.length === 0 && !paginationToken) {
+          console.log("GSI query returned 0 results, falling back to Scan to find old records without logType");
+          throw new Error("FALLBACK_TO_SCAN"); // Trigger fallback
         }
         
-        lastKey = scanResult.LastEvaluatedKey;
-        scanCount++;
-        
-        // Stop if we've reached our limit or no more items
-        if (allItems.length >= MAX_SCAN_ITEMS || !lastKey || scanCount >= maxScans) {
-          break;
-        }
-      } while (lastKey);
-      
-      // Sort all items globally by timestamp (most recent first)
-      allItems.sort((a, b) => {
-        const timeA = new Date(a.timestamp || 0).getTime();
-        const timeB = new Date(b.timestamp || 0).getTime();
-        return timeB - timeA;
-      });
-      
-      // Calculate pagination - use page number from token
-      const pageSize = limitValue || 10;
-      let pageNumber = 0;
-      
-      if (paginationToken) {
-        try {
-          const decoded = Buffer.from(paginationToken, 'base64').toString();
-          const parsed = JSON.parse(decoded);
-          pageNumber = parsed.pageNumber || 0;
-        } catch (e) {
-          console.warn("Failed to parse pagination token, starting from page 0:", e);
-          pageNumber = 0;
+        nextToken = encodePaginationToken({ lastEvaluatedKey: queryResult.LastEvaluatedKey });
+        console.log(`Query returned ${auditLogs.length} items using efficient GSI query`);
+      } catch (queryError: any) {
+        // Fallback to Scan if:
+        // 1. GSI doesn't exist yet (during migration)
+        // 2. Query returned 0 results (old records without logType field)
+        if (queryError.name === 'ResourceNotFoundException' || 
+            queryError.message?.includes('index') || 
+            queryError.message?.includes('GSI') ||
+            queryError.message === 'FALLBACK_TO_SCAN') {
+          console.warn("Falling back to Scan (GSI not found or no results with logType):", queryError.message);
+          
+          // Limit scan to prevent excessive reads
+          const MAX_SCAN_ITEMS = 5000; // Keep last 5000 records
+          let allItems: any[] = [];
+          let lastKey: any = undefined;
+          let scanCount = 0;
+          const maxScans = 50; // Safety limit
+          
+          do {
+            const scanResult = await docClient.send(
+              new ScanCommand({
+                TableName: ADMIN_AUDIT_TABLE,
+                Limit: 100,
+                ExclusiveStartKey: lastKey,
+              })
+            );
+            
+            if (scanResult.Items) {
+              allItems = allItems.concat(scanResult.Items);
+            }
+            
+            lastKey = scanResult.LastEvaluatedKey;
+            scanCount++;
+            
+            if (allItems.length >= MAX_SCAN_ITEMS || !lastKey || scanCount >= maxScans) {
+              break;
+            }
+          } while (lastKey);
+          
+          // Sort by timestamp (most recent first)
+          allItems.sort((a, b) => {
+            const timeA = new Date(a.timestamp || 0).getTime();
+            const timeB = new Date(b.timestamp || 0).getTime();
+            return timeB - timeA;
+          });
+          
+          // Paginate
+          const pageSize = limitValue || 10;
+          let pageNumber = 0;
+          
+          if (paginationToken) {
+            try {
+              const decoded = Buffer.from(paginationToken, 'base64').toString();
+              const parsed = JSON.parse(decoded);
+              pageNumber = parsed.pageNumber || 0;
+            } catch (e) {
+              pageNumber = 0;
+            }
+          }
+          
+          const startIndex = pageNumber * pageSize;
+          const endIndex = startIndex + pageSize;
+          auditLogs = allItems.slice(startIndex, endIndex);
+          
+          if (endIndex < allItems.length) {
+            nextToken = encodePaginationToken({ pageNumber: pageNumber + 1, totalItems: allItems.length });
+          } else {
+            nextToken = undefined;
+          }
+          
+          console.log(`Fallback Scan returned ${auditLogs.length} items from ${allItems.length} total`);
+        } else {
+          // Re-throw if it's a different error
+          throw queryError;
         }
       }
-      
-      const startIndex = pageNumber * pageSize;
-      const endIndex = startIndex + pageSize;
-      
-      // Get the page of items
-      auditLogs = allItems.slice(startIndex, endIndex);
-      
-      // Set next token if there are more items
-      if (endIndex < allItems.length) {
-        nextToken = encodePaginationToken({ pageNumber: pageNumber + 1, totalItems: allItems.length });
-      } else {
-        nextToken = undefined;
-      }
-      
-      console.log(`Fetched ${allItems.length} total items, returning page ${pageNumber} (items ${startIndex}-${Math.min(endIndex - 1, allItems.length - 1)})`);
     }
 
     // Fetch emails for adminUserId and targetUserId

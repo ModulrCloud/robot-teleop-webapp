@@ -1,0 +1,173 @@
+.social-page {
+  min-height: 100vh;
+  background: #0a0a0a;
+  color: #fff;
+  padding: 2rem;
+}
+
+.social-header {
+  max-width: 1200px;
+  margin: 0 auto 2rem;
+}
+
+.social-title-section {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.social-icon {
+  font-size: 2rem;
+  color: #ffc107;
+}
+
+.social-header h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin: 0;
+  color: #fff;
+}
+
+.social-description {
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.social-tabs {
+  display: flex;
+  gap: 1rem;
+  max-width: 1200px;
+  margin: 0 auto 2rem;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 0.5rem;
+}
+
+.social-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -0.5rem;
+}
+
+.social-tab:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.social-tab.active {
+  color: #ffc107;
+  border-bottom-color: #ffc107;
+}
+
+.social-tab svg {
+  font-size: 1.1rem;
+}
+
+.social-content {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.social-feed {
+  min-height: 400px;
+}
+
+.placeholder-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 4rem 2rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 2px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  min-height: 400px;
+}
+
+.placeholder-icon {
+  font-size: 4rem;
+  color: #ffc107;
+  margin-bottom: 1.5rem;
+  opacity: 0.7;
+}
+
+.placeholder-content h2 {
+  font-size: 2rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  color: #fff;
+}
+
+.placeholder-content p {
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.7);
+  max-width: 600px;
+  line-height: 1.6;
+  margin: 0 0 2rem;
+}
+
+.placeholder-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 8px;
+  color: #ffc107;
+  font-size: 0.9rem;
+}
+
+.placeholder-info svg {
+  font-size: 1rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .social-page {
+    padding: 1rem;
+  }
+
+  .social-header h1 {
+    font-size: 2rem;
+  }
+
+  .social-description {
+    font-size: 1rem;
+  }
+
+  .social-tabs {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .social-tab {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .placeholder-content {
+    padding: 2rem 1rem;
+  }
+
+  .placeholder-icon {
+    font-size: 3rem;
+  }
+
+  .placeholder-content h2 {
+    font-size: 1.5rem;
+  }
+}
+

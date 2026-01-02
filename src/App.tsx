@@ -24,6 +24,7 @@ import { Admin } from "./pages/Admin";
 import RobotSetup from "./pages/RobotSetup";
 import { EditRobot } from "./pages/EditRobot";
 import MyRobots from "./pages/MyRobots";
+import { Social } from "./pages/Social";
 import { useEffect } from "react";
 import { fetchAuthSession } from "aws-amplify/auth";
 import PartnerProfile from './pages/PartnerProfile';
@@ -193,6 +194,12 @@ function App() {
             <Route path='/partner-profile/edit' element={
               <PrivateRoute>
                 <EditPartnerProfile />
+              </PrivateRoute>
+            }
+            />
+            <Route path='/social' element={
+              <PrivateRoute>
+                <Social />
               </PrivateRoute>
             }
             />

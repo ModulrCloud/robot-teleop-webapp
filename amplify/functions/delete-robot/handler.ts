@@ -1,8 +1,8 @@
 import { DynamoDBClient, DeleteItemCommand, GetItemCommand, QueryCommand } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { Schema } from '../../data/resource';
-import { randomUUID } from 'crypto';
+import { createAuditLog } from '../shared/audit-log';
 
 const ddbClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(ddbClient);
@@ -135,33 +135,20 @@ export const handler: Schema["deleteRobotLambda"]["functionHandler"] = async (ev
   console.log(`✅ Successfully deleted robot "${robotName}" (${robotId})`);
 
   // Create audit log entry if admin deleted the robot
-  if (isAdminUser && ADMIN_AUDIT_TABLE) {
-    try {
-      const adminUserId = identity.username;
-      await docClient.send(
-        new PutCommand({
-          TableName: ADMIN_AUDIT_TABLE,
-          Item: {
-            id: randomUUID(),
-            action: 'DELETE_ROBOT',
-            adminUserId,
-            targetUserId: partnerCognitoUsername || null, // Partner who owned the robot
-            reason: `Admin deleted robot "${robotName}"`,
-            timestamp: new Date().toISOString(),
-            metadata: {
-              robotId,
-              robotName,
-              robotModel,
-              partnerId: robotPartnerId,
-            },
-          },
-        })
-      );
-      console.log(`Audit log entry created for robot deletion by ${adminUserId}`);
-    } catch (auditError) {
-      // Don't fail the deletion if audit logging fails, but log it
-      console.error("Failed to create audit log entry:", auditError);
-    }
+  if (isAdminUser) {
+    const adminUserId = identity.username;
+    await createAuditLog(docClient, {
+      action: 'DELETE_ROBOT',
+      adminUserId,
+      targetUserId: partnerCognitoUsername || undefined,
+      reason: `Admin deleted robot "${robotName}"`,
+      metadata: {
+        robotId,
+        robotName,
+        robotModel,
+        partnerId: robotPartnerId,
+      },
+    });
   }
 
   return {

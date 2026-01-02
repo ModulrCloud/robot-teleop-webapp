@@ -3,6 +3,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { randomUUID } from 'crypto';
+import { createAuditLog } from '../shared/audit-log';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -181,33 +182,20 @@ export const handler: Schema["addCreditsLambda"]["functionHandler"] = async (eve
     console.log(`Successfully ${credits > 0 ? 'added' : 'deducted'} ${Math.abs(credits)} credits ${credits > 0 ? 'to' : 'from'} user ${userId}. New balance: ${newCredits}`);
 
     // Create audit log entry if admin performed this action
-    if (isAdmin && ADMIN_AUDIT_TABLE) {
-      try {
-        const adminUsername = "username" in identity ? identity.username : '';
-        await docClient.send(
-          new PutCommand({
-            TableName: ADMIN_AUDIT_TABLE,
-            Item: {
-              id: randomUUID(),
-              action: 'ADJUST_CREDITS',
-              adminUserId: adminUsername,
-              targetUserId: userId,
-              reason: description || (credits > 0 ? 'Credits added by admin' : 'Credits removed by admin'),
-              timestamp: new Date().toISOString(),
-              metadata: {
-                creditsAmount: credits,
-                oldBalance: currentCredits,
-                newBalance: newCredits,
-                transactionType: credits > 0 ? 'addition' : 'removal',
-              },
-            },
-          })
-        );
-        console.log(`Audit log entry created for credit adjustment by ${adminUsername}`);
-      } catch (auditError) {
-        // Don't fail the credit adjustment if audit logging fails, but log it
-        console.error("Failed to create audit log entry:", auditError);
-      }
+    if (isAdmin) {
+      const adminUsername = "username" in identity ? identity.username : '';
+      await createAuditLog(docClient, {
+        action: 'ADJUST_CREDITS',
+        adminUserId: adminUsername,
+        targetUserId: userId,
+        reason: description || (credits > 0 ? 'Credits added by admin' : 'Credits removed by admin'),
+        metadata: {
+          creditsAmount: credits,
+          oldBalance: currentCredits,
+          newBalance: newCredits,
+          transactionType: credits > 0 ? 'addition' : 'removal',
+        },
+      });
     }
 
     // Query the record one more time to verify it exists and return the full record
