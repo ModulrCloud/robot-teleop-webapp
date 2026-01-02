@@ -1,8 +1,8 @@
 import type { Schema } from "../../data/resource";
 import { CognitoIdentityProviderClient, AdminRemoveUserFromGroupCommand, AdminListGroupsForUserCommand, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { randomUUID } from 'crypto';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { createAuditLog } from '../shared/audit-log';
 
 const cognito = new CognitoIdentityProviderClient({});
 const dynamoClient = new DynamoDBClient({});
@@ -81,23 +81,16 @@ export const handler: Schema["removeAdminLambda"]["functionHandler"] = async (ev
     );
 
     // Create audit log entry
-    await docClient.send(
-      new PutCommand({
-        TableName: ADMIN_AUDIT_TABLE,
-        Item: {
-          id: randomUUID(),
-          action: 'REMOVE_ADMIN',
-          adminUserId,
-          targetUserId,
-          reason: reason || null,
-          timestamp: new Date().toISOString(),
-          metadata: {
-            adminGroups: adminGroups || [],
-            remainingAdminCount: adminCount - 1,
-          },
-        },
-      })
-    );
+    await createAuditLog(docClient, {
+      action: 'REMOVE_ADMIN',
+      adminUserId,
+      targetUserId,
+      reason: reason || undefined,
+      metadata: {
+        adminGroups: adminGroups || [],
+        remainingAdminCount: adminCount - 1,
+      },
+    });
 
     console.log(`Admin ${adminUserId} removed admin status from ${targetUserId}. Reason: ${reason || 'N/A'}`);
 

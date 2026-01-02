@@ -1,8 +1,8 @@
 import type { Schema } from "../../data/resource";
 import { CognitoIdentityProviderClient, AdminAddUserToGroupCommand, AdminListGroupsForUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
-import { randomUUID } from 'crypto';
+import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { createAuditLog } from '../shared/audit-log';
 
 const cognito = new CognitoIdentityProviderClient({});
 const dynamoClient = new DynamoDBClient({});
@@ -67,22 +67,15 @@ export const handler: Schema["assignAdminLambda"]["functionHandler"] = async (ev
     );
 
     // Create audit log entry
-    await docClient.send(
-      new PutCommand({
-        TableName: ADMIN_AUDIT_TABLE,
-        Item: {
-          id: randomUUID(),
-          action: 'ASSIGN_ADMIN',
-          adminUserId,
-          targetUserId,
-          reason: reason || null,
-          timestamp: new Date().toISOString(),
-          metadata: {
-            adminGroups: adminGroups || [],
-          },
-        },
-      })
-    );
+    await createAuditLog(docClient, {
+      action: 'ASSIGN_ADMIN',
+      adminUserId,
+      targetUserId,
+      reason: reason || undefined,
+      metadata: {
+        adminGroups: adminGroups || [],
+      },
+    });
 
     console.log(`Admin ${adminUserId} assigned admin status to ${targetUserId}. Reason: ${reason || 'N/A'}`);
 
