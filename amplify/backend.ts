@@ -42,6 +42,7 @@ import { triggerConnectionCleanup } from './functions/trigger-connection-cleanup
 import { getActiveRobots } from './functions/get-active-robots/resource';
 import { manageCreditTier } from './functions/manage-credit-tier/resource';
 import { cleanupAuditLogs } from './functions/cleanup-audit-logs/resource';
+import { websocketKeepalive } from './functions/websocket-keepalive/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -98,6 +99,7 @@ const backend = defineBackend({
   getActiveRobots,
   manageCreditTier,
   cleanupAuditLogs,
+  websocketKeepalive,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -879,6 +881,37 @@ const cleanupRule = new Rule(backend.stack, 'CleanupStaleConnectionsRule', {
 
 // Add Lambda as target
 cleanupRule.addTarget(new LambdaFunction(cleanupStaleConnectionsFunction));
+
+// ============================================
+// WebSocket Keepalive Lambda Function
+// ============================================
+
+const websocketKeepaliveFunction = backend.websocketKeepalive.resources.lambda;
+const websocketKeepaliveCdkFunction = websocketKeepaliveFunction as CdkFunction;
+
+// Set environment variables
+websocketKeepaliveCdkFunction.addEnvironment('CONN_TABLE', connTable.tableName);
+// Construct WebSocket Management API endpoint (same as signaling function)
+websocketKeepaliveCdkFunction.addEnvironment('WS_MGMT_ENDPOINT', wsMgmtEndpoint);
+
+// Grant permissions
+connTable.grantReadData(websocketKeepaliveFunction);
+
+// Grant permission to send messages via WebSocket Management API
+websocketKeepaliveFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["execute-api:ManageConnections"],
+  resources: [`arn:aws:execute-api:${dataStack.region}:${dataStack.account}:${wsApi.apiId}/*/*`],
+}));
+
+// Create EventBridge rule to trigger keepalive every 5 minutes
+// This ensures connections stay alive before the 10-minute AWS timeout
+const keepaliveRule = new Rule(backend.stack, 'WebSocketKeepaliveRule', {
+  schedule: Schedule.rate(Duration.minutes(5)), // Run every 5 minutes
+  description: 'Send keepalive pings to all active WebSocket connections to prevent idle timeout',
+});
+
+// Add Lambda as target
+keepaliveRule.addTarget(new LambdaFunction(websocketKeepaliveCdkFunction));
 
 // ============================================
 // Trigger Connection Cleanup Lambda Function
