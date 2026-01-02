@@ -40,7 +40,7 @@ const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
 // Types
 // ---------------------------------
 
-type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor';
+type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong';
 type Target = 'robot' | 'client';
 
 // ---------------------------------
@@ -2014,6 +2014,44 @@ export async function handler(
       hasClaims: !!claims?.sub,
     });
     return handleSignal(claims, event, msg);
+  }
+
+  // Handle pong responses to keepalive pings
+  if (type === 'pong') {
+    // Access timestamp from raw message body if present
+    const rawBody = event.body ? JSON.parse(event.body) : {};
+    console.log('[PONG_RECEIVED]', {
+      connectionId: event.requestContext.connectionId,
+      robotId: msg.robotId,
+      userId: claims?.sub,
+      timestamp: rawBody.timestamp || 'not provided',
+    });
+    // Pong messages don't need special handling - just acknowledge receipt
+    // The connection stays alive from receiving/sending the message
+    return successResponse({ type: 'pong-acknowledged' });
+  }
+
+  // Handle ping messages (though these are typically sent via Management API, not through signaling)
+  if (type === 'ping') {
+    console.log('[PING_RECEIVED]', {
+      connectionId: event.requestContext.connectionId,
+      robotId: msg.robotId,
+      userId: claims?.sub,
+    });
+    // If a client/robot sends a ping, respond with pong
+    try {
+      await postTo(connectionId, {
+        type: 'pong',
+        timestamp: Date.now(),
+        keepalive: true,
+      });
+    } catch (err) {
+      console.warn('[PING_RESPONSE_ERROR]', {
+        connectionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return successResponse({ type: 'ping-acknowledged' });
   }
 
   // Log unknown message types for debugging
