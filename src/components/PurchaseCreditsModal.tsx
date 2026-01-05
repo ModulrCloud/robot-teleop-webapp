@@ -180,56 +180,28 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
         userId: user.username,
       });
 
-      logger.debug('🔍 [STRIPE] Full response object:', result);
-      logger.debug('🔍 [STRIPE] result.data:', result.data);
-      logger.debug('🔍 [STRIPE] typeof result.data:', typeof result.data);
-      logger.debug('🔍 [STRIPE] result.data as string:', JSON.stringify(result.data));
-
-      // Parse the JSON response - GraphQL mutations returning a.json() return a string
+      // Parse the JSON response
       let checkoutData: { checkoutUrl?: string; sessionId?: string };
       
       if (typeof result.data === 'string') {
-        logger.debug('🔍 [STRIPE] Parsing as string...');
         try {
           const firstParse = JSON.parse(result.data);
-          logger.debug('✅ [STRIPE] First parse result:', firstParse);
-          logger.debug('🔍 [STRIPE] First parse type:', typeof firstParse);
-          
-          // Check if the first parse is still a string (double encoding)
-          if (typeof firstParse === 'string') {
-            logger.debug('⚠️ [STRIPE] Still a string after first parse, parsing again...');
-            checkoutData = JSON.parse(firstParse);
-            logger.debug('✅ [STRIPE] Second parse successful:', checkoutData);
-          } else {
-            checkoutData = firstParse;
-            logger.debug('✅ [STRIPE] Using first parse result');
-          }
-        } catch (e) {
-          logger.error('❌ [STRIPE] Parse failed:', e);
-          logger.error('❌ [STRIPE] Raw data:', result.data);
+          checkoutData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+        } catch {
           throw new Error('Invalid response format from server');
         }
       } else if (result.data && typeof result.data === 'object') {
-        logger.debug('🔍 [STRIPE] Using data as object directly');
         checkoutData = result.data as { checkoutUrl?: string; sessionId?: string };
       } else {
-        logger.error('❌ [STRIPE] Unexpected response format:', result);
         throw new Error('Unexpected response format from server');
       }
 
       const checkoutUrl = checkoutData?.checkoutUrl;
-      const sessionId = checkoutData?.sessionId;
-
-      logger.debug('🔍 [STRIPE] Final checkoutData:', checkoutData);
-      logger.debug('🔍 [STRIPE] checkoutUrl:', checkoutUrl);
-      logger.debug('🔍 [STRIPE] sessionId:', sessionId);
 
       if (!checkoutUrl) {
-        logger.error('No checkoutUrl in response. Full data:', checkoutData);
         throw new Error('No checkout URL returned from server');
       }
 
-      // Redirect to Stripe Checkout
       window.location.href = checkoutUrl;
     } catch (err) {
       logger.error('Error creating Stripe checkout:', err);

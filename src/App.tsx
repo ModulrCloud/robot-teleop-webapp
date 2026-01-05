@@ -39,49 +39,24 @@ const DebugPanel = lazy(() => import("./components/DebugPanel").then(module => (
 import '@aws-amplify/ui-react/styles.css';
 
 function App() {
-  // Debug: Log OAuth callback handling (commented out - uncomment for debugging)
+  // Handle OAuth callback errors
   useEffect(() => {
-    // Check if we're coming back from OAuth redirect
     const urlParams = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.substring(1));
     
-    // const code = urlParams.get('code') || hashParams.get('code'); // Unused for now
     const error = urlParams.get('error') || hashParams.get('error');
     const errorDescription = urlParams.get('error_description') || hashParams.get('error_description');
     
-    // if (code) {
-    //   console.log('🔵 OAuth callback detected - Authorization code received:', {
-    //     code: code.substring(0, 20) + '...',
-    //     fullUrl: window.location.href,
-    //     searchParams: Object.fromEntries(urlParams),
-    //     hashParams: Object.fromEntries(hashParams)
-    //   });
-    // }
-    
     if (error) {
-      // Keep error logging for actual errors
-      logger.error('🔴 OAuth callback error:', {
+      logger.error('OAuth callback error:', {
         error,
         errorDescription: decodeURIComponent(errorDescription || ''),
-        fullUrl: window.location.href,
-        searchParams: Object.fromEntries(urlParams),
-        hashParams: Object.fromEntries(hashParams)
       });
       
-      // Try to get more details from the session
-      fetchAuthSession().then(() => {
-        // logger.log('Session after OAuth error:', session);
-      }).catch(err => {
+      fetchAuthSession().catch(err => {
         logger.error('Failed to fetch session after OAuth error:', err);
       });
     }
-    
-    // Log current URL for debugging (commented out)
-    // if (window.location.search || window.location.hash) {
-    //   console.log('📍 Current URL:', window.location.href);
-    //   console.log('📍 Search params:', Object.fromEntries(urlParams));
-    //   console.log('📍 Hash params:', Object.fromEntries(hashParams));
-    // }
   }, []);
 
   return (
