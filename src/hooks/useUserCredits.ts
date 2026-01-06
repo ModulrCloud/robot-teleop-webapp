@@ -127,19 +127,12 @@ export function useUserCredits(): UserCreditsData {
     loadCredits();
   }, [loadCredits]);
 
-  // Listen for credit update events (e.g., when admin adjusts credits for current user)
+  // Listen for credit update events
   useEffect(() => {
-    const handleCreditsUpdate = () => {
-      logger.debug("🔄 Custom event 'creditsUpdated' received, refreshing credits...");
-      loadCredits();
-    };
-
+    const handleCreditsUpdate = () => loadCredits();
     window.addEventListener('creditsUpdated', handleCreditsUpdate);
-
-    return () => {
-      window.removeEventListener('creditsUpdated', handleCreditsUpdate);
-    };
-  }, [loadCredits]); // Dependency on loadCredits to ensure it's the latest version
+    return () => window.removeEventListener('creditsUpdated', handleCreditsUpdate);
+  }, [loadCredits]);
 
   // Update formatted balance when credits or currency changes
   useEffect(() => {

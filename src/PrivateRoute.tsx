@@ -18,16 +18,10 @@ export function PrivateRoute({ children }: PrivateRouteProps) {
     const returnTo = from ? from : location;
 
     if (!loading && !isLoggedIn && location.pathname !== "/signin") {
-      // Debug logging (commented out - uncomment for debugging)
-      // console.log("Redirecting to signin page...");
-      // Redirect to /signin and remember the page the user tried to access
       navigate("/signin", { replace: true, state: { from: returnTo } });
     }
 
     if (!loading && !hasUserGroup && location.pathname !== "/user-setup") {
-      // Debug logging (commented out - uncomment for debugging)
-      // console.log("Redirecting to user setup page...");
-      // Redirect to /user-setup and remember the page
       navigate("/user-setup", { replace: true, state: { from: returnTo } });
     }
   }, [isLoggedIn, loading, navigate, location]);
