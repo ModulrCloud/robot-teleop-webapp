@@ -35,7 +35,6 @@ interface CreditTier {
   contactEmail?: string;
 }
 
-// Default tiers (will be replaced with dynamic data from CreditTier model later)
 const DEFAULT_TIERS: CreditTier[] = [
   {
     id: '20',
@@ -108,26 +107,22 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
         const { data: tiersList } = await client.models.CreditTier.list();
         
         if (tiersList && tiersList.length > 0) {
-          // Filter active tiers, sort by displayOrder, and convert to CreditTier format
-          // Only take first 3 tiers to enforce limit
           const activeTiers = tiersList
             .filter(tier => tier.isActive !== false)
             .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0))
-            .slice(0, 3) // Enforce 3-tier limit
+            .slice(0, 3)
             .map((tier, index) => ({
               id: tier.tierId || tier.id || '',
               name: tier.name || '',
               price: tier.basePrice || 0,
               credits: tier.baseCredits || 0,
               bonusCredits: tier.bonusCredits || 0,
-              // Mark middle tier (2nd of 3) as popular by default, or can be configured later
               isPopular: index === 1 && tiersList.length >= 2,
               isOnSale: tier.isOnSale || false,
               salePrice: tier.salePrice || undefined,
               isEnterprise: false,
             }));
 
-          // Add Enterprise tier at the end (always available)
           const allTiers = [
             ...activeTiers,
             {
@@ -140,12 +135,10 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
 
           setTiers(allTiers);
         } else {
-          // Fallback to defaults if no tiers in database
           setTiers(DEFAULT_TIERS);
         }
       } catch (err) {
         logger.error('Error loading credit tiers:', err);
-        // Fallback to defaults on error
         setTiers(DEFAULT_TIERS);
       } finally {
         setLoadingTiers(false);
@@ -173,50 +166,46 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
     setError('');
 
     try {
-      logger.log('Creating Stripe checkout session for tier:', tierId);
-      
       const result = await client.mutations.createStripeCheckoutLambda({
         tierId,
         userId: user.username,
       });
 
-      // Parse the JSON response
+      if (result.errors && result.errors.length > 0) {
+        throw new Error(result.errors.map(e => e.message).join(', '));
+      }
+
+      if (!result.data) {
+        throw new Error('No data returned from server');
+      }
+
       let checkoutData: { checkoutUrl?: string; sessionId?: string };
       
       if (typeof result.data === 'string') {
-        try {
-          const firstParse = JSON.parse(result.data);
-          checkoutData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
-        } catch {
-          throw new Error('Invalid response format from server');
-        }
-      } else if (result.data && typeof result.data === 'object') {
-        checkoutData = result.data as { checkoutUrl?: string; sessionId?: string };
+        const firstParse = JSON.parse(result.data);
+        checkoutData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
       } else {
-        throw new Error('Unexpected response format from server');
+        checkoutData = result.data as { checkoutUrl?: string; sessionId?: string };
       }
 
-      const checkoutUrl = checkoutData?.checkoutUrl;
-
-      if (!checkoutUrl) {
+      if (!checkoutData?.checkoutUrl) {
         throw new Error('No checkout URL returned from server');
       }
 
-      window.location.href = checkoutUrl;
+      window.location.href = checkoutData.checkoutUrl;
     } catch (err) {
-      logger.error('Error creating Stripe checkout:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create checkout session');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create checkout session';
+      logger.error('Stripe checkout error:', errorMessage);
+      setError(errorMessage);
       setSelectedTier(null);
     }
   };
 
   if (!isOpen) return null;
 
-  // Render modal using portal to body to avoid z-index/overflow issues
   return createPortal(
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
         <div className="modal-header">
           <div className="modal-header-left">
             <FontAwesomeIcon icon={faCoins} className="modal-icon" />
@@ -230,7 +219,6 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
           </button>
         </div>
 
-        {/* Error Message */}
         {error && (
           <div className="modal-error" style={{ 
             padding: '12px', 
@@ -244,7 +232,6 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
           </div>
         )}
 
-        {/* Tiers Grid */}
         <div className="modal-body">
           {loadingTiers ? (
             <div style={{ textAlign: 'center', padding: '3rem', color: 'rgba(255, 255, 255, 0.6)' }}>
@@ -252,7 +239,6 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
             </div>
           ) : (
             <>
-              {/* Standard Payment Options - 3 wide grid */}
               <div className="tiers-grid">
             {tiers
               .filter(tier => !tier.isEnterprise)
@@ -315,7 +301,6 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
               })}
           </div>
 
-          {/* Enterprise Option - Full width bar at bottom */}
           {tiers.find(tier => tier.isEnterprise) && (() => {
             const enterpriseTier = tiers.find(tier => tier.isEnterprise)!;
             return (
@@ -347,7 +332,6 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
           )}
         </div>
 
-        {/* Footer */}
         <div className="modal-footer">
           <p className="modal-note">
             <FontAwesomeIcon icon={faCoins} />

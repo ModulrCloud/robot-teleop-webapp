@@ -398,9 +398,8 @@ listAccessibleRobotsFunction.addToRolePolicy(new PolicyStatement({
   ]
 }));
 
-// Stripe checkout Lambda - no additional permissions needed (just uses Stripe API)
+// Stripe checkout Lambda - FRONTEND_URL is set via secret in resource.ts
 const createStripeCheckoutCdkFunction = createStripeCheckoutFunction as CdkFunction;
-createStripeCheckoutCdkFunction.addEnvironment('FRONTEND_URL', 'http://localhost:5173'); // Can be overridden in production
 createStripeCheckoutCdkFunction.addEnvironment('CREDIT_TIER_TABLE', tables.CreditTier.tableName);
 tables.CreditTier.grantReadData(createStripeCheckoutFunction);
 // Grant permission to query the tierIdIndex GSI
