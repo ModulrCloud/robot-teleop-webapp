@@ -287,12 +287,15 @@ export const Credits = () => {
     }
 
     try {
-      // Step 1: Verify payment with Stripe
       const verifyResult = await client.mutations.verifyStripePaymentLambda({
         sessionId,
       });
 
-      // Parse verification result
+      if (verifyResult.errors && verifyResult.errors.length > 0) {
+        const errorMessages = verifyResult.errors.map(e => e.message).join(', ');
+        throw new Error(errorMessages);
+      }
+
       let verifyData: {
         success?: boolean;
         error?: string;
@@ -315,7 +318,6 @@ export const Credits = () => {
         verifyData = verifyResult.data as typeof verifyData;
       }
 
-      // Check if payment was declined or failed
       if (!verifyData.success) {
         const errorMsg = verifyData.error || "Payment was declined. Please check your payment method and try again.";
         setError(errorMsg);
@@ -328,8 +330,7 @@ export const Credits = () => {
         throw new Error("Payment verification failed: No credits information received");
       }
 
-      // Step 2: Add credits to user account
-      await client.mutations.addCreditsLambda({
+      const addResult = await client.mutations.addCreditsLambda({
         userId: verifyData.userId!,
         credits: verifyData.credits,
         amountPaid: verifyData.amountPaid,
@@ -337,7 +338,11 @@ export const Credits = () => {
         tierId: verifyData.tierId,
       });
 
-      // Wait for DynamoDB eventual consistency
+      if (addResult.errors && addResult.errors.length > 0) {
+        const errorMessages = addResult.errors.map(e => e.message).join(', ');
+        throw new Error(errorMessages);
+      }
+
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Refresh credits and transactions

@@ -1,13 +1,9 @@
 import type { Schema } from "../../data/resource";
 import Stripe from 'stripe';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-12-15.clover',
-});
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 export const handler: Schema["verifyStripePaymentLambda"]["functionHandler"] = async (event) => {
-  console.log("Verify Stripe Payment request:", JSON.stringify(event, null, 2));
-  
   const { sessionId } = event.arguments;
 
   if (!sessionId) {
@@ -20,18 +16,9 @@ export const handler: Schema["verifyStripePaymentLambda"]["functionHandler"] = a
   }
 
   try {
-    // Retrieve the checkout session from Stripe
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-    console.log("Retrieved Stripe session:", {
-      id: session.id,
-      payment_status: session.payment_status,
-      metadata: session.metadata,
-    });
-
-    // Verify payment was successful
     if (session.payment_status !== 'paid') {
-      // Return detailed error information for declined/failed payments
       const errorMessage = session.payment_status === 'unpaid' 
         ? 'Payment was declined. Please check your payment method and try again.'
         : session.payment_status === 'no_payment_required'
@@ -46,13 +33,11 @@ export const handler: Schema["verifyStripePaymentLambda"]["functionHandler"] = a
       });
     }
 
-    // Verify the userId in metadata matches the authenticated user
     const userId = session.metadata?.userId;
     if (!userId || userId !== identity.username) {
       throw new Error("Unauthorized: session userId does not match authenticated user");
     }
 
-    // Extract payment details from metadata
     const tierId = session.metadata?.tierId;
     const credits = parseInt(session.metadata?.credits || '0', 10);
     const amountPaid = parseFloat(session.metadata?.amountPaid || '0');
@@ -72,7 +57,6 @@ export const handler: Schema["verifyStripePaymentLambda"]["functionHandler"] = a
       sessionId: session.id,
     });
   } catch (error) {
-    console.error("Error verifying Stripe payment:", error);
     throw new Error(`Failed to verify payment: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };
