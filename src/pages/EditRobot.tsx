@@ -16,41 +16,33 @@ import {
   faCheckCircle, 
   faExclamationCircle,
   faInfoCircle,
-  faTruck,
-  faPersonWalking,
-  faPlane,
-  faWater,
   faTrash,
   faCircle,
   faCloudUploadAlt,
-  faTimes
+  faTimes,
+  faLock
 } from '@fortawesome/free-solid-svg-icons';
 
-const ROBOT_MODELS = [
-  { value: "rover", label: "Rover", icon: faTruck },
-  { value: "humanoid", label: "Humanoid", icon: faPersonWalking },
-  { value: "drone", label: "Drone", icon: faPlane },
-  { value: "submarine", label: "Submarine", icon: faWater },
+// Robot types with their default images
+const ROBOT_TYPES = [
+  { value: "rover", label: "Rover", image: "/default/rover.png" },
+  { value: "humanoid", label: "Humanoid", image: "/default/humanoid.png" },
+  { value: "drone", label: "Drone", image: "/default/drone.png" },
+  { value: "sub", label: "Submarine", image: "/default/sub.png" },
+  { value: "robodog", label: "Robot Dog", image: "/default/robodog.png" },
+  { value: "robot", label: "Robot Arm", image: "/default/robot.png" },
 ];
 
-// Get default robot image based on model
-const getDefaultRobotImage = (model: string): string => {
-  const modelImages: Record<string, string> = {
-    'humanoid': '/humaniod.png',
-    'drone': '/drone.png',
-    'rover': '/rover.webp',
-    'arm': '/robot_arm.webp',
-    'submarine': '/submarine.png',
-    'racer': '/racer.png',
-  };
-  
-  return modelImages[model.toLowerCase()] || '/humaniod.png';
+// Get default robot image based on robotType
+const getDefaultRobotImage = (robotType: string): string => {
+  const type = ROBOT_TYPES.find(t => t.value === robotType.toLowerCase());
+  return type?.image || "/default/robot.png";
 };
 
 type RobotListing = {
   robotName: string;
   description: string;
-  model: string;
+  robotType: string; // Robot type for default image selection
   hourlyRateCredits: number;
   enableAccessControl: boolean;
   allowedUserEmails: string; // Comma-separated or newline-separated emails
@@ -83,7 +75,7 @@ export const EditRobot = () => {
   const [robotListing, setRobotListing] = useState<RobotListing>({
     robotName: "",
     description: "",
-    model: ROBOT_MODELS[0].value,
+    robotType: ROBOT_TYPES[0].value,
     hourlyRateCredits: 100,
     enableAccessControl: false,
     allowedUserEmails: "",
@@ -93,6 +85,7 @@ export const EditRobot = () => {
     latitude: "",
     longitude: "",
   });
+  const [isVerified, setIsVerified] = useState(false);
 
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -207,19 +200,21 @@ export const EditRobot = () => {
         setRobotName(name);
         setRobotIdForStatus(robotData.robotId || ''); // Store robotId for status check
         
-        // Ensure model is a valid value, defaulting to first model if missing or invalid
-        const validModel = robotData.model && robotData.model.trim() !== '' 
-          ? robotData.model.trim().toLowerCase()
-          : ROBOT_MODELS[0].value;
-        // Validate that the model is one of the allowed values
-        const modelValue = ROBOT_MODELS.some(m => m.value === validModel) 
-          ? validModel 
-          : ROBOT_MODELS[0].value;
+        // Type-safe access to extended robot fields
+        const extendedData = robotData as typeof robotData & { isVerified?: boolean; robotType?: string };
+        setIsVerified(extendedData.isVerified || false); // Store verification status
+        
+        // Get robotType, falling back to model for backwards compatibility
+        const robotTypeValue = extendedData.robotType || robotData.model || ROBOT_TYPES[0].value;
+        // Validate that the robotType is one of the allowed values
+        const validRobotType = ROBOT_TYPES.some(t => t.value === robotTypeValue.toLowerCase()) 
+          ? robotTypeValue.toLowerCase() 
+          : ROBOT_TYPES[0].value;
         
         setRobotListing({
           robotName: name,
           description: robotData.description || "",
-          model: modelValue,
+          robotType: validRobotType,
           hourlyRateCredits: robotData.hourlyRateCredits || 100,
           enableAccessControl: allowedUsers.length > 0,
           allowedUserEmails: additionalUsers.join('\n'),
@@ -230,8 +225,8 @@ export const EditRobot = () => {
           longitude: robotData.longitude?.toString() || "",
         });
 
-        // Load existing image if available
-        if (robotData.imageUrl) {
+        // Load existing image if available (only for verified robots with custom images)
+        if (robotData.imageUrl && extendedData.isVerified) {
           setExistingImageKey(robotData.imageUrl);
           if (!robotData.imageUrl.startsWith('http')) {
             try {
@@ -239,15 +234,15 @@ export const EditRobot = () => {
               setImagePreview(result.url.toString());
             } catch (err) {
               logger.error('Error loading existing image:', err);
-              // If loading fails, show default image
-              setImagePreview(getDefaultRobotImage(modelValue));
+              // If loading fails, show default image based on robotType
+              setImagePreview(getDefaultRobotImage(validRobotType));
             }
           } else {
             setImagePreview(robotData.imageUrl);
           }
         } else {
-          // No image provided, use default based on model
-          setImagePreview(getDefaultRobotImage(modelValue));
+          // Use default image based on robotType
+          setImagePreview(getDefaultRobotImage(validRobotType));
         }
       } catch (err) {
         logger.error('Error loading robot:', err);
@@ -325,8 +320,8 @@ export const EditRobot = () => {
         [name]: type === 'checkbox' ? checked : value,
       }));
       
-      // If model changed and no custom image is set, update preview to default
-      if (name === 'model' && !imageFile && !existingImageKey) {
+      // If robotType changed and no custom image is set, update preview to default
+      if (name === 'robotType' && !imageFile && !existingImageKey) {
         setImagePreview(getDefaultRobotImage(value));
       }
     }
@@ -363,8 +358,8 @@ export const EditRobot = () => {
     setExistingImageKey(null);
     setUploadError(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
-    // Show default image based on current model
-    setImagePreview(getDefaultRobotImage(robotListing.model));
+    // Show default image based on current robotType
+    setImagePreview(getDefaultRobotImage(robotListing.robotType));
   };
 
   const uploadImage = async (): Promise<string | null> => {
@@ -425,30 +420,29 @@ export const EditRobot = () => {
           .filter(email => email.length > 0 && email.includes('@'))
       : [];
 
-    // Ensure model is valid before sending
-    const validModel = robotListing.model && robotListing.model.trim() !== '' 
-      ? robotListing.model.trim().toLowerCase()
-      : ROBOT_MODELS[0].value;
-    const modelToSend = ROBOT_MODELS.some(m => m.value === validModel) 
-      ? validModel 
-      : ROBOT_MODELS[0].value;
+    // Ensure robotType is valid before sending
+    const validRobotType = robotListing.robotType && robotListing.robotType.trim() !== '' 
+      ? robotListing.robotType.trim().toLowerCase()
+      : ROBOT_TYPES[0].value;
+    const robotTypeToSend = ROBOT_TYPES.some(t => t.value === validRobotType) 
+      ? validRobotType 
+      : ROBOT_TYPES[0].value;
     
     const robotData = {
       robotName: robotListing.robotName,
       description: robotListing.description,
-      model: modelToSend,
+      model: robotTypeToSend, // Keep model for backwards compatibility
+      robotType: robotTypeToSend, // New field for default image selection
       hourlyRateCredits: robotListing.hourlyRateCredits,
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
-      ...(imageUrl ? { imageUrl } : {}), // Only include imageUrl if it has a value
+      ...(isVerified && imageUrl ? { imageUrl } : {}), // Only include imageUrl if verified and has a value
       city: robotListing.city || undefined,
       state: robotListing.state || undefined,
       country: robotListing.country || undefined,
       latitude: robotListing.latitude ? (isNaN(parseFloat(robotListing.latitude)) ? undefined : parseFloat(robotListing.latitude)) : undefined,
       longitude: robotListing.longitude ? (isNaN(parseFloat(robotListing.longitude)) ? undefined : parseFloat(robotListing.longitude)) : undefined,
     };
-
-    logger.log('🤖 Updating robot with data:', robotData);
 
     try {
       if (!robotId) {
@@ -460,49 +454,15 @@ export const EditRobot = () => {
         ...robotData,
       });
 
-      logger.log('📊 Robot update response:', {
-        hasData: !!robot.data,
-        hasErrors: !!robot.errors,
-        data: robot.data,
-        errors: robot.errors,
-      });
-
       if (robot.errors) {
-        logger.error('❌ Errors updating robot:', robot.errors);
         setError(robot.errors[0]?.message || 'Failed to update robot');
         setSuccess(false);
       } else {
-        logger.log('✅ Robot updated successfully:', robot.data);
         setSuccess(true);
-        
-        // Redirect to Robot Setup page so user can get a fresh token URL
-        // The Robot Setup page will fetch a fresh token from the current auth session
-        if (robotId) {
-          navigate(`/robot-setup?robotId=${robotId}`);
-        } else {
-          // Fallback: try to get robotId from response
-          try {
-            const robotData = JSON.parse(robot.data || '{}');
-            const updatedRobotId = robotData.robotId;
-            if (updatedRobotId) {
-              navigate(`/robot-setup?robotId=${updatedRobotId}`);
-            } else {
-              // Final fallback: redirect to robots list
-              setTimeout(() => {
-                navigate('/robots');
-              }, 2000);
-            }
-          } catch (parseError) {
-            logger.error('Failed to parse robot data:', parseError);
-            // Final fallback: redirect to robots list
-            setTimeout(() => {
-              navigate('/robots');
-            }, 2000);
-          }
-        }
+        navigate(`/robot-setup?robotId=${robotId}`);
       }
     } catch (error) {
-      logger.error('❌ Exception updating robot:', error);
+      logger.error('Error updating robot:', error);
       setError(error instanceof Error ? error.message : 'Failed to update robot');
       setSuccess(false);
     }
@@ -525,33 +485,20 @@ export const EditRobot = () => {
       setIsDeleting(true);
       setError(null);
       
-      logger.log(`🗑️ Attempting to delete robot: ${robotName} (${robotId})`);
-      
       const result = await client.mutations.deleteRobotLambda({ robotId });
       
-      logger.log('📊 Delete robot response:', {
-        hasData: !!result.data,
-        hasErrors: !!result.errors,
-        data: result.data,
-        errors: result.errors,
-      });
-      
-      // Check for GraphQL errors first
       if (result.errors && result.errors.length > 0) {
-        logger.error('❌ GraphQL errors:', result.errors);
-        const errorMessages = result.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ');
+        const errorMessages = result.errors.map((e: { message?: string }) => e.message || JSON.stringify(e)).join(', ');
         throw new Error(errorMessages);
       }
       
-      // Check the response status
       if (result.data?.statusCode === 200) {
-        // Success - redirect to robots list
         navigate('/robots');
       } else {
         throw new Error(result.data?.body || 'Failed to delete robot');
       }
     } catch (err) {
-      logger.error('❌ Exception deleting robot:', err);
+      logger.error('Error deleting robot:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete robot');
       setSuccess(false);
     } finally {
@@ -637,9 +584,13 @@ export const EditRobot = () => {
                 
                 <div className="view-row">
                   <span className="view-label">Type</span>
-                  <span className="view-value" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <FontAwesomeIcon icon={ROBOT_MODELS.find(m => m.value === robotListing.model)?.icon || faRobot} />
-                    {ROBOT_MODELS.find(m => m.value === robotListing.model)?.label || robotListing.model}
+                  <span className="view-value" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <img 
+                      src={ROBOT_TYPES.find(t => t.value === robotListing.robotType)?.image || "/default/robot.png"} 
+                      alt={robotListing.robotType}
+                      style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '6px' }}
+                    />
+                    {ROBOT_TYPES.find(t => t.value === robotListing.robotType)?.label || robotListing.robotType}
                   </span>
                 </div>
                 
@@ -733,32 +684,35 @@ export const EditRobot = () => {
             </div>
 
             <div className="form-group">
-              <label htmlFor="robot-model">
+              <label htmlFor="robot-type">
                 Robot Type <span className="required">*</span>
               </label>
-              <div className="model-selector">
-                {ROBOT_MODELS.map(model => (
+              <div className="robot-type-selector">
+                {ROBOT_TYPES.map(type => (
                   <label 
-                    key={model.value}
-                    className={`model-option ${robotListing.model === model.value ? 'selected' : ''}`}
+                    key={type.value}
+                    className={`robot-type-option ${robotListing.robotType === type.value ? 'selected' : ''}`}
                   >
                     <input
                       type="radio"
-                      name="model"
-                      value={model.value}
-                      checked={robotListing.model === model.value}
+                      name="robotType"
+                      value={type.value}
+                      checked={robotListing.robotType === type.value}
                       onChange={handleInputChange}
                       disabled={isLoading || isViewMode}
                     />
-                    <div className="model-card">
-                      <div className="model-icon">
-                        <FontAwesomeIcon icon={model.icon} />
+                    <div className="robot-type-card">
+                      <div className="robot-type-image">
+                        <img src={type.image} alt={type.label} />
                       </div>
-                      <span className="model-label">{model.label}</span>
+                      <span className="robot-type-label">{type.label}</span>
                     </div>
                   </label>
                 ))}
               </div>
+              <p className="form-help-text">
+                Select the type that best matches your robot. This image will be displayed in listings.
+              </p>
             </div>
 
             <div className="form-group">
@@ -807,51 +761,85 @@ export const EditRobot = () => {
             <h3>Robot Image</h3>
             
             <div className="form-group">
-              <label>
-                Image <span className="optional">(optional)</span>
-              </label>
-              
-              {!imagePreview ? (
-                <div
-                  className={`upload-zone ${isDragging ? 'dragging' : ''}`}
-                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileInput}
-                    hidden
-                  />
-                  <div className="upload-prompt">
-                    <FontAwesomeIcon icon={faCloudUploadAlt} />
-                    <span>Drop an image here or click to browse</span>
-                    <small>PNG, JPG up to 5MB</small>
+              {/* Show current image (default or custom) */}
+              <div className="preview-container" style={{ marginBottom: '1rem' }}>
+                <img 
+                  src={imagePreview || getDefaultRobotImage(robotListing.robotType)} 
+                  alt="Robot preview" 
+                />
+                {isVerified && (imageFile || existingImageKey) && (
+                  <button type="button" className="remove-image" onClick={clearImage}>
+                    <FontAwesomeIcon icon={faTimes} />
+                  </button>
+                )}
+                {uploadProgress > 0 && uploadProgress < 100 && (
+                  <div className="upload-progress">
+                    <div className="progress-bar" style={{ width: `${uploadProgress}%` }} />
                   </div>
-                </div>
-              ) : (
-                <div className="preview-container">
-                  <img src={imagePreview} alt="Preview" />
-                  {(imageFile || existingImageKey) && (
-                    <button type="button" className="remove-image" onClick={clearImage}>
-                      <FontAwesomeIcon icon={faTimes} />
-                    </button>
-                  )}
-                  {uploadProgress > 0 && uploadProgress < 100 && (
-                    <div className="upload-progress">
-                      <div className="progress-bar" style={{ width: `${uploadProgress}%` }} />
+                )}
+              </div>
+
+              {/* Conditional upload section based on verification */}
+              {isVerified ? (
+                <>
+                  <label>
+                    Custom Image <span className="optional">(optional)</span>
+                  </label>
+                  <div
+                    className={`upload-zone ${isDragging ? 'dragging' : ''}`}
+                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileInput}
+                      hidden
+                    />
+                    <div className="upload-prompt">
+                      <FontAwesomeIcon icon={faCloudUploadAlt} />
+                      <span>Drop an image here or click to browse</span>
+                      <small>PNG, JPG up to 5MB</small>
+                    </div>
+                  </div>
+                  {uploadError && (
+                    <div className="upload-error">
+                      <FontAwesomeIcon icon={faExclamationCircle} />
+                      <span>{uploadError}</span>
                     </div>
                   )}
-                </div>
-              )}
-              
-              {uploadError && (
-                <div className="upload-error">
-                  <FontAwesomeIcon icon={faExclamationCircle} />
-                  <span>{uploadError}</span>
+                </>
+              ) : (
+                <div style={{ 
+                  background: 'rgba(255, 183, 0, 0.1)', 
+                  border: '1px solid rgba(255, 183, 0, 0.3)', 
+                  borderRadius: '8px', 
+                  padding: '1rem',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '0.75rem'
+                }}>
+                  <FontAwesomeIcon icon={faLock} style={{ color: '#ffc107', marginTop: '0.125rem' }} />
+                  <div>
+                    <p style={{ 
+                      color: 'rgba(255, 255, 255, 0.9)', 
+                      margin: 0,
+                      fontWeight: 500
+                    }}>
+                      Custom images available after verification
+                    </p>
+                    <p style={{ 
+                      color: 'rgba(255, 255, 255, 0.6)', 
+                      margin: '0.5rem 0 0 0',
+                      fontSize: '0.85rem'
+                    }}>
+                      Your robot is using the default image based on its type. Once our team verifies your robot, 
+                      you'll be able to upload custom photos.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

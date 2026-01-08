@@ -1,8 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './CreateRobotListing.css';
 import { generateClient } from 'aws-amplify/api';
-import { uploadData } from 'aws-amplify/storage';
 import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -15,26 +14,23 @@ import {
   faCheckCircle, 
   faExclamationCircle,
   faInfoCircle,
-  faTruck,
-  faPersonWalking,
-  faPlane,
-  faWater,
-  faCloudUploadAlt,
-  faTimes,
   faCalendarAlt
 } from '@fortawesome/free-solid-svg-icons';
 
-const ROBOT_MODELS = [
-  { value: "rover", label: "Rover", icon: faTruck },
-  { value: "humanoid", label: "Humanoid", icon: faPersonWalking },
-  { value: "drone", label: "Drone", icon: faPlane },
-  { value: "submarine", label: "Submarine", icon: faWater },
+// Robot types with their default images
+const ROBOT_TYPES = [
+  { value: "rover", label: "Rover", image: "/default/rover.png" },
+  { value: "humanoid", label: "Humanoid", image: "/default/humanoid.png" },
+  { value: "drone", label: "Drone", image: "/default/drone.png" },
+  { value: "sub", label: "Submarine", image: "/default/sub.png" },
+  { value: "robodog", label: "Robot Dog", image: "/default/robodog.png" },
+  { value: "robot", label: "Robot Arm", image: "/default/robot.png" },
 ];
 
 type RobotListing = {
   robotName: string;
   description: string;
-  model: string;
+  robotType: string; // Robot type for default image selection
   hourlyRateCredits: number;
   enableAccessControl: boolean;
   allowedUserEmails: string; // Comma-separated or newline-separated emails
@@ -57,7 +53,7 @@ export const CreateRobotListing = () => {
   const [robotListing, setRobotListing] = useState<RobotListing>({
     robotName: "",
     description: "",
-    model: ROBOT_MODELS[0].value,
+    robotType: ROBOT_TYPES[0].value,
     hourlyRateCredits: 100, // Default 100 credits/hour (stored internally)
     enableAccessControl: false,
     allowedUserEmails: "",
@@ -70,14 +66,6 @@ export const CreateRobotListing = () => {
   
   // Raw input value as string to allow free typing
   const [hourlyRateInput, setHourlyRateInput] = useState<string>('1.00');
-
-  // Image upload state
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const { user } = useAuthStatus();
   const [currencyDisplay, setCurrencyDisplay] = useState<string>('USD');
   const [currencyCode, setCurrencyCode] = useState<CurrencyCode>('USD');
@@ -168,69 +156,10 @@ export const CreateRobotListing = () => {
     }
   };
 
-  const handleFileSelect = (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      setUploadError('Please select an image file');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setUploadError('Image must be less than 5MB');
-      return;
-    }
-    setUploadError(null);
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFileSelect(file);
-  };
-
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFileSelect(file);
-  };
-
-  const clearImage = () => {
-    setImageFile(null);
-    setImagePreview(null);
-    setUploadError(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const uploadImage = async (): Promise<string | null> => {
-    if (!imageFile) return null;
-
-    const key = `robot-images/${Date.now()}-${Math.random().toString(36).slice(2)}.${imageFile.name.split('.').pop()}`;
-
-    try {
-      await uploadData({
-        path: key,
-        data: imageFile,
-        options: {
-          contentType: imageFile.type,
-          onProgress: ({ transferredBytes, totalBytes }) => {
-            if (totalBytes) setUploadProgress(Math.round((transferredBytes / totalBytes) * 100));
-          },
-        },
-      }).result;
-
-      return key;
-    } catch (error) {
-      logger.error('Upload failed:', error);
-      throw error;
-    }
-  };
-
   const onConfirmCreate = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
     setSuccess(undefined);
-    setUploadError(null);
-    setUploadProgress(0);
     setHourlyRateError(null);
 
     // Validate hourly rate before proceeding
@@ -249,19 +178,6 @@ export const CreateRobotListing = () => {
       return;
     }
 
-    let imageUrl: string | null = null;
-
-    if (imageFile) {
-      try {
-        const key = await uploadImage();
-        imageUrl = key;
-      } catch {
-        setUploadError('Failed to upload image. Please try again.');
-        setIsLoading(false);
-        return;
-      }
-    }
-
     const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
       ? robotListing.allowedUserEmails
           .split(/[,\n]/)
@@ -272,11 +188,11 @@ export const CreateRobotListing = () => {
     const robotData = {
       robotName: robotListing.robotName,
       description: robotListing.description,
-      model: robotListing.model,
-      hourlyRateCredits: creditsValue, // Use the validated and converted value
+      model: robotListing.robotType, // Use robotType as model for backwards compatibility
+      robotType: robotListing.robotType, // New field for default image selection
+      hourlyRateCredits: creditsValue,
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
-      imageUrl: imageUrl || undefined,
       city: robotListing.city || undefined,
       state: robotListing.state || undefined,
       country: robotListing.country || undefined,
@@ -316,7 +232,7 @@ export const CreateRobotListing = () => {
     setRobotListing({
       robotName: "",
       description: "",
-      model: ROBOT_MODELS[0].value,
+      robotType: ROBOT_TYPES[0].value,
       hourlyRateCredits: 100,
       enableAccessControl: false,
       allowedUserEmails: "",
@@ -326,7 +242,6 @@ export const CreateRobotListing = () => {
       latitude: "",
       longitude: "",
     });
-    clearImage();
   };
 
   return (
@@ -368,32 +283,35 @@ export const CreateRobotListing = () => {
             </div>
 
             <div className="form-group">
-              <label htmlFor="robot-model">
+              <label htmlFor="robot-type">
                 Robot Type <span className="required">*</span>
               </label>
-              <div className="model-selector">
-                {ROBOT_MODELS.map(model => (
+              <div className="robot-type-selector">
+                {ROBOT_TYPES.map(type => (
                   <label 
-                    key={model.value}
-                    className={`model-option ${robotListing.model === model.value ? 'selected' : ''}`}
+                    key={type.value}
+                    className={`robot-type-option ${robotListing.robotType === type.value ? 'selected' : ''}`}
                   >
                     <input
                       type="radio"
-                      name="model"
-                      value={model.value}
-                      checked={robotListing.model === model.value}
+                      name="robotType"
+                      value={type.value}
+                      checked={robotListing.robotType === type.value}
                       onChange={handleInputChange}
                       disabled={isLoading}
                     />
-                    <div className="model-card">
-                      <div className="model-icon">
-                        <FontAwesomeIcon icon={model.icon} />
+                    <div className="robot-type-card">
+                      <div className="robot-type-image">
+                        <img src={type.image} alt={type.label} />
                       </div>
-                      <span className="model-label">{model.label}</span>
+                      <span className="robot-type-label">{type.label}</span>
                     </div>
                   </label>
                 ))}
               </div>
+              <p className="form-help-text">
+                Select the type that best matches your robot. This image will be displayed in listings.
+              </p>
             </div>
 
             <div className="form-group">
@@ -443,54 +361,6 @@ export const CreateRobotListing = () => {
               </small>
             </div>
 
-            {/* Image Upload Section */}
-            <div className="form-group">
-              <label>
-                Robot Image <span className="optional">(optional)</span>
-              </label>
-              
-              {!imagePreview ? (
-                <div
-                  className={`upload-zone ${isDragging ? 'dragging' : ''}`}
-                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileInput}
-                    hidden
-                  />
-                  <div className="upload-prompt">
-                    <FontAwesomeIcon icon={faCloudUploadAlt} />
-                    <span>Drop an image here or click to browse</span>
-                    <small>PNG, JPG up to 5MB</small>
-                  </div>
-                </div>
-              ) : (
-                <div className="preview-container">
-                  <img src={imagePreview} alt="Preview" />
-                  <button type="button" className="remove-image" onClick={clearImage}>
-                    <FontAwesomeIcon icon={faTimes} />
-                  </button>
-                  {uploadProgress > 0 && uploadProgress < 100 && (
-                    <div className="upload-progress">
-                      <div className="progress-bar" style={{ width: `${uploadProgress}%` }} />
-                    </div>
-                  )}
-                </div>
-              )}
-              
-              {uploadError && (
-                <div className="upload-error">
-                  <FontAwesomeIcon icon={faExclamationCircle} />
-                  <span>{uploadError}</span>
-                </div>
-              )}
-            </div>
           </div>
 
           <div className="form-section">

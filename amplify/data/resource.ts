@@ -293,11 +293,13 @@ const schema = a.schema({
     name: a.string().required(),
     description: a.string().required(),
     model: a.string(),
+    robotType: a.string(), // Robot type for default image: 'drone', 'humanoid', 'robodog', 'robot', 'rover', 'sub'
     robotId: a.string(),
     partnerId: a.id().required(),
     partner: a.belongsTo('Partner', 'partnerId'),
     allowedUsers: a.string().array(), // Optional: if null/empty, robot is open access. If set, only listed users can access.
     imageUrl: a.string(),
+    isVerified: a.boolean().default(false), // Only verified robots can upload custom images
     // Pricing: Hourly rate in credits (before platform markup)
     hourlyRateCredits: a.float().default(100), // Default 100 credits/hour (editable by robot owner)
     // Location fields
@@ -507,6 +509,7 @@ const schema = a.schema({
       robotName: a.string().required(),
       description: a.string(),
       model: a.string(),
+      robotType: a.string(), // Robot type for default image: 'drone', 'humanoid', 'robodog', 'robot', 'rover', 'sub'
       hourlyRateCredits: a.float(), // Optional: hourly rate in credits (defaults to 100)
       enableAccessControl: a.boolean(), // Optional: if true, creates ACL with default users
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL
@@ -529,10 +532,11 @@ const schema = a.schema({
       robotName: a.string(), // Optional: update name
       description: a.string(), // Optional: update description
       model: a.string(), // Optional: update model
+      robotType: a.string(), // Optional: update robotType for default image
       hourlyRateCredits: a.float(), // Optional: update hourly rate in credits
       enableAccessControl: a.boolean(), // Optional: update ACL (true = enable/update, false = disable/remove)
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL (only used if enableAccessControl is true)
-      imageUrl: a.string(), // Optional: update imageUrl
+      imageUrl: a.string(), // Optional: update imageUrl (only for verified robots)
       // Location fields (optional)
       city: a.string(),
       state: a.string(),

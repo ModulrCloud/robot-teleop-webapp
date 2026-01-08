@@ -26,6 +26,7 @@ interface Robot {
   name: string;
   description: string;
   model: string;
+  robotType?: string;
   robotId: string;
   imageUrl?: string;
   city?: string;
@@ -90,12 +91,13 @@ export default function MyRobots() {
         }
 
         const robotsList = (robotsResponse.data || [])
-          .filter(robot => robot.id != null) // Filter out robots without IDs
+          .filter(robot => robot.id != null)
           .map(robot => ({
             id: robot.id!,
             name: robot.name || '',
             description: robot.description || '',
             model: robot.model || '',
+            robotType: robot.robotType || undefined,
             robotId: robot.robotId || '',
             imageUrl: robot.imageUrl || undefined,
             city: robot.city || undefined,
@@ -234,17 +236,21 @@ export default function MyRobots() {
     return new Date(timestamp).toLocaleString();
   };
 
-  const getRobotImage = (model?: string, imageUrl?: string): string => {
-    if (imageUrl) return imageUrl;
-    
-    const normalized = model?.toLowerCase()?.trim();
-    switch (normalized) {
-      case 'rover': return '/racer.png';
-      case 'humanoid': return '/humaniod.png';
-      case 'drone': return '/drone.png';
-      case 'submarine': return '/submarine.png';
-      default: return '/racer.png';
+  const getRobotImage = (robotType?: string, imageUrl?: string): string => {
+    if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('/'))) {
+      return imageUrl;
     }
+    
+    const typeImages: Record<string, string> = {
+      'rover': '/default/rover.png',
+      'humanoid': '/default/humanoid.png',
+      'drone': '/default/drone.png',
+      'sub': '/default/sub.png',
+      'robodog': '/default/robodog.png',
+      'robot': '/default/robot.png',
+    };
+    
+    return typeImages[robotType?.toLowerCase() || ''] || '/default/robot.png';
   };
 
   if (isLoading) {
@@ -409,7 +415,7 @@ export default function MyRobots() {
                 onClick={() => handleRobotClick(robot)}
               >
                 <div className="robot-card-image">
-                  <img src={getRobotImage(robot.model, robot.imageUrl)} alt={robot.name} />
+                  <img src={getRobotImage(robot.robotType, robot.imageUrl)} alt={robot.name} />
                 </div>
                 <div className="robot-card-header">
                   <div className="robot-card-title">

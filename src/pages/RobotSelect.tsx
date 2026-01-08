@@ -14,29 +14,28 @@ import { formatCreditsAsCurrencySync, fetchExchangeRates } from '../utils/credit
 
 const client = generateClient<Schema>();
 
-const getRobotImage = (model: string, imageUrl?: string): string => {
-  // Only use imageUrl if it's already a full URL (http/https) or a local path (/)
-  // Don't use S3 keys as-is - they need to be resolved first
+const getRobotImage = (robotType: string, imageUrl?: string): string => {
   if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('/'))) {
     return imageUrl;
   }
   
-  const modelImages: Record<string, string> = {
-    'humanoid': '/humaniod.png',
-    'drone': '/drone.png',
-    'rover': '/rover.webp',
-    'arm': '/robot_arm.webp',
-    'submarine': '/submarine.png',
-    'racer': '/racer.png',
+  const typeImages: Record<string, string> = {
+    'rover': '/default/rover.png',
+    'humanoid': '/default/humanoid.png',
+    'drone': '/default/drone.png',
+    'sub': '/default/sub.png',
+    'robodog': '/default/robodog.png',
+    'robot': '/default/robot.png',
   };
   
-  return modelImages[model.toLowerCase()] || '/humaniod.png';
+  return typeImages[robotType?.toLowerCase() || ''] || '/default/robot.png';
 };
 
 // Extended robot data to include the UUID for deletion
 interface RobotData extends CardGridItemProps {
   uuid?: string; // The actual Robot.id (UUID) for deletion
-  model?: string; // Robot model type (e.g., 'humanoid', 'rover', 'drone', 'submarine')
+  model?: string; // Robot model type
+  robotType?: string; // Robot type for default image selection
 }
 
 export default function RobotSelect() {
@@ -400,11 +399,6 @@ export default function RobotSelect() {
                 // For now, we'll rely on the ACL check
               }
               
-              // Log model for debugging
-              if (robot.model) {
-                logger.log(`[ROBOT_IMAGE] Robot "${robot.name || 'Unnamed'}": model="${robot.model}", image="${getRobotImage(robot.model, robot.imageUrl)}"`);
-              }
-              
               // Calculate hourly rate (partner rate + platform fee)
               let hourlyRateDisplay: string | undefined = undefined;
               
@@ -428,15 +422,15 @@ export default function RobotSelect() {
                 hourlyRateDisplay = "Free";
               }
               return {
-                id: (robot.robotId || robot.id) as string, // Use robotId (string) for connection, fallback to id
-                uuid: robot.id || undefined, // Store the actual UUID for deletion
+                id: (robot.robotId || robot.id) as string,
+                uuid: robot.id || undefined,
                 title: robot.name || 'Unnamed Robot',
                 description: description,
-                location: location, // Location on separate line
-                // Use model-based default image initially - S3 keys will be resolved in resolveImages
-                imageUrl: getRobotImage(robot.model),
-                rawImageUrl: robot.imageUrl, // Store S3 key for later resolution
-                disabled: !canAccess, // Gray out if user can't access
+                location: location,
+                imageUrl: getRobotImage(robot.robotType || robot.model, robot.imageUrl),
+                rawImageUrl: robot.imageUrl,
+                robotType: robot.robotType || robot.model,
+                disabled: !canAccess,
                 hourlyRate: hourlyRateDisplay,
               };
             });
@@ -671,8 +665,8 @@ export default function RobotSelect() {
               uuid: robot.id || undefined,
               title: robot.name || 'Unnamed Robot',
               description: description,
-              // Use resolved image if available, otherwise fall back to model-based default
-              imageUrl: resolvedImages[robot.id] || getRobotImage(robot.model),
+              imageUrl: resolvedImages[robot.id] || getRobotImage(robot.robotType || robot.model),
+              robotType: robot.robotType || robot.model,
             };
           });
         
@@ -727,8 +721,7 @@ export default function RobotSelect() {
           <CardGrid
             items={robots.map(robot => ({ 
               ...robot, 
-              // Use resolved image if available, otherwise use the robot's imageUrl (which should be model-based default)
-              imageUrl: resolvedImages[robot.id] || robot.imageUrl || getRobotImage(robot.model || 'humanoid')
+              imageUrl: resolvedImages[robot.id] || robot.imageUrl || getRobotImage(robot.robotType || 'robot')
             }))}
             columns={3}
             multiple={false}
