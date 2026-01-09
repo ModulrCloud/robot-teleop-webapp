@@ -20,11 +20,11 @@ import {
 // Robot types with their default images
 const ROBOT_TYPES = [
   { value: "rover", label: "Rover", image: "/default/rover.png" },
-  { value: "humanoid", label: "Humanoid", image: "/default/humanoid.png" },
+  { value: "humanoid", label: "Humanoid", image: "/default/robot.png" },
   { value: "drone", label: "Drone", image: "/default/drone.png" },
   { value: "sub", label: "Submarine", image: "/default/sub.png" },
   { value: "robodog", label: "Robot Dog", image: "/default/robodog.png" },
-  { value: "robot", label: "Robot Arm", image: "/default/robot.png" },
+  { value: "robot", label: "Robot Arm", image: "/default/humanoid.png" },
 ];
 
 type RobotListing = {

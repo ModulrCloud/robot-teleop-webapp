@@ -21,14 +21,14 @@ const getRobotImage = (robotType: string, imageUrl?: string): string => {
   
   const typeImages: Record<string, string> = {
     'rover': '/default/rover.png',
-    'humanoid': '/default/humanoid.png',
+    'humanoid': '/default/robot.png',
     'drone': '/default/drone.png',
     'sub': '/default/sub.png',
     'robodog': '/default/robodog.png',
-    'robot': '/default/robot.png',
+    'robot': '/default/humanoid.png',
   };
   
-  return typeImages[robotType?.toLowerCase() || ''] || '/default/robot.png';
+  return typeImages[robotType?.toLowerCase() || ''] || '/default/humanoid.png';
 };
 
 // Extended robot data to include the UUID for deletion

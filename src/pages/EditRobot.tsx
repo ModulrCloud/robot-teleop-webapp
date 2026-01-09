@@ -26,17 +26,17 @@ import {
 // Robot types with their default images
 const ROBOT_TYPES = [
   { value: "rover", label: "Rover", image: "/default/rover.png" },
-  { value: "humanoid", label: "Humanoid", image: "/default/humanoid.png" },
+  { value: "humanoid", label: "Humanoid", image: "/default/robot.png" },
   { value: "drone", label: "Drone", image: "/default/drone.png" },
   { value: "sub", label: "Submarine", image: "/default/sub.png" },
   { value: "robodog", label: "Robot Dog", image: "/default/robodog.png" },
-  { value: "robot", label: "Robot Arm", image: "/default/robot.png" },
+  { value: "robot", label: "Robot Arm", image: "/default/humanoid.png" },
 ];
 
 // Get default robot image based on robotType
 const getDefaultRobotImage = (robotType: string): string => {
   const type = ROBOT_TYPES.find(t => t.value === robotType.toLowerCase());
-  return type?.image || "/default/robot.png";
+  return type?.image || "/default/humanoid.png";
 };
 
 type RobotListing = {
@@ -586,7 +586,7 @@ export const EditRobot = () => {
                   <span className="view-label">Type</span>
                   <span className="view-value" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <img 
-                      src={ROBOT_TYPES.find(t => t.value === robotListing.robotType)?.image || "/default/robot.png"} 
+                      src={ROBOT_TYPES.find(t => t.value === robotListing.robotType)?.image || "/default/humanoid.png"} 
                       alt={robotListing.robotType}
                       style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '6px' }}
                     />
