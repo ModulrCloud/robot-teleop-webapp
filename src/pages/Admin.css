@@ -124,7 +124,7 @@
 }
 
 /* System Statistics */
-.stat-grid {
+.stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1.5rem;
@@ -148,20 +148,20 @@
   transform: translateY(-2px);
 }
 
-.stat-card-icon {
+.stat-icon {
   font-size: 2rem;
   color: #ffc107;
   margin-bottom: 0.5rem;
 }
 
-.stat-card-value {
+.stat-value {
   font-size: 2rem;
   font-weight: 700;
   color: #fff;
   margin: 0;
 }
 
-.stat-card-label {
+.stat-label {
   font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.6);
   margin: 0;

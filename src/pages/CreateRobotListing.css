@@ -93,6 +93,10 @@
   margin-top: 1.5rem;
 }
 
+.form-row .form-group + .form-group {
+  margin-top: 1rem;
+}
+
 .form-group label {
   font-size: 0.95rem;
   font-weight: 600;
@@ -174,6 +178,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
+  align-items: end;
 }
 
 @media (max-width: 600px) {
