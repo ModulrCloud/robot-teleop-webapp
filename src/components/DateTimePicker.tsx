@@ -81,16 +81,67 @@ export function DateTimePicker({
       const now = new Date();
       const hours = now.getHours();
       const hour12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
-      setSelectedTime({
+      const newTime: { hour: number; minute: number; ampm: 'AM' | 'PM' } = {
         hour: hour12,
         minute: now.getMinutes(),
         ampm: hours >= 12 ? 'PM' : 'AM',
-      });
+      };
+      setSelectedTime(newTime);
+      
+      // Auto-update the value immediately
+      const dateWithTime = new Date(date);
+      dateWithTime.setHours(hours, newTime.minute, 0, 0);
+      const year = dateWithTime.getFullYear();
+      const month = (dateWithTime.getMonth() + 1).toString().padStart(2, '0');
+      const day = dateWithTime.getDate().toString().padStart(2, '0');
+      const hoursStr = dateWithTime.getHours().toString().padStart(2, '0');
+      const minutesStr = dateWithTime.getMinutes().toString().padStart(2, '0');
+      const isoString = `${year}-${month}-${day}T${hoursStr}:${minutesStr}`;
+      onChange(isoString);
+    } else {
+      // If time is already selected, update immediately when date changes
+      const dateWithTime = new Date(date);
+      let hours = selectedTime.hour;
+      if (selectedTime.ampm === 'PM' && hours !== 12) {
+        hours += 12;
+      } else if (selectedTime.ampm === 'AM' && hours === 12) {
+        hours = 0;
+      }
+      dateWithTime.setHours(hours, selectedTime.minute, 0, 0);
+      const year = dateWithTime.getFullYear();
+      const month = (dateWithTime.getMonth() + 1).toString().padStart(2, '0');
+      const day = dateWithTime.getDate().toString().padStart(2, '0');
+      const hoursStr = dateWithTime.getHours().toString().padStart(2, '0');
+      const minutesStr = dateWithTime.getMinutes().toString().padStart(2, '0');
+      const isoString = `${year}-${month}-${day}T${hoursStr}:${minutesStr}`;
+      onChange(isoString);
     }
   };
 
   const handleTimeSelect = (hour: number, minute: number, ampm: 'AM' | 'PM') => {
     setSelectedTime({ hour, minute, ampm });
+    
+    // Auto-update the value immediately when time is selected (better UX)
+    if (selectedDate) {
+      const date = new Date(selectedDate);
+      let hours = hour;
+      if (ampm === 'PM' && hours !== 12) {
+        hours += 12;
+      } else if (ampm === 'AM' && hours === 12) {
+        hours = 0;
+      }
+      date.setHours(hours, minute, 0, 0);
+      
+      // Format as ISO string for datetime-local input
+      const year = date.getFullYear();
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const day = date.getDate().toString().padStart(2, '0');
+      const hoursStr = date.getHours().toString().padStart(2, '0');
+      const minutesStr = date.getMinutes().toString().padStart(2, '0');
+      
+      const isoString = `${year}-${month}-${day}T${hoursStr}:${minutesStr}`;
+      onChange(isoString);
+    }
   };
 
   const handleConfirm = () => {

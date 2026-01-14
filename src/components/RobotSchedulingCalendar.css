@@ -457,10 +457,10 @@
 .block-indicator.past-time {
   background: repeating-linear-gradient(
     135deg,
-    rgba(255, 152, 0, 0.3),
-    rgba(255, 152, 0, 0.3) 5px,
-    rgba(255, 152, 0, 0.1) 5px,
-    rgba(255, 152, 0, 0.1) 10px
+    rgba(100, 100, 100, 0.3), /* Gray color for past times */
+    rgba(100, 100, 100, 0.3) 5px,
+    rgba(100, 100, 100, 0.1) 5px,
+    rgba(100, 100, 100, 0.1) 10px
   );
 }
 

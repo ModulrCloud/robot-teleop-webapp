@@ -785,17 +785,6 @@ export default function Teleop() {
                 </p>
               </div>
             </div>
-          ) : controlMode === 'location' ? (
-            <div className="location-controls-hint">
-              <div className="location-hint-content">
-                <FontAwesomeIcon icon={faMapMarkerAlt} className="location-icon" size="4x" />
-                <h3>Location Control</h3>
-                <p className="coming-soon-message">Coming Soon</p>
-                <p className="location-description">
-                  Navigate your robot to specific locations using map-based controls.
-                </p>
-              </div>
-            </div>
           ) : (
             <div className="gamepad-wrapper">
               {gamepadDetected ? (
@@ -907,7 +896,7 @@ export default function Teleop() {
           setClientBindings(bindings);
           // In real implementation, save to backend/localStorage
           // For now, just update state
-          showToast('success', 'Input bindings saved successfully!');
+          showToast('Input bindings saved successfully!', 'success');
         }}
       />
     </div>

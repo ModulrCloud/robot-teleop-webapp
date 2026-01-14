@@ -225,14 +225,16 @@ export const handler: Schema["manageRobotAvailabilityLambda"]["functionHandler"]
       const updateExpressions: string[] = [];
       const expressionAttributeValues: Record<string, any> = {};
 
-      if (startTime) {
+      if (startTime !== undefined && startTime !== null) {
+        const startTimeISO = new Date(startTime).toISOString();
         updateExpressions.push('startTime = :startTime');
-        expressionAttributeValues[':startTime'] = new Date(startTime).toISOString();
+        expressionAttributeValues[':startTime'] = startTimeISO;
       }
 
-      if (endTime) {
+      if (endTime !== undefined && endTime !== null) {
+        const endTimeISO = new Date(endTime).toISOString();
         updateExpressions.push('endTime = :endTime');
-        expressionAttributeValues[':endTime'] = new Date(endTime).toISOString();
+        expressionAttributeValues[':endTime'] = endTimeISO;
       }
 
       if (reason !== undefined) {
@@ -253,12 +255,13 @@ export const handler: Schema["manageRobotAvailabilityLambda"]["functionHandler"]
       updateExpressions.push('updatedAt = :now');
       expressionAttributeValues[':now'] = nowISO;
 
-      await docClient.send(
+      const updateResult = await docClient.send(
         new UpdateCommand({
           TableName: ROBOT_AVAILABILITY_TABLE,
           Key: { id: availabilityId },
           UpdateExpression: `SET ${updateExpressions.join(', ')}`,
           ExpressionAttributeValues: expressionAttributeValues,
+          ReturnValues: 'ALL_NEW',
         })
       );
 
@@ -267,6 +270,7 @@ export const handler: Schema["manageRobotAvailabilityLambda"]["functionHandler"]
         body: JSON.stringify({
           success: true,
           message: "Availability block updated successfully",
+          updatedItem: updateResult.Attributes,
         }),
       };
     } else if (action === 'delete') {

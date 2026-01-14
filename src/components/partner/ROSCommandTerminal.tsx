@@ -151,7 +151,7 @@ export function ROSCommandTerminal({
   const [preview, setPreview] = useState<any>(null);
   const [isROS2Command, setIsROS2Command] = useState(false);
   const [convertedCommand, setConvertedCommand] = useState<string | null>(null);
-  const [showConverted, setShowConverted] = useState(false);
+  const [_showConverted, setShowConverted] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Validate and parse input (either ROS2 CLI or JSON)

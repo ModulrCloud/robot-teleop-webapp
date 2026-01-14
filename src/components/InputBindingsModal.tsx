@@ -83,7 +83,7 @@ export function InputBindingsModal({
     }
   };
 
-  const handleSaveEdit = (commandId: string) => {
+  const handleSaveEdit = (_commandId: string) => {
     setEditingCommandId(null);
     // In real implementation, this would save to backend
     // For now, just update local state

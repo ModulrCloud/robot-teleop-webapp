@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { CustomCommand, KeyboardBinding, GamepadBinding, GAMEPAD_BUTTON_BINDINGS, GamepadButton, RESERVED_KEYBOARD_KEYS } from '../types/customCommands';
+import { CustomCommand, KeyboardBinding, GamepadBinding, RESERVED_KEYBOARD_KEYS } from '../types/customCommands';
 import { getEnabledMockCommandsForRobot } from '../mocks/customCommands';
 import { logger } from '../utils/logger';
 

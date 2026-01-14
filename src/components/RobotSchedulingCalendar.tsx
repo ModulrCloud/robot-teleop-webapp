@@ -19,6 +19,7 @@ interface RobotSchedulingCalendarProps {
   onDurationChange: (minutes: number) => void;
   mode?: 'scheduling' | 'availability'; // 'scheduling' for users, 'availability' for partners
   onAvailabilityBlockCreate?: (startTime: Date, endTime: Date, isRecurring: boolean, recurrencePattern?: string) => void;
+  refreshTrigger?: number; // Increment this to force a refresh of the calendar data
 }
 
 export function RobotSchedulingCalendar({
@@ -30,6 +31,7 @@ export function RobotSchedulingCalendar({
   onDurationChange,
   mode: _mode = 'scheduling',
   onAvailabilityBlockCreate: _onAvailabilityBlockCreate,
+  refreshTrigger = 0,
 }: RobotSchedulingCalendarProps) {
   const [currentWeek, setCurrentWeek] = useState(new Date());
   const [reservations, setReservations] = useState<any[]>([]);
@@ -59,7 +61,7 @@ export function RobotSchedulingCalendar({
   // Load reservations and availability blocks for the current week
   useEffect(() => {
     loadWeekData();
-  }, [robotId, currentWeek]);
+  }, [robotId, currentWeek, refreshTrigger]);
 
   // Scroll to 6am when calendar loads
   useEffect(() => {

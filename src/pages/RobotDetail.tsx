@@ -469,6 +469,7 @@ export default function RobotDetail() {
                 </div>
               </div>
             )}
+            </div>
           </div>
         </div>
 

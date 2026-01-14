@@ -40,7 +40,7 @@ export function InputBindingPicker({
   onBindingChange,
   existingKeyboardBindings = new Set(),
   existingGamepadBindings = new Set(),
-  allowBoth = true,
+  allowBoth: _allowBoth = true,
   disabled = false,
 }: InputBindingPickerProps) {
   const [activeTab, setActiveTab] = useState<InputMethod>('keyboard');

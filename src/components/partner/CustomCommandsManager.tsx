@@ -12,7 +12,7 @@ import {
 import { InputBindingPicker } from '../InputBindingPicker';
 import { ROSCommandTerminal } from './ROSCommandTerminal';
 import { CustomCommand, KeyboardBinding, GamepadBinding } from '../../types/customCommands';
-import { getMockCommandsForRobot, MOCK_CUSTOM_COMMANDS } from '../../mocks/customCommands';
+import { getMockCommandsForRobot } from '../../mocks/customCommands';
 import './CustomCommandsManager.css';
 
 export interface CustomCommandsManagerProps {
