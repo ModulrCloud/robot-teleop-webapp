@@ -32,6 +32,5 @@ amplify_outputs.json
 # Rust test files and documentation
 rust/
 
-# Documentation/TODO files (not for commit)
-CUSTOM_COMMANDS_TODO.md
-ROS_COMMAND_EXAMPLE.md
+# Documentation/explanation files (not for commit)
+explanations/
