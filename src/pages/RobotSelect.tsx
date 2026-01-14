@@ -463,8 +463,8 @@ export default function RobotSelect() {
               id: 'robot1',
               title: 'Test Robot (Local)',
               description: 'Default test robot for local development',
-              imageUrl: '/racer.png',
-              uuid: undefined, // No UUID for test robot (can't be deleted)
+              imageUrl: '/default/robot.png',
+              uuid: undefined,
             },
           ];
         }
@@ -481,8 +481,8 @@ export default function RobotSelect() {
               id: 'robot1',
               title: 'Test Robot (Local)',
               description: 'Default test robot for local development',
-              imageUrl: '/racer.png',
-              uuid: undefined, // No UUID for test robot (can't be deleted)
+              imageUrl: '/default/robot.png',
+              uuid: undefined,
             },
           ]);
         } else {
@@ -536,17 +536,6 @@ export default function RobotSelect() {
   const handleRobotClick = (robot: CardGridItemProps) => {
     // Navigate to robot detail page
     navigate(`/robot/${robot.id}`);
-  };
-
-  const handleViewRobot = (robot: RobotData, event: React.MouseEvent) => {
-    event.stopPropagation();
-    
-    if (!robot.uuid) {
-      logger.error('Cannot view robot: missing UUID');
-      return;
-    }
-    
-    navigate(`/edit-robot?robotId=${robot.uuid}&mode=view`);
   };
 
   const handleEditRobot = (robot: RobotData, event: React.MouseEvent) => {
@@ -728,7 +717,6 @@ export default function RobotSelect() {
             selected={selected}
             setSelected={setSelected}
             onItemClick={handleRobotClick}
-            onView={handleViewRobot}
             onEdit={canEditRobots ? handleEditRobot : undefined}
             onDelete={canEditRobots ? handleDeleteRobot : undefined}
             deletingItemId={deletingRobotId}

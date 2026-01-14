@@ -29,13 +29,22 @@ export function RobotRating({ robotId, sessionId, onRatingSubmitted }: RobotRati
       try {
         const result = await client.queries.listRobotRatingsLambda({
           robotId: robotId,
-          limit: 100, // Get all ratings to find user's own
+          limit: 100,
         });
 
         if (result.data) {
-          // Note: We can't filter by userId on the client side since it's hidden for non-admins
-          // The Lambda will return all ratings, but we can check if we have a rating by looking at the count
-          // For now, we'll just allow users to update their rating if they submit again
+          let parsed = typeof result.data === 'string' ? JSON.parse(result.data) : result.data;
+          if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+          
+          if (parsed.statusCode === 200) {
+            const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
+            const ownRating = body.ratings?.find((r: { isOwnRating?: boolean }) => r.isOwnRating);
+            if (ownRating) {
+              setExistingRating(ownRating);
+              setSelectedRating(ownRating.rating || 0);
+              setComment(ownRating.comment || '');
+            }
+          }
         }
       } catch (err) {
         logger.warn('Could not check existing rating:', err);
@@ -84,16 +93,15 @@ export function RobotRating({ robotId, sessionId, onRatingSubmitted }: RobotRati
             if (onRatingSubmitted) {
               onRatingSubmitted();
             }
-            // Reset form after a delay
             setTimeout(() => {
               setSuccess(false);
             }, 3000);
           } else {
-            setError(body.error || 'Failed to submit rating');
+            setError(body.error || body.details || 'Failed to submit rating');
           }
         } else {
           const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
-          setError(body.error || 'Failed to submit rating');
+          setError(body.error || body.details || 'Failed to submit rating');
         }
       } else if (result.errors) {
         setError(result.errors[0]?.message || 'Failed to submit rating');
@@ -122,7 +130,7 @@ export function RobotRating({ robotId, sessionId, onRatingSubmitted }: RobotRati
 
   return (
     <div className="robot-rating-component">
-      <h3>Rate this Robot</h3>
+      <h3>{existingRating ? 'Edit Your Rating' : 'Rate this Robot'}</h3>
       
       <div 
         className="robot-rating-selector"
@@ -182,7 +190,7 @@ export function RobotRating({ robotId, sessionId, onRatingSubmitted }: RobotRati
 
       {success && (
         <div className="rating-success">
-          <FontAwesomeIcon icon={faRobot} /> Rating submitted successfully!
+          <FontAwesomeIcon icon={faRobot} /> {existingRating ? 'Rating updated successfully!' : 'Rating submitted successfully!'}
         </div>
       )}
 

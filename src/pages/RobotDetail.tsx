@@ -20,22 +20,20 @@ import "./RobotDetail.css";
 const client = generateClient<Schema>();
 
 const getRobotImage = (model: string, imageUrl?: string): string => {
-  // Only use imageUrl if it's already a full URL (http/https) or a local path (/)
-  // Don't use S3 keys as-is - they need to be resolved first
   if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('/'))) {
     return imageUrl;
   }
   
   const modelImages: Record<string, string> = {
-    'humanoid': '/humaniod.png',
-    'drone': '/drone.png',
-    'rover': '/rover.webp',
-    'arm': '/robot_arm.webp',
-    'submarine': '/submarine.png',
-    'racer': '/racer.png',
+    'rover': '/default/rover.png',
+    'humanoid': '/default/humanoid.png',
+    'drone': '/default/drone.png',
+    'sub': '/default/sub.png',
+    'robodog': '/default/robodog.png',
+    'robot': '/default/robot.png',
   };
   
-  return modelImages[model.toLowerCase()] || '/humaniod.png';
+  return modelImages[model?.toLowerCase() || ''] || '/default/humanoid.png';
 };
 
 export default function RobotDetail() {
@@ -395,13 +393,13 @@ export default function RobotDetail() {
           </div>
 
           <div className="robot-info-section">
-            <div className="robot-info-main">
-              <h1 className="robot-detail-name">{robot.name || 'Unnamed Robot'}</h1>
-              
-              {robot.description && (
-                <p className="robot-detail-description">{robot.description}</p>
-              )}
+            <h1 className="robot-detail-name">{robot.name || 'Unnamed Robot'}</h1>
+            
+            {robot.description && (
+              <p className="robot-detail-description">{robot.description}</p>
+            )}
 
+            <div className="robot-info-boxes">
               <div className="robot-detail-meta">
                 <div className="robot-meta-item">
                   <span className="robot-meta-label">Model:</span>
@@ -433,27 +431,27 @@ export default function RobotDetail() {
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* Scheduling Section */}
-            {robot && robot.robotId && (
-              <div className="robot-scheduling-section">
-                <h2>
-                  <FontAwesomeIcon icon={faCalendarAlt} />
-                  Schedule Time
-                </h2>
-                <p className="scheduling-description">
-                  Reserve time slots for this robot in advance. Minimum 15-minute reservations with deposit required.
-                </p>
-                <button
-                  className="schedule-button"
-                  onClick={() => setShowSchedulingModal(true)}
-                >
-                  <FontAwesomeIcon icon={faCalendarAlt} />
-                  Schedule Robot Time
-                </button>
-              </div>
-            )}
+              {/* Scheduling Section */}
+              {robot && robot.robotId && (
+                <div className="robot-scheduling-section">
+                  <h2>
+                    <FontAwesomeIcon icon={faCalendarAlt} />
+                    Schedule Time
+                  </h2>
+                  <p className="scheduling-description">
+                    Reserve time slots for this robot in advance. Minimum 15-minute reservations with deposit required.
+                  </p>
+                  <button
+                    className="schedule-button"
+                    onClick={() => setShowSchedulingModal(true)}
+                  >
+                    <FontAwesomeIcon icon={faCalendarAlt} />
+                    Schedule Robot Time
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -476,25 +474,30 @@ export default function RobotDetail() {
             </div>
           )}
 
-          {/* Rating Form (only show if user has a qualifying session or is modulr.cloud employee) */}
-          {user && robot.robotId && (recentSessionId || user.email?.toLowerCase().endsWith('@modulr.cloud')) && (
-            <RobotRating
-              robotId={robot.robotId}
-              sessionId={recentSessionId}
-              onRatingSubmitted={() => {
-                setRatingsRefreshKey(prev => prev + 1);
-                // Reload robot to get updated averageRating
-                if (robotId) {
-                  client.models.Robot.list({
-                    filter: { robotId: { eq: robotId } },
-                  }).then(({ data: robots }) => {
-                    if (robots && robots.length > 0) {
-                      setRobot(robots[0]);
-                    }
-                  });
-                }
-              }}
-            />
+          {/* Rating Form - requires a completed session */}
+          {user && robot.robotId && (
+            recentSessionId || user.email?.toLowerCase().endsWith('@modulr.cloud') ? (
+              <RobotRating
+                robotId={robot.robotId}
+                sessionId={recentSessionId}
+                onRatingSubmitted={() => {
+                  setRatingsRefreshKey(prev => prev + 1);
+                  if (robotId) {
+                    client.models.Robot.list({
+                      filter: { robotId: { eq: robotId } },
+                    }).then(({ data: robots }) => {
+                      if (robots && robots.length > 0) {
+                        setRobot(robots[0]);
+                      }
+                    });
+                  }
+                }}
+              />
+            ) : (
+              <div className="rating-gate-message">
+                <p>Complete a session with this robot to leave a rating.</p>
+              </div>
+            )
           )}
 
           {/* Reviews Display */}

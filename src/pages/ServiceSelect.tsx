@@ -10,7 +10,6 @@ import { logger } from '../utils/logger';
 import { 
   faSearch, 
   faStar, 
-  faRobot,
   faArrowRight,
   faFilter
 } from '@fortawesome/free-solid-svg-icons';
@@ -18,7 +17,7 @@ import "./ServiceSelect.css";
 
 const client = generateClient<Schema>();
 
-const COMPANY_TYPES = ['All', 'Robot Provider', 'AI Provider', 'Data Service Provider', 'Compute Provider'];
+const COMPANY_TYPES = ['All', 'AI Provider', 'Data Service Provider', 'Compute Provider', 'Software Platform'];
 
 interface PartnerData {
   id: string;
@@ -49,6 +48,9 @@ export default function ServiceSelect() {
 
         const partnerData: PartnerData[] = [];
         for (const p of result.data || []) {
+          // Skip Robot Providers - they belong in the Robots tab
+          if (p.companyType === 'Robot Provider') continue;
+          
           const robots = await p.robots();
           partnerData.push({
             id: p.id!,
@@ -188,12 +190,6 @@ export default function ServiceSelect() {
                     <span className="meta-item">
                       <FontAwesomeIcon icon={faStar} />
                       {partner.averageRating.toFixed(1)}
-                    </span>
-                  )}
-                  {partner.companyType === 'Robot Provider' && partner.robotCount > 0 && (
-                    <span className="meta-item">
-                      <FontAwesomeIcon icon={faRobot} />
-                      {partner.robotCount} robots
                     </span>
                   )}
                 </div>
