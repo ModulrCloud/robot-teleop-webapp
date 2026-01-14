@@ -65,6 +65,14 @@ npm run dev
 
 App runs at [http://localhost:5173](http://localhost:5173)
 
+### Seed Data
+
+Seed credit tiers for purchases:
+
+```bash
+npx tsx scripts/seed-credit-tiers.ts
+```
+
 ### Test Cards (Stripe)
 
 For testing payments in sandbox mode:
