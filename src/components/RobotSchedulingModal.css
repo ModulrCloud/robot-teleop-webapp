@@ -7,15 +7,15 @@
   background: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(4px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: 1000;
-  padding: 2rem;
+  padding: 6rem 2rem 2rem 2rem;
 }
 
 .scheduling-modal {
-  background: #1a1a1a;
-  border: 1px solid rgba(255, 183, 0, 0.3);
+  background: #10131a;
+  border: 2px solid rgba(255, 183, 0, 0.3);
   border-radius: 16px;
   width: 100%;
   max-width: 1200px;
@@ -25,15 +25,17 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
-.modal-header {
+.scheduling-modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 1.5rem 2rem;
-  border-bottom: 1px solid rgba(255, 183, 0, 0.2);
+  background: #1a1d24;
+  border-bottom: 2px solid rgba(255, 183, 0, 0.3);
+  border-radius: 14px 14px 0 0;
 }
 
-.modal-header h2 {
+.scheduling-modal-header h2 {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -59,28 +61,28 @@
   color: #fff;
 }
 
-.modal-content {
+.scheduling-modal-content {
   padding: 2rem;
   overflow-y: auto;
   flex: 1;
 }
 
 /* Custom scrollbar styling for modal content to match app theme */
-.modal-content::-webkit-scrollbar {
+.scheduling-modal-content::-webkit-scrollbar {
   width: 8px;
 }
 
-.modal-content::-webkit-scrollbar-track {
+.scheduling-modal-content::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.05);
   border-radius: 4px;
 }
 
-.modal-content::-webkit-scrollbar-thumb {
+.scheduling-modal-content::-webkit-scrollbar-thumb {
   background: rgba(255, 193, 7, 0.5);
   border-radius: 4px;
 }
 
-.modal-content::-webkit-scrollbar-thumb:hover {
+.scheduling-modal-content::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 193, 7, 0.7);
 }
 
@@ -366,7 +368,7 @@
     border-radius: 0;
   }
 
-  .modal-content {
+  .scheduling-modal-content {
     padding: 1rem;
   }
 

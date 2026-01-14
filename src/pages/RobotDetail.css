@@ -97,16 +97,21 @@
 }
 
 .robot-info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.robot-info-boxes {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 2rem;
   align-items: start;
 }
 
-.robot-info-main {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+.robot-detail-meta,
+.robot-scheduling-section {
+  box-sizing: border-box;
 }
 
 .robot-detail-name {
@@ -193,7 +198,8 @@
 }
 
 .robot-reviews-section {
-  max-height: 600px;
+  min-height: 500px;
+  max-height: 900px;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -252,13 +258,29 @@
   font-weight: 400;
 }
 
+.rating-gate-message {
+  padding: 1rem 1.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.rating-gate-message p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.95rem;
+}
+
 /* Scheduling Section */
 .robot-scheduling-section {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 183, 0, 0.2);
   border-radius: 12px;
-  padding: 2rem;
-  margin-top: 2rem;
+  padding: 1.5rem;
+  margin-top: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .robot-scheduling-section h2 {
@@ -362,10 +384,10 @@
 
 /* Responsive: Stack scheduling below info on smaller screens */
 @media (max-width: 968px) {
-  .robot-info-section {
+  .robot-info-boxes {
     grid-template-columns: 1fr;
   }
-  
+
   .robot-detail-main {
     grid-template-columns: 1fr;
   }
@@ -395,4 +417,3 @@
     max-width: 100%;
   }
 }
-

@@ -303,6 +303,7 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
 
           {tiers.find(tier => tier.isEnterprise) && (() => {
             const enterpriseTier = tiers.find(tier => tier.isEnterprise)!;
+            const mailtoUrl = `mailto:${enterpriseTier.contactEmail}?subject=Enterprise%20Credit%20Package%20Inquiry`;
             return (
               <div className="enterprise-bar">
                 <div className="enterprise-content">
@@ -311,19 +312,21 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
                     <div className="enterprise-message">
                       <span>Please contact</span>
                       <a 
-                        href={`mailto:${enterpriseTier.contactEmail}?subject=Enterprise Credit Package Inquiry`}
+                        href={mailtoUrl}
                         className="enterprise-email"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         {enterpriseTier.contactEmail}
                       </a>
                     </div>
                   </div>
-                  <button
+                  <a
+                    href={mailtoUrl}
                     className="enterprise-button"
-                    onClick={() => handlePurchase(enterpriseTier.id)}
+                    onClick={(e) => e.stopPropagation()}
                   >
                     Contact Sales
-                  </button>
+                  </a>
                 </div>
               </div>
             );
@@ -336,6 +339,9 @@ export function PurchaseCreditsModal({ isOpen, onClose }: PurchaseCreditsModalPr
           <p className="modal-note">
             <FontAwesomeIcon icon={faCoins} />
             <span>Credits never expire. Use them for teleoperation sessions.</span>
+          </p>
+          <p className="modal-note payment-note">
+            <span>Secure checkout via Stripe. Pay with card or cryptocurrency.</span>
           </p>
         </div>
       </div>
