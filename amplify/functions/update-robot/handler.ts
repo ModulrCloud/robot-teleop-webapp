@@ -100,10 +100,19 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     expressionAttributeValues[':hourlyRateCredits'] = { N: hourlyRateCredits.toString() };
   }
 
-  if (imageUrl !== undefined && imageUrl !== null) {
-    updateExpressions.push('#imageUrl = :imageUrl');
-    expressionAttributeNames['#imageUrl'] = 'imageUrl';
-    expressionAttributeValues[':imageUrl'] = { S: imageUrl };
+  // Update imageUrl if provided
+  // If imageUrl is null, undefined, or empty string, remove it (use default robot image)
+  if (imageUrl !== undefined) {
+    if (imageUrl !== null && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
+      // Valid imageUrl - set it
+      updateExpressions.push('#imageUrl = :imageUrl');
+      expressionAttributeNames['#imageUrl'] = 'imageUrl';
+      expressionAttributeValues[':imageUrl'] = { S: imageUrl.trim() };
+    } else {
+      // null, undefined, or empty string - remove imageUrl attribute (will use default based on model)
+      updateExpressions.push('REMOVE #imageUrl');
+      expressionAttributeNames['#imageUrl'] = 'imageUrl';
+    }
   }
 
   if (city !== undefined && city !== null) {

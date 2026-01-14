@@ -655,10 +655,12 @@ const manageRobotAvailabilityCdkFunction = manageRobotAvailabilityFunction as Cd
 manageRobotAvailabilityCdkFunction.addEnvironment('ROBOT_AVAILABILITY_TABLE', tables.RobotAvailability.tableName);
 manageRobotAvailabilityCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 manageRobotAvailabilityCdkFunction.addEnvironment('ROBOT_RESERVATION_TABLE', tables.RobotReservation.tableName);
+manageRobotAvailabilityCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
 manageRobotAvailabilityCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 tables.RobotAvailability.grantReadWriteData(manageRobotAvailabilityFunction);
 tables.Robot.grantReadData(manageRobotAvailabilityFunction);
 tables.RobotReservation.grantReadData(manageRobotAvailabilityFunction);
+tables.Partner.grantReadData(manageRobotAvailabilityFunction);
 // Grant permission to query indexes
 manageRobotAvailabilityFunction.addToRolePolicy(new PolicyStatement({
   actions: ["dynamodb:Query"],
@@ -666,6 +668,7 @@ manageRobotAvailabilityFunction.addToRolePolicy(new PolicyStatement({
     `${tables.Robot.tableArn}/index/robotIdIndex`,
     `${tables.RobotAvailability.tableArn}/index/robotIdIndex`,
     `${tables.RobotReservation.tableArn}/index/robotIdIndex`,
+    `${tables.Partner.tableArn}/index/cognitoUsernameIndex`,
   ],
 }));
 // Grant Cognito permission to get user groups (for admin check)

@@ -11,7 +11,13 @@ const cognito = new CognitoIdentityProviderClient({});
 const ROBOT_AVAILABILITY_TABLE = process.env.ROBOT_AVAILABILITY_TABLE!;
 const ROBOT_TABLE = process.env.ROBOT_TABLE_NAME!;
 const ROBOT_RESERVATION_TABLE = process.env.ROBOT_RESERVATION_TABLE!;
+const PARTNER_TABLE = process.env.PARTNER_TABLE_NAME!;
 const USER_POOL_ID = process.env.USER_POOL_ID!;
+
+// Validate required environment variables
+if (!ROBOT_AVAILABILITY_TABLE || !ROBOT_TABLE || !ROBOT_RESERVATION_TABLE || !PARTNER_TABLE || !USER_POOL_ID) {
+  throw new Error('Missing required environment variables. Check: ROBOT_AVAILABILITY_TABLE, ROBOT_TABLE_NAME, ROBOT_RESERVATION_TABLE, PARTNER_TABLE_NAME, USER_POOL_ID');
+}
 
 export const handler: Schema["manageRobotAvailabilityLambda"]["functionHandler"] = async (event) => {
   console.log("Manage Robot Availability request:", JSON.stringify(event, null, 2));
@@ -26,14 +32,15 @@ export const handler: Schema["manageRobotAvailabilityLambda"]["functionHandler"]
     };
   }
 
-  const requesterId = identity.username;
+  const requesterUsername = identity.username;
   let isAdmin = false;
+  let requesterPartnerId: string | null = null;
 
   try {
     const userResponse = await cognito.send(
       new AdminGetUserCommand({
         UserPoolId: USER_POOL_ID,
-        Username: requesterId,
+        Username: requesterUsername,
       })
     );
     const groups = userResponse.UserAttributes?.find(attr => attr.Name === 'cognito:groups')?.Value;
@@ -43,6 +50,31 @@ export const handler: Schema["manageRobotAvailabilityLambda"]["functionHandler"]
   }
 
   try {
+    // Look up Partner record for the requester to get their Partner UUID
+    if (!isAdmin) {
+      const partnerQuery = await docClient.send(
+        new QueryCommand({
+          TableName: PARTNER_TABLE,
+          IndexName: 'cognitoUsernameIndex',
+          KeyConditionExpression: 'cognitoUsername = :username',
+          ExpressionAttributeValues: {
+            ':username': requesterUsername,
+          },
+          Limit: 1,
+        })
+      );
+
+      const partnerItem = partnerQuery.Items?.[0];
+      if (partnerItem && partnerItem.id) {
+        requesterPartnerId = partnerItem.id;
+      } else {
+        return {
+          statusCode: 403,
+          body: JSON.stringify({ error: "Unauthorized: No Partner record found for this user" }),
+        };
+      }
+    }
+
     // Get robot to verify ownership
     const robotQuery = await docClient.send(
       new QueryCommand({
@@ -65,7 +97,8 @@ export const handler: Schema["manageRobotAvailabilityLambda"]["functionHandler"]
     }
 
     // Check authorization (partner owns robot or is admin)
-    if (!isAdmin && robot.partnerId !== requesterId) {
+    // robot.partnerId is a Partner UUID, so we compare it with requesterPartnerId
+    if (!isAdmin && robot.partnerId !== requesterPartnerId) {
       return {
         statusCode: 403,
         body: JSON.stringify({ error: "Unauthorized: You can only manage availability for your own robots" }),
@@ -102,12 +135,16 @@ export const handler: Schema["manageRobotAvailabilityLambda"]["functionHandler"]
       }
 
       // Check for conflicting reservations
+      // Note: 'status' is a reserved keyword in DynamoDB, so we use ExpressionAttributeNames
       const reservationsQuery = await docClient.send(
         new QueryCommand({
           TableName: ROBOT_RESERVATION_TABLE,
           IndexName: 'robotIdIndex',
           KeyConditionExpression: 'robotId = :robotId',
-          FilterExpression: 'status IN (:pending, :confirmed, :active) AND ((startTime <= :start AND endTime > :start) OR (startTime < :end AND endTime >= :end) OR (startTime >= :start AND endTime <= :end))',
+          FilterExpression: '#status IN (:pending, :confirmed, :active) AND ((startTime <= :start AND endTime > :start) OR (startTime < :end AND endTime >= :end) OR (startTime >= :start AND endTime <= :end))',
+          ExpressionAttributeNames: {
+            '#status': 'status',
+          },
           ExpressionAttributeValues: {
             ':robotId': robotId,
             ':start': start.toISOString(),
@@ -177,7 +214,8 @@ export const handler: Schema["manageRobotAvailabilityLambda"]["functionHandler"]
       }
 
       // Verify ownership
-      if (!isAdmin && existingAvailability.Item.partnerId !== requesterId) {
+      // existingAvailability.Item.partnerId is a Partner UUID, so we compare it with requesterPartnerId
+      if (!isAdmin && existingAvailability.Item.partnerId !== requesterPartnerId) {
         return {
           statusCode: 403,
           body: JSON.stringify({ error: "Unauthorized: You can only update your own availability blocks" }),
@@ -254,7 +292,8 @@ export const handler: Schema["manageRobotAvailabilityLambda"]["functionHandler"]
       }
 
       // Verify ownership
-      if (!isAdmin && existingAvailability.Item.partnerId !== requesterId) {
+      // existingAvailability.Item.partnerId is a Partner UUID, so we compare it with requesterPartnerId
+      if (!isAdmin && existingAvailability.Item.partnerId !== requesterPartnerId) {
         return {
           statusCode: 403,
           body: JSON.stringify({ error: "Unauthorized: You can only delete your own availability blocks" }),

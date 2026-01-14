@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faChevronLeft, faChevronRight } from '@fortawesome/free-solid-svg-icons';
+import { faChevronLeft, faChevronRight, faCircleExclamation } from '@fortawesome/free-solid-svg-icons';
 import { logger } from '../utils/logger';
 import { parseRecurrencePattern, expandRecurrencePattern } from '../utils/recurrence';
+import { useToast } from '../hooks/useToast';
 import './RobotSchedulingCalendar.css';
 
 const client = generateClient<Schema>();
@@ -39,20 +40,20 @@ export function RobotSchedulingCalendar({
   const [dragStart, setDragStart] = useState<{ day: Date; hour: number; minute: number } | null>(null);
   const [dragEnd, setDragEnd] = useState<{ day: Date; hour: number; minute: number } | null>(null);
   const calendarGridRef = useRef<HTMLDivElement>(null);
+  const { toast, showToast } = useToast();
 
-  // Get start of week (Sunday)
+  // Get start of week (Sunday) - create clean date to avoid timezone/rollover issues
   const getWeekStart = (date: Date) => {
     const d = new Date(date);
     const day = d.getDay();
     const diff = d.getDate() - day;
-    return new Date(d.setDate(diff));
+    return new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
   };
 
   const weekStart = getWeekStart(currentWeek);
+  // Create clean dates for each day of the week to avoid timezone/rollover issues
   const weekDays = Array.from({ length: 7 }, (_, i) => {
-    const day = new Date(weekStart);
-    day.setDate(day.getDate() + i);
-    return day;
+    return new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + i, 0, 0, 0, 0);
   });
 
   // Load reservations and availability blocks for the current week
@@ -125,9 +126,18 @@ export function RobotSchedulingCalendar({
     setCurrentWeek(new Date());
   };
 
+  // Check if a time is in the past (less than 1 hour from now)
+  const isTimeInPast = (day: Date, hour: number, minute: number) => {
+    const now = new Date();
+    const minAdvanceDate = new Date(now);
+    minAdvanceDate.setHours(minAdvanceDate.getHours() + 1);
+    const slotTime = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour, minute, 0, 0);
+    return slotTime < minAdvanceDate;
+  };
+
   const isTimeBlocked = (day: Date, hour: number, minute: number) => {
-    const time = new Date(day);
-    time.setHours(hour, minute, 0, 0);
+    // Create a clean date at midnight first to avoid timezone/rollover issues
+    const time = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour, minute, 0, 0);
     const slotEnd = new Date(time.getTime() + 15 * 60000); // 15 minutes later
 
     // Check reservations - check if this 15-minute slot overlaps with any reservation
@@ -180,8 +190,8 @@ export function RobotSchedulingCalendar({
   };
 
   const handleTimeMouseDown = (day: Date, hour: number, minute: number) => {
-    const clickedTime = new Date(day);
-    clickedTime.setHours(hour, minute, 0, 0);
+    // Create a clean date at midnight first to avoid timezone/rollover issues
+    const clickedTime = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour, minute, 0, 0);
 
     // Check if time is available - don't allow selection of blocked/reserved times
     const blocked = isTimeBlocked(day, hour, minute);
@@ -213,9 +223,6 @@ export function RobotSchedulingCalendar({
 
   const handleTimeMouseEnter = (day: Date, hour: number, minute: number) => {
     if (isDragging && dragStart) {
-      const currentTime = new Date(day);
-      currentTime.setHours(hour, minute, 0, 0);
-      
       // Check if this time is valid for selection
       const blocked = isTimeBlocked(day, hour, minute);
       if (!blocked) {
@@ -236,12 +243,10 @@ export function RobotSchedulingCalendar({
     if (!isDragging || !dragStart || !dragEnd) return;
 
     const handleGlobalMouseUp = () => {
-      // Calculate the actual start and end times
-      const startTime = new Date(dragStart.day);
-      startTime.setHours(dragStart.hour, dragStart.minute, 0, 0);
+      // Calculate the actual start and end times - create clean dates to avoid timezone/rollover issues
+      const startTime = new Date(dragStart.day.getFullYear(), dragStart.day.getMonth(), dragStart.day.getDate(), dragStart.hour, dragStart.minute, 0, 0);
       
-      const endTime = new Date(dragEnd.day);
-      endTime.setHours(dragEnd.hour, dragEnd.minute, 0, 0);
+      const endTime = new Date(dragEnd.day.getFullYear(), dragEnd.day.getMonth(), dragEnd.day.getDate(), dragEnd.hour, dragEnd.minute, 0, 0);
       
       // Ensure start is before end
       let finalStart = startTime;
@@ -291,8 +296,8 @@ export function RobotSchedulingCalendar({
   const handleTimeClick = (day: Date, hour: number, minute: number) => {
     // If not dragging, use the old click behavior
     if (!isDragging) {
-      const clickedTime = new Date(day);
-      clickedTime.setHours(hour, minute, 0, 0);
+      // Create a clean date at midnight first to avoid timezone/rollover issues
+      const clickedTime = new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour, minute, 0, 0);
 
       // Check if time is available
       const blocked = isTimeBlocked(day, hour, minute);
@@ -313,6 +318,7 @@ export function RobotSchedulingCalendar({
       minAdvanceDate.setHours(minAdvanceDate.getHours() + 1);
       
       if (clickedTime < minAdvanceDate) {
+        showToast('Cannot schedule times in the past. Please select a time at least 1 hour from now.', 'warning');
         return;
       }
 
@@ -394,20 +400,19 @@ export function RobotSchedulingCalendar({
               <div className="day-time-slots">
                 {timeSlots.map((slot, slotIndex) => {
                   const blocked = isTimeBlocked(day, slot.hour, slot.minute);
-                  const slotTime = new Date(day);
-                  slotTime.setHours(slot.hour, slot.minute, 0, 0);
+                  const isPast = isTimeInPast(day, slot.hour, slot.minute);
+                  // Create a clean date at midnight first to avoid timezone/rollover issues
+                  const slotTime = new Date(day.getFullYear(), day.getMonth(), day.getDate(), slot.hour, slot.minute, 0, 0);
                   
                   // Check if selected (either from props or from drag)
                   let isSelected = false;
                   if (selectedStartTime && selectedEndTime) {
                     isSelected = slotTime >= selectedStartTime && slotTime < selectedEndTime;
                   } else if (isDragging && dragStart && dragEnd) {
-                    // Show drag selection
-                    const dragStartTime = new Date(dragStart.day);
-                    dragStartTime.setHours(dragStart.hour, dragStart.minute, 0, 0);
+                    // Show drag selection - create clean dates to avoid timezone/rollover issues
+                    const dragStartTime = new Date(dragStart.day.getFullYear(), dragStart.day.getMonth(), dragStart.day.getDate(), dragStart.hour, dragStart.minute, 0, 0);
                     
-                    const dragEndTime = new Date(dragEnd.day);
-                    dragEndTime.setHours(dragEnd.hour, dragEnd.minute, 0, 0);
+                    const dragEndTime = new Date(dragEnd.day.getFullYear(), dragEnd.day.getMonth(), dragEnd.day.getDate(), dragEnd.hour, dragEnd.minute, 0, 0);
                     
                     const minTime = dragStartTime < dragEndTime ? dragStartTime : dragEndTime;
                     const maxTime = dragStartTime > dragEndTime ? dragStartTime : dragEndTime;
@@ -421,25 +426,46 @@ export function RobotSchedulingCalendar({
                     hoveredTime.hour === slot.hour &&
                     hoveredTime.minute === slot.minute;
 
+                  // Build title tooltip
+                  let titleText = `${formatTime(slot.hour, slot.minute)} - Available`;
+                  if (blocked) {
+                    titleText = blocked.type === 'reservation' ? 'Reserved' : 'Blocked by partner';
+                  } else if (isPast) {
+                    titleText = `${formatTime(slot.hour, slot.minute)} - Past time (cannot schedule)`;
+                  }
+
                   return (
                     <div
                       key={slotIndex}
-                      className={`time-cell quarter-cell ${blocked ? 'blocked' : ''} ${isSelected ? 'selected' : ''} ${isHovered && !isDragging ? 'hovered' : ''} ${isDragging ? 'dragging' : ''}`}
+                      className={`time-cell quarter-cell ${blocked ? 'blocked' : ''} ${isPast ? 'past-time' : ''} ${isSelected ? 'selected' : ''} ${isHovered && !isDragging ? 'hovered' : ''} ${isDragging ? 'dragging' : ''}`}
                       onMouseDown={(e) => {
                         e.preventDefault();
-                        handleTimeMouseDown(day, slot.hour, slot.minute);
+                        if (!isPast) {
+                          handleTimeMouseDown(day, slot.hour, slot.minute);
+                        }
                       }}
-                      onMouseEnter={() => handleTimeMouseEnter(day, slot.hour, slot.minute)}
+                      onMouseEnter={() => {
+                        if (!isPast) {
+                          handleTimeMouseEnter(day, slot.hour, slot.minute);
+                        }
+                      }}
                       onMouseLeave={() => {
                         if (!isDragging) {
                           setHoveredTime(null);
                         }
                       }}
-                      onClick={() => handleTimeClick(day, slot.hour, slot.minute)}
-                      title={blocked ? (blocked.type === 'reservation' ? 'Reserved' : 'Blocked by partner') : `${formatTime(slot.hour, slot.minute)} - Available`}
+                      onClick={() => {
+                        if (!isPast) {
+                          handleTimeClick(day, slot.hour, slot.minute);
+                        }
+                      }}
+                      title={titleText}
                     >
                       {blocked && (
                         <div className={`block-indicator ${blocked.type === 'reservation' ? 'reserved' : 'blocked'}`} />
+                      )}
+                      {isPast && !blocked && (
+                        <div className="block-indicator past-time" />
                       )}
                     </div>
                   );
@@ -500,6 +526,14 @@ export function RobotSchedulingCalendar({
           </div>
         </div>
       </div>
+
+      {/* Toast Notification */}
+      {toast.visible && (
+        <div className={`toast-notification ${toast.type}`}>
+          <FontAwesomeIcon icon={faCircleExclamation} />
+          <span>{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }

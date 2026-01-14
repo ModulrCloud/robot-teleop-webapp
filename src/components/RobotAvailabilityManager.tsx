@@ -53,13 +53,23 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
     isRecurring: false,
   });
 
+  // Helper function to format date for datetime-local input (in local timezone, not UTC)
+  const formatLocalDateTime = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
   // Handle time selection from calendar
   const handleTimeSelect = (startTime: Date, endTime: Date) => {
     setSelectedStartTime(startTime);
     setSelectedEndTime(endTime);
     setFormData({
-      startTime: startTime.toISOString().slice(0, 16),
-      endTime: endTime.toISOString().slice(0, 16),
+      startTime: formatLocalDateTime(startTime),
+      endTime: formatLocalDateTime(endTime),
       reason: '',
       isRecurring: false,
     });
@@ -147,7 +157,10 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
           await loadAvailabilityBlocks();
         } else {
           const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
-          setError(body.error || 'Failed to save availability block');
+          // Show detailed error message if available
+          const errorMessage = body.error || 'Failed to save availability block';
+          const errorDetails = body.details ? ` ${body.details}` : '';
+          setError(errorMessage + errorDetails);
         }
       } else if (result.errors) {
         setError(result.errors[0]?.message || 'Failed to save availability block');

@@ -18,7 +18,24 @@ export default function EndSession() {
   const navigate = useNavigate();
   const location = useLocation();
   
-  const state = location.state as LocationState | null;
+  // Try to get state from React Router first, then fall back to sessionStorage
+  // This supports both button clicks (React Router state) and Escape key (sessionStorage)
+  const routerState = location.state as LocationState | null;
+  const sessionStorageState = (() => {
+    try {
+      const stored = sessionStorage.getItem('endSessionState');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        sessionStorage.removeItem('endSessionState'); // Clean up after reading
+        return parsed;
+      }
+    } catch (e) {
+      logger.error('[END_SESSION] Failed to parse sessionStorage state:', e);
+    }
+    return null;
+  })();
+  
+  const state = routerState || sessionStorageState;
   const clientDuration = state?.duration ?? 0;
   const sessionId = state?.sessionId;
   

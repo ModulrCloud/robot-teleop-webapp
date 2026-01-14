@@ -13,8 +13,9 @@ import { RobotRating } from '../components/RobotRating';
 import { ReviewsDisplay } from '../components/ReviewsDisplay';
 import { RobotSchedulingModal } from '../components/RobotSchedulingModal';
 import { UserReservations } from '../components/UserReservations';
+import { InputBindingsModal } from '../components/InputBindingsModal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar, faCalendarAlt } from '@fortawesome/free-solid-svg-icons';
+import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar, faCalendarAlt, faKeyboard, faCog, faTools } from '@fortawesome/free-solid-svg-icons';
 import "./RobotDetail.css";
 
 const client = generateClient<Schema>();
@@ -63,6 +64,7 @@ export default function RobotDetail() {
   const [ratingsRefreshKey, setRatingsRefreshKey] = useState(0);
   const [showSchedulingModal, setShowSchedulingModal] = useState(false);
   const [reservationsRefreshKey, setReservationsRefreshKey] = useState(0);
+  const [showInputBindingsModal, setShowInputBindingsModal] = useState(false);
 
   // Load platform settings and user currency
   useEffect(() => {
@@ -435,23 +437,39 @@ export default function RobotDetail() {
               </div>
             </div>
 
-            {/* Scheduling Section */}
+            {/* Configure Section */}
             {robot && robot.robotId && (
               <div className="robot-scheduling-section">
                 <h2>
-                  <FontAwesomeIcon icon={faCalendarAlt} />
-                  Schedule Time
+                  <FontAwesomeIcon icon={faCog} />
+                  Configure
                 </h2>
                 <p className="scheduling-description">
-                  Reserve time slots for this robot in advance. Minimum 15-minute reservations with deposit required.
+                  Manage scheduling, input bindings, and services for this robot.
                 </p>
-                <button
-                  className="schedule-button"
-                  onClick={() => setShowSchedulingModal(true)}
-                >
-                  <FontAwesomeIcon icon={faCalendarAlt} />
-                  Schedule Robot Time
-                </button>
+                <div className="configure-buttons">
+                  <button
+                    className="schedule-button"
+                    onClick={() => setShowSchedulingModal(true)}
+                  >
+                    <FontAwesomeIcon icon={faCalendarAlt} />
+                    Schedule Robot Time
+                  </button>
+                  <button
+                    className="schedule-button"
+                    onClick={() => setShowInputBindingsModal(true)}
+                  >
+                    <FontAwesomeIcon icon={faKeyboard} />
+                    Input Bindings
+                  </button>
+                  <button
+                    className="schedule-button"
+                    onClick={() => navigate(`/services?robotId=${robot.robotId}`)}
+                  >
+                    <FontAwesomeIcon icon={faTools} />
+                    Services
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -545,6 +563,12 @@ export default function RobotDetail() {
           setInsufficientFundsError(null);
           refreshCredits();
         }}
+      />
+
+      <InputBindingsModal
+        isOpen={showInputBindingsModal}
+        onClose={() => setShowInputBindingsModal(false)}
+        robotId={robot?.robotId || ''}
       />
     </div>
   );

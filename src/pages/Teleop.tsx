@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Joystick, { type JoystickChange } from "../components/Joystick";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { useWebRTC } from "../hooks/useWebRTC";
 import { useGamepad } from "../hooks/useGamepad";
+import { useKeyboardMovement } from "../hooks/useKeyboardMovement";
 import { useUserCredits } from "../hooks/useUserCredits";
 import { useToast } from "../hooks/useToast";
 import { generateClient } from 'aws-amplify/api';
@@ -21,8 +22,13 @@ import {
   faLock,
   faUserLock,
   faCoins,
-  faExclamationTriangle
-} from '@fortawesome/free-solid-svg-icons';
+      faExclamationTriangle,
+      faKeyboard,
+      faMapMarkerAlt,
+      faCog
+    } from '@fortawesome/free-solid-svg-icons';
+import { InputBindingsModal } from '../components/InputBindingsModal';
+import { useCustomCommandBindings } from '../hooks/useCustomCommandBindings';
 import "./Teleop.css";
 import { usePageTitle } from "../hooks/usePageTitle";
 import outputs from '../../amplify_outputs.json';
@@ -40,7 +46,7 @@ export default function Teleop() {
   const [sessionTime, setSessionTime] = useState(0);
   const [isJoystickActive, setIsJoystickActive] = useState(false);
   const [currentSpeed, setCurrentSpeed] = useState({ forward: 0, turn: 0 });
-  const [controlMode, setControlMode] = useState<'joystick' | 'gamepad'>('joystick');
+  const [controlMode, setControlMode] = useState<'joystick' | 'gamepad' | 'keyboard' | 'location'>('joystick');
   const [gamepadDetected, setGamepadDetected] = useState(false);
   const sendIntervalMs = 100; // 10 Hz
   const { credits, refreshCredits } = useUserCredits();
@@ -48,6 +54,11 @@ export default function Teleop() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [insufficientFunds, setInsufficientFunds] = useState(false);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
+  const [showInputBindingsModal, setShowInputBindingsModal] = useState(false);
+  const [clientBindings, setClientBindings] = useState<{
+    keyboard: Record<string, string>;
+    gamepad: Record<string, string>;
+  }>({ keyboard: {}, gamepad: {} });
   const lastDeductionTimeRef = useRef<number | null>(null);
   
   // Low credits warning state
@@ -72,6 +83,23 @@ export default function Teleop() {
     wsUrl,
     robotId,
   });
+
+  // Set up custom command bindings
+  useCustomCommandBindings({
+    robotId,
+    enabled: status.connected,
+    clientKeyboardBindings: clientBindings.keyboard,
+    clientGamepadBindings: clientBindings.gamepad,
+    onCommandExecute: (result) => {
+      showToast(
+        `Command executed: ${result.commandName} (${result.inputMethod})`,
+        'success',
+        3000
+      );
+    },
+  });
+
+  // Status changes are handled by the useWebRTC hook - no need to log here
 
   useEffect(() => {
     connect();
@@ -349,6 +377,53 @@ export default function Teleop() {
     }
   }, [status.videoStream]);
 
+  const handleEndSession = useCallback(() => {
+    stopRobot();
+    disconnect();
+    // Store state in sessionStorage for EndSession page to read
+    sessionStorage.setItem('endSessionState', JSON.stringify({
+      duration: sessionTime,
+      sessionId: status.sessionId
+    }));
+    // Use window.location.href for reliable navigation from keyboard event handlers
+    // React Router's navigate() doesn't always work reliably when called from keyboard events
+    // This causes a full page reload, but ensures navigation always works
+    window.location.href = '/endsession';
+  }, [stopRobot, disconnect, sessionTime, status.sessionId]);
+
+  // Memoize keyboard input handler to prevent infinite re-renders
+  const handleKeyboardInput = useCallback((input: { forward: number; turn: number }) => {
+    const forward = input.forward;
+    const turn = input.turn;
+    setCurrentSpeed({ forward, turn });
+    setIsJoystickActive(forward !== 0 || turn !== 0);
+    
+    // Only send commands when actually connected
+    if (!status.connected || controlMode !== 'keyboard') return;
+    const now = Date.now();
+    if (now - lastSendTimeRef.current < sendIntervalMs) return;
+    lastSendTimeRef.current = now;
+    sendCommand(forward, turn);
+  }, [status.connected, controlMode, sendCommand]);
+
+  // Memoize keyboard stop handler to prevent infinite re-renders
+  const handleKeyboardStop = useCallback(() => {
+    setIsJoystickActive(false);
+    setCurrentSpeed({ forward: 0, turn: 0 });
+    if (status.connected) stopRobot();
+  }, [status.connected, stopRobot]);
+
+  // Keyboard movement (WASD)
+  // Note: enabled is always true for keyboard mode to allow visual feedback even when not connected
+  const { pressedKeys } = useKeyboardMovement({
+    enabled: true, // Always enabled for visual feedback (movement only sent when connected)
+    controlMode,
+    escWorksInAllModes: true, // ESC works in all modes
+    onInput: handleKeyboardInput,
+    onStop: handleKeyboardStop,
+    onEndSession: handleEndSession,
+  });
+
   const handleJoystickChange = (change: JoystickChange) => {
     if (!status.connected || controlMode !== 'joystick') return;
     
@@ -373,12 +448,6 @@ export default function Teleop() {
     if (status.connected) stopRobot();
   };
 
-  const handleEndSession = () => {
-    stopRobot();
-    disconnect();
-    // Pass both client-side duration (for display) and sessionId (for server-side billing verification)
-    navigate('/endsession', { state: { duration: sessionTime, sessionId: status.sessionId } });
-  };
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -519,10 +588,10 @@ export default function Teleop() {
         </div>
       )}
 
-      {status.error && (
+      {(status.error || (!status.connected && !status.connecting)) && (
         <div className="teleop-error-alert">
           <div className="error-content">
-            <strong>Connection Error:</strong> {status.error}
+            <strong>Connection Error:</strong> {status.error || 'Unable to connect to robot'}
             <div className="error-details">Check that WebSocket server is running at: {wsUrl}</div>
           </div>
           <button 
@@ -582,6 +651,13 @@ export default function Teleop() {
                 Joystick
               </button>
               <button
+                className={`mode-btn ${controlMode === 'keyboard' ? 'active' : ''}`}
+                onClick={() => setControlMode('keyboard')}
+              >
+                <FontAwesomeIcon icon={faKeyboard} />
+                Keyboard
+              </button>
+              <button
                 className={`mode-btn ${controlMode === 'gamepad' ? 'active' : ''}`}
                 onClick={() => {
                   setControlMode('gamepad');
@@ -594,13 +670,25 @@ export default function Teleop() {
                 <FontAwesomeIcon icon={faGamepad} />
                 Gamepad
               </button>
+              <button
+                className={`mode-btn ${controlMode === 'location' ? 'active' : ''}`}
+                onClick={() => setControlMode('location')}
+              >
+                <FontAwesomeIcon icon={faMapMarkerAlt} />
+                Location
+              </button>
             </div>
           </div>
 
           <div className="control-status">
             <div className="status-row">
               <span className="status-label">Mode:</span>
-              <span className="status-value">{controlMode === 'joystick' ? 'Virtual Joystick' : 'Gamepad'}</span>
+              <span className="status-value">
+                {controlMode === 'joystick' ? 'Virtual Joystick' : 
+                 controlMode === 'keyboard' ? 'Keyboard (WASD)' : 
+                 controlMode === 'location' ? 'Location' :
+                 'Gamepad'}
+              </span>
             </div>
             <div className="status-row">
               <span className="status-label">Status:</span>
@@ -651,6 +739,62 @@ export default function Teleop() {
                 size={220}
                 knobSize={90}
               />
+            </div>
+          ) : controlMode === 'keyboard' ? (
+            <div className="keyboard-controls-hint">
+              <div className="keyboard-hint-content">
+                <h3>Keyboard Controls</h3>
+                <div className="keyboard-layout">
+                  <div className="key-row">
+                    <div className={`key-hint ${pressedKeys.includes('KeyW') ? 'pressed' : ''}`}>
+                      <kbd>W</kbd>
+                      <span>Forward</span>
+                    </div>
+                  </div>
+                  <div className="key-row">
+                    <div className={`key-hint ${pressedKeys.includes('KeyA') ? 'pressed' : ''}`}>
+                      <kbd>A</kbd>
+                      <span>Turn Left</span>
+                    </div>
+                    <div className={`key-hint ${pressedKeys.includes('KeyS') ? 'pressed' : ''}`}>
+                      <kbd>S</kbd>
+                      <span>Backward</span>
+                    </div>
+                    <div className={`key-hint ${pressedKeys.includes('KeyD') ? 'pressed' : ''}`}>
+                      <kbd>D</kbd>
+                      <span>Turn Right</span>
+                    </div>
+                  </div>
+                  <div className="key-row">
+                    <div className={`key-hint ${pressedKeys.includes('Escape') ? 'pressed' : ''}`}>
+                      <kbd>ESC</kbd>
+                      <span>End Session</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : controlMode === 'location' ? (
+            <div className="location-controls-hint">
+              <div className="location-hint-content">
+                <FontAwesomeIcon icon={faMapMarkerAlt} className="location-icon" size="4x" />
+                <h3>Location Control</h3>
+                <p className="coming-soon-message">Coming Soon</p>
+                <p className="location-description">
+                  Navigate your robot to specific locations using map-based controls.
+                </p>
+              </div>
+            </div>
+          ) : controlMode === 'location' ? (
+            <div className="location-controls-hint">
+              <div className="location-hint-content">
+                <FontAwesomeIcon icon={faMapMarkerAlt} className="location-icon" size="4x" />
+                <h3>Location Control</h3>
+                <p className="coming-soon-message">Coming Soon</p>
+                <p className="location-description">
+                  Navigate your robot to specific locations using map-based controls.
+                </p>
+              </div>
             </div>
           ) : (
             <div className="gamepad-wrapper">
@@ -703,6 +847,24 @@ export default function Teleop() {
             End Session
           </button>
         </div>
+
+        {/* Settings Card */}
+        <div className="teleop-settings-card">
+          <div className="settings-header">
+            <FontAwesomeIcon icon={faCog} />
+            <h3>Settings</h3>
+          </div>
+          <div className="settings-content">
+            <button
+              type="button"
+              className="settings-button"
+              onClick={() => setShowInputBindingsModal(true)}
+            >
+              <FontAwesomeIcon icon={faKeyboard} />
+              <span>Input Bindings</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <PurchaseCreditsModal
@@ -734,6 +896,20 @@ export default function Teleop() {
           <span>{toast.message}</span>
         </div>
       )}
+
+      {/* Input Bindings Modal */}
+      <InputBindingsModal
+        isOpen={showInputBindingsModal}
+        onClose={() => setShowInputBindingsModal(false)}
+        robotId={robotId}
+        clientBindings={clientBindings}
+        onSaveClientBindings={(bindings) => {
+          setClientBindings(bindings);
+          // In real implementation, save to backend/localStorage
+          // For now, just update state
+          showToast('success', 'Input bindings saved successfully!');
+        }}
+      />
     </div>
   );
 }
