@@ -4,7 +4,7 @@
 
 ### Prerequisites
 
-- Node.js (v18+) and npm
+- Node.js 22.x and npm 10.x
 - AWS Account
 - AWS CLI configured
 - Google OAuth 2.0 credentials
@@ -16,6 +16,9 @@ AWS Console → Your User → Security Credentials → Access Keys → Create Ac
 ### Installation
 
 ```bash
+# Use the repo's pinned Node version (optional but recommended)
+nvm use
+
 # Install dependencies
 npm install
 
@@ -62,6 +65,8 @@ In a separate terminal, start the dev server:
 ```bash
 npm run dev
 ```
+
+Tip: Use `npm ci` in CI to avoid lockfile drift.
 
 App runs at [http://localhost:5173](http://localhost:5173)
 
