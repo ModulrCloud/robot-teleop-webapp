@@ -380,25 +380,19 @@ export default function Teleop() {
   const handleEndSession = useCallback(() => {
     stopRobot();
     disconnect();
-    // Store state in sessionStorage for EndSession page to read
     sessionStorage.setItem('endSessionState', JSON.stringify({
       duration: sessionTime,
       sessionId: status.sessionId
     }));
-    // Use window.location.href for reliable navigation from keyboard event handlers
-    // React Router's navigate() doesn't always work reliably when called from keyboard events
-    // This causes a full page reload, but ensures navigation always works
     window.location.href = '/endsession';
   }, [stopRobot, disconnect, sessionTime, status.sessionId]);
 
-  // Memoize keyboard input handler to prevent infinite re-renders
   const handleKeyboardInput = useCallback((input: { forward: number; turn: number }) => {
     const forward = input.forward;
     const turn = input.turn;
     setCurrentSpeed({ forward, turn });
     setIsJoystickActive(forward !== 0 || turn !== 0);
     
-    // Only send commands when actually connected
     if (!status.connected || controlMode !== 'keyboard') return;
     const now = Date.now();
     if (now - lastSendTimeRef.current < sendIntervalMs) return;
@@ -406,19 +400,16 @@ export default function Teleop() {
     sendCommand(forward, turn);
   }, [status.connected, controlMode, sendCommand]);
 
-  // Memoize keyboard stop handler to prevent infinite re-renders
   const handleKeyboardStop = useCallback(() => {
     setIsJoystickActive(false);
     setCurrentSpeed({ forward: 0, turn: 0 });
     if (status.connected) stopRobot();
   }, [status.connected, stopRobot]);
 
-  // Keyboard movement (WASD)
-  // Note: enabled is always true for keyboard mode to allow visual feedback even when not connected
   const { pressedKeys } = useKeyboardMovement({
-    enabled: true, // Always enabled for visual feedback (movement only sent when connected)
+    enabled: true,
     controlMode,
-    escWorksInAllModes: true, // ESC works in all modes
+    escWorksInAllModes: true,
     onInput: handleKeyboardInput,
     onStop: handleKeyboardStop,
     onEndSession: handleEndSession,
@@ -429,12 +420,10 @@ export default function Teleop() {
     
     setIsJoystickActive(true);
     
-    // Update visual feedback immediately for responsive feel
     const forward = change.y * 0.5;
     const turn = change.x * -1.0;
     setCurrentSpeed({ forward, turn });
     
-    // Throttle network sends to avoid overwhelming the connection
     const now = Date.now();
     if (now - lastSendTimeRef.current >= sendIntervalMs) {
       lastSendTimeRef.current = now;

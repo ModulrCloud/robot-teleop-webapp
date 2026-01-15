@@ -1,16 +1,16 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCalendarAlt } from '@fortawesome/free-solid-svg-icons';
 import './DateTimePicker.css';
 
 interface DatePickerProps {
-  value: string; // YYYY-MM-DD format or empty
+  value: string;
   onChange: (value: string) => void;
   label: string;
   required?: boolean;
   disabled?: boolean;
-  min?: string; // YYYY-MM-DD format
-  max?: string; // YYYY-MM-DD format
+  min?: string;
+  max?: string;
 }
 
 export function DatePicker({
@@ -29,10 +29,9 @@ export function DatePicker({
   const pickerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLDivElement>(null);
 
-  // Parse initial value
   useEffect(() => {
     if (value) {
-      const date = new Date(value + 'T00:00:00'); // Add time to avoid timezone issues
+      const date = new Date(`${value}T00:00:00`);
       if (!isNaN(date.getTime())) {
         setSelectedDate(date);
         setCurrentMonth(date);
@@ -42,19 +41,17 @@ export function DatePicker({
     }
   }, [value]);
 
-  // Calculate if picker should open upward
   useEffect(() => {
     if (isOpen && inputRef.current) {
       const inputRect = inputRef.current.getBoundingClientRect();
       const spaceBelow = window.innerHeight - inputRect.bottom;
       const spaceAbove = inputRect.top;
-      const pickerHeight = 350; // Approximate height of the date picker modal
+      const pickerHeight = 350;
 
       setOpenUpward(spaceBelow < pickerHeight && spaceAbove > spaceBelow);
     }
   }, [isOpen]);
 
-  // Close picker when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
@@ -79,9 +76,18 @@ export function DatePicker({
     });
   };
 
+  const minDate = useMemo(() => (min ? new Date(`${min}T00:00:00`) : null), [min]);
+  const maxDate = useMemo(() => (max ? new Date(`${max}T00:00:00`) : null), [max]);
+
+  const isDateDisabled = (date: Date) => {
+    if (minDate && date < minDate) return true;
+    if (maxDate && date > maxDate) return true;
+    return false;
+  };
+
   const handleDateSelect = (date: Date) => {
+    if (isDateDisabled(date)) return;
     setSelectedDate(date);
-    // Format as YYYY-MM-DD
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
@@ -95,7 +101,6 @@ export function DatePicker({
     setIsOpen(false);
   };
 
-  // Calendar helpers
   const getDaysInMonth = (date: Date) => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   };
@@ -152,7 +157,6 @@ export function DatePicker({
       {isOpen && (
         <div className={`datetime-picker-modal ${openUpward ? 'open-upward' : ''}`}>
           <div className="picker-content" style={{ minHeight: 'auto' }}>
-            {/* Date Picker */}
             <div className="date-picker-section" style={{ flex: '1', minWidth: '320px' }}>
               <div className="date-picker-header">
                 <button type="button" className="nav-button" onClick={() => navigateMonth('prev')}>
@@ -181,17 +185,7 @@ export function DatePicker({
                       date.getMonth() === selectedDate.getMonth() &&
                       date.getFullYear() === selectedDate.getFullYear();
                     const isToday = date.toDateString() === new Date().toDateString();
-                    
-                    // Check min/max constraints
-                    let isDisabled = false;
-                    if (min) {
-                      const minDate = new Date(min + 'T00:00:00');
-                      if (date < minDate) isDisabled = true;
-                    }
-                    if (max) {
-                      const maxDate = new Date(max + 'T00:00:00');
-                      if (date > maxDate) isDisabled = true;
-                    }
+                    const isDisabled = isDateDisabled(date);
                     
                     return (
                       <div

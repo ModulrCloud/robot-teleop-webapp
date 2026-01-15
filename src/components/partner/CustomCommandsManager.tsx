@@ -26,7 +26,6 @@ export function CustomCommandsManager({ robotId, onSave }: CustomCommandsManager
   const [editingCommand, setEditingCommand] = useState<CustomCommand | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
-  // Load commands for this robot
   useEffect(() => {
     if (robotId) {
       const mockCommands = getMockCommandsForRobot(robotId);
@@ -74,7 +73,6 @@ export function CustomCommandsManager({ robotId, onSave }: CustomCommandsManager
   const handleSaveCommand = () => {
     if (!editingCommand) return;
 
-    // Basic validation
     if (!editingCommand.name.trim()) {
       alert('Please enter a command name');
       return;
@@ -88,18 +86,11 @@ export function CustomCommandsManager({ robotId, onSave }: CustomCommandsManager
       return;
     }
 
-    if (isCreating) {
-      setCommands([...commands, editingCommand]);
-    } else {
-      const updated = commands.map(cmd =>
-        cmd.id === editingCommand.id ? editingCommand : cmd
-      );
-      setCommands(updated);
-    }
-
-    onSave?.(isCreating ? [...commands, editingCommand] : commands.map(cmd =>
-      cmd.id === editingCommand.id ? editingCommand : cmd
-    ));
+    const nextCommands = isCreating
+      ? [...commands, editingCommand]
+      : commands.map(cmd => (cmd.id === editingCommand.id ? editingCommand : cmd));
+    setCommands(nextCommands);
+    onSave?.(nextCommands);
 
     setEditingCommand(null);
     setIsCreating(false);

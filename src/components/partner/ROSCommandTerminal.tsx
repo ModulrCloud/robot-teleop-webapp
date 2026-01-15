@@ -13,21 +13,13 @@ import { parseROS2Command, convertToCustomCommandFormat } from '../../utils/rosC
 import './ROSCommandTerminal.css';
 
 export interface ROSCommandTerminalProps {
-  /** Current ROS command JSON string */
   value: string;
-  /** Callback when command changes */
   onChange: (command: string) => void;
-  /** Placeholder text */
   placeholder?: string;
-  /** Disabled state */
   disabled?: boolean;
-  /** Number of rows */
   rows?: number;
 }
 
-/**
- * Example ROS commands for quick reference
- */
 const EXAMPLE_COMMANDS = [
   {
     name: 'Simple String Command',
@@ -148,36 +140,31 @@ export function ROSCommandTerminal({
 }: ROSCommandTerminalProps) {
   const [validationError, setValidationError] = useState<string | null>(null);
   const [showExamples, setShowExamples] = useState(false);
-  const [preview, setPreview] = useState<any>(null);
+  const [preview, setPreview] = useState<unknown>(null);
   const [isROS2Command, setIsROS2Command] = useState(false);
   const [convertedCommand, setConvertedCommand] = useState<string | null>(null);
-  const [_showConverted, setShowConverted] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const hasPreview = preview !== null;
 
-  // Validate and parse input (either ROS2 CLI or JSON)
   useEffect(() => {
     if (!value || value.trim() === '') {
       setValidationError(null);
       setPreview(null);
       setIsROS2Command(false);
       setConvertedCommand(null);
-      setShowConverted(false);
       return;
     }
 
-    // First, check if it's a ROS2 CLI command
     const ros2Parsed = parseROS2Command(value);
     if (ros2Parsed) {
       setIsROS2Command(true);
       
       if (ros2Parsed.isValid) {
-        // Convert to our format
         try {
           const converted = convertToCustomCommandFormat(ros2Parsed);
           setConvertedCommand(converted);
           setValidationError(null);
           
-          // Parse the converted JSON for preview
           const parsed = JSON.parse(converted);
           setPreview(parsed);
         } catch (error) {
@@ -193,23 +180,20 @@ export function ROSCommandTerminal({
       return;
     }
 
-    // Not a ROS2 command, try parsing as JSON
     setIsROS2Command(false);
     setConvertedCommand(null);
     
     try {
       const parsed = JSON.parse(value);
       
-      // Validate it has the expected structure
       if (typeof parsed !== 'object' || parsed === null) {
         setValidationError('Command must be a JSON object');
         setPreview(null);
         return;
       }
 
-      // Check for required fields (for CustomCommand)
-      if (parsed.type === 'CustomCommand') {
-        if (!parsed.rosTopic || !parsed.rosMessageType || !parsed.payload) {
+    if (parsed.type === 'CustomCommand') {
+      if (!parsed.rosTopic || !parsed.rosMessageType || parsed.payload === undefined) {
           setValidationError('CustomCommand requires: type, rosTopic, rosMessageType, and payload');
           setPreview(null);
           return;
@@ -221,9 +205,7 @@ export function ROSCommandTerminal({
           return;
         }
       } else if (!parsed.type) {
-        // If no type specified, assume it's a CustomCommand and warn
         setValidationError('Warning: Missing "type" field. Should be "CustomCommand" or "CustomCommandGroup"');
-        // Don't return - allow preview to show
       }
 
       setValidationError(null);
@@ -239,8 +221,6 @@ export function ROSCommandTerminal({
     }
   }, [value]);
 
-  // Don't auto-replace - keep the original ROS command, just show preview
-
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChange(e.target.value);
   };
@@ -248,13 +228,12 @@ export function ROSCommandTerminal({
   const handleExampleSelect = (example: typeof EXAMPLE_COMMANDS[0]) => {
     onChange(example.command);
     setShowExamples(false);
-    // Focus the textarea after a brief delay
     setTimeout(() => {
       textareaRef.current?.focus();
     }, 100);
   };
 
-  const formatPreview = (obj: any, indent = 0): string => {
+  const formatPreview = (obj: unknown, indent = 0): string => {
     if (obj === null) return 'null';
     if (typeof obj === 'string') return `"${obj}"`;
     if (typeof obj === 'number' || typeof obj === 'boolean') return String(obj);
@@ -262,7 +241,7 @@ export function ROSCommandTerminal({
       return `[\n${obj.map(item => '  '.repeat(indent + 1) + formatPreview(item, indent + 1)).join(',\n')}\n${'  '.repeat(indent)}]`;
     }
     if (typeof obj === 'object') {
-      const entries = Object.entries(obj);
+      const entries = Object.entries(obj as Record<string, unknown>);
       if (entries.length === 0) return '{}';
       return `{\n${entries.map(([key, val]) => 
         '  '.repeat(indent + 1) + `"${key}": ${formatPreview(val, indent + 1)}`
@@ -354,7 +333,7 @@ export function ROSCommandTerminal({
         </div>
       )}
 
-      {!isROS2Command && preview && !validationError && (
+      {!isROS2Command && hasPreview && !validationError && (
         <div className="validation-success">
           <FontAwesomeIcon icon={faCheckCircle} />
           <span>Valid JSON</span>
@@ -373,7 +352,7 @@ export function ROSCommandTerminal({
         </div>
       )}
 
-      {!isROS2Command && preview && !validationError && (
+      {!isROS2Command && hasPreview && !validationError && (
         <div className="command-preview">
           <div className="preview-header">
             <FontAwesomeIcon icon={faInfoCircle} />

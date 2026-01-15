@@ -147,18 +147,18 @@ export function InputBindingsModal({
   return (
     <div className="input-bindings-modal-overlay" onClick={onClose}>
       <div className="input-bindings-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
+        <div className="input-bindings-modal-header">
           <h2>
             <FontAwesomeIcon icon={faKeyboard} />
             <FontAwesomeIcon icon={faGamepad} />
             Input Bindings
           </h2>
-          <button className="close-button" onClick={onClose}>
+          <button className="input-bindings-close-button" onClick={onClose}>
             <FontAwesomeIcon icon={faTimes} />
           </button>
         </div>
 
-        <div className="modal-content">
+        <div className="input-bindings-modal-content">
           {/* Tabs */}
           <div className="bindings-tabs">
             <button

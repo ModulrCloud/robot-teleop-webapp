@@ -19,20 +19,25 @@ import {
 import './InputBindingPicker.css';
 
 export interface InputBindingPickerProps {
-  /** Current keyboard binding (if any) */
   keyboardBinding?: KeyboardBinding;
-  /** Current gamepad binding (if any) */
   gamepadBinding?: GamepadBinding;
-  /** Callback when binding changes */
   onBindingChange: (keyboard?: KeyboardBinding, gamepad?: GamepadBinding) => void;
-  /** Existing bindings to check for conflicts */
   existingKeyboardBindings?: Set<KeyboardBinding>;
   existingGamepadBindings?: Set<GamepadBinding>;
-  /** Whether to allow both keyboard and gamepad bindings */
   allowBoth?: boolean;
-  /** Disabled state */
   disabled?: boolean;
 }
+
+const MODIFIER_ONLY_KEYS = new Set([
+  'ShiftLeft',
+  'ShiftRight',
+  'ControlLeft',
+  'ControlRight',
+  'AltLeft',
+  'AltRight',
+  'MetaLeft',
+  'MetaRight',
+]);
 
 export function InputBindingPicker({
   keyboardBinding,
@@ -40,7 +45,7 @@ export function InputBindingPicker({
   onBindingChange,
   existingKeyboardBindings = new Set(),
   existingGamepadBindings = new Set(),
-  allowBoth: _allowBoth = true,
+  allowBoth = true,
   disabled = false,
 }: InputBindingPickerProps) {
   const [activeTab, setActiveTab] = useState<InputMethod>('keyboard');
@@ -51,7 +56,6 @@ export function InputBindingPicker({
   const gamepadPollRef = useRef<number | null>(null);
   const previousButtonStatesRef = useRef<boolean[]>([]);
 
-  // Keyboard event handlers
   useEffect(() => {
     if (!isListening || activeTab !== 'keyboard' || disabled) return;
 
@@ -59,14 +63,12 @@ export function InputBindingPicker({
       e.preventDefault();
       e.stopPropagation();
 
-      // Handle Escape key to cancel
       if (e.key === 'Escape' || e.code === 'Escape') {
         setIsListening(false);
         setConflict(null);
         return;
       }
 
-      // Build binding string with modifiers
       const modifiers: string[] = [];
       if (e.ctrlKey) modifiers.push('Ctrl');
       if (e.shiftKey) modifiers.push('Shift');
@@ -74,13 +76,15 @@ export function InputBindingPicker({
       if (e.metaKey) modifiers.push('Meta');
 
       const key = e.code || e.key;
+      if (MODIFIER_ONLY_KEYS.has(key)) {
+        return;
+      }
       const binding: KeyboardBinding = modifiers.length > 0
         ? `${modifiers.join('+')}+${key}`
         : key;
 
       setLastPressedKey(binding);
 
-      // Check for conflicts
       if (RESERVED_KEYBOARD_KEYS.has(key)) {
         setConflict({ type: 'keyboard', binding: `${key} is reserved for system controls` });
         return;
@@ -91,7 +95,6 @@ export function InputBindingPicker({
         return;
       }
 
-      // Valid binding
       setConflict(null);
       setIsListening(false);
       onBindingChange(binding, gamepadBinding);
@@ -103,7 +106,6 @@ export function InputBindingPicker({
     };
   }, [isListening, activeTab, keyboardBinding, gamepadBinding, existingKeyboardBindings, onBindingChange, disabled]);
 
-  // Gamepad polling
   useEffect(() => {
     if (!isListening || activeTab !== 'gamepad' || disabled) return;
 
@@ -116,24 +118,20 @@ export function InputBindingPicker({
         return;
       }
 
-      // Initialize previous states if needed
       if (previousButtonStatesRef.current.length === 0) {
         previousButtonStatesRef.current = new Array(gamepad.buttons.length).fill(false);
       }
 
-      // Check for button presses (state change from false to true)
       for (let i = 0; i < gamepad.buttons.length; i++) {
         const isPressed = gamepad.buttons[i].pressed;
         const wasPressed = previousButtonStatesRef.current[i];
 
         if (isPressed && !wasPressed) {
-          // Button was just pressed
           const button = i as GamepadButton;
           const binding = GAMEPAD_BUTTON_BINDINGS[button] || `Button${i}`;
 
           setLastPressedButton(button);
 
-          // Check for conflicts
           if (RESERVED_GAMEPAD_BUTTONS.has(binding)) {
             setConflict({ type: 'gamepad', binding: `${GAMEPAD_BUTTON_NAMES[button]} is reserved` });
             previousButtonStatesRef.current[i] = isPressed;
@@ -148,7 +146,6 @@ export function InputBindingPicker({
             return;
           }
 
-          // Valid binding
           setConflict(null);
           setIsListening(false);
           onBindingChange(keyboardBinding, binding);
@@ -172,6 +169,12 @@ export function InputBindingPicker({
       previousButtonStatesRef.current = [];
     };
   }, [isListening, activeTab, keyboardBinding, gamepadBinding, existingGamepadBindings, onBindingChange, disabled]);
+
+  useEffect(() => {
+    if (!allowBoth && activeTab !== 'keyboard') {
+      setActiveTab('keyboard');
+    }
+  }, [allowBoth, activeTab]);
 
   const handleStartListening = useCallback(() => {
     setConflict(null);
@@ -208,37 +211,37 @@ export function InputBindingPicker({
 
   return (
     <div className="input-binding-picker">
-      {/* Tabs */}
-      <div className="binding-tabs">
-        <button
-          type="button"
-          className={`tab ${activeTab === 'keyboard' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveTab('keyboard');
-            setIsListening(false);
-            setConflict(null);
-          }}
-          disabled={disabled}
-        >
-          <FontAwesomeIcon icon={faKeyboard} />
-          <span>Keyboard</span>
-        </button>
-        <button
-          type="button"
-          className={`tab ${activeTab === 'gamepad' ? 'active' : ''}`}
-          onClick={() => {
-            setActiveTab('gamepad');
-            setIsListening(false);
-            setConflict(null);
-          }}
-          disabled={disabled}
-        >
-          <FontAwesomeIcon icon={faGamepad} />
-          <span>Gamepad</span>
-        </button>
-      </div>
+      {allowBoth && (
+        <div className="binding-tabs">
+          <button
+            type="button"
+            className={`tab ${activeTab === 'keyboard' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('keyboard');
+              setIsListening(false);
+              setConflict(null);
+            }}
+            disabled={disabled}
+          >
+            <FontAwesomeIcon icon={faKeyboard} />
+            <span>Keyboard</span>
+          </button>
+          <button
+            type="button"
+            className={`tab ${activeTab === 'gamepad' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('gamepad');
+              setIsListening(false);
+              setConflict(null);
+            }}
+            disabled={disabled}
+          >
+            <FontAwesomeIcon icon={faGamepad} />
+            <span>Gamepad</span>
+          </button>
+        </div>
+      )}
 
-      {/* Keyboard Picker */}
       {activeTab === 'keyboard' && (
         <div className="binding-picker-content">
           <div className="current-binding">
@@ -309,8 +312,7 @@ export function InputBindingPicker({
         </div>
       )}
 
-      {/* Gamepad Picker */}
-      {activeTab === 'gamepad' && (
+      {allowBoth && activeTab === 'gamepad' && (
         <div className="binding-picker-content">
           <div className="current-binding">
             <label>Current Binding:</label>
@@ -373,7 +375,6 @@ export function InputBindingPicker({
             </div>
           )}
 
-          {/* Gamepad Visual Layout */}
           <div className="gamepad-layout">
             <div className="gamepad-visual">
               <div className="gamepad-top">

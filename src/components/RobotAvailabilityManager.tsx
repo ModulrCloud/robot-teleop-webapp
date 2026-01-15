@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -47,7 +47,6 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
   const [selectedEndTime, setSelectedEndTime] = useState<Date | null>(null);
   const [calendarRefreshTrigger, setCalendarRefreshTrigger] = useState(0);
 
-  // Form state
   const [formData, setFormData] = useState<AvailabilityBlock>({
     startTime: '',
     endTime: '',
@@ -55,7 +54,15 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
     isRecurring: false,
   });
 
-  // Helper function to format date for datetime-local input (in local timezone, not UTC)
+  const parsedRecurrencePattern = useMemo(() => {
+    if (!formData.recurrencePattern) return null;
+    try {
+      return JSON.parse(formData.recurrencePattern);
+    } catch {
+      return null;
+    }
+  }, [formData.recurrencePattern]);
+
   const formatLocalDateTime = (date: Date): string => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -65,7 +72,6 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
 
-  // Handle time selection from calendar
   const handleTimeSelect = (startTime: Date, endTime: Date) => {
     setSelectedStartTime(startTime);
     setSelectedEndTime(endTime);
@@ -78,7 +84,6 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
     setShowBlockModal(true);
   };
 
-  // Load availability blocks
   useEffect(() => {
     loadAvailabilityBlocks();
   }, [robotId]);
@@ -120,8 +125,6 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
       return;
     }
 
-    // DateTimePicker returns local time in format "YYYY-MM-DDTHH:mm"
-    // new Date() interprets this as local time, which is what we want
     const start = new Date(formData.startTime);
     const end = new Date(formData.endTime);
 
@@ -172,15 +175,12 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
           setSelectedEndTime(null);
           setShowBlockModal(false);
           
-          // Add a small delay to ensure DynamoDB consistency, then reload
           setTimeout(async () => {
             await loadAvailabilityBlocks();
-            // Trigger calendar refresh
             setCalendarRefreshTrigger(prev => prev + 1);
           }, 500);
         } else {
           const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
-          // Show detailed error message if available
           const errorMessage = body.error || 'Failed to save unavailability block';
           const errorDetails = body.details ? ` ${body.details}` : '';
           logger.error('Error from Lambda:', errorMessage + errorDetails);
@@ -238,7 +238,6 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
         if (parsed.statusCode === 200) {
           setSuccess('Unavailability block deleted successfully');
           await loadAvailabilityBlocks();
-          // Trigger calendar refresh
           setCalendarRefreshTrigger(prev => prev + 1);
         } else {
           const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
@@ -309,7 +308,6 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
         </div>
       )}
 
-      {/* Calendar for visual selection */}
       <div className="availability-calendar-section">
         <h4>Select Time to Block</h4>
         <p className="calendar-help-text">
@@ -327,22 +325,15 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
         />
       </div>
 
-      {/* Modal for block details */}
       {showBlockModal && (
-        <div className="block-modal-overlay" onClick={() => setShowBlockModal(false)}>
+        <div className="block-modal-overlay" onClick={handleCancel}>
           <div className="block-modal" onClick={(e) => e.stopPropagation()}>
             <div className="block-modal-header">
               <h3>{editingId ? 'Edit Unavailability Block' : 'Create Unavailability Block'}</h3>
               <button
                 type="button"
                 className="modal-close-btn"
-                onClick={() => {
-                  setShowBlockModal(false);
-                  setSelectedStartTime(null);
-                  setSelectedEndTime(null);
-                  setFormData({ startTime: '', endTime: '', reason: '', isRecurring: false });
-                  setEditingId(null);
-                }}
+                onClick={handleCancel}
               >
                 <FontAwesomeIcon icon={faTimes} />
               </button>
@@ -353,10 +344,8 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
             value={formData.startTime}
             onChange={(value) => {
               setFormData(prev => ({ ...prev, startTime: value }));
-              // Update selectedStartTime for calendar display - create clean local date
               if (value) {
                 const date = new Date(value);
-                // Create a clean local date to match calendar's date creation
                 const cleanDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), date.getMinutes(), 0, 0);
                 setSelectedStartTime(cleanDate);
               } else {
@@ -374,10 +363,8 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
             value={formData.endTime}
             onChange={(value) => {
               setFormData(prev => ({ ...prev, endTime: value }));
-              // Update selectedEndTime for calendar display - create clean local date
               if (value) {
                 const date = new Date(value);
-                // Create a clean local date to match calendar's date creation
                 const cleanDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), date.getMinutes(), 0, 0);
                 setSelectedEndTime(cleanDate);
               } else {
@@ -428,19 +415,19 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
                     <label key={index} className="day-checkbox">
                       <input
                         type="checkbox"
-                        checked={formData.recurrencePattern ? JSON.parse(formData.recurrencePattern).daysOfWeek?.includes(index) : false}
+                        checked={parsedRecurrencePattern?.daysOfWeek?.includes(index) ?? false}
                         onChange={(e) => {
-                          const currentPattern = formData.recurrencePattern ? JSON.parse(formData.recurrencePattern) : { type: 'weekly', daysOfWeek: [] };
-                          const daysOfWeek = currentPattern.daysOfWeek || [];
+                          const currentPattern = parsedRecurrencePattern ?? { type: 'weekly', daysOfWeek: [] };
+                          const currentDays: number[] = Array.isArray(currentPattern.daysOfWeek) ? currentPattern.daysOfWeek : [];
+                          const daySet = new Set(currentDays);
                           if (e.target.checked) {
-                            daysOfWeek.push(index);
+                            daySet.add(index);
                           } else {
-                            const idx = daysOfWeek.indexOf(index);
-                            if (idx > -1) daysOfWeek.splice(idx, 1);
+                            daySet.delete(index);
                           }
                           setFormData(prev => ({
                             ...prev,
-                            recurrencePattern: JSON.stringify({ type: 'weekly', daysOfWeek: daysOfWeek.sort() }),
+                            recurrencePattern: JSON.stringify({ type: 'weekly', daysOfWeek: Array.from(daySet).sort() }),
                           }));
                         }}
                         disabled={isCreating}
@@ -452,9 +439,9 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
               </div>
               <div className="form-group">
                 <DatePicker
-                  value={formData.recurrencePattern ? (JSON.parse(formData.recurrencePattern).endDate || '') : ''}
+                  value={parsedRecurrencePattern?.endDate || ''}
                   onChange={(value) => {
-                    const currentPattern = formData.recurrencePattern ? JSON.parse(formData.recurrencePattern) : { type: 'weekly', daysOfWeek: [] };
+                    const currentPattern = parsedRecurrencePattern ?? { type: 'weekly', daysOfWeek: [] };
                     setFormData(prev => ({
                       ...prev,
                       recurrencePattern: JSON.stringify({ ...currentPattern, endDate: value || undefined }),
@@ -492,7 +479,6 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
                 preventDefault: () => {},
               } as React.FormEvent;
               await handleSubmit(fakeEvent);
-              // handleSubmit already handles closing the modal and reloading on success
             }}
             className="btn-primary"
             disabled={isCreating || !formData.startTime || !formData.endTime}

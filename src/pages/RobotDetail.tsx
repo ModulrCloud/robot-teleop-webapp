@@ -63,6 +63,8 @@ export default function RobotDetail() {
   const [showSchedulingModal, setShowSchedulingModal] = useState(false);
   const [reservationsRefreshKey, setReservationsRefreshKey] = useState(0);
   const [showInputBindingsModal, setShowInputBindingsModal] = useState(false);
+  const [showPricingDetails, setShowPricingDetails] = useState(false);
+  const servicesSubtotalCredits = 0;
 
   // Load platform settings and user currency
   useEffect(() => {
@@ -460,12 +462,63 @@ export default function RobotDetail() {
                     Input Bindings
                   </button>
                   <button
-                    className="schedule-button"
-                    onClick={() => navigate(`/services?robotId=${robot.robotId}`)}
+                    className="schedule-button schedule-button-disabled"
+                    disabled
+                    aria-disabled="true"
+                    title="Services selection is coming soon"
                   >
                     <FontAwesomeIcon icon={faTools} />
-                    Services
+                    Services (coming soon)
                   </button>
+                </div>
+                <div className="services-placeholder">
+                  Services can be added here before teleop starts. We'll show pricing in advance.
+                </div>
+                <div className="cost-summary compact">
+                  <div className="cost-summary-row total">
+                    <span>Estimated cost per hour</span>
+                    <span>
+                      {formatCreditsAsCurrencySync(
+                        (robot.hourlyRateCredits || 0) + servicesSubtotalCredits,
+                        userCurrency as any,
+                        exchangeRates || undefined
+                      )}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="cost-summary-toggle"
+                    onClick={() => setShowPricingDetails((prev) => !prev)}
+                  >
+                    {showPricingDetails ? 'Hide details' : 'View details'}
+                  </button>
+                  {showPricingDetails && (
+                    <>
+                      <div className="cost-summary-row">
+                        <span>Robot rate</span>
+                        <span>
+                          {formatCreditsAsCurrencySync(
+                            robot.hourlyRateCredits || 0,
+                            userCurrency as any,
+                            exchangeRates || undefined
+                          )}
+                        </span>
+                      </div>
+                      <div className="cost-summary-row">
+                        <span>Services subtotal</span>
+                        <span>
+                          {formatCreditsAsCurrencySync(
+                            servicesSubtotalCredits,
+                            userCurrency as any,
+                            exchangeRates || undefined
+                          )}
+                        </span>
+                      </div>
+                      <p className="cost-summary-note">
+                        Services pricing will appear here before teleop starts.
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             )}
