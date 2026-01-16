@@ -40,7 +40,9 @@ const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
 // Types
 // ---------------------------------
 
-type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong';
+type LegacyMessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong';
+type ProtocolMessageType = 'signalling.offer' | 'signalling.answer' | 'signalling.ice_candidate' | 'signalling.connected' | 'signalling.disconnected' | 'signalling.capabilities' | 'signalling.error' | 'agent.ping' | 'agent.pong';
+type MessageType = LegacyMessageType | ProtocolMessageType;
 type Target = 'robot' | 'client';
 
 // ---------------------------------
@@ -172,48 +174,51 @@ async function verifyCognitoJWT(token: string | null | undefined): Promise<Claim
 
 /**
  * Extracts and normalizes the message type from a raw message.
- * Maps legacy 'candidate' to 'ice-candidate' for backward compatibility.
+ * Supports both legacy format (offer, answer, candidate) and new protocol (signalling.offer, etc.)
  */
 function extractMessageType(raw: RawMessage): MessageType | undefined {
   if (typeof raw.type !== 'string') return undefined;
   
   const t = raw.type.toLowerCase();
-  if (t === 'candidate') {
-    return 'ice-candidate'; // map legacy name to internal name
-  } else if (
-    t === 'offer' ||
-    t === 'answer' ||
-    t === 'register' ||
-    t === 'takeover' ||
-    t === 'ice-candidate' ||
-    t === 'monitor'
-  ) {
-    return t as MessageType;
-  }
+  
+  // New protocol format (v0.0)
+  if (t === 'signalling.offer') return 'signalling.offer';
+  if (t === 'signalling.answer') return 'signalling.answer';
+  if (t === 'signalling.ice_candidate') return 'signalling.ice_candidate';
+  if (t === 'signalling.connected') return 'signalling.connected';
+  if (t === 'signalling.disconnected') return 'signalling.disconnected';
+  if (t === 'signalling.capabilities') return 'signalling.capabilities';
+  if (t === 'signalling.error') return 'signalling.error';
+  if (t === 'agent.ping') return 'agent.ping';
+  if (t === 'agent.pong') return 'agent.pong';
+  
+  // Legacy format
+  if (t === 'candidate') return 'ice-candidate';
+  if (t === 'offer') return 'offer';
+  if (t === 'answer') return 'answer';
+  if (t === 'register') return 'register';
+  if (t === 'takeover') return 'takeover';
+  if (t === 'ice-candidate') return 'ice-candidate';
+  if (t === 'monitor') return 'monitor';
+  if (t === 'ping') return 'ping';
+  if (t === 'pong') return 'pong';
   
   return undefined;
 }
 
 /**
  * Extracts the robotId from a raw message.
- * 
- * Strategy:
- * 1. Explicit 'robotId' field (preferred)
- * 2. For 'register' messages: 'from' field contains robotId
- * 3. For WebRTC messages (offer/answer/candidate):
- *    - Check if 'to' field starts with "robot-" (client-to-robot)
- *    - Check if 'from' field starts with "robot-" (robot-to-client)
- *    - Fallback to 'to' or 'from' if they exist
- * 
- * Examples:
- * - Rust agent: { type: "register", from: "robot-id" }
- * - Rust agent: { type: "offer", from: "robot-id", to: "client-id", sdp: "..." }
- * - Browser: { type: "offer", to: "robot-id", from: "browser1", sdp: "..." }
+ * Supports both legacy and new protocol formats.
  */
 function extractRobotId(raw: RawMessage, type: MessageType | undefined): string | undefined {
   // Preferred: explicit 'robotId' field
   if (typeof raw.robotId === 'string' && raw.robotId.trim().length > 0) {
     return raw.robotId.trim();
+  }
+
+  // New protocol format: connectionId in payload is the robotId
+  if (type?.startsWith('signalling.') && raw.payload?.connectionId) {
+    return String(raw.payload.connectionId).trim();
   }
 
   // Registration messages always come from robots
@@ -224,30 +229,16 @@ function extractRobotId(raw: RawMessage, type: MessageType | undefined): string 
     return undefined;
   }
 
-  // For WebRTC signaling messages, determine direction and extract robotId
-  if (type === 'offer' || type === 'answer' || type === 'candidate' || type === 'ice-candidate') {
+  // For legacy WebRTC signaling messages
+  const legacyTypes = ['offer', 'answer', 'candidate', 'ice-candidate'];
+  if (type && legacyTypes.includes(type)) {
     const toField = typeof raw.to === 'string' ? raw.to.trim() : '';
     const fromField = typeof raw.from === 'string' ? raw.from.trim() : '';
     
-    // Check 'to' field first - if it starts with "robot-", it's likely the robotId (client-to-robot)
-    if (toField.startsWith('robot-')) {
-      return toField;
-    }
-    
-    // If 'from' starts with "robot-", it's likely the robotId (robot-to-client)
-    if (fromField.startsWith('robot-')) {
-      return fromField;
-    }
-    
-    // Fallback: use 'to' if it exists (for client-to-robot messages where robotId doesn't start with "robot-")
-    if (toField.length > 0) {
-      return toField;
-    }
-    
-    // Last resort: use 'from' (for robot-to-client messages where robotId doesn't start with "robot-")
-    if (fromField.length > 0) {
-      return fromField;
-    }
+    if (toField.startsWith('robot-')) return toField;
+    if (fromField.startsWith('robot-')) return fromField;
+    if (toField.length > 0) return toField;
+    if (fromField.length > 0) return fromField;
   }
 
   return undefined;
@@ -255,31 +246,23 @@ function extractRobotId(raw: RawMessage, type: MessageType | undefined): string 
 
 /**
  * Extracts and combines payload data from a raw message.
- * 
- * Combines:
- * - Explicit 'payload' object (preferred)
- * - Top-level 'sdp' field (for WebRTC SDP offers/answers)
- * - Top-level 'candidate' field (for ICE candidates)
- * 
- * This supports both formats:
- * - Payload-wrapped: { payload: { sdp: "...", candidate: "..." } }
- * - Top-level: { sdp: "...", candidate: "..." }
+ * Supports both legacy top-level fields and new protocol payload format.
  */
 function extractPayload(raw: RawMessage): Record<string, unknown> | undefined {
   let payload: Record<string, unknown> | undefined;
   
-  // Start with explicit payload object if present
+  // Start with explicit payload object if present (new protocol format)
   if (raw.payload && typeof raw.payload === 'object') {
     payload = { ...raw.payload };
   }
 
-  // Fold in top-level 'sdp' field (Mike's WebRTC format)
+  // Fold in top-level 'sdp' field (legacy format)
   if (raw.sdp) {
     payload = payload ?? {};
     payload.sdp = raw.sdp;
   }
 
-  // Fold in top-level 'candidate' field (Mike's WebRTC format)
+  // Fold in top-level 'candidate' field (legacy format)
   if (raw.candidate) {
     payload = payload ?? {};
     payload.candidate = raw.candidate;
@@ -1582,7 +1565,7 @@ async function handleSignal(
     // Only check for 'offer' messages (initial WebRTC connection attempts)
     // This prevents a second client from establishing control of a robot
     // that already has an active teleoperation session
-    if (type === 'offer') {
+    if (type === 'offer' || type === 'signalling.offer') {
       const currentUserIdentifier = userEmailOrUsername || claims.sub!;
       const sessionLock = await checkSessionLock(robotId, currentUserIdentifier);
       if (sessionLock) {
@@ -1687,10 +1670,15 @@ async function handleSignal(
   // Extract sdp and candidate from payload to top level (for agent/browser compatibility)
   const payload = msg.payload ?? {};
   
-  // Convert internal 'ice-candidate' type to 'candidate' for Rust agent compatibility
-  // Rust agent expects: { type: "candidate", ... }
-  // Browser also expects: type: "candidate" (see useWebRTC.ts line 215)
-  const outboundType = type === 'ice-candidate' ? 'candidate' : type;
+  // Determine outbound type: preserve new protocol types, convert legacy ice-candidate to candidate
+  let outboundType: string;
+  if (type?.startsWith('signalling.') || type?.startsWith('agent.')) {
+    outboundType = type; // Keep new protocol types as-is
+  } else if (type === 'ice-candidate') {
+    outboundType = 'candidate'; // Legacy conversion
+  } else {
+    outboundType = type || 'unknown';
+  }
   
   const outbound: Record<string, unknown> = {
     type: outboundType,
@@ -1756,7 +1744,7 @@ async function handleSignal(
         messageType: type,
       });
       
-      if (type === 'offer' && target === 'robot' && claims?.sub) {
+      if ((type === 'offer' || type === 'signalling.offer') && target === 'robot' && claims?.sub) {
         let userEmail: string | undefined;
         let username: string | undefined;
         try {
@@ -2007,7 +1995,13 @@ export async function handler(
     return handleTakeover(claims, msg);
   }
 
-  if (type === 'offer' || type === 'answer' || type === 'ice-candidate') {
+  // Handle both legacy and new protocol signalling messages
+  const signallingTypes = [
+    'offer', 'answer', 'ice-candidate',
+    'signalling.offer', 'signalling.answer', 'signalling.ice_candidate',
+    'signalling.connected', 'signalling.disconnected'
+  ];
+  if (signallingTypes.includes(type)) {
     console.log('[ROUTING_TO_HANDLE_SIGNAL]', {
       type,
       robotId: msg.robotId,
@@ -2016,35 +2010,45 @@ export async function handler(
     return handleSignal(claims, event, msg);
   }
 
-  // Handle pong responses to keepalive pings
-  if (type === 'pong') {
-    // Access timestamp from raw message body if present
+  // Handle pong responses to keepalive pings (both legacy and new protocol)
+  if (type === 'pong' || type === 'agent.pong') {
     const rawBody = event.body ? JSON.parse(event.body) : {};
     console.log('[PONG_RECEIVED]', {
       connectionId: event.requestContext.connectionId,
       robotId: msg.robotId,
       userId: claims?.sub,
-      timestamp: rawBody.timestamp || 'not provided',
+      timestamp: rawBody.timestamp || rawBody.payload?.timestamp || 'not provided',
+      protocol: type === 'agent.pong' ? 'v0.0' : 'legacy',
     });
-    // Pong messages don't need special handling - just acknowledge receipt
-    // The connection stays alive from receiving/sending the message
     return successResponse({ type: 'pong-acknowledged' });
   }
 
-  // Handle ping messages (though these are typically sent via Management API, not through signaling)
-  if (type === 'ping') {
+  // Handle ping messages (both legacy and new protocol)
+  if (type === 'ping' || type === 'agent.ping') {
+    const rawBody = event.body ? JSON.parse(event.body) : {};
     console.log('[PING_RECEIVED]', {
       connectionId: event.requestContext.connectionId,
       robotId: msg.robotId,
       userId: claims?.sub,
+      protocol: type === 'agent.ping' ? 'v0.0' : 'legacy',
     });
-    // If a client/robot sends a ping, respond with pong
+    // Respond with matching protocol format
     try {
-      await postTo(connectionId, {
-        type: 'pong',
-        timestamp: Date.now(),
-        keepalive: true,
-      });
+      if (type === 'agent.ping') {
+        await postTo(connectionId, {
+          type: 'agent.pong',
+          version: '0.0',
+          id: `pong-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          correlationId: rawBody.id,
+        });
+      } else {
+        await postTo(connectionId, {
+          type: 'pong',
+          timestamp: Date.now(),
+          keepalive: true,
+        });
+      }
     } catch (err) {
       console.warn('[PING_RESPONSE_ERROR]', {
         connectionId,

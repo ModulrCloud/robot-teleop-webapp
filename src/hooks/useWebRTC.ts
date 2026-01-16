@@ -1,6 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import { logger } from '../utils/logger';
+import {
+  signalling,
+  agent,
+  parseMessage,
+  ProtocolEnvelope,
+  SignallingAnswerPayload,
+  SignallingIceCandidatePayload,
+} from '../utils/protocol';
 
 export interface WebRTCStatus {
   connecting: boolean;
@@ -20,27 +28,30 @@ export interface WebRTCOptions {
 
 class WebRTCRosBridge {
   private channel: RTCDataChannel;
-  private callbacks: Record<string, (msg: any) => void> = {};
+  private callbacks: Record<string, (msg: ProtocolEnvelope) => void> = {};
 
   constructor(dc: RTCDataChannel) {
     this.channel = dc;
     dc.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      if (msg.id && this.callbacks[msg.id]) {
-        this.callbacks[msg.id](msg);
-        delete this.callbacks[msg.id];
-      } else if (msg.op === 'publish') {
-        // Handle other ROS messages if needed
-        logger.log('Topic ' + msg.topic + ': ' + JSON.stringify(msg.msg));
+      const msg = parseMessage(event.data);
+      if (!msg) {
+        logger.warn('[WEBRTC] Received non-protocol message:', event.data);
+        return;
+      }
+      if (msg.correlationId && this.callbacks[msg.correlationId]) {
+        this.callbacks[msg.correlationId](msg);
+        delete this.callbacks[msg.correlationId];
       }
     };
   }
 
-  send(msg: any): Promise<void> {
+  send(envelope: ProtocolEnvelope): Promise<void> {
     return new Promise((resolve) => {
-      if (msg.id) this.callbacks[msg.id] = resolve;
-      this.channel.send(JSON.stringify(msg));
-      if (!msg.id) resolve();
+      if (envelope.correlationId) {
+        this.callbacks[envelope.id] = () => resolve();
+      }
+      this.channel.send(JSON.stringify(envelope));
+      if (!envelope.correlationId) resolve();
     });
   }
 }
@@ -337,14 +348,8 @@ export function useWebRTC(options: WebRTCOptions) {
           pc.onicecandidate = (event) => {
             if (event.candidate && ws.readyState === WebSocket.OPEN) {
               logger.log('[WEBRTC] Sending ICE candidate to robot:', robotId);
-              ws.send(
-                JSON.stringify({
-                  type: 'candidate',
-                  from: myIdRef.current,
-                  to: robotId,
-                  candidate: event.candidate,
-                })
-              );
+              const iceMsg = signalling.iceCandidate(robotId, event.candidate);
+              ws.send(JSON.stringify(iceMsg));
             }
           };
 
@@ -380,40 +385,66 @@ export function useWebRTC(options: WebRTCOptions) {
           await pc.setLocalDescription(offer);
           logger.log('[WEBRTC] Offer created, sending to robot:', robotId);
 
-          const offerMessage = {
-            to: robotId,
-            from: myIdRef.current,
-            type: 'offer',
-            sdp: pc.localDescription?.sdp,
-          };
+          const offerMsg = signalling.offer(robotId, pc.localDescription?.sdp || '');
           logger.log('[WEBRTC] Sending offer message:', { 
-            to: offerMessage.to, 
-            from: offerMessage.from, 
-            type: offerMessage.type,
-            sdpLength: offerMessage.sdp?.length 
+            type: offerMsg.type,
+            connectionId: offerMsg.payload?.connectionId,
+            sdpLength: offerMsg.payload?.sdp?.length 
           });
           
-          ws.send(JSON.stringify(offerMessage));
+          ws.send(JSON.stringify(offerMsg));
           logger.log('[WEBRTC] Offer sent! Waiting for answer from robot...');
           return;
         }
 
-        // Handle WebRTC signaling messages
+        // Handle WebRTC signaling messages (support both legacy and new protocol)
         const pc = pcRef.current;
         if (!pc) return;
 
-        if (msg.type === 'answer' && msg.sdp) {
-          logger.log('[WEBRTC] Received answer from robot, setting remote description...');
+        // New protocol format: signalling.answer
+        if (msg.type === 'signalling.answer') {
+          const payload = msg.payload as SignallingAnswerPayload | undefined;
+          if (payload?.sdp) {
+            logger.log('[WEBRTC] Received answer (v0.0), setting remote description...');
+            try {
+              await pc.setRemoteDescription({ type: 'answer', sdp: payload.sdp });
+              logger.log('[WEBRTC] Remote description set successfully');
+            } catch (e) {
+              logger.error('[WEBRTC] Error setting remote description:', e);
+            }
+          }
+        }
+        // Legacy format: type='answer' with top-level sdp
+        else if (msg.type === 'answer' && msg.sdp) {
+          logger.log('[WEBRTC] Received answer (legacy), setting remote description...');
           try {
             await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
             logger.log('[WEBRTC] Remote description set successfully');
           } catch (e) {
             logger.error('[WEBRTC] Error setting remote description:', e);
           }
-        } else if (msg.type === 'candidate' && msg.candidate) {
+        }
+        // New protocol format: signalling.ice_candidate
+        else if (msg.type === 'signalling.ice_candidate') {
+          const payload = msg.payload as SignallingIceCandidatePayload | undefined;
+          if (payload?.candidate) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate({
+                candidate: payload.candidate,
+                sdpMid: payload.sdpMid,
+                sdpMLineIndex: payload.sdpMLineIndex,
+              }));
+              logger.log('[WEBRTC] Added ICE candidate (v0.0) from robot');
+            } catch (e) {
+              logger.error('[WEBRTC] Error adding ICE candidate:', e);
+            }
+          }
+        }
+        // Legacy format: type='candidate' with top-level candidate object
+        else if (msg.type === 'candidate' && msg.candidate) {
           try {
             await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-            logger.log('[WEBRTC] Added ICE candidate from robot');
+            logger.log('[WEBRTC] Added ICE candidate (legacy) from robot');
           } catch (e) {
             logger.error('[WEBRTC] Error adding ICE candidate:', e);
           }
@@ -432,14 +463,7 @@ export function useWebRTC(options: WebRTCOptions) {
 
   const sendCommand = useCallback((linearX: number, angularZ: number) => {
     if (!rosBridgeRef.current) return;
-
-    rosBridgeRef.current.send({
-      type: "MovementCommand",
-      params: {
-        "forward": linearX,
-        "turn": angularZ,
-      }
-    });
+    rosBridgeRef.current.send(agent.movement(linearX, angularZ));
   }, []);
 
   const stopRobot = useCallback(() => {
