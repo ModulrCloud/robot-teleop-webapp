@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import CardGrid from "../components/CardGrid";
 import { type CardGridItemProps } from "../components/CardGridItem";
@@ -7,6 +7,8 @@ import { useAuthStatus } from "../hooks/useAuthStatus";
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from "../components/LoadingWheel";
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faSearch, faFilter } from '@fortawesome/free-solid-svg-icons';
 import "./RobotSelect.css";
 import { getUrl } from 'aws-amplify/storage';
 import { logger } from '../utils/logger';
@@ -51,6 +53,9 @@ export default function RobotSelect() {
   const [platformMarkup, setPlatformMarkup] = useState<number>(30); // Default 30%
   const [userCurrency, setUserCurrency] = useState<string>('USD');
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
+  const pageSize = 9;
   const navigate = useNavigate();
   
   // Check if user can edit robots (Partners or Admins)
@@ -609,7 +614,7 @@ export default function RobotSelect() {
   };
 
   const loadMoreRobots = async () => {
-    if (!nextToken || isLoading) return;
+    if (!nextToken || isLoading) return false;
     
     try {
       setIsLoading(true);
@@ -617,7 +622,7 @@ export default function RobotSelect() {
       if (!client.queries.listAccessibleRobotsLambda) {
         logger.warn('⚠️ listAccessibleRobotsLambda not available. Cannot load more robots.');
         setHasMore(false);
-        return;
+        return false;
       }
       
       const queryResponse = await client.queries.listAccessibleRobotsLambda({
@@ -663,21 +668,69 @@ export default function RobotSelect() {
         const token = responseData.nextToken || '';
         setNextToken(token || null);
         setHasMore(!!token);
+        return true;
       } else {
         setNextToken(null);
         setHasMore(false);
+        return false;
       }
     } catch (err) {
       logger.error('Error loading more robots:', err);
       alert('Failed to load more robots. Please try again.');
+      return false;
     } finally {
       setIsLoading(false);
     }
   };
 
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
+
+  const filteredRobots = useMemo(() => {
+    const normalized = searchTerm.trim().toLowerCase();
+    if (!normalized) return robots;
+    return robots.filter(robot => {
+      const title = robot.title?.toLowerCase() || '';
+      const description = robot.description?.toLowerCase() || '';
+      const location = (robot as any).location?.toLowerCase() || '';
+      return title.includes(normalized) || description.includes(normalized) || location.includes(normalized);
+    });
+  }, [robots, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRobots.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * pageSize;
+  const pagedRobots = filteredRobots.slice(startIndex, startIndex + pageSize);
+  const totalPagesLabel = hasMore ? `${totalPages}+` : `${totalPages}`;
+  const pageButtons = Array.from(
+    new Set(
+      [1, currentPage - 1, currentPage, currentPage + 1, totalPages].filter(
+        (value) => value >= 1 && value <= totalPages
+      )
+    )
+  ).sort((a, b) => a - b);
+
+  const handlePrevPage = () => {
+    setPage(prev => Math.max(1, prev - 1));
+  };
+
+  const handleNextPage = async () => {
+    if (currentPage < totalPages) {
+      setPage(prev => prev + 1);
+      return;
+    }
+    if (hasMore) {
+      const loaded = await loadMoreRobots();
+      if (loaded) {
+        setPage(prev => prev + 1);
+      }
+    }
+  };
+
   if (isLoading) {
     return (
-      <div className="robot-select-container">
+      <div className="robot-select-container robot-select-loading">
         <h2>Select Robot</h2>
         <LoadingWheel />
       </div>
@@ -706,9 +759,31 @@ export default function RobotSelect() {
 
   return (
     <div className="robot-select-container">
-      <h2>Select Robot</h2>
+      <div className="robot-directory-header">
+        <h1>Select Robot</h1>
+        <p>Choose a robot to start a teleop session.</p>
+      </div>
+      <div className="robot-directory-controls">
+        <div className="robot-search-box">
+          <FontAwesomeIcon icon={faSearch} className="robot-search-icon" />
+          <input
+            type="search"
+            placeholder="Search robots..."
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+          />
+          <span className="robot-count">
+            <FontAwesomeIcon icon={faFilter} className="robot-filter-icon" />
+            {filteredRobots.length} robot{filteredRobots.length === 1 ? '' : 's'}
+          </span>
+        </div>
+      </div>
+      {filteredRobots.length === 0 ? (
+        <p className="robot-empty-state">No robots match your search.</p>
+      ) : (
+        <>
           <CardGrid
-            items={robots.map(robot => ({ 
+            items={pagedRobots.map(robot => ({ 
               ...robot, 
               imageUrl: resolvedImages[robot.id] || robot.imageUrl || getRobotImage(robot.robotType || 'robot')
             }))}
@@ -721,24 +796,49 @@ export default function RobotSelect() {
             onDelete={canEditRobots ? handleDeleteRobot : undefined}
             deletingItemId={deletingRobotId}
           />
-      {hasMore && (
-        <button
-          className="load-more-button"
-          onClick={loadMoreRobots}
-          disabled={isLoading}
-          style={{
-            marginTop: '1rem',
-            padding: '0.75rem 1.5rem',
-            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '8px',
-            color: '#fff',
-            cursor: isLoading ? 'wait' : 'pointer',
-            fontSize: '1rem',
-          }}
-        >
-          {isLoading ? 'Loading...' : 'Load More Robots'}
-        </button>
+          <div className="robot-pagination">
+            <button
+              className="robot-pagination-button"
+              type="button"
+              onClick={handlePrevPage}
+              disabled={currentPage === 1 || isLoading}
+            >
+              Previous
+            </button>
+            <div className="robot-pagination-pages">
+              {pageButtons.map((pageNumber, index) => {
+                const prev = pageButtons[index - 1];
+                const showGap = prev !== undefined && pageNumber - prev > 1;
+                return (
+                  <div key={pageNumber} className="robot-pagination-page">
+                    {showGap && <span className="robot-pagination-ellipsis">…</span>}
+                    <button
+                      type="button"
+                      className={`robot-pagination-number ${
+                        pageNumber === currentPage ? 'active' : ''
+                      }`}
+                      onClick={() => setPage(pageNumber)}
+                      disabled={isLoading}
+                    >
+                      {pageNumber}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <span className="robot-pagination-status">
+              Page {currentPage} of {totalPagesLabel}
+            </span>
+            <button
+              className="robot-pagination-button"
+              type="button"
+              onClick={handleNextPage}
+              disabled={(currentPage >= totalPages && !hasMore) || isLoading}
+            >
+              {isLoading ? 'Loading...' : currentPage >= totalPages && hasMore ? 'Load more' : 'Next'}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );
