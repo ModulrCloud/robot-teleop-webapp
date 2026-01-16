@@ -13,8 +13,9 @@ import { RobotRating } from '../components/RobotRating';
 import { ReviewsDisplay } from '../components/ReviewsDisplay';
 import { RobotSchedulingModal } from '../components/RobotSchedulingModal';
 import { UserReservations } from '../components/UserReservations';
+import { InputBindingsModal } from '../components/InputBindingsModal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar, faCalendarAlt } from '@fortawesome/free-solid-svg-icons';
+import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar, faCalendarAlt, faKeyboard, faCog, faTools } from '@fortawesome/free-solid-svg-icons';
 import "./RobotDetail.css";
 
 const client = generateClient<Schema>();
@@ -61,6 +62,9 @@ export default function RobotDetail() {
   const [ratingsRefreshKey, setRatingsRefreshKey] = useState(0);
   const [showSchedulingModal, setShowSchedulingModal] = useState(false);
   const [reservationsRefreshKey, setReservationsRefreshKey] = useState(0);
+  const [showInputBindingsModal, setShowInputBindingsModal] = useState(false);
+  const [showPricingDetails, setShowPricingDetails] = useState(false);
+  const servicesSubtotalCredits = 0;
 
   // Load platform settings and user currency
   useEffect(() => {
@@ -432,16 +436,17 @@ export default function RobotDetail() {
                 )}
               </div>
 
-              {/* Scheduling Section */}
-              {robot && robot.robotId && (
-                <div className="robot-scheduling-section">
-                  <h2>
-                    <FontAwesomeIcon icon={faCalendarAlt} />
-                    Schedule Time
-                  </h2>
-                  <p className="scheduling-description">
-                    Reserve time slots for this robot in advance. Minimum 15-minute reservations with deposit required.
-                  </p>
+            {/* Configure Section */}
+            {robot && robot.robotId && (
+              <div className="robot-scheduling-section">
+                <h2>
+                  <FontAwesomeIcon icon={faCog} />
+                  Configure
+                </h2>
+                <p className="scheduling-description">
+                  Manage scheduling, input bindings, and services for this robot.
+                </p>
+                <div className="configure-buttons">
                   <button
                     className="schedule-button"
                     onClick={() => setShowSchedulingModal(true)}
@@ -449,8 +454,74 @@ export default function RobotDetail() {
                     <FontAwesomeIcon icon={faCalendarAlt} />
                     Schedule Robot Time
                   </button>
+                  <button
+                    className="schedule-button"
+                    onClick={() => setShowInputBindingsModal(true)}
+                  >
+                    <FontAwesomeIcon icon={faKeyboard} />
+                    Input Bindings
+                  </button>
+                  <button
+                    className="schedule-button schedule-button-disabled"
+                    disabled
+                    aria-disabled="true"
+                    title="Services selection is coming soon"
+                  >
+                    <FontAwesomeIcon icon={faTools} />
+                    Services (coming soon)
+                  </button>
                 </div>
-              )}
+                <div className="services-placeholder">
+                  Services can be added here before teleop starts. We'll show pricing in advance.
+                </div>
+                <div className="cost-summary compact">
+                  <div className="cost-summary-row total">
+                    <span>Estimated cost per hour</span>
+                    <span>
+                      {formatCreditsAsCurrencySync(
+                        (robot.hourlyRateCredits || 0) + servicesSubtotalCredits,
+                        userCurrency as any,
+                        exchangeRates || undefined
+                      )}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="cost-summary-toggle"
+                    onClick={() => setShowPricingDetails((prev) => !prev)}
+                  >
+                    {showPricingDetails ? 'Hide details' : 'View details'}
+                  </button>
+                  {showPricingDetails && (
+                    <>
+                      <div className="cost-summary-row">
+                        <span>Robot rate</span>
+                        <span>
+                          {formatCreditsAsCurrencySync(
+                            robot.hourlyRateCredits || 0,
+                            userCurrency as any,
+                            exchangeRates || undefined
+                          )}
+                        </span>
+                      </div>
+                      <div className="cost-summary-row">
+                        <span>Services subtotal</span>
+                        <span>
+                          {formatCreditsAsCurrencySync(
+                            servicesSubtotalCredits,
+                            userCurrency as any,
+                            exchangeRates || undefined
+                          )}
+                        </span>
+                      </div>
+                      <p className="cost-summary-note">
+                        Services pricing will appear here before teleop starts.
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
             </div>
           </div>
         </div>
@@ -548,6 +619,12 @@ export default function RobotDetail() {
           setInsufficientFundsError(null);
           refreshCredits();
         }}
+      />
+
+      <InputBindingsModal
+        isOpen={showInputBindingsModal}
+        onClose={() => setShowInputBindingsModal(false)}
+        robotId={robot?.robotId || ''}
       />
     </div>
   );

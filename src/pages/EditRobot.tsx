@@ -11,6 +11,7 @@ import { getCurrencyInfo, creditsToCurrencySync, currencyToCreditsSync, fetchExc
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
 import { RobotAvailabilityManager } from '../components/RobotAvailabilityManager';
+import { CustomCommandsManager } from '../components/partner/CustomCommandsManager';
 import { 
   faRobot, 
   faCheckCircle, 
@@ -971,6 +972,19 @@ export const EditRobot = () => {
               <RobotAvailabilityManager 
                 robotId={robotIdForStatus}
                 robotUuid={robotId || undefined}
+              />
+            </div>
+          )}
+
+          {!isViewMode && robotIdForStatus && (
+            <div className="form-section">
+              <CustomCommandsManager
+                robotId={robotIdForStatus}
+                onSave={(commands) => {
+                  // In real implementation, save to backend
+                  // For now, just log
+                  logger.log('Custom commands saved:', commands);
+                }}
               />
             </div>
           )}

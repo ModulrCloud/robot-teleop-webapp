@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -16,6 +16,7 @@ import {
 import { logger } from '../utils/logger';
 import { RobotSchedulingCalendar } from './RobotSchedulingCalendar';
 import { DateTimePicker } from './DateTimePicker';
+import { DatePicker } from './DatePicker';
 import './RobotAvailabilityManager.css';
 
 const client = generateClient<Schema>();
@@ -44,8 +45,8 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [selectedStartTime, setSelectedStartTime] = useState<Date | null>(null);
   const [selectedEndTime, setSelectedEndTime] = useState<Date | null>(null);
+  const [calendarRefreshTrigger, setCalendarRefreshTrigger] = useState(0);
 
-  // Form state
   const [formData, setFormData] = useState<AvailabilityBlock>({
     startTime: '',
     endTime: '',
@@ -53,20 +54,36 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
     isRecurring: false,
   });
 
-  // Handle time selection from calendar
+  const parsedRecurrencePattern = useMemo(() => {
+    if (!formData.recurrencePattern) return null;
+    try {
+      return JSON.parse(formData.recurrencePattern);
+    } catch {
+      return null;
+    }
+  }, [formData.recurrencePattern]);
+
+  const formatLocalDateTime = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
   const handleTimeSelect = (startTime: Date, endTime: Date) => {
     setSelectedStartTime(startTime);
     setSelectedEndTime(endTime);
     setFormData({
-      startTime: startTime.toISOString().slice(0, 16),
-      endTime: endTime.toISOString().slice(0, 16),
+      startTime: formatLocalDateTime(startTime),
+      endTime: formatLocalDateTime(endTime),
       reason: '',
       isRecurring: false,
     });
     setShowBlockModal(true);
   };
 
-  // Load availability blocks
   useEffect(() => {
     loadAvailabilityBlocks();
   }, [robotId]);
@@ -81,10 +98,12 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
         filter: { robotId: { eq: robotId } },
       });
 
-      setAvailabilityBlocks((blocks || []).filter(block => block !== null) as AvailabilityBlock[]);
+      const filteredBlocks = (blocks || []).filter(block => block !== null) as AvailabilityBlock[];
+      
+      setAvailabilityBlocks(filteredBlocks);
     } catch (err) {
-      logger.error('Error loading availability blocks:', err);
-      setError('Failed to load availability blocks');
+      logger.error('Error loading unavailability blocks:', err);
+      setError('Failed to load unavailability blocks');
     } finally {
       setIsLoading(false);
     }
@@ -124,6 +143,13 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
       setError(null);
       setSuccess(null);
 
+      logger.info(`Submitting ${editingId ? 'update' : 'create'} for unavailability block`, {
+        robotId,
+        editingId,
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+      });
+
       const result = await client.mutations.manageRobotAvailabilityLambda({
         robotId,
         action: editingId ? 'update' : 'create',
@@ -135,26 +161,41 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
         recurrencePattern: formData.recurrencePattern || undefined,
       });
 
+      logger.info('Mutation result:', result);
+
       if (result.data) {
         const parsed = JSON.parse(result.data as string);
+        logger.info('Parsed response:', parsed);
+        
         if (parsed.statusCode === 200) {
-          setSuccess(editingId ? 'Availability block updated successfully' : 'Availability block created successfully');
+          setSuccess(editingId ? 'Unavailability block updated successfully' : 'Unavailability block created successfully');
           setFormData({ startTime: '', endTime: '', reason: '', isRecurring: false });
           setEditingId(null);
           setSelectedStartTime(null);
           setSelectedEndTime(null);
           setShowBlockModal(false);
-          await loadAvailabilityBlocks();
+          
+          setTimeout(async () => {
+            await loadAvailabilityBlocks();
+            setCalendarRefreshTrigger(prev => prev + 1);
+          }, 500);
         } else {
           const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
-          setError(body.error || 'Failed to save availability block');
+          const errorMessage = body.error || 'Failed to save unavailability block';
+          const errorDetails = body.details ? ` ${body.details}` : '';
+          logger.error('Error from Lambda:', errorMessage + errorDetails);
+          setError(errorMessage + errorDetails);
         }
       } else if (result.errors) {
-        setError(result.errors[0]?.message || 'Failed to save availability block');
+        logger.error('GraphQL errors:', result.errors);
+        setError(result.errors[0]?.message || 'Failed to save unavailability block');
+      } else {
+        logger.error('Unexpected result format:', result);
+        setError('Unexpected response from server');
       }
     } catch (err) {
-      logger.error('Error saving availability block:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save availability block');
+      logger.error('Error saving unavailability block:', err);
+      setError(err instanceof Error ? err.message : 'Failed to save unavailability block');
     } finally {
       setIsCreating(false);
     }
@@ -162,17 +203,23 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
 
   const handleEdit = (block: AvailabilityBlock) => {
     setFormData({
-      startTime: block.startTime ? new Date(block.startTime).toISOString().slice(0, 16) : '',
-      endTime: block.endTime ? new Date(block.endTime).toISOString().slice(0, 16) : '',
+      startTime: block.startTime ? formatLocalDateTime(new Date(block.startTime)) : '',
+      endTime: block.endTime ? formatLocalDateTime(new Date(block.endTime)) : '',
       reason: block.reason || '',
       isRecurring: block.isRecurring || false,
       recurrencePattern: block.recurrencePattern || undefined,
     });
     setEditingId(block.id || null);
+    setShowBlockModal(true); // Open the modal when editing
   };
 
-  const handleDelete = async (blockId: string) => {
-    if (!confirm('Are you sure you want to delete this availability block?')) {
+  const handleDelete = async (blockId: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    if (!confirm('Are you sure you want to delete this unavailability block?')) {
       return;
     }
 
@@ -189,18 +236,19 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
       if (result.data) {
         const parsed = JSON.parse(result.data as string);
         if (parsed.statusCode === 200) {
-          setSuccess('Availability block deleted successfully');
+          setSuccess('Unavailability block deleted successfully');
           await loadAvailabilityBlocks();
+          setCalendarRefreshTrigger(prev => prev + 1);
         } else {
           const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
-          setError(body.error || 'Failed to delete availability block');
+          setError(body.error || 'Failed to delete unavailability block');
         }
       } else if (result.errors) {
-        setError(result.errors[0]?.message || 'Failed to delete availability block');
+        setError(result.errors[0]?.message || 'Failed to delete unavailability block');
       }
     } catch (err) {
-      logger.error('Error deleting availability block:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete availability block');
+      logger.error('Error deleting unavailability block:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete unavailability block');
     }
   };
 
@@ -209,6 +257,9 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
     setEditingId(null);
     setError(null);
     setSuccess(null);
+    setShowBlockModal(false);
+    setSelectedStartTime(null);
+    setSelectedEndTime(null);
   };
 
   const formatDateTime = (isoString: string) => {
@@ -226,7 +277,7 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
   if (isLoading && availabilityBlocks.length === 0) {
     return (
       <div className="availability-manager">
-        <p>Loading availability blocks...</p>
+        <p>Loading unavailability blocks...</p>
       </div>
     );
   }
@@ -257,7 +308,6 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
         </div>
       )}
 
-      {/* Calendar for visual selection */}
       <div className="availability-calendar-section">
         <h4>Select Time to Block</h4>
         <p className="calendar-help-text">
@@ -271,50 +321,61 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
           durationMinutes={15}
           onDurationChange={() => {}}
           mode="availability"
+          refreshTrigger={calendarRefreshTrigger}
         />
       </div>
 
-      {/* Modal for block details */}
       {showBlockModal && (
-        <div className="block-modal-overlay" onClick={() => setShowBlockModal(false)}>
+        <div className="block-modal-overlay" onClick={handleCancel}>
           <div className="block-modal" onClick={(e) => e.stopPropagation()}>
             <div className="block-modal-header">
-              <h3>Create Availability Block</h3>
+              <h3>{editingId ? 'Edit Unavailability Block' : 'Create Unavailability Block'}</h3>
               <button
                 type="button"
                 className="modal-close-btn"
-                onClick={() => {
-                  setShowBlockModal(false);
-                  setSelectedStartTime(null);
-                  setSelectedEndTime(null);
-                  setFormData({ startTime: '', endTime: '', reason: '', isRecurring: false });
-                }}
+                onClick={handleCancel}
               >
                 <FontAwesomeIcon icon={faTimes} />
               </button>
             </div>
             <div className="availability-form">
-        <div className="form-row">
-          <div className="form-group">
-            <DateTimePicker
-              value={formData.startTime}
-              onChange={(value) => setFormData(prev => ({ ...prev, startTime: value }))}
-              label="Start Time"
-              required
-              disabled={isCreating}
-            />
-          </div>
+        <div className="form-group">
+          <DateTimePicker
+            value={formData.startTime}
+            onChange={(value) => {
+              setFormData(prev => ({ ...prev, startTime: value }));
+              if (value) {
+                const date = new Date(value);
+                const cleanDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), date.getMinutes(), 0, 0);
+                setSelectedStartTime(cleanDate);
+              } else {
+                setSelectedStartTime(null);
+              }
+            }}
+            label="Start Time"
+            required
+            disabled={isCreating}
+          />
+        </div>
 
-          <div className="form-group">
-            <DateTimePicker
-              value={formData.endTime}
-              onChange={(value) => setFormData(prev => ({ ...prev, endTime: value }))}
-              label="End Time"
-              required
-              disabled={isCreating}
-              min={formData.startTime || undefined}
-            />
-          </div>
+        <div className="form-group">
+          <DateTimePicker
+            value={formData.endTime}
+            onChange={(value) => {
+              setFormData(prev => ({ ...prev, endTime: value }));
+              if (value) {
+                const date = new Date(value);
+                const cleanDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours(), date.getMinutes(), 0, 0);
+                setSelectedEndTime(cleanDate);
+              } else {
+                setSelectedEndTime(null);
+              }
+            }}
+            label="End Time"
+            required
+            disabled={isCreating}
+            min={formData.startTime || undefined}
+          />
         </div>
 
         <div className="form-group">
@@ -354,19 +415,19 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
                     <label key={index} className="day-checkbox">
                       <input
                         type="checkbox"
-                        checked={formData.recurrencePattern ? JSON.parse(formData.recurrencePattern).daysOfWeek?.includes(index) : false}
+                        checked={parsedRecurrencePattern?.daysOfWeek?.includes(index) ?? false}
                         onChange={(e) => {
-                          const currentPattern = formData.recurrencePattern ? JSON.parse(formData.recurrencePattern) : { type: 'weekly', daysOfWeek: [] };
-                          const daysOfWeek = currentPattern.daysOfWeek || [];
+                          const currentPattern = parsedRecurrencePattern ?? { type: 'weekly', daysOfWeek: [] };
+                          const currentDays: number[] = Array.isArray(currentPattern.daysOfWeek) ? currentPattern.daysOfWeek : [];
+                          const daySet = new Set(currentDays);
                           if (e.target.checked) {
-                            daysOfWeek.push(index);
+                            daySet.add(index);
                           } else {
-                            const idx = daysOfWeek.indexOf(index);
-                            if (idx > -1) daysOfWeek.splice(idx, 1);
+                            daySet.delete(index);
                           }
                           setFormData(prev => ({
                             ...prev,
-                            recurrencePattern: JSON.stringify({ type: 'weekly', daysOfWeek: daysOfWeek.sort() }),
+                            recurrencePattern: JSON.stringify({ type: 'weekly', daysOfWeek: Array.from(daySet).sort() }),
                           }));
                         }}
                         disabled={isCreating}
@@ -377,18 +438,16 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
                 </div>
               </div>
               <div className="form-group">
-                <label htmlFor="recurrenceEndDate">End Date (Optional)</label>
-                <input
-                  id="recurrenceEndDate"
-                  type="date"
-                  value={formData.recurrencePattern ? (JSON.parse(formData.recurrencePattern).endDate || '') : ''}
-                  onChange={(e) => {
-                    const currentPattern = formData.recurrencePattern ? JSON.parse(formData.recurrencePattern) : { type: 'weekly', daysOfWeek: [] };
+                <DatePicker
+                  value={parsedRecurrencePattern?.endDate || ''}
+                  onChange={(value) => {
+                    const currentPattern = parsedRecurrencePattern ?? { type: 'weekly', daysOfWeek: [] };
                     setFormData(prev => ({
                       ...prev,
-                      recurrencePattern: JSON.stringify({ ...currentPattern, endDate: e.target.value || undefined }),
+                      recurrencePattern: JSON.stringify({ ...currentPattern, endDate: value || undefined }),
                     }));
                   }}
+                  label="End Date (Optional)"
                   disabled={isCreating}
                 />
                 <p className="form-help-text">
@@ -413,14 +472,13 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
           )}
           <button
             type="button"
-            onClick={async () => {
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
               const fakeEvent = {
                 preventDefault: () => {},
               } as React.FormEvent;
               await handleSubmit(fakeEvent);
-              if (!error) {
-                setShowBlockModal(false);
-              }
             }}
             className="btn-primary"
             disabled={isCreating || !formData.startTime || !formData.endTime}
@@ -446,20 +504,23 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
       )}
 
       <div className="availability-blocks">
-        <h4>Current Availability Blocks</h4>
+        <h4>Current Unavailability Blocks</h4>
         {availabilityBlocks.length === 0 ? (
-          <p className="no-blocks">No availability blocks set. Your robot is available for scheduling at all times.</p>
+          <p className="no-blocks">No unavailability blocks set. Your robot is available for scheduling at all times.</p>
         ) : (
           <div className="blocks-list">
-            {availabilityBlocks.map((block) => (
+            {availabilityBlocks.map((block) => {
+              const startFormatted = formatDateTime(block.startTime || '');
+              const endFormatted = formatDateTime(block.endTime || '');
+              return (
               <div key={block.id} className="availability-block-card">
                 <div className="block-info">
                   <div className="block-time">
                     <FontAwesomeIcon icon={faClock} />
                     <div>
-                      <strong>{formatDateTime(block.startTime || '')}</strong>
+                      <strong>{startFormatted}</strong>
                       <span> to </span>
-                      <strong>{formatDateTime(block.endTime || '')}</strong>
+                      <strong>{endFormatted}</strong>
                     </div>
                   </div>
                   {block.reason && (
@@ -488,14 +549,24 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
                 </div>
                 <div className="block-actions">
                   <button
-                    onClick={() => handleEdit(block)}
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleEdit(block);
+                    }}
                     className="btn-icon"
                     title="Edit block"
                   >
                     <FontAwesomeIcon icon={faEdit} />
                   </button>
                   <button
-                    onClick={() => block.id && handleDelete(block.id)}
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (block.id) handleDelete(block.id, e);
+                    }}
                     className="btn-icon danger"
                     title="Delete block"
                   >
@@ -503,7 +574,8 @@ export function RobotAvailabilityManager({ robotId }: RobotAvailabilityManagerPr
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

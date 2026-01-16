@@ -31,3 +31,6 @@ amplify_outputs.json
 
 # Rust test files and documentation
 rust/
+
+# Documentation/explanation files (not for commit)
+explanations/

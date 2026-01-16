@@ -3,6 +3,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { randomUUID } from 'crypto';
+import { hasRecurringConflict } from '../utils/recurrence';
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
@@ -289,14 +290,17 @@ export const handler: Schema["createRobotReservationLambda"]["functionHandler"] 
   }
 };
 
+
 async function checkAvailability(robotId: string, start: Date, end: Date): Promise<{ available: boolean; reason?: string }> {
-  // Check for conflicting reservations
   const reservationsQuery = await docClient.send(
     new QueryCommand({
       TableName: ROBOT_RESERVATION_TABLE,
       IndexName: 'robotIdIndex',
       KeyConditionExpression: 'robotId = :robotId',
-      FilterExpression: 'status IN (:pending, :confirmed, :active) AND ((startTime <= :start AND endTime > :start) OR (startTime < :end AND endTime >= :end) OR (startTime >= :start AND endTime <= :end))',
+      FilterExpression: '#status IN (:pending, :confirmed, :active) AND ((startTime <= :start AND endTime > :start) OR (startTime < :end AND endTime >= :end) OR (startTime >= :start AND endTime <= :end))',
+      ExpressionAttributeNames: {
+        '#status': 'status',
+      },
       ExpressionAttributeValues: {
         ':robotId': robotId,
         ':start': start.toISOString(),
@@ -312,23 +316,46 @@ async function checkAvailability(robotId: string, start: Date, end: Date): Promi
     return { available: false, reason: "Robot is already reserved during this time" };
   }
 
-  // Check for availability blocks
   const availabilityQuery = await docClient.send(
     new QueryCommand({
       TableName: ROBOT_AVAILABILITY_TABLE,
       IndexName: 'robotIdIndex',
       KeyConditionExpression: 'robotId = :robotId',
-      FilterExpression: '(startTime <= :start AND endTime > :start) OR (startTime < :end AND endTime >= :end) OR (startTime >= :start AND endTime <= :end)',
+      FilterExpression: '(attribute_not_exists(isRecurring) OR isRecurring = :false) AND ((startTime <= :start AND endTime > :start) OR (startTime < :end AND endTime >= :end) OR (startTime >= :start AND endTime <= :end))',
       ExpressionAttributeValues: {
         ':robotId': robotId,
         ':start': start.toISOString(),
         ':end': end.toISOString(),
+        ':false': false,
       },
     })
   );
 
   if (availabilityQuery.Items && availabilityQuery.Items.length > 0) {
     return { available: false, reason: "Robot is blocked during this time by the partner" };
+  }
+
+  const recurringQuery = await docClient.send(
+    new QueryCommand({
+      TableName: ROBOT_AVAILABILITY_TABLE,
+      IndexName: 'robotIdIndex',
+      KeyConditionExpression: 'robotId = :robotId',
+      FilterExpression: 'isRecurring = :true',
+      ExpressionAttributeValues: {
+        ':robotId': robotId,
+        ':true': true,
+      },
+    })
+  );
+
+  if (recurringQuery.Items && recurringQuery.Items.length > 0) {
+    const recurringBlocks = recurringQuery.Items.filter(
+      (block): block is { startTime: string; endTime: string; recurrencePattern?: string } =>
+        typeof block?.startTime === 'string' && typeof block?.endTime === 'string'
+    );
+    if (hasRecurringConflict(recurringBlocks, start, end)) {
+      return { available: false, reason: "Robot is blocked during this time by the partner (recurring schedule)" };
+    }
   }
 
   return { available: true };
