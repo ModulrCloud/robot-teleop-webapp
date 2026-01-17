@@ -21,6 +21,7 @@ import {
   faBook
 } from '@fortawesome/free-solid-svg-icons';
 import { faXTwitter, faTelegram, faGithub } from '@fortawesome/free-brands-svg-icons';
+import { getSafeHttpHref, getSafeMailtoHref } from '../utils/safeHref';
 import './PartnerProfile.css';
 
 const client = generateClient<Schema>();
@@ -150,6 +151,13 @@ export default function PartnerProfile() {
     );
   }
 
+  const websiteHref = getSafeHttpHref(partner.websiteUrl);
+  const contactHref = getSafeMailtoHref(partner.contactEmail);
+  const twitterHref = getSafeHttpHref(partner.twitterUrl);
+  const telegramHref = getSafeHttpHref(partner.telegramUrl);
+  const githubHref = getSafeHttpHref(partner.githubUrl);
+  const integrationDocsHref = getSafeHttpHref(partner.integrationDocsUrl);
+
   return (
     <div className="partner-profile-page">
       <button className="back-btn" onClick={() => navigate('/services')}>
@@ -191,33 +199,33 @@ export default function PartnerProfile() {
             )}
           </div>
           <div className="hero-actions">
-            {partner.websiteUrl && (
-              <a href={partner.websiteUrl} target="_blank" rel="noopener noreferrer" className="btn-primary">
+            {websiteHref && (
+              <a href={websiteHref} target="_blank" rel="noopener noreferrer" className="btn-primary">
                 <FontAwesomeIcon icon={faGlobe} />
                 Visit Website
               </a>
             )}
-            {partner.contactEmail && (
-              <a href={`mailto:${partner.contactEmail}`} className="btn-outline">
+            {contactHref && (
+              <a href={contactHref} className="btn-outline">
                 <FontAwesomeIcon icon={faEnvelope} />
                 Contact
               </a>
             )}
           </div>
-          {(partner.twitterUrl || partner.telegramUrl || partner.githubUrl) && (
+          {(twitterHref || telegramHref || githubHref) && (
             <div className="hero-socials">
-              {partner.twitterUrl && (
-                <a href={partner.twitterUrl} target="_blank" rel="noopener noreferrer" className="social-link">
+              {twitterHref && (
+                <a href={twitterHref} target="_blank" rel="noopener noreferrer" className="social-link">
                   <FontAwesomeIcon icon={faXTwitter} />
                 </a>
               )}
-              {partner.telegramUrl && (
-                <a href={partner.telegramUrl} target="_blank" rel="noopener noreferrer" className="social-link">
+              {telegramHref && (
+                <a href={telegramHref} target="_blank" rel="noopener noreferrer" className="social-link">
                   <FontAwesomeIcon icon={faTelegram} />
                 </a>
               )}
-              {partner.githubUrl && (
-                <a href={partner.githubUrl} target="_blank" rel="noopener noreferrer" className="social-link">
+              {githubHref && (
+                <a href={githubHref} target="_blank" rel="noopener noreferrer" className="social-link">
                   <FontAwesomeIcon icon={faGithub} />
                 </a>
               )}
@@ -240,8 +248,8 @@ export default function PartnerProfile() {
                   <FontAwesomeIcon icon={faCode} />
                   Integration
                 </h2>
-                {partner.integrationDocsUrl && (
-                  <a href={partner.integrationDocsUrl} target="_blank" rel="noopener noreferrer" className="docs-link">
+                {integrationDocsHref && (
+                  <a href={integrationDocsHref} target="_blank" rel="noopener noreferrer" className="docs-link">
                     <FontAwesomeIcon icon={faBook} />
                     Documentation
                     <FontAwesomeIcon icon={faArrowUpRightFromSquare} />
