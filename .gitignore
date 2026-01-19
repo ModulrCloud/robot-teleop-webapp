@@ -34,3 +34,6 @@ rust/
 
 # Documentation/explanation files (not for commit)
 explanations/
+
+# Interface specification (reference only, not committed)
+interface-spec/
