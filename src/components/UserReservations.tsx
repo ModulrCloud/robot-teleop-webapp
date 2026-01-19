@@ -14,6 +14,8 @@ interface UserReservationsProps {
   userCurrency: string;
   exchangeRates?: Record<string, number>;
   refreshTrigger?: number; // Key to force refresh
+  variant?: 'section' | 'banner';
+  limit?: number;
 }
 
 interface Reservation {
@@ -31,6 +33,8 @@ export function UserReservations({
   userCurrency,
   exchangeRates,
   refreshTrigger,
+  variant = 'section',
+  limit,
 }: UserReservationsProps) {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -53,9 +57,13 @@ export function UserReservations({
           const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
           // Filter to only show pending, confirmed, and active reservations
           const activeStatuses = ['pending', 'confirmed', 'active'];
-          const filtered = (body.reservations || []).filter((r: Reservation) => 
-            activeStatuses.includes(r.status.toLowerCase())
-          );
+          const filtered = (body.reservations || [])
+            .filter((r: Reservation) => activeStatuses.includes(r.status.toLowerCase()))
+            .sort((a: Reservation, b: Reservation) => {
+              const aTime = new Date(a.startTime).getTime();
+              const bTime = new Date(b.startTime).getTime();
+              return aTime - bTime;
+            });
           setReservations(filtered);
         }
       }
@@ -86,7 +94,7 @@ export function UserReservations({
 
   if (isLoading) {
     return (
-      <div className="user-reservations">
+      <div className={`user-reservations ${variant === 'banner' ? 'user-reservations-banner' : ''}`}>
         <p>Loading reservations...</p>
       </div>
     );
@@ -96,15 +104,27 @@ export function UserReservations({
     return null; // Don't show section if no reservations
   }
 
+  const visibleReservations = typeof limit === 'number' ? reservations.slice(0, limit) : reservations;
+
   return (
-    <div className="user-reservations">
-      <h3>
-        <FontAwesomeIcon icon={faCalendarAlt} />
-        Your Reservations
-      </h3>
+    <div className={`user-reservations ${variant === 'banner' ? 'user-reservations-banner' : ''}`}>
+      {variant === 'section' ? (
+        <h3>
+          <FontAwesomeIcon icon={faCalendarAlt} />
+          Your Reservations
+        </h3>
+      ) : (
+        <div className="user-reservations-banner-header">
+          <FontAwesomeIcon icon={faCalendarAlt} />
+          <span>Upcoming session</span>
+        </div>
+      )}
       <div className="reservations-list">
-        {reservations.map((reservation) => (
-          <div key={reservation.id} className="reservation-card">
+        {visibleReservations.map((reservation) => (
+          <div
+            key={reservation.id}
+            className={`reservation-card ${variant === 'banner' ? 'reservation-card-banner' : ''}`}
+          >
             <div className="reservation-info">
               <div className="reservation-time">
                 <FontAwesomeIcon icon={faClock} />

@@ -24,7 +24,7 @@ const getRobotImage = (model: string, imageUrl?: string): string => {
   if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('/'))) {
     return imageUrl;
   }
-  
+
   const modelImages: Record<string, string> = {
     'rover': '/default/rover.png',
     'humanoid': '/default/humanoid.png',
@@ -33,7 +33,7 @@ const getRobotImage = (model: string, imageUrl?: string): string => {
     'robodog': '/default/robodog.png',
     'robot': '/default/robot.png',
   };
-  
+
   return modelImages[model?.toLowerCase() || ''] || '/default/humanoid.png';
 };
 
@@ -43,7 +43,7 @@ export default function RobotDetail() {
   const navigate = useNavigate();
   const { user } = useAuthStatus();
   const { credits, refreshCredits } = useUserCredits();
-  
+
   const [robot, setRobot] = useState<any>(null);
   const [robotImage, setRobotImage] = useState<string>('');
   const [partner, setPartner] = useState<any>(null);
@@ -168,7 +168,7 @@ export default function RobotDetail() {
             });
             if (partners && partners.length > 0) {
               setPartner(partners[0]);
-              
+
               // Check if current user is the partner owner
               if (user?.username && partners[0].cognitoUsername === user.username) {
                 setIsPartnerOwner(true);
@@ -200,7 +200,7 @@ export default function RobotDetail() {
         const status = await client.queries.getRobotStatusLambda({
           robotId: robotId,
         });
-        
+
         if (status.data) {
           setRobotStatus({
             isOnline: status.data.isOnline || false,
@@ -216,7 +216,7 @@ export default function RobotDetail() {
     };
 
     loadRobotStatus();
-    
+
     // Poll status every 10 seconds
     const interval = setInterval(loadRobotStatus, 10000);
     return () => clearInterval(interval);
@@ -239,7 +239,7 @@ export default function RobotDetail() {
         const activeSession = sessions?.find(
           session => session.userId !== user.username && session.status === 'active'
         );
-        
+
         setIsInUse(!!activeSession);
       } catch (err) {
         logger.warn('Error checking if robot is in use:', err);
@@ -247,7 +247,7 @@ export default function RobotDetail() {
     };
 
     checkIfInUse();
-    
+
     // Poll every 5 seconds
     const interval = setInterval(checkIfInUse, 5000);
     return () => clearInterval(interval);
@@ -370,11 +370,10 @@ export default function RobotDetail() {
 
   return (
     <div className="robot-detail-container">
-      <button className="back-button" onClick={() => navigate('/robots')}>
-        <FontAwesomeIcon icon={faArrowLeft} /> Back to Robots
-      </button>
-
-      <div className="robot-detail-header">
+      <div className="robot-detail-topbar">
+        <button className="back-button" onClick={() => navigate('/robots')}>
+          <FontAwesomeIcon icon={faArrowLeft} /> Back to Robots
+        </button>
         <button
           className="start-session-button"
           onClick={handleStartSession}
@@ -390,6 +389,19 @@ export default function RobotDetail() {
         </div>
       )}
 
+      {user && robot.robotId && (
+        <div className="robot-detail-reservation-banner">
+          <UserReservations
+            robotId={robot.robotId}
+            userCurrency={userCurrency}
+            exchangeRates={exchangeRates || undefined}
+            refreshTrigger={reservationsRefreshKey}
+            variant="banner"
+            limit={1}
+          />
+        </div>
+      )}
+
       <div className="robot-detail-content">
         <div className="robot-detail-main">
           <div className="robot-image-section">
@@ -398,7 +410,7 @@ export default function RobotDetail() {
 
           <div className="robot-info-section">
             <h1 className="robot-detail-name">{robot.name || 'Unnamed Robot'}</h1>
-            
+
             {robot.description && (
               <p className="robot-detail-description">{robot.description}</p>
             )}
@@ -436,92 +448,92 @@ export default function RobotDetail() {
                 )}
               </div>
 
-            {/* Configure Section */}
-            {robot && robot.robotId && (
-              <div className="robot-scheduling-section">
-                <h2>
-                  <FontAwesomeIcon icon={faCog} />
-                  Configure
-                </h2>
-                <p className="scheduling-description">
-                  Manage scheduling, input bindings, and services for this robot.
-                </p>
-                <div className="configure-buttons">
-                  <button
-                    className="schedule-button"
-                    onClick={() => setShowSchedulingModal(true)}
-                  >
-                    <FontAwesomeIcon icon={faCalendarAlt} />
-                    Schedule Robot Time
-                  </button>
-                  <button
-                    className="schedule-button"
-                    onClick={() => setShowInputBindingsModal(true)}
-                  >
-                    <FontAwesomeIcon icon={faKeyboard} />
-                    Input Bindings
-                  </button>
-                  <button
-                    className="schedule-button schedule-button-disabled"
-                    disabled
-                    aria-disabled="true"
-                    title="Services selection is coming soon"
-                  >
-                    <FontAwesomeIcon icon={faTools} />
-                    Services (coming soon)
-                  </button>
-                </div>
-                <div className="services-placeholder">
-                  Services can be added here before teleop starts. We'll show pricing in advance.
-                </div>
-                <div className="cost-summary compact">
-                  <div className="cost-summary-row total">
-                    <span>Estimated cost per hour</span>
-                    <span>
-                      {formatCreditsAsCurrencySync(
-                        (robot.hourlyRateCredits || 0) + servicesSubtotalCredits,
-                        userCurrency as any,
-                        exchangeRates || undefined
-                      )}
-                    </span>
+              {/* Configure Section */}
+              {robot && robot.robotId && (
+                <div className="robot-scheduling-section">
+                  <h2>
+                    <FontAwesomeIcon icon={faCog} />
+                    Configure
+                  </h2>
+                  <p className="scheduling-description">
+                    Manage scheduling, input bindings, and services for this robot.
+                  </p>
+                  <div className="configure-buttons">
+                    <button
+                      className="schedule-button"
+                      onClick={() => setShowSchedulingModal(true)}
+                    >
+                      <FontAwesomeIcon icon={faCalendarAlt} />
+                      Schedule Robot Time
+                    </button>
+                    <button
+                      className="schedule-button"
+                      onClick={() => setShowInputBindingsModal(true)}
+                    >
+                      <FontAwesomeIcon icon={faKeyboard} />
+                      Input Bindings
+                    </button>
+                    <button
+                      className="schedule-button schedule-button-disabled"
+                      disabled
+                      aria-disabled="true"
+                      title="Services selection is coming soon"
+                    >
+                      <FontAwesomeIcon icon={faTools} />
+                      Services (coming soon)
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    className="cost-summary-toggle"
-                    onClick={() => setShowPricingDetails((prev) => !prev)}
-                  >
-                    {showPricingDetails ? 'Hide details' : 'View details'}
-                  </button>
-                  {showPricingDetails && (
-                    <>
-                      <div className="cost-summary-row">
-                        <span>Robot rate</span>
-                        <span>
-                          {formatCreditsAsCurrencySync(
-                            robot.hourlyRateCredits || 0,
-                            userCurrency as any,
-                            exchangeRates || undefined
-                          )}
-                        </span>
-                      </div>
-                      <div className="cost-summary-row">
-                        <span>Services subtotal</span>
-                        <span>
-                          {formatCreditsAsCurrencySync(
-                            servicesSubtotalCredits,
-                            userCurrency as any,
-                            exchangeRates || undefined
-                          )}
-                        </span>
-                      </div>
-                      <p className="cost-summary-note">
-                        Services pricing will appear here before teleop starts.
-                      </p>
-                    </>
-                  )}
+                  <div className="services-placeholder">
+                    Services can be added here before teleop starts. We'll show pricing in advance.
+                  </div>
+                  <div className="cost-summary compact">
+                    <div className="cost-summary-row total">
+                      <span>Estimated cost per hour</span>
+                      <span>
+                        {formatCreditsAsCurrencySync(
+                          (robot.hourlyRateCredits || 0) + servicesSubtotalCredits,
+                          userCurrency as any,
+                          exchangeRates || undefined
+                        )}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="cost-summary-toggle"
+                      onClick={() => setShowPricingDetails((prev) => !prev)}
+                    >
+                      {showPricingDetails ? 'Hide details' : 'View details'}
+                    </button>
+                    {showPricingDetails && (
+                      <>
+                        <div className="cost-summary-row">
+                          <span>Robot rate</span>
+                          <span>
+                            {formatCreditsAsCurrencySync(
+                              robot.hourlyRateCredits || 0,
+                              userCurrency as any,
+                              exchangeRates || undefined
+                            )}
+                          </span>
+                        </div>
+                        <div className="cost-summary-row">
+                          <span>Services subtotal</span>
+                          <span>
+                            {formatCreditsAsCurrencySync(
+                              servicesSubtotalCredits,
+                              userCurrency as any,
+                              exchangeRates || undefined
+                            )}
+                          </span>
+                        </div>
+                        <p className="cost-summary-note">
+                          Services pricing will appear here before teleop starts.
+                        </p>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
             </div>
           </div>
         </div>
@@ -531,9 +543,19 @@ export default function RobotDetail() {
           <p className="specs-placeholder">Specifications will be available soon.</p>
         </div>
 
+        {user && robot.robotId && (
+          <UserReservations
+            robotId={robot.robotId}
+            userCurrency={userCurrency}
+            exchangeRates={exchangeRates || undefined}
+            refreshTrigger={reservationsRefreshKey}
+            variant="section"
+          />
+        )}
+
         <div className="robot-reviews-section">
           <h2>Ratings & Reviews</h2>
-          
+
           {/* Average Rating Display */}
           {robot.averageRating && (
             <div className="average-rating-display">
@@ -585,16 +607,6 @@ export default function RobotDetail() {
           )}
         </div>
       </div>
-
-      {/* User Reservations Section */}
-      {robot && robot.robotId && user && (
-        <UserReservations
-          robotId={robot.robotId}
-          userCurrency={userCurrency}
-          exchangeRates={exchangeRates || undefined}
-          refreshTrigger={reservationsRefreshKey}
-        />
-      )}
 
       <RobotSchedulingModal
         isOpen={showSchedulingModal}
