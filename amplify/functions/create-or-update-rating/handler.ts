@@ -202,7 +202,10 @@ export const handler: Schema["createOrUpdateRatingLambda"]["functionHandler"] = 
         new UpdateCommand({
           TableName: ROBOT_RATING_TABLE,
           Key: { id: existingRating.id },
-          UpdateExpression: 'SET rating = :rating, comment = :comment, updatedAt = :updatedAt, userDisplayName = :displayName',
+          UpdateExpression: 'SET rating = :rating, #comment = :comment, updatedAt = :updatedAt, userDisplayName = :displayName',
+          ExpressionAttributeNames: {
+            '#comment': 'comment',
+          },
           ExpressionAttributeValues: {
             ':rating': rating,
             ':comment': comment || null,
@@ -262,11 +265,11 @@ export const handler: Schema["createOrUpdateRatingLambda"]["functionHandler"] = 
     }
   } catch (error) {
     console.error("Error creating/updating rating:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
     return {
       statusCode: 500,
       body: JSON.stringify({
-        error: "Failed to create/update rating",
-        details: error instanceof Error ? error.message : String(error),
+        error: `Failed to create/update rating: ${errorMessage}`,
       }),
     };
   }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import CardGrid from "../components/CardGrid";
 import { type CardGridItemProps } from "../components/CardGridItem";
@@ -7,6 +7,8 @@ import { useAuthStatus } from "../hooks/useAuthStatus";
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from "../components/LoadingWheel";
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faSearch, faFilter } from '@fortawesome/free-solid-svg-icons';
 import "./RobotSelect.css";
 import { getUrl } from 'aws-amplify/storage';
 import { logger } from '../utils/logger';
@@ -14,29 +16,28 @@ import { formatCreditsAsCurrencySync, fetchExchangeRates } from '../utils/credit
 
 const client = generateClient<Schema>();
 
-const getRobotImage = (model: string, imageUrl?: string): string => {
-  // Only use imageUrl if it's already a full URL (http/https) or a local path (/)
-  // Don't use S3 keys as-is - they need to be resolved first
+const getRobotImage = (robotType: string, imageUrl?: string): string => {
   if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('/'))) {
     return imageUrl;
   }
   
-  const modelImages: Record<string, string> = {
-    'humanoid': '/humaniod.png',
-    'drone': '/drone.png',
-    'rover': '/rover.webp',
-    'arm': '/robot_arm.webp',
-    'submarine': '/submarine.png',
-    'racer': '/racer.png',
+  const typeImages: Record<string, string> = {
+    'rover': '/default/rover.png',
+    'humanoid': '/default/robot.png',
+    'drone': '/default/drone.png',
+    'sub': '/default/sub.png',
+    'robodog': '/default/robodog.png',
+    'robot': '/default/humanoid.png',
   };
   
-  return modelImages[model.toLowerCase()] || '/humaniod.png';
+  return typeImages[robotType?.toLowerCase() || ''] || '/default/humanoid.png';
 };
 
 // Extended robot data to include the UUID for deletion
 interface RobotData extends CardGridItemProps {
   uuid?: string; // The actual Robot.id (UUID) for deletion
-  model?: string; // Robot model type (e.g., 'humanoid', 'rover', 'drone', 'submarine')
+  model?: string; // Robot model type
+  robotType?: string; // Robot type for default image selection
 }
 
 export default function RobotSelect() {
@@ -52,6 +53,9 @@ export default function RobotSelect() {
   const [platformMarkup, setPlatformMarkup] = useState<number>(30); // Default 30%
   const [userCurrency, setUserCurrency] = useState<string>('USD');
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
+  const pageSize = 9;
   const navigate = useNavigate();
   
   // Check if user can edit robots (Partners or Admins)
@@ -400,11 +404,6 @@ export default function RobotSelect() {
                 // For now, we'll rely on the ACL check
               }
               
-              // Log model for debugging
-              if (robot.model) {
-                logger.log(`[ROBOT_IMAGE] Robot "${robot.name || 'Unnamed'}": model="${robot.model}", image="${getRobotImage(robot.model, robot.imageUrl)}"`);
-              }
-              
               // Calculate hourly rate (partner rate + platform fee)
               let hourlyRateDisplay: string | undefined = undefined;
               
@@ -428,15 +427,15 @@ export default function RobotSelect() {
                 hourlyRateDisplay = "Free";
               }
               return {
-                id: (robot.robotId || robot.id) as string, // Use robotId (string) for connection, fallback to id
-                uuid: robot.id || undefined, // Store the actual UUID for deletion
+                id: (robot.robotId || robot.id) as string,
+                uuid: robot.id || undefined,
                 title: robot.name || 'Unnamed Robot',
                 description: description,
-                location: location, // Location on separate line
-                // Use model-based default image initially - S3 keys will be resolved in resolveImages
-                imageUrl: getRobotImage(robot.model),
-                rawImageUrl: robot.imageUrl, // Store S3 key for later resolution
-                disabled: !canAccess, // Gray out if user can't access
+                location: location,
+                imageUrl: getRobotImage(robot.robotType || robot.model, robot.imageUrl),
+                rawImageUrl: robot.imageUrl,
+                robotType: robot.robotType || robot.model,
+                disabled: !canAccess,
                 hourlyRate: hourlyRateDisplay,
               };
             });
@@ -469,8 +468,8 @@ export default function RobotSelect() {
               id: 'robot1',
               title: 'Test Robot (Local)',
               description: 'Default test robot for local development',
-              imageUrl: '/racer.png',
-              uuid: undefined, // No UUID for test robot (can't be deleted)
+              imageUrl: '/default/robot.png',
+              uuid: undefined,
             },
           ];
         }
@@ -487,8 +486,8 @@ export default function RobotSelect() {
               id: 'robot1',
               title: 'Test Robot (Local)',
               description: 'Default test robot for local development',
-              imageUrl: '/racer.png',
-              uuid: undefined, // No UUID for test robot (can't be deleted)
+              imageUrl: '/default/robot.png',
+              uuid: undefined,
             },
           ]);
         } else {
@@ -542,17 +541,6 @@ export default function RobotSelect() {
   const handleRobotClick = (robot: CardGridItemProps) => {
     // Navigate to robot detail page
     navigate(`/robot/${robot.id}`);
-  };
-
-  const handleViewRobot = (robot: RobotData, event: React.MouseEvent) => {
-    event.stopPropagation();
-    
-    if (!robot.uuid) {
-      logger.error('Cannot view robot: missing UUID');
-      return;
-    }
-    
-    navigate(`/edit-robot?robotId=${robot.uuid}&mode=view`);
   };
 
   const handleEditRobot = (robot: RobotData, event: React.MouseEvent) => {
@@ -626,7 +614,7 @@ export default function RobotSelect() {
   };
 
   const loadMoreRobots = async () => {
-    if (!nextToken || isLoading) return;
+    if (!nextToken || isLoading) return false;
     
     try {
       setIsLoading(true);
@@ -634,7 +622,7 @@ export default function RobotSelect() {
       if (!client.queries.listAccessibleRobotsLambda) {
         logger.warn('⚠️ listAccessibleRobotsLambda not available. Cannot load more robots.');
         setHasMore(false);
-        return;
+        return false;
       }
       
       const queryResponse = await client.queries.listAccessibleRobotsLambda({
@@ -671,8 +659,8 @@ export default function RobotSelect() {
               uuid: robot.id || undefined,
               title: robot.name || 'Unnamed Robot',
               description: description,
-              // Use resolved image if available, otherwise fall back to model-based default
-              imageUrl: resolvedImages[robot.id] || getRobotImage(robot.model),
+              imageUrl: resolvedImages[robot.id] || getRobotImage(robot.robotType || robot.model),
+              robotType: robot.robotType || robot.model,
             };
           });
         
@@ -680,21 +668,69 @@ export default function RobotSelect() {
         const token = responseData.nextToken || '';
         setNextToken(token || null);
         setHasMore(!!token);
+        return true;
       } else {
         setNextToken(null);
         setHasMore(false);
+        return false;
       }
     } catch (err) {
       logger.error('Error loading more robots:', err);
       alert('Failed to load more robots. Please try again.');
+      return false;
     } finally {
       setIsLoading(false);
     }
   };
 
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
+
+  const filteredRobots = useMemo(() => {
+    const normalized = searchTerm.trim().toLowerCase();
+    if (!normalized) return robots;
+    return robots.filter(robot => {
+      const title = robot.title?.toLowerCase() || '';
+      const description = robot.description?.toLowerCase() || '';
+      const location = (robot as any).location?.toLowerCase() || '';
+      return title.includes(normalized) || description.includes(normalized) || location.includes(normalized);
+    });
+  }, [robots, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRobots.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * pageSize;
+  const pagedRobots = filteredRobots.slice(startIndex, startIndex + pageSize);
+  const totalPagesLabel = hasMore ? `${totalPages}+` : `${totalPages}`;
+  const pageButtons = Array.from(
+    new Set(
+      [1, currentPage - 1, currentPage, currentPage + 1, totalPages].filter(
+        (value) => value >= 1 && value <= totalPages
+      )
+    )
+  ).sort((a, b) => a - b);
+
+  const handlePrevPage = () => {
+    setPage(prev => Math.max(1, prev - 1));
+  };
+
+  const handleNextPage = async () => {
+    if (currentPage < totalPages) {
+      setPage(prev => prev + 1);
+      return;
+    }
+    if (hasMore) {
+      const loaded = await loadMoreRobots();
+      if (loaded) {
+        setPage(prev => prev + 1);
+      }
+    }
+  };
+
   if (isLoading) {
     return (
-      <div className="robot-select-container">
+      <div className="robot-select-container robot-select-loading">
         <h2>Select Robot</h2>
         <LoadingWheel />
       </div>
@@ -723,41 +759,86 @@ export default function RobotSelect() {
 
   return (
     <div className="robot-select-container">
-      <h2>Select Robot</h2>
+      <div className="robot-directory-header">
+        <h1>Select Robot</h1>
+        <p>Choose a robot to start a teleop session.</p>
+      </div>
+      <div className="robot-directory-controls">
+        <div className="robot-search-box">
+          <FontAwesomeIcon icon={faSearch} className="robot-search-icon" />
+          <input
+            type="search"
+            placeholder="Search robots..."
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+          />
+          <span className="robot-count">
+            <FontAwesomeIcon icon={faFilter} className="robot-filter-icon" />
+            {filteredRobots.length} robot{filteredRobots.length === 1 ? '' : 's'}
+          </span>
+        </div>
+      </div>
+      {filteredRobots.length === 0 ? (
+        <p className="robot-empty-state">No robots match your search.</p>
+      ) : (
+        <>
           <CardGrid
-            items={robots.map(robot => ({ 
+            items={pagedRobots.map(robot => ({ 
               ...robot, 
-              // Use resolved image if available, otherwise use the robot's imageUrl (which should be model-based default)
-              imageUrl: resolvedImages[robot.id] || robot.imageUrl || getRobotImage(robot.model || 'humanoid')
+              imageUrl: resolvedImages[robot.id] || robot.imageUrl || getRobotImage(robot.robotType || 'robot')
             }))}
             columns={3}
             multiple={false}
             selected={selected}
             setSelected={setSelected}
             onItemClick={handleRobotClick}
-            onView={handleViewRobot}
             onEdit={canEditRobots ? handleEditRobot : undefined}
             onDelete={canEditRobots ? handleDeleteRobot : undefined}
             deletingItemId={deletingRobotId}
           />
-      {hasMore && (
-        <button
-          className="load-more-button"
-          onClick={loadMoreRobots}
-          disabled={isLoading}
-          style={{
-            marginTop: '1rem',
-            padding: '0.75rem 1.5rem',
-            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            borderRadius: '8px',
-            color: '#fff',
-            cursor: isLoading ? 'wait' : 'pointer',
-            fontSize: '1rem',
-          }}
-        >
-          {isLoading ? 'Loading...' : 'Load More Robots'}
-        </button>
+          <div className="robot-pagination">
+            <button
+              className="robot-pagination-button"
+              type="button"
+              onClick={handlePrevPage}
+              disabled={currentPage === 1 || isLoading}
+            >
+              Previous
+            </button>
+            <div className="robot-pagination-pages">
+              {pageButtons.map((pageNumber, index) => {
+                const prev = pageButtons[index - 1];
+                const showGap = prev !== undefined && pageNumber - prev > 1;
+                return (
+                  <div key={pageNumber} className="robot-pagination-page">
+                    {showGap && <span className="robot-pagination-ellipsis">…</span>}
+                    <button
+                      type="button"
+                      className={`robot-pagination-number ${
+                        pageNumber === currentPage ? 'active' : ''
+                      }`}
+                      onClick={() => setPage(pageNumber)}
+                      disabled={isLoading}
+                    >
+                      {pageNumber}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <span className="robot-pagination-status">
+              Page {currentPage} of {totalPagesLabel}
+            </span>
+            <button
+              className="robot-pagination-button"
+              type="button"
+              onClick={handleNextPage}
+              disabled={(currentPage >= totalPages && !hasMore) || isLoading}
+            >
+              {isLoading ? 'Loading...' : currentPage >= totalPages && hasMore ? 'Load more' : 'Next'}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

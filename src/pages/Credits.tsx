@@ -71,25 +71,19 @@ export const Credits = () => {
 
   // Handle Stripe payment redirect
   useEffect(() => {
-    if (!user?.username) {
-      logger.log("⏳ [REDIRECT] Waiting for user to load...");
-      return;
-    }
+    if (!user?.username) return;
 
     const success = searchParams.get('success');
     const sessionId = searchParams.get('session_id');
     const canceled = searchParams.get('canceled') || searchParams.get('cancelled');
 
     if (canceled === 'true') {
-      logger.log("❌ [REDIRECT] Payment was canceled");
       setError("Payment was canceled. No charges were made.");
-      // Clean up URL
       setSearchParams({});
       return;
     }
 
     if (success === 'true' && sessionId) {
-      logger.log("✅ [REDIRECT] Payment success detected, processing...");
       handlePaymentSuccess(sessionId);
     }
   }, [user?.username, searchParams]);
@@ -102,7 +96,17 @@ export const Credits = () => {
       const result = await client.queries.getUserCreditsLambda();
       
       // Parse the JSON response
-      let queryData: { success?: boolean; userCredits?: any };
+      interface UserCreditsResponse {
+        success?: boolean;
+        userCredits?: {
+          autoTopUpEnabled?: boolean;
+          autoTopUpThreshold?: number;
+          autoTopUpTier?: string;
+          stripePaymentMethodId?: string;
+        };
+      }
+      
+      let queryData: UserCreditsResponse;
       if (typeof result.data === 'string') {
         try {
           const firstParse = JSON.parse(result.data);
@@ -112,7 +116,7 @@ export const Credits = () => {
           return;
         }
       } else {
-        queryData = result.data as typeof queryData;
+        queryData = result.data as UserCreditsResponse;
       }
 
       if (queryData.userCredits) {
@@ -278,26 +282,20 @@ export const Credits = () => {
 
   const handlePaymentSuccess = async (sessionId: string) => {
     if (!user?.username) {
-      logger.error("❌ [PAYMENT] No user logged in");
       setError("You must be logged in to process payment");
       return;
     }
 
     try {
-      logger.log("🎯 [PAYMENT] Starting payment success handler");
-      logger.log("🎯 [PAYMENT] Session ID:", sessionId);
-      logger.log("🎯 [PAYMENT] Current user:", user.username);
-
-      // Step 1: Verify payment with Stripe
-      logger.log("🔍 [PAYMENT] Step 1: Verifying payment with Stripe...");
       const verifyResult = await client.mutations.verifyStripePaymentLambda({
         sessionId,
       });
 
-      logger.log("✅ [PAYMENT] Verification result:", verifyResult);
+      if (verifyResult.errors && verifyResult.errors.length > 0) {
+        const errorMessages = verifyResult.errors.map(e => e.message).join(', ');
+        throw new Error(errorMessages);
+      }
 
-      // Parse verification result (same double-encoding issue as checkout)
-      
       let verifyData: {
         success?: boolean;
         error?: string;
@@ -312,26 +310,18 @@ export const Credits = () => {
       if (typeof verifyResult.data === 'string') {
         try {
           const firstParse = JSON.parse(verifyResult.data);
-          if (typeof firstParse === 'string') {
-            verifyData = JSON.parse(firstParse);
-          } else {
-            verifyData = firstParse;
-          }
-        } catch (e) {
+          verifyData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+        } catch {
           throw new Error("Failed to parse payment verification response");
         }
       } else {
         verifyData = verifyResult.data as typeof verifyData;
       }
 
-
-      // Check if payment was declined or failed
       if (!verifyData.success) {
         const errorMsg = verifyData.error || "Payment was declined. Please check your payment method and try again.";
         setError(errorMsg);
-        // Clean up URL parameters
         setSearchParams({});
-        // Show error for 10 seconds
         setTimeout(() => setError(""), 10000);
         return;
       }
@@ -340,11 +330,7 @@ export const Credits = () => {
         throw new Error("Payment verification failed: No credits information received");
       }
 
-      logger.log("✅ [PAYMENT] Payment verified:", verifyData);
-
-      // Step 2: Add credits to user account
-      logger.log("🔍 [PAYMENT] Step 2: Adding credits to account...");
-      const addCreditsResult = await client.mutations.addCreditsLambda({
+      const addResult = await client.mutations.addCreditsLambda({
         userId: verifyData.userId!,
         credits: verifyData.credits,
         amountPaid: verifyData.amountPaid,
@@ -352,36 +338,26 @@ export const Credits = () => {
         tierId: verifyData.tierId,
       });
 
-      logger.log("✅ [PAYMENT] Credits added:", addCreditsResult);
+      if (addResult.errors && addResult.errors.length > 0) {
+        const errorMessages = addResult.errors.map(e => e.message).join(', ');
+        throw new Error(errorMessages);
+      }
 
-      // Wait a moment for DynamoDB eventual consistency
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased to 2 seconds
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Refresh credits and transactions
-      
-      // Retry logic - sometimes user object needs a moment
-      let retries = 0;
-      while (!user?.username && retries < 5) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        retries++;
-      }
-      
       if (user?.username) {
-        await refreshCredits(); // Refresh the balance from useUserCredits hook
-        // Trigger custom event for navbar update
+        await refreshCredits();
         window.dispatchEvent(new CustomEvent('creditsUpdated'));
-      } else {
       }
-      await loadCreditsData(); // Refresh auto-top-up settings
-      await loadTransactions(); // Refresh transaction history
+      await loadCreditsData();
+      await loadTransactions();
 
-      // Clean up URL parameters
       setSearchParams({});
-
       setSuccess(`Successfully added ${verifyData.credits.toLocaleString()} credits to your account!`);
       setTimeout(() => setSuccess(""), 5000);
     } catch (err) {
-      logger.error("❌ [PAYMENT] Error processing payment:", err);
+      logger.error("Error processing payment:", err);
       
       // Provide user-friendly error messages
       let errorMessage = "Failed to process payment. Please contact support if credits were charged.";

@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Joystick, { type JoystickChange } from "../components/Joystick";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { useWebRTC } from "../hooks/useWebRTC";
 import { useGamepad } from "../hooks/useGamepad";
+import { useKeyboardMovement } from "../hooks/useKeyboardMovement";
 import { useUserCredits } from "../hooks/useUserCredits";
 import { useToast } from "../hooks/useToast";
 import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../amplify/data/resource';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { 
+import {
   faClock,
   faRotate,
   faVideo,
@@ -21,8 +22,13 @@ import {
   faLock,
   faUserLock,
   faCoins,
-  faExclamationTriangle
+  faExclamationTriangle,
+  faKeyboard,
+  faMapMarkerAlt,
+  faCog
 } from '@fortawesome/free-solid-svg-icons';
+import { InputBindingsModal } from '../components/InputBindingsModal';
+import { useCustomCommandBindings } from '../hooks/useCustomCommandBindings';
 import "./Teleop.css";
 import { usePageTitle } from "../hooks/usePageTitle";
 import outputs from '../../amplify_outputs.json';
@@ -40,7 +46,7 @@ export default function Teleop() {
   const [sessionTime, setSessionTime] = useState(0);
   const [isJoystickActive, setIsJoystickActive] = useState(false);
   const [currentSpeed, setCurrentSpeed] = useState({ forward: 0, turn: 0 });
-  const [controlMode, setControlMode] = useState<'joystick' | 'gamepad'>('joystick');
+  const [controlMode, setControlMode] = useState<'joystick' | 'gamepad' | 'keyboard' | 'location'>('joystick');
   const [gamepadDetected, setGamepadDetected] = useState(false);
   const sendIntervalMs = 100; // 10 Hz
   const { credits, refreshCredits } = useUserCredits();
@@ -48,8 +54,13 @@ export default function Teleop() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [insufficientFunds, setInsufficientFunds] = useState(false);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
+  const [showInputBindingsModal, setShowInputBindingsModal] = useState(false);
+  const [clientBindings, setClientBindings] = useState<{
+    keyboard: Record<string, string>;
+    gamepad: Record<string, string>;
+  }>({ keyboard: {}, gamepad: {} });
   const lastDeductionTimeRef = useRef<number | null>(null);
-  
+
   // Low credits warning state
   const [lowCreditsWarningMinutes, setLowCreditsWarningMinutes] = useState<number>(1);
   const [sessionHourlyRate, setSessionHourlyRate] = useState<number | null>(null);
@@ -59,10 +70,10 @@ export default function Teleop() {
 
   // Read WebSocket URL from amplify_outputs.json (AWS signaling server)
   // Falls back to local WebSocket for development
-  const wsUrl = outputs?.custom?.signaling?.websocketUrl 
-    ? outputs.custom.signaling.websocketUrl 
+  const wsUrl = outputs?.custom?.signaling?.websocketUrl
+    ? outputs.custom.signaling.websocketUrl
     : (import.meta.env.VITE_WS_URL || 'ws://192.168.132.19:8765');
-  
+
   // Get robotId from URL params (set by RobotSelect page)
   // Falls back to environment variable or default for development
   const [searchParams] = useSearchParams();
@@ -73,9 +84,26 @@ export default function Teleop() {
     robotId,
   });
 
+  // Set up custom command bindings
+  useCustomCommandBindings({
+    robotId,
+    enabled: status.connected,
+    clientKeyboardBindings: clientBindings.keyboard,
+    clientGamepadBindings: clientBindings.gamepad,
+    onCommandExecute: (result) => {
+      showToast(
+        `Command executed: ${result.commandName} (${result.inputMethod})`,
+        'success',
+        3000
+      );
+    },
+  });
+
+  // Status changes are handled by the useWebRTC hook - no need to log here
+
   useEffect(() => {
     connect();
-    
+
     return () => {
       stopRobot();
       disconnect();
@@ -88,7 +116,7 @@ export default function Teleop() {
       sessionStartTimeRef.current = Date.now();
       lastDeductionTimeRef.current = Date.now();
       logger.log('Session started for robot:', robotId);
-      
+
       // Find the active session ID and load settings
       const findSessionId = async () => {
         try {
@@ -114,7 +142,7 @@ export default function Teleop() {
           logger.error('Failed to find session ID:', err);
         }
       };
-      
+
       // Load low credits warning setting
       const loadWarningSetting = async () => {
         try {
@@ -128,7 +156,7 @@ export default function Teleop() {
           logger.error('Failed to load warning setting:', err);
         }
       };
-      
+
       // Load platform markup
       const loadPlatformMarkup = async () => {
         try {
@@ -142,7 +170,7 @@ export default function Teleop() {
           logger.error('Failed to load platform markup:', err);
         }
       };
-      
+
       findSessionId();
       loadWarningSetting();
       loadPlatformMarkup();
@@ -178,22 +206,22 @@ export default function Teleop() {
         });
 
         if (result.data) {
-          const response = typeof result.data === 'string' 
-            ? JSON.parse(result.data) 
+          const response = typeof result.data === 'string'
+            ? JSON.parse(result.data)
             : result.data;
-          
+
           if (response.statusCode === 200) {
-            const body = typeof response.body === 'string' 
-              ? JSON.parse(response.body) 
+            const body = typeof response.body === 'string'
+              ? JSON.parse(response.body)
               : response.body;
-            
+
             logger.log('Credits deducted:', body);
             lastDeductionTimeRef.current = Date.now();
             // Refresh credits and notify navbar
             await refreshCredits();
             // Trigger custom event for navbar update
             window.dispatchEvent(new CustomEvent('creditsUpdated'));
-            
+
             // Check for low credits warning
             // Use remainingCredits from the response (most accurate)
             if (body.remainingCredits !== undefined && body.remainingCredits > 0 && sessionHourlyRate && platformMarkup) {
@@ -203,19 +231,19 @@ export default function Teleop() {
               const baseCostCredits = hourlyRateCredits * durationHours;
               const platformFeeCredits = baseCostCredits * (platformMarkup / 100);
               const costPerMinute = baseCostCredits + platformFeeCredits;
-              
+
               // Calculate remaining minutes
               const remainingCredits = body.remainingCredits;
               const remainingMinutes = remainingCredits / costPerMinute;
-              
+
               // Show warning if below threshold and haven't shown it yet this session
               if (remainingMinutes <= lowCreditsWarningMinutes && remainingMinutes > 0 && !warningShownRef.current) {
-                const minutesText = remainingMinutes < 1 
-                  ? 'less than 1 minute' 
+                const minutesText = remainingMinutes < 1
+                  ? 'less than 1 minute'
                   : remainingMinutes < 2
-                  ? 'about 1 minute'
-                  : `${Math.floor(remainingMinutes)} minutes`;
-                
+                    ? 'about 1 minute'
+                    : `${Math.floor(remainingMinutes)} minutes`;
+
                 showToast(
                   `Low credits warning: You have approximately ${minutesText} of session time remaining. Please top up your account to continue.`,
                   'warning',
@@ -229,27 +257,27 @@ export default function Teleop() {
             }
           } else if (response.statusCode === 402) {
             // Insufficient funds
-            const body = typeof response.body === 'string' 
-              ? JSON.parse(response.body) 
+            const body = typeof response.body === 'string'
+              ? JSON.parse(response.body)
               : response.body;
-            
+
             logger.error('Insufficient funds:', body);
-            
+
             // Refresh credits to show updated balance (should be 0 or very low)
             await refreshCredits();
             // Trigger custom event for navbar update
             window.dispatchEvent(new CustomEvent('creditsUpdated'));
-            
+
             // Show toast notification
             showToast(
               'Session terminated due to insufficient credits. Please top up your account to continue.',
               'error',
               8000
             );
-            
+
             // Reset warning flag
             warningShownRef.current = false;
-            
+
             setInsufficientFunds(true);
             stopRobot();
             disconnect();
@@ -273,7 +301,7 @@ export default function Teleop() {
 
     // Check immediately on mount
     checkGamepad();
-    
+
     // Browser security: gamepads already connected require user interaction to detect
     // Add one-time listeners for ANY user interaction to "activate" gamepad detection
     let interactionHandled = false;
@@ -288,27 +316,27 @@ export default function Teleop() {
         document.removeEventListener('pointerdown', handleFirstInteraction);
       }
     };
-    
+
     // Listen for any user interaction to activate gamepad detection
     document.addEventListener('mousedown', handleFirstInteraction, { once: true });
     document.addEventListener('touchstart', handleFirstInteraction, { once: true });
     document.addEventListener('keydown', handleFirstInteraction, { once: true });
     document.addEventListener('pointerdown', handleFirstInteraction, { once: true });
-    
+
     // Also check periodically (some browsers need user interaction first)
     const interval = setInterval(checkGamepad, 500); // Check more frequently
-    
+
     const handleGamepadConnected = () => {
       checkGamepad();
     };
-    
+
     const handleGamepadDisconnected = () => {
       checkGamepad();
     };
-    
+
     window.addEventListener('gamepadconnected', handleGamepadConnected);
     window.addEventListener('gamepaddisconnected', handleGamepadDisconnected);
-    
+
     return () => {
       clearInterval(interval);
       window.removeEventListener('gamepadconnected', handleGamepadConnected);
@@ -326,14 +354,14 @@ export default function Teleop() {
       const turn = input.turn * -1.0;
       setCurrentSpeed({ forward, turn });
       setIsJoystickActive(forward !== 0 || turn !== 0);
-      
+
       // Gamepad input detected - update detection status immediately
       const gamepads = navigator.getGamepads();
       const hasGamepad = Array.from(gamepads).some(g => g !== null);
       if (hasGamepad && !gamepadDetected) {
         setGamepadDetected(true);
       }
-      
+
       if (!status.connected || controlMode !== 'gamepad') return;
       const now = Date.now();
       if (now - lastSendTimeRef.current < sendIntervalMs) return;
@@ -349,17 +377,56 @@ export default function Teleop() {
     }
   }, [status.videoStream]);
 
+  const handleEndSession = useCallback(() => {
+    stopRobot();
+    disconnect();
+    const endDuration = sessionStartTimeRef.current
+      ? Math.floor((Date.now() - sessionStartTimeRef.current) / 1000)
+      : sessionTime;
+    sessionStorage.setItem('endSessionState', JSON.stringify({
+      duration: Math.max(0, endDuration),
+      sessionId: status.sessionId
+    }));
+    window.location.href = '/endsession';
+  }, [stopRobot, disconnect, sessionTime, status.sessionId]);
+
+  const handleKeyboardInput = useCallback((input: { forward: number; turn: number }) => {
+    const forward = input.forward;
+    const turn = input.turn;
+    setCurrentSpeed({ forward, turn });
+    setIsJoystickActive(forward !== 0 || turn !== 0);
+
+    if (!status.connected || controlMode !== 'keyboard') return;
+    const now = Date.now();
+    if (now - lastSendTimeRef.current < sendIntervalMs) return;
+    lastSendTimeRef.current = now;
+    sendCommand(forward, turn);
+  }, [status.connected, controlMode, sendCommand]);
+
+  const handleKeyboardStop = useCallback(() => {
+    setIsJoystickActive(false);
+    setCurrentSpeed({ forward: 0, turn: 0 });
+    if (status.connected) stopRobot();
+  }, [status.connected, stopRobot]);
+
+  const { pressedKeys } = useKeyboardMovement({
+    enabled: true,
+    controlMode,
+    escWorksInAllModes: true,
+    onInput: handleKeyboardInput,
+    onStop: handleKeyboardStop,
+    onEndSession: handleEndSession,
+  });
+
   const handleJoystickChange = (change: JoystickChange) => {
     if (!status.connected || controlMode !== 'joystick') return;
-    
+
     setIsJoystickActive(true);
-    
-    // Update visual feedback immediately for responsive feel
+
     const forward = change.y * 0.5;
     const turn = change.x * -1.0;
     setCurrentSpeed({ forward, turn });
-    
-    // Throttle network sends to avoid overwhelming the connection
+
     const now = Date.now();
     if (now - lastSendTimeRef.current >= sendIntervalMs) {
       lastSendTimeRef.current = now;
@@ -373,12 +440,6 @@ export default function Teleop() {
     if (status.connected) stopRobot();
   };
 
-  const handleEndSession = () => {
-    stopRobot();
-    disconnect();
-    // Pass both client-side duration (for display) and sessionId (for server-side billing verification)
-    navigate('/endsession', { state: { duration: sessionTime, sessionId: status.sessionId } });
-  };
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -401,14 +462,14 @@ export default function Teleop() {
               I will let you know once their session is closed.
             </p>
             <div className="busy-actions">
-              <button 
+              <button
                 className="retry-btn"
                 onClick={() => window.location.reload()}
               >
                 <FontAwesomeIcon icon={faRotate} />
                 Check Again
               </button>
-              <button 
+              <button
                 className="back-btn"
                 onClick={() => navigate('/robots')}
               >
@@ -432,14 +493,14 @@ export default function Teleop() {
               Your session has been paused due to insufficient credits. Please top up your account to continue.
             </p>
             <div className="busy-actions">
-              <button 
+              <button
                 className="retry-btn"
                 onClick={() => setShowPurchaseModal(true)}
               >
                 <FontAwesomeIcon icon={faCoins} />
                 Purchase Credits
               </button>
-              <button 
+              <button
                 className="back-btn"
                 onClick={() => navigate('/robots')}
               >
@@ -466,13 +527,13 @@ export default function Teleop() {
         {/* Toast Notification */}
         {toast.visible && (
           <div className={`toast-notification ${toast.type}`}>
-            <FontAwesomeIcon 
+            <FontAwesomeIcon
               icon={
                 toast.type === 'error' ? faExclamationTriangle :
-                toast.type === 'success' ? faCheckCircle :
-                toast.type === 'warning' ? faCircleExclamation :
-                faCheckCircle
-              } 
+                  toast.type === 'success' ? faCheckCircle :
+                    toast.type === 'warning' ? faCircleExclamation :
+                      faCheckCircle
+              }
             />
             <span>{toast.message}</span>
           </div>
@@ -488,7 +549,7 @@ export default function Teleop() {
           <span className="info-label">Robot:</span>
           <span className="info-value">{robotId}</span>
         </div>
-        
+
         <div className="session-timer">
           <FontAwesomeIcon icon={faClock} />
           {formatTime(sessionTime)}
@@ -519,14 +580,14 @@ export default function Teleop() {
         </div>
       )}
 
-      {status.error && (
+      {(status.error || (!status.connected && !status.connecting)) && (
         <div className="teleop-error-alert">
           <div className="error-content">
-            <strong>Connection Error:</strong> {status.error}
+            <strong>Connection Error:</strong> {status.error || 'Unable to connect to robot'}
             <div className="error-details">Check that WebSocket server is running at: {wsUrl}</div>
           </div>
-          <button 
-            onClick={connect} 
+          <button
+            onClick={connect}
             className="retry-btn"
             disabled={status.connecting}
           >
@@ -572,7 +633,7 @@ export default function Teleop() {
         <div className="teleop-controls-panel">
           <div className="controls-header">
             <h3>Movement Control</h3>
-            
+
             <div className="control-mode-selector">
               <button
                 className={`mode-btn ${controlMode === 'joystick' ? 'active' : ''}`}
@@ -580,6 +641,13 @@ export default function Teleop() {
               >
                 <FontAwesomeIcon icon={faArrowsUpDownLeftRight} />
                 Joystick
+              </button>
+              <button
+                className={`mode-btn ${controlMode === 'keyboard' ? 'active' : ''}`}
+                onClick={() => setControlMode('keyboard')}
+              >
+                <FontAwesomeIcon icon={faKeyboard} />
+                Keyboard
               </button>
               <button
                 className={`mode-btn ${controlMode === 'gamepad' ? 'active' : ''}`}
@@ -594,13 +662,25 @@ export default function Teleop() {
                 <FontAwesomeIcon icon={faGamepad} />
                 Gamepad
               </button>
+              <button
+                className={`mode-btn ${controlMode === 'location' ? 'active' : ''}`}
+                onClick={() => setControlMode('location')}
+              >
+                <FontAwesomeIcon icon={faMapMarkerAlt} />
+                Location
+              </button>
             </div>
           </div>
 
           <div className="control-status">
             <div className="status-row">
               <span className="status-label">Mode:</span>
-              <span className="status-value">{controlMode === 'joystick' ? 'Virtual Joystick' : 'Gamepad'}</span>
+              <span className="status-value">
+                {controlMode === 'joystick' ? 'Virtual Joystick' :
+                  controlMode === 'keyboard' ? 'Keyboard (WASD)' :
+                    controlMode === 'location' ? 'Location' :
+                      'Gamepad'}
+              </span>
             </div>
             <div className="status-row">
               <span className="status-label">Status:</span>
@@ -615,9 +695,9 @@ export default function Teleop() {
               <div className="speed-label">Forward</div>
               <div className="speed-bar-container">
                 <div className="speed-bar-center-line" />
-                <div 
-                  className="speed-bar forward" 
-                  style={{ 
+                <div
+                  className="speed-bar forward"
+                  style={{
                     left: currentSpeed.forward < 0 ? `${50 + (currentSpeed.forward / 0.5) * 50}%` : '50%',
                     width: `${Math.abs(currentSpeed.forward / 0.5) * 50}%`,
                     backgroundColor: currentSpeed.forward > 0 ? '#28a745' : currentSpeed.forward < 0 ? '#dc3545' : '#666'
@@ -630,9 +710,9 @@ export default function Teleop() {
               <div className="speed-label">Turn</div>
               <div className="speed-bar-container">
                 <div className="speed-bar-center-line" />
-                <div 
-                  className="speed-bar turn" 
-                  style={{ 
+                <div
+                  className="speed-bar turn"
+                  style={{
                     left: -currentSpeed.turn < 0 ? `${50 + (-currentSpeed.turn / 1.0) * 50}%` : '50%',
                     width: `${Math.abs(currentSpeed.turn / 1.0) * 50}%`,
                     backgroundColor: currentSpeed.turn < 0 ? '#ffc107' : currentSpeed.turn > 0 ? '#17a2b8' : '#666'
@@ -642,15 +722,60 @@ export default function Teleop() {
               <div className="speed-value">{((-currentSpeed.turn / 1.0) * 100).toFixed(0)}%</div>
             </div>
           </div>
-          
+
           {controlMode === 'joystick' ? (
             <div className="joystick-wrapper">
-              <Joystick 
-                onChange={handleJoystickChange} 
+              <Joystick
+                onChange={handleJoystickChange}
                 onEnd={handleJoystickEnd}
                 size={220}
                 knobSize={90}
               />
+            </div>
+          ) : controlMode === 'keyboard' ? (
+            <div className="keyboard-controls-hint">
+              <div className="keyboard-hint-content">
+                <h3>Keyboard Controls</h3>
+                <div className="keyboard-layout">
+                  <div className="key-row">
+                    <div className={`key-hint ${pressedKeys.includes('KeyW') ? 'pressed' : ''}`}>
+                      <kbd>W</kbd>
+                      <span>Forward</span>
+                    </div>
+                  </div>
+                  <div className="key-row">
+                    <div className={`key-hint ${pressedKeys.includes('KeyA') ? 'pressed' : ''}`}>
+                      <kbd>A</kbd>
+                      <span>Turn Left</span>
+                    </div>
+                    <div className={`key-hint ${pressedKeys.includes('KeyS') ? 'pressed' : ''}`}>
+                      <kbd>S</kbd>
+                      <span>Backward</span>
+                    </div>
+                    <div className={`key-hint ${pressedKeys.includes('KeyD') ? 'pressed' : ''}`}>
+                      <kbd>D</kbd>
+                      <span>Turn Right</span>
+                    </div>
+                  </div>
+                  <div className="key-row">
+                    <div className={`key-hint ${pressedKeys.includes('Escape') ? 'pressed' : ''}`}>
+                      <kbd>ESC</kbd>
+                      <span>End Session</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : controlMode === 'location' ? (
+            <div className="location-controls-hint">
+              <div className="location-hint-content">
+                <FontAwesomeIcon icon={faMapMarkerAlt} className="location-icon" size="4x" />
+                <h3>Location Control</h3>
+                <p className="coming-soon-message">Coming Soon</p>
+                <p className="location-description">
+                  Navigate your robot to specific locations using map-based controls.
+                </p>
+              </div>
             </div>
           ) : (
             <div className="gamepad-wrapper">
@@ -673,7 +798,7 @@ export default function Teleop() {
                   <FontAwesomeIcon icon={faGamepad} className="gamepad-icon" size="6x" />
                   <div className="gamepad-status not-detected-status">
                     <div className="gamepad-hint">
-                      {controlMode === 'gamepad' 
+                      {controlMode === 'gamepad'
                         ? 'Press a button on your controller to start'
                         : 'Switch to Gamepad mode to use your controller'}
                     </div>
@@ -694,14 +819,32 @@ export default function Teleop() {
             </div>
           </div>
 
-          <button 
-            onClick={handleEndSession} 
+          <button
+            onClick={handleEndSession}
             className="end-session-btn"
             disabled={status.connecting}
           >
             <FontAwesomeIcon icon={faRightFromBracket} />
             End Session
           </button>
+        </div>
+
+        {/* Settings Card */}
+        <div className="teleop-settings-card">
+          <div className="settings-header">
+            <FontAwesomeIcon icon={faCog} />
+            <h3>Settings</h3>
+          </div>
+          <div className="settings-content">
+            <button
+              type="button"
+              className="settings-button"
+              onClick={() => setShowInputBindingsModal(true)}
+            >
+              <FontAwesomeIcon icon={faKeyboard} />
+              <span>Input Bindings</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -723,17 +866,31 @@ export default function Teleop() {
       {/* Toast Notification */}
       {toast.visible && (
         <div className={`toast-notification ${toast.type}`}>
-          <FontAwesomeIcon 
+          <FontAwesomeIcon
             icon={
               toast.type === 'error' ? faExclamationTriangle :
-              toast.type === 'success' ? faCheckCircle :
-              toast.type === 'warning' ? faCircleExclamation :
-              faCheckCircle
-            } 
+                toast.type === 'success' ? faCheckCircle :
+                  toast.type === 'warning' ? faCircleExclamation :
+                    faCheckCircle
+            }
           />
           <span>{toast.message}</span>
         </div>
       )}
+
+      {/* Input Bindings Modal */}
+      <InputBindingsModal
+        isOpen={showInputBindingsModal}
+        onClose={() => setShowInputBindingsModal(false)}
+        robotId={robotId}
+        clientBindings={clientBindings}
+        onSaveClientBindings={(bindings) => {
+          setClientBindings(bindings);
+          // In real implementation, save to backend/localStorage
+          // For now, just update state
+          showToast('Input bindings saved successfully!', 'success');
+        }}
+      />
     </div>
   );
 }

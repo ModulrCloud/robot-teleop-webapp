@@ -236,7 +236,7 @@ export function RobotSchedulingModal({
   return (
     <div className="scheduling-modal-overlay" onClick={onClose}>
       <div className="scheduling-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
+        <div className="scheduling-modal-header">
           <h2>
             <FontAwesomeIcon icon={faCalendarAlt} />
             Schedule Robot Time
@@ -246,7 +246,7 @@ export function RobotSchedulingModal({
           </button>
         </div>
 
-        <div className="modal-content">
+        <div className="scheduling-modal-content">
           {step === 'calendar' && (
             <>
               <div className="scheduling-info">

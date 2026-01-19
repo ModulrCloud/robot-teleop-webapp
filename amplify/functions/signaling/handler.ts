@@ -16,6 +16,7 @@ import { jwtVerify, createRemoteJWKSet } from 'jose';
 const CONN_TABLE = process.env.CONN_TABLE!;
 const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
 const REVOKED_TOKENS_TABLE = process.env.REVOKED_TOKENS_TABLE!;
+const USER_INVALIDATION_TABLE = process.env.USER_INVALIDATION_TABLE!;
 const ROBOT_OPERATOR_TABLE = process.env.ROBOT_OPERATOR_TABLE!;
 const ROBOT_TABLE_NAME = process.env.ROBOT_TABLE_NAME!;
 const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME; // For session lock enforcement
@@ -40,7 +41,7 @@ const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
 // Types
 // ---------------------------------
 
-type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor';
+type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong';
 type Target = 'robot' | 'client';
 
 // ---------------------------------
@@ -98,6 +99,34 @@ type RawMessage = any;
 const nowMs = () => Date.now();
 
 /**
+ * Checks if a user's session has been invalidated (global sign-out).
+ * Returns the invalidation timestamp if user was invalidated, null otherwise.
+ * 
+ * This catches tokens from other devices that weren't explicitly blacklisted.
+ * If a token was issued (iat) before the invalidation timestamp, it's invalid.
+ */
+async function getUserInvalidationTimestamp(userId: string): Promise<number | null> {
+    try {
+        const result = await db.send(
+            new GetItemCommand({
+                TableName: USER_INVALIDATION_TABLE,
+                Key: { userId: { S: userId } },
+            })
+        );
+        
+        if (result?.Item?.invalidatedAt?.N) {
+            // Return the timestamp when user signed out (in milliseconds)
+            return parseInt(result.Item.invalidatedAt.N, 10);
+        }
+        return null; // No invalidation record
+    } catch (error) {
+        // If we can't check invalidation, log but don't block (fail open for availability)
+        console.warn('Failed to check user invalidation timestamp', error);
+        return null; // Fail open - allow if we can't check
+    }
+}
+
+/**
  * Checks if a token is in the revocation blacklist.
  * Returns true if token is revoked, false otherwise.
  */
@@ -150,6 +179,33 @@ async function verifyCognitoJWT(token: string | null | undefined): Promise<Claim
         if (payload.exp && payload.exp < now) {
             console.warn('Token expired', { exp: payload.exp, now });
             return null;
+        }
+
+        // Extract userId from claims (need this to check invalidation)
+        const userId = (payload['cognito:username'] as string | undefined) || 
+                      (payload.email as string | undefined) || 
+                      (payload.sub as string | undefined);
+        
+        // Check if user's session has been invalidated (global sign-out)
+        // If token was issued (iat) before invalidation timestamp, reject it
+        if (userId) {
+            const invalidatedAt = await getUserInvalidationTimestamp(userId);
+            if (invalidatedAt) {
+                // Token's iat is in seconds, invalidatedAt is in milliseconds
+                // Convert invalidatedAt to seconds for comparison
+                const tokenIat = payload.iat as number | undefined;
+                const invalidatedAtSeconds = Math.floor(invalidatedAt / 1000);
+                
+                if (tokenIat && tokenIat < invalidatedAtSeconds) {
+                    console.warn('Token issued before user global sign-out', { 
+                        userId,
+                        tokenIat, 
+                        invalidatedAtSeconds,
+                        hasToken: !!token 
+                    });
+                    return null; // Token was issued before global sign-out
+                }
+            }
         }
 
         // Extract claims
@@ -1068,12 +1124,18 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
     // Verify JWT token signature and expiration
     const claims = await verifyCognitoJWT(token);
     if (!claims?.sub) {
+        // Check if token was revoked (for better logging)
+        const tokenRevoked = token ? await isTokenRevoked(token) : false;
+        const reason = tokenRevoked 
+            ? 'Token has been revoked (user signed out)' 
+            : 'Invalid or missing token';
         console.error('[CONNECTION_REJECTED]', {
             connectionId,
-            reason: 'Invalid or missing token',
+            reason,
             hasToken: !!token,
+            tokenRevoked,
         });
-        return errorResponse(401, 'Unauthorized');
+        return errorResponse(401, reason); // Include reason in response for debugging
     }
 
     try {
@@ -2014,6 +2076,44 @@ export async function handler(
       hasClaims: !!claims?.sub,
     });
     return handleSignal(claims, event, msg);
+  }
+
+  // Handle pong responses to keepalive pings
+  if (type === 'pong') {
+    // Access timestamp from raw message body if present
+    const rawBody = event.body ? JSON.parse(event.body) : {};
+    console.log('[PONG_RECEIVED]', {
+      connectionId: event.requestContext.connectionId,
+      robotId: msg.robotId,
+      userId: claims?.sub,
+      timestamp: rawBody.timestamp || 'not provided',
+    });
+    // Pong messages don't need special handling - just acknowledge receipt
+    // The connection stays alive from receiving/sending the message
+    return successResponse({ type: 'pong-acknowledged' });
+  }
+
+  // Handle ping messages (though these are typically sent via Management API, not through signaling)
+  if (type === 'ping') {
+    console.log('[PING_RECEIVED]', {
+      connectionId: event.requestContext.connectionId,
+      robotId: msg.robotId,
+      userId: claims?.sub,
+    });
+    // If a client/robot sends a ping, respond with pong
+    try {
+      await postTo(connectionId, {
+        type: 'pong',
+        timestamp: Date.now(),
+        keepalive: true,
+      });
+    } catch (err) {
+      console.warn('[PING_RESPONSE_ERROR]', {
+        connectionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return successResponse({ type: 'ping-acknowledged' });
   }
 
   // Log unknown message types for debugging

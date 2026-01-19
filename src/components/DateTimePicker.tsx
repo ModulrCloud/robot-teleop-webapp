@@ -1,16 +1,16 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCalendarAlt, faClock } from '@fortawesome/free-solid-svg-icons';
 import './DateTimePicker.css';
 
 interface DateTimePickerProps {
-  value: string; // ISO datetime string or empty
+  value: string;
   onChange: (value: string) => void;
   label: string;
   required?: boolean;
   disabled?: boolean;
-  min?: string; // ISO datetime string
-  max?: string; // ISO datetime string
+  min?: string;
+  max?: string;
 }
 
 export function DateTimePicker({
@@ -19,8 +19,8 @@ export function DateTimePicker({
   label,
   required = false,
   disabled = false,
-  min: _min,
-  max: _max,
+  min,
+  max,
 }: DateTimePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -28,10 +28,11 @@ export function DateTimePicker({
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const pickerRef = useRef<HTMLDivElement>(null);
 
-  // Parse initial value
+  const minDateTime = useMemo(() => (min ? new Date(min) : null), [min]);
+  const maxDateTime = useMemo(() => (max ? new Date(max) : null), [max]);
+
   useEffect(() => {
     if (value) {
-      // Handle both ISO string and datetime-local format (YYYY-MM-DDTHH:mm)
       const dateStr = value.includes('T') ? value : `${value}T00:00`;
       const date = new Date(dateStr);
       if (!isNaN(date.getTime())) {
@@ -43,11 +44,14 @@ export function DateTimePicker({
           minute: date.getMinutes(),
           ampm: hours >= 12 ? 'PM' : 'AM',
         });
+        setCurrentMonth(date);
       }
+    } else {
+      setSelectedDate(null);
+      setSelectedTime(null);
     }
   }, [value]);
 
-  // Close picker when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
@@ -74,23 +78,80 @@ export function DateTimePicker({
     return `${month} ${day}, ${year} ${hour}:${minute} ${ampm}`;
   };
 
+  const isDateDisabled = (date: Date) => {
+    const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+    const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+    if (minDateTime && dayEnd < minDateTime) return true;
+    if (maxDateTime && dayStart > maxDateTime) return true;
+    return false;
+  };
+
+  const isDateTimeAllowed = (candidate: Date) => {
+    if (minDateTime && candidate < minDateTime) return false;
+    if (maxDateTime && candidate > maxDateTime) return false;
+    return true;
+  };
+
+  const toDateTimeLocalString = (date: Date) => {
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    const hoursStr = date.getHours().toString().padStart(2, '0');
+    const minutesStr = date.getMinutes().toString().padStart(2, '0');
+    return `${year}-${month}-${day}T${hoursStr}:${minutesStr}`;
+  };
+
   const handleDateSelect = (date: Date) => {
+    if (isDateDisabled(date)) return;
     setSelectedDate(date);
-    // If no time is selected yet, use current time
     if (!selectedTime) {
       const now = new Date();
       const hours = now.getHours();
       const hour12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
-      setSelectedTime({
+      const newTime: { hour: number; minute: number; ampm: 'AM' | 'PM' } = {
         hour: hour12,
         minute: now.getMinutes(),
         ampm: hours >= 12 ? 'PM' : 'AM',
-      });
+      };
+      setSelectedTime(newTime);
+      
+      const dateWithTime = new Date(date);
+      dateWithTime.setHours(hours, newTime.minute, 0, 0);
+      if (isDateTimeAllowed(dateWithTime)) {
+        onChange(toDateTimeLocalString(dateWithTime));
+      }
+    } else {
+      const dateWithTime = new Date(date);
+      let hours = selectedTime.hour;
+      if (selectedTime.ampm === 'PM' && hours !== 12) {
+        hours += 12;
+      } else if (selectedTime.ampm === 'AM' && hours === 12) {
+        hours = 0;
+      }
+      dateWithTime.setHours(hours, selectedTime.minute, 0, 0);
+      if (isDateTimeAllowed(dateWithTime)) {
+        onChange(toDateTimeLocalString(dateWithTime));
+      }
     }
   };
 
   const handleTimeSelect = (hour: number, minute: number, ampm: 'AM' | 'PM') => {
     setSelectedTime({ hour, minute, ampm });
+    
+    if (selectedDate) {
+      const date = new Date(selectedDate);
+      let hours = hour;
+      if (ampm === 'PM' && hours !== 12) {
+        hours += 12;
+      } else if (ampm === 'AM' && hours === 12) {
+        hours = 0;
+      }
+      date.setHours(hours, minute, 0, 0);
+      
+      if (isDateTimeAllowed(date)) {
+        onChange(toDateTimeLocalString(date));
+      }
+    }
   };
 
   const handleConfirm = () => {
@@ -104,16 +165,10 @@ export function DateTimePicker({
       }
       date.setHours(hours, selectedTime.minute, 0, 0);
       
-      // Format as ISO string for datetime-local input
-      const year = date.getFullYear();
-      const month = (date.getMonth() + 1).toString().padStart(2, '0');
-      const day = date.getDate().toString().padStart(2, '0');
-      const hoursStr = date.getHours().toString().padStart(2, '0');
-      const minutesStr = date.getMinutes().toString().padStart(2, '0');
-      
-      const isoString = `${year}-${month}-${day}T${hoursStr}:${minutesStr}`;
-      onChange(isoString);
-      setIsOpen(false);
+      if (isDateTimeAllowed(date)) {
+        onChange(toDateTimeLocalString(date));
+        setIsOpen(false);
+      }
     }
   };
 
@@ -124,7 +179,6 @@ export function DateTimePicker({
     setIsOpen(false);
   };
 
-  // Calendar helpers
   const getDaysInMonth = (date: Date) => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   };
@@ -157,7 +211,7 @@ export function DateTimePicker({
   const monthName = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   const hours = Array.from({ length: 12 }, (_, i) => i + 1);
-  const minutes = Array.from({ length: 60 }, (_, i) => i).filter(m => m % 15 === 0); // 15-minute intervals
+  const minutes = Array.from({ length: 60 }, (_, i) => i).filter(m => m % 15 === 0);
 
   return (
     <div className="datetime-picker-wrapper" ref={pickerRef}>
@@ -179,7 +233,6 @@ export function DateTimePicker({
       {isOpen && (
         <div className="datetime-picker-modal">
           <div className="picker-content">
-            {/* Date Picker */}
             <div className="date-picker-section">
               <div className="date-picker-header">
                 <button type="button" className="nav-button" onClick={() => navigateMonth('prev')}>
@@ -208,12 +261,14 @@ export function DateTimePicker({
                       date.getMonth() === selectedDate.getMonth() &&
                       date.getFullYear() === selectedDate.getFullYear();
                     const isToday = date.toDateString() === new Date().toDateString();
+                    const isDisabled = isDateDisabled(date);
                     
                     return (
                       <div
                         key={day}
-                        className={`calendar-day ${isSelected ? 'selected' : ''} ${isToday ? 'today' : ''}`}
-                        onClick={() => handleDateSelect(date)}
+                        className={`calendar-day ${isSelected ? 'selected' : ''} ${isToday ? 'today' : ''} ${isDisabled ? 'disabled' : ''}`}
+                        onClick={() => !isDisabled && handleDateSelect(date)}
+                        style={isDisabled ? { opacity: 0.3, cursor: 'not-allowed' } : {}}
                       >
                         {day}
                       </div>
@@ -232,7 +287,6 @@ export function DateTimePicker({
               </div>
             </div>
 
-            {/* Time Picker */}
             <div className="time-picker-section">
               <div className="time-picker-header">
                 <FontAwesomeIcon icon={faClock} />

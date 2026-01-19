@@ -29,37 +29,45 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: 1000;
-  padding: 1rem;
+  padding: 6rem 2rem 2rem 2rem;
 }
 
 .block-modal {
-  background: rgba(26, 26, 26, 0.98);
-  border: 1px solid rgba(255, 183, 0, 0.3);
-  border-radius: 12px;
-  width: 100%;
-  max-width: 700px;
-  max-height: 90vh;
-  overflow-y: auto;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  background: #10131a;
+  border: 2px solid rgba(255, 183, 0, 0.3);
+  border-radius: 16px;
+  width: 650px;
+  height: 75vh;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
 .block-modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem;
-  border-bottom: 1px solid rgba(255, 183, 0, 0.2);
+  padding: 1.5rem 2rem;
+  background: #1a1d24;
+  border-bottom: 2px solid rgba(255, 183, 0, 0.3);
+  border-radius: 14px 14px 0 0;
 }
 
 .block-modal-header h3 {
-  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #ffb700;
   margin: 0;
-  font-size: 1.3rem;
+  font-size: 1.5rem;
+  font-weight: 600;
 }
 
 .modal-close-btn {
@@ -82,7 +90,28 @@
   margin: 0;
   border: none;
   border-radius: 0;
-  padding: 1.5rem;
+  padding: 2rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Custom scrollbar styling for modal content to match app theme */
+.block-modal .availability-form::-webkit-scrollbar {
+  width: 8px;
+}
+
+.block-modal .availability-form::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.block-modal .availability-form::-webkit-scrollbar-thumb {
+  background: rgba(255, 193, 7, 0.5);
+  border-radius: 4px;
+}
+
+.block-modal .availability-form::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 193, 7, 0.7);
 }
 
 .legacy-form-toggle {
@@ -223,10 +252,53 @@
 }
 
 .checkbox-group input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
   cursor: pointer;
-  accent-color: #ffb700;
+  border: 2px solid rgba(255, 183, 0, 0.5);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  position: relative;
+  transition: all 0.2s ease;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.checkbox-group input[type="checkbox"]:hover {
+  border-color: rgba(255, 183, 0, 0.8);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.checkbox-group input[type="checkbox"]:checked {
+  background: linear-gradient(135deg, #ffb700 0%, #ffa000 100%);
+  border-color: #ffb700;
+  box-shadow: 0 0 0 3px rgba(255, 183, 0, 0.2);
+}
+
+.checkbox-group input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(45deg);
+  width: 5px;
+  height: 10px;
+  border: solid #1a1a1a;
+  border-width: 0 2px 2px 0;
+}
+
+.checkbox-group input[type="checkbox"]:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 183, 0, 0.2);
+}
+
+.checkbox-group input[type="checkbox"]:focus:checked {
+  box-shadow: 0 0 0 3px rgba(255, 183, 0, 0.3);
 }
 
 .form-help-text {
@@ -447,44 +519,70 @@
 .day-checkbox {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
   padding: 0.5rem 0.75rem;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 2px solid rgba(255, 255, 255, 0.15);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
   user-select: none;
+  min-width: 50px;
 }
 
 .day-checkbox:hover {
   background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 183, 0, 0.3);
+  border-color: rgba(255, 183, 0, 0.5);
 }
 
 .day-checkbox input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
   margin: 0;
-  cursor: pointer;
-}
-
-.day-checkbox input[type="checkbox"]:checked + span {
-  color: #ffb700;
-  font-weight: 600;
+  padding: 0;
+  pointer-events: none;
 }
 
 .day-checkbox:has(input[type="checkbox"]:checked) {
-  background: rgba(255, 183, 0, 0.1);
+  background: linear-gradient(135deg, rgba(255, 183, 0, 0.2) 0%, rgba(255, 160, 0, 0.2) 100%);
   border-color: #ffb700;
+  box-shadow: 0 0 0 2px rgba(255, 183, 0, 0.2);
+}
+
+.day-checkbox:has(input[type="checkbox"]:checked):hover {
+  background: linear-gradient(135deg, rgba(255, 183, 0, 0.3) 0%, rgba(255, 160, 0, 0.3) 100%);
+  border-color: #ffa000;
 }
 
 .day-checkbox span {
   color: rgba(255, 255, 255, 0.7);
   font-size: 0.9rem;
-  transition: color 0.2s ease;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.day-checkbox:has(input[type="checkbox"]:checked) span {
+  color: #ffb700;
+  font-weight: 600;
 }
 
 /* Responsive */
 @media (max-width: 768px) {
+  .block-modal-overlay {
+    padding: 0;
+  }
+
+  .block-modal {
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .block-modal .availability-form {
+    padding: 1rem;
+  }
+
   .form-row {
     grid-template-columns: 1fr;
   }

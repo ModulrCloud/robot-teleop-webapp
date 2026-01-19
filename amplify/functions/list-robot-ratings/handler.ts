@@ -78,6 +78,8 @@ export const handler: Schema["listRobotRatingsLambda"]["functionHandler"] = asyn
 
     const ratingsResult = await docClient.send(new QueryCommand(queryParams));
 
+    const currentUserId = identity.username;
+    
     const ratings = (ratingsResult.Items || []).map((rating: any) => {
       // Filter sensitive data for non-admins
       const sanitizedRating: any = {
@@ -88,6 +90,7 @@ export const handler: Schema["listRobotRatingsLambda"]["functionHandler"] = asyn
         userDisplayName: rating.userDisplayName || "Anonymous",
         createdAt: rating.createdAt,
         updatedAt: rating.updatedAt,
+        isOwnRating: rating.userId === currentUserId,
       };
 
       // Only include userId and userEmail for modulr.cloud employees (for moderation)

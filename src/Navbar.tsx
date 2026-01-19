@@ -6,7 +6,6 @@ import { hasAdminAccess } from "./utils/admin";
 import { PurchaseCreditsModal } from "./components/PurchaseCreditsModal";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faHome,
   faRobot,
   faClockRotateLeft,
   faUser,
@@ -19,7 +18,8 @@ import {
   faUsers,
   faCoins,
   faWallet,
-  faShieldAlt
+  faShieldAlt,
+  faGlobe
 } from '@fortawesome/free-solid-svg-icons';
 import "./Navbar.css";
 import { formatGroupName, capitalizeName } from "./utils/formatters";
@@ -53,19 +53,22 @@ export default function Navbar() {
   return (
     <nav className="app-navbar">
       <div className="navbar-container">
-        <Link to="/" className="navbar-logo">
+        <Link to="/" className={`navbar-logo ${isActive('/') ? 'active' : ''}`}>
           <img src="/logo-large.png" alt="Modulr" />
         </Link>
 
+        <a 
+          href="https://modulr.cloud" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="navbar-external-link"
+        >
+          <FontAwesomeIcon icon={faGlobe} />
+          <span>Website</span>
+        </a>
+
         {isLoggedIn && (
           <div className="navbar-links">
-            <Link 
-              to="/" 
-              className={`nav-link ${isActive('/') ? 'active' : ''}`}
-            >
-              <FontAwesomeIcon icon={faHome} />
-              <span>Dashboard</span>
-            </Link>
             <Link 
               to="/robots" 
               className={`nav-link ${isActive('/robots') ? 'active' : ''}`}
@@ -225,10 +228,16 @@ export default function Navbar() {
 
       {isLoggedIn && showMobileMenu && (
         <div className="mobile-menu">
-          <Link to="/" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
-            <FontAwesomeIcon icon={faHome} />
-            <span>Dashboard</span>
-          </Link>
+          <a 
+            href="https://modulr.cloud" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="mobile-nav-link external"
+            onClick={() => setShowMobileMenu(false)}
+          >
+            <FontAwesomeIcon icon={faGlobe} />
+            <span>Website ↗</span>
+          </a>
           <Link to="/robots" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
             <FontAwesomeIcon icon={faRobot} />
             <span>Robots</span>

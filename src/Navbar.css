@@ -22,6 +22,18 @@
   display: flex;
   align-items: center;
   text-decoration: none;
+  transition: opacity 0.2s ease;
+  padding: 0.25rem;
+  border-radius: 6px;
+}
+
+.navbar-logo:hover {
+  opacity: 0.8;
+}
+
+.navbar-logo.active {
+  opacity: 1;
+  background: rgba(255, 193, 7, 0.1);
 }
 
 .navbar-logo img {
@@ -34,15 +46,12 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.6rem 1rem;
   color: rgba(255, 255, 255, 0.5);
   text-decoration: none;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 500;
   transition: all 0.2s ease;
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
-  margin-left: 0.5rem;
-  padding-left: 1rem;
 }
 
 .navbar-external-link:hover {
@@ -390,6 +399,14 @@
   margin-top: 0.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   padding-top: 1rem;
+}
+
+.mobile-nav-link.external {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 0.5rem;
+  padding-bottom: 1rem;
 }
 
 .mobile-nav-link svg {

@@ -1,6 +1,6 @@
 import type { Schema } from "../../data/resource";
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand, ScanCommand, QueryCommandInput, ScanCommandInput } from '@aws-sdk/lib-dynamodb';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 
 const dynamoClient = new DynamoDBClient({});
@@ -42,16 +42,19 @@ export const handler: Schema["listRobotReservationsLambda"]["functionHandler"] =
   }
 
   try {
-    let reservations: any[] = [];
-    let lastEvaluatedKey: any = undefined;
+    let reservations: Record<string, unknown>[] = [];
+    let lastEvaluatedKey: Record<string, unknown> | undefined = undefined;
+    const resolvedLimit = typeof limit === 'number' ? limit : 20;
 
     // Build filter expression
     const filterExpressions: string[] = [];
-    const expressionAttributeValues: Record<string, any> = {};
+    const expressionAttributeValues: Record<string, unknown> = {};
+    const expressionAttributeNames: Record<string, string> = {};
 
     if (status) {
       filterExpressions.push('#status = :status');
       expressionAttributeValues[':status'] = status;
+      expressionAttributeNames['#status'] = 'status';
     }
 
     if (startTime) {
@@ -67,7 +70,7 @@ export const handler: Schema["listRobotReservationsLambda"]["functionHandler"] =
     // Query based on filter
     if (robotId) {
       // Query by robotId
-      const queryParams: any = {
+      const queryParams: QueryCommandInput = {
         TableName: ROBOT_RESERVATION_TABLE,
         IndexName: 'robotIdIndex',
         KeyConditionExpression: 'robotId = :robotId',
@@ -75,12 +78,15 @@ export const handler: Schema["listRobotReservationsLambda"]["functionHandler"] =
           ':robotId': robotId,
           ...expressionAttributeValues,
         },
-        Limit: limit,
+        Limit: resolvedLimit,
         ScanIndexForward: false, // Newest first
       };
 
       if (filterExpressions.length > 0) {
         queryParams.FilterExpression = filterExpressions.join(' AND ');
+        if (Object.keys(expressionAttributeNames).length > 0) {
+          queryParams.ExpressionAttributeNames = expressionAttributeNames;
+        }
       }
 
       if (nextToken) {
@@ -99,7 +105,7 @@ export const handler: Schema["listRobotReservationsLambda"]["functionHandler"] =
         };
       }
 
-      const queryParams: any = {
+      const queryParams: QueryCommandInput = {
         TableName: ROBOT_RESERVATION_TABLE,
         IndexName: 'userIdIndex',
         KeyConditionExpression: 'userId = :userId',
@@ -107,12 +113,15 @@ export const handler: Schema["listRobotReservationsLambda"]["functionHandler"] =
           ':userId': userId,
           ...expressionAttributeValues,
         },
-        Limit: limit,
+        Limit: resolvedLimit,
         ScanIndexForward: false,
       };
 
       if (filterExpressions.length > 0) {
         queryParams.FilterExpression = filterExpressions.join(' AND ');
+        if (Object.keys(expressionAttributeNames).length > 0) {
+          queryParams.ExpressionAttributeNames = expressionAttributeNames;
+        }
       }
 
       if (nextToken) {
@@ -145,7 +154,7 @@ export const handler: Schema["listRobotReservationsLambda"]["functionHandler"] =
         }
       }
 
-      const queryParams: any = {
+      const queryParams: QueryCommandInput = {
         TableName: ROBOT_RESERVATION_TABLE,
         IndexName: 'partnerIdIndex',
         KeyConditionExpression: 'partnerId = :partnerId',
@@ -153,12 +162,15 @@ export const handler: Schema["listRobotReservationsLambda"]["functionHandler"] =
           ':partnerId': partnerId,
           ...expressionAttributeValues,
         },
-        Limit: limit,
+        Limit: resolvedLimit,
         ScanIndexForward: false,
       };
 
       if (filterExpressions.length > 0) {
         queryParams.FilterExpression = filterExpressions.join(' AND ');
+        if (Object.keys(expressionAttributeNames).length > 0) {
+          queryParams.ExpressionAttributeNames = expressionAttributeNames;
+        }
       }
 
       if (nextToken) {
@@ -172,14 +184,17 @@ export const handler: Schema["listRobotReservationsLambda"]["functionHandler"] =
       // No specific filter - return user's own reservations (or all if admin)
       if (isAdmin) {
         // Admin can see all
-        const scanParams: any = {
+        const scanParams: ScanCommandInput = {
           TableName: ROBOT_RESERVATION_TABLE,
-          Limit: limit,
+          Limit: resolvedLimit,
         };
 
         if (filterExpressions.length > 0) {
           scanParams.FilterExpression = filterExpressions.join(' AND ');
           scanParams.ExpressionAttributeValues = expressionAttributeValues;
+          if (Object.keys(expressionAttributeNames).length > 0) {
+            scanParams.ExpressionAttributeNames = expressionAttributeNames;
+          }
         }
 
         if (nextToken) {
@@ -191,7 +206,7 @@ export const handler: Schema["listRobotReservationsLambda"]["functionHandler"] =
         lastEvaluatedKey = result.LastEvaluatedKey;
       } else {
         // Regular user sees only their own
-        const queryParams: any = {
+        const queryParams: QueryCommandInput = {
           TableName: ROBOT_RESERVATION_TABLE,
           IndexName: 'userIdIndex',
           KeyConditionExpression: 'userId = :userId',
@@ -199,12 +214,15 @@ export const handler: Schema["listRobotReservationsLambda"]["functionHandler"] =
             ':userId': requesterId,
             ...expressionAttributeValues,
           },
-          Limit: limit,
+          Limit: resolvedLimit,
           ScanIndexForward: false,
         };
 
         if (filterExpressions.length > 0) {
           queryParams.FilterExpression = filterExpressions.join(' AND ');
+          if (Object.keys(expressionAttributeNames).length > 0) {
+            queryParams.ExpressionAttributeNames = expressionAttributeNames;
+          }
         }
 
         if (nextToken) {
@@ -223,9 +241,9 @@ export const handler: Schema["listRobotReservationsLambda"]["functionHandler"] =
         return reservation; // Admins see everything
       }
       
-      // Regular users see their own data, but not other users' emails
-      const filtered: any = { ...reservation };
-      if (reservation.userId !== requesterId) {
+      const filtered: Record<string, unknown> = { ...reservation };
+      const reservationUserId = typeof filtered.userId === 'string' ? filtered.userId : undefined;
+      if (reservationUserId !== requesterId) {
         delete filtered.userEmail;
       }
       return filtered;

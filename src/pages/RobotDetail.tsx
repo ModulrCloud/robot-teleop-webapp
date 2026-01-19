@@ -13,29 +13,28 @@ import { RobotRating } from '../components/RobotRating';
 import { ReviewsDisplay } from '../components/ReviewsDisplay';
 import { RobotSchedulingModal } from '../components/RobotSchedulingModal';
 import { UserReservations } from '../components/UserReservations';
+import { InputBindingsModal } from '../components/InputBindingsModal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar, faCalendarAlt } from '@fortawesome/free-solid-svg-icons';
+import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar, faCalendarAlt, faKeyboard, faCog, faTools } from '@fortawesome/free-solid-svg-icons';
 import "./RobotDetail.css";
 
 const client = generateClient<Schema>();
 
 const getRobotImage = (model: string, imageUrl?: string): string => {
-  // Only use imageUrl if it's already a full URL (http/https) or a local path (/)
-  // Don't use S3 keys as-is - they need to be resolved first
   if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('/'))) {
     return imageUrl;
   }
-  
+
   const modelImages: Record<string, string> = {
-    'humanoid': '/humaniod.png',
-    'drone': '/drone.png',
-    'rover': '/rover.webp',
-    'arm': '/robot_arm.webp',
-    'submarine': '/submarine.png',
-    'racer': '/racer.png',
+    'rover': '/default/rover.png',
+    'humanoid': '/default/humanoid.png',
+    'drone': '/default/drone.png',
+    'sub': '/default/sub.png',
+    'robodog': '/default/robodog.png',
+    'robot': '/default/robot.png',
   };
-  
-  return modelImages[model.toLowerCase()] || '/humaniod.png';
+
+  return modelImages[model?.toLowerCase() || ''] || '/default/humanoid.png';
 };
 
 export default function RobotDetail() {
@@ -44,7 +43,7 @@ export default function RobotDetail() {
   const navigate = useNavigate();
   const { user } = useAuthStatus();
   const { credits, refreshCredits } = useUserCredits();
-  
+
   const [robot, setRobot] = useState<any>(null);
   const [robotImage, setRobotImage] = useState<string>('');
   const [partner, setPartner] = useState<any>(null);
@@ -63,6 +62,9 @@ export default function RobotDetail() {
   const [ratingsRefreshKey, setRatingsRefreshKey] = useState(0);
   const [showSchedulingModal, setShowSchedulingModal] = useState(false);
   const [reservationsRefreshKey, setReservationsRefreshKey] = useState(0);
+  const [showInputBindingsModal, setShowInputBindingsModal] = useState(false);
+  const [showPricingDetails, setShowPricingDetails] = useState(false);
+  const servicesSubtotalCredits = 0;
 
   // Load platform settings and user currency
   useEffect(() => {
@@ -166,7 +168,7 @@ export default function RobotDetail() {
             });
             if (partners && partners.length > 0) {
               setPartner(partners[0]);
-              
+
               // Check if current user is the partner owner
               if (user?.username && partners[0].cognitoUsername === user.username) {
                 setIsPartnerOwner(true);
@@ -198,7 +200,7 @@ export default function RobotDetail() {
         const status = await client.queries.getRobotStatusLambda({
           robotId: robotId,
         });
-        
+
         if (status.data) {
           setRobotStatus({
             isOnline: status.data.isOnline || false,
@@ -214,7 +216,7 @@ export default function RobotDetail() {
     };
 
     loadRobotStatus();
-    
+
     // Poll status every 10 seconds
     const interval = setInterval(loadRobotStatus, 10000);
     return () => clearInterval(interval);
@@ -237,7 +239,7 @@ export default function RobotDetail() {
         const activeSession = sessions?.find(
           session => session.userId !== user.username && session.status === 'active'
         );
-        
+
         setIsInUse(!!activeSession);
       } catch (err) {
         logger.warn('Error checking if robot is in use:', err);
@@ -245,7 +247,7 @@ export default function RobotDetail() {
     };
 
     checkIfInUse();
-    
+
     // Poll every 5 seconds
     const interval = setInterval(checkIfInUse, 5000);
     return () => clearInterval(interval);
@@ -368,11 +370,10 @@ export default function RobotDetail() {
 
   return (
     <div className="robot-detail-container">
-      <button className="back-button" onClick={() => navigate('/robots')}>
-        <FontAwesomeIcon icon={faArrowLeft} /> Back to Robots
-      </button>
-
-      <div className="robot-detail-header">
+      <div className="robot-detail-topbar">
+        <button className="back-button" onClick={() => navigate('/robots')}>
+          <FontAwesomeIcon icon={faArrowLeft} /> Back to Robots
+        </button>
         <button
           className="start-session-button"
           onClick={handleStartSession}
@@ -388,6 +389,19 @@ export default function RobotDetail() {
         </div>
       )}
 
+      {user && robot.robotId && (
+        <div className="robot-detail-reservation-banner">
+          <UserReservations
+            robotId={robot.robotId}
+            userCurrency={userCurrency}
+            exchangeRates={exchangeRates || undefined}
+            refreshTrigger={reservationsRefreshKey}
+            variant="banner"
+            limit={1}
+          />
+        </div>
+      )}
+
       <div className="robot-detail-content">
         <div className="robot-detail-main">
           <div className="robot-image-section">
@@ -395,13 +409,13 @@ export default function RobotDetail() {
           </div>
 
           <div className="robot-info-section">
-            <div className="robot-info-main">
-              <h1 className="robot-detail-name">{robot.name || 'Unnamed Robot'}</h1>
-              
-              {robot.description && (
-                <p className="robot-detail-description">{robot.description}</p>
-              )}
+            <h1 className="robot-detail-name">{robot.name || 'Unnamed Robot'}</h1>
 
+            {robot.description && (
+              <p className="robot-detail-description">{robot.description}</p>
+            )}
+
+            <div className="robot-info-boxes">
               <div className="robot-detail-meta">
                 <div className="robot-meta-item">
                   <span className="robot-meta-label">Model:</span>
@@ -433,27 +447,94 @@ export default function RobotDetail() {
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* Scheduling Section */}
-            {robot && robot.robotId && (
-              <div className="robot-scheduling-section">
-                <h2>
-                  <FontAwesomeIcon icon={faCalendarAlt} />
-                  Schedule Time
-                </h2>
-                <p className="scheduling-description">
-                  Reserve time slots for this robot in advance. Minimum 15-minute reservations with deposit required.
-                </p>
-                <button
-                  className="schedule-button"
-                  onClick={() => setShowSchedulingModal(true)}
-                >
-                  <FontAwesomeIcon icon={faCalendarAlt} />
-                  Schedule Robot Time
-                </button>
-              </div>
-            )}
+              {/* Configure Section */}
+              {robot && robot.robotId && (
+                <div className="robot-scheduling-section">
+                  <h2>
+                    <FontAwesomeIcon icon={faCog} />
+                    Configure
+                  </h2>
+                  <p className="scheduling-description">
+                    Manage scheduling, input bindings, and services for this robot.
+                  </p>
+                  <div className="configure-buttons">
+                    <button
+                      className="schedule-button"
+                      onClick={() => setShowSchedulingModal(true)}
+                    >
+                      <FontAwesomeIcon icon={faCalendarAlt} />
+                      Schedule Robot Time
+                    </button>
+                    <button
+                      className="schedule-button"
+                      onClick={() => setShowInputBindingsModal(true)}
+                    >
+                      <FontAwesomeIcon icon={faKeyboard} />
+                      Input Bindings
+                    </button>
+                    <button
+                      className="schedule-button schedule-button-disabled"
+                      disabled
+                      aria-disabled="true"
+                      title="Services selection is coming soon"
+                    >
+                      <FontAwesomeIcon icon={faTools} />
+                      Services (coming soon)
+                    </button>
+                  </div>
+                  <div className="services-placeholder">
+                    Services can be added here before teleop starts. We'll show pricing in advance.
+                  </div>
+                  <div className="cost-summary compact">
+                    <div className="cost-summary-row total">
+                      <span>Estimated cost per hour</span>
+                      <span>
+                        {formatCreditsAsCurrencySync(
+                          (robot.hourlyRateCredits || 0) + servicesSubtotalCredits,
+                          userCurrency as any,
+                          exchangeRates || undefined
+                        )}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="cost-summary-toggle"
+                      onClick={() => setShowPricingDetails((prev) => !prev)}
+                    >
+                      {showPricingDetails ? 'Hide details' : 'View details'}
+                    </button>
+                    {showPricingDetails && (
+                      <>
+                        <div className="cost-summary-row">
+                          <span>Robot rate</span>
+                          <span>
+                            {formatCreditsAsCurrencySync(
+                              robot.hourlyRateCredits || 0,
+                              userCurrency as any,
+                              exchangeRates || undefined
+                            )}
+                          </span>
+                        </div>
+                        <div className="cost-summary-row">
+                          <span>Services subtotal</span>
+                          <span>
+                            {formatCreditsAsCurrencySync(
+                              servicesSubtotalCredits,
+                              userCurrency as any,
+                              exchangeRates || undefined
+                            )}
+                          </span>
+                        </div>
+                        <p className="cost-summary-note">
+                          Services pricing will appear here before teleop starts.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -462,9 +543,19 @@ export default function RobotDetail() {
           <p className="specs-placeholder">Specifications will be available soon.</p>
         </div>
 
+        {user && robot.robotId && (
+          <UserReservations
+            robotId={robot.robotId}
+            userCurrency={userCurrency}
+            exchangeRates={exchangeRates || undefined}
+            refreshTrigger={reservationsRefreshKey}
+            variant="section"
+          />
+        )}
+
         <div className="robot-reviews-section">
           <h2>Ratings & Reviews</h2>
-          
+
           {/* Average Rating Display */}
           {robot.averageRating && (
             <div className="average-rating-display">
@@ -476,25 +567,30 @@ export default function RobotDetail() {
             </div>
           )}
 
-          {/* Rating Form (only show if user has a qualifying session or is modulr.cloud employee) */}
-          {user && robot.robotId && (recentSessionId || user.email?.toLowerCase().endsWith('@modulr.cloud')) && (
-            <RobotRating
-              robotId={robot.robotId}
-              sessionId={recentSessionId}
-              onRatingSubmitted={() => {
-                setRatingsRefreshKey(prev => prev + 1);
-                // Reload robot to get updated averageRating
-                if (robotId) {
-                  client.models.Robot.list({
-                    filter: { robotId: { eq: robotId } },
-                  }).then(({ data: robots }) => {
-                    if (robots && robots.length > 0) {
-                      setRobot(robots[0]);
-                    }
-                  });
-                }
-              }}
-            />
+          {/* Rating Form - requires a completed session */}
+          {user && robot.robotId && (
+            recentSessionId || user.email?.toLowerCase().endsWith('@modulr.cloud') ? (
+              <RobotRating
+                robotId={robot.robotId}
+                sessionId={recentSessionId}
+                onRatingSubmitted={() => {
+                  setRatingsRefreshKey(prev => prev + 1);
+                  if (robotId) {
+                    client.models.Robot.list({
+                      filter: { robotId: { eq: robotId } },
+                    }).then(({ data: robots }) => {
+                      if (robots && robots.length > 0) {
+                        setRobot(robots[0]);
+                      }
+                    });
+                  }
+                }}
+              />
+            ) : (
+              <div className="rating-gate-message">
+                <p>Complete a session with this robot to leave a rating.</p>
+              </div>
+            )
           )}
 
           {/* Reviews Display */}
@@ -511,16 +607,6 @@ export default function RobotDetail() {
           )}
         </div>
       </div>
-
-      {/* User Reservations Section */}
-      {robot && robot.robotId && user && (
-        <UserReservations
-          robotId={robot.robotId}
-          userCurrency={userCurrency}
-          exchangeRates={exchangeRates || undefined}
-          refreshTrigger={reservationsRefreshKey}
-        />
-      )}
 
       <RobotSchedulingModal
         isOpen={showSchedulingModal}
@@ -545,6 +631,12 @@ export default function RobotDetail() {
           setInsufficientFundsError(null);
           refreshCredits();
         }}
+      />
+
+      <InputBindingsModal
+        isOpen={showInputBindingsModal}
+        onClose={() => setShowInputBindingsModal(false)}
+        robotId={robot?.robotId || ''}
       />
     </div>
   );
