@@ -7,9 +7,9 @@ import { LoadingWheel } from '../components/LoadingWheel';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
-import { 
-  faGlobe, 
-  faEnvelope, 
+import {
+  faGlobe,
+  faEnvelope,
   faStar,
   faShieldHalved,
   faCopy,
@@ -103,7 +103,8 @@ export default function PartnerProfile() {
             setLogoPreview(null);
           }
         } else if (data.logoUrl) {
-          setLogoPreview(data.logoUrl);
+          const safeLogoHref = getSafeHttpHref(data.logoUrl);
+          setLogoPreview(safeLogoHref);
         }
 
         const robotsData = await data.robots();
@@ -167,8 +168,8 @@ export default function PartnerProfile() {
 
       <div className="profile-hero">
         <div className="hero-logo">
-          <img 
-            src={logoPreview || '/logo-thumb.png'} 
+          <img
+            src={logoPreview || '/logo-thumb.png'}
             alt={partner.name}
             onError={(e) => { e.currentTarget.src = '/logo-thumb.png'; }}
           />
