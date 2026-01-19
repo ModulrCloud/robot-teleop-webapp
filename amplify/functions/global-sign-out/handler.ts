@@ -18,8 +18,6 @@ const USER_INVALIDATION_TABLE = process.env.USER_INVALIDATION_TABLE!;
  * @returns Success or error response
  */
 export const handler: Schema["globalSignOutLambda"]["functionHandler"] = async (event) => {
-  console.log("Global sign-out request:", JSON.stringify(event, null, 2));
-  
   const identity = event.identity;
   
   if (!identity || !("username" in identity)) {
@@ -54,7 +52,6 @@ export const handler: Schema["globalSignOutLambda"]["functionHandler"] = async (
       })
     );
 
-    console.log(`Global sign-out successful for user: ${username}, invalidation timestamp: ${invalidatedAt}`);
 
     return {
       statusCode: 200,
