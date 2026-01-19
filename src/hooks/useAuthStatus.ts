@@ -148,11 +148,6 @@ export function useAuthStatus(): AuthStatus {
           );
           
           if (isAuthError) {
-            console.error('[AUTH] ❌ Authentication error detected - token is invalid/expired/revoked:', {
-              errorName: attrError instanceof Error ? attrError.name : 'Unknown',
-              errorMessage: attrError instanceof Error ? attrError.message : String(attrError),
-              reason: 'Token was invalidated by global sign-out or expired',
-            });
             logger.error('❌ Authentication error detected - token is invalid/expired/revoked:', {
               errorName: attrError instanceof Error ? attrError.name : 'Unknown',
               errorMessage: attrError instanceof Error ? attrError.message : String(attrError),
@@ -160,14 +155,11 @@ export function useAuthStatus(): AuthStatus {
             });
             
             // Automatically sign out when token is invalidated
-            console.warn('[AUTH] 🔐 Triggering automatic sign-out due to invalid token...');
             logger.warn('🔐 Triggering automatic sign-out due to invalid token...');
             try {
               await signOut();
-              console.log('[AUTH] ✅ Automatic sign-out completed');
               logger.log('✅ Automatic sign-out completed');
             } catch (signOutError) {
-              console.error('[AUTH] ❌ Failed to sign out automatically:', signOutError);
               logger.error('❌ Failed to sign out automatically:', signOutError);
             }
             
