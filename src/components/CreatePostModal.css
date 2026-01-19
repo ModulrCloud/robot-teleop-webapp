@@ -1,0 +1,605 @@
+/* Modal Overlay - using existing pattern from PurchaseCreditsModal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Modal Content */
+.create-post-modal {
+  background: #10131a;
+  border: 2px solid rgba(255, 183, 0, 0.3);
+  border-radius: 16px;
+  width: 90%;
+  max-width: 700px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: slideUp 0.3s ease-out;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Modulr-themed scrollbar for modal */
+.create-post-modal::-webkit-scrollbar {
+  width: 8px;
+}
+
+.create-post-modal::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.create-post-modal::-webkit-scrollbar-thumb {
+  background: rgba(255, 193, 7, 0.5);
+  border-radius: 4px;
+}
+
+.create-post-modal::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 193, 7, 0.7);
+}
+
+/* Firefox scrollbar */
+.create-post-modal {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 193, 7, 0.5) rgba(255, 255, 255, 0.05);
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Modal Header */
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2rem;
+  border-bottom: 1px solid rgba(255, 183, 0, 0.2);
+}
+
+.modal-header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.modal-icon {
+  font-size: 2rem;
+  color: var(--yellow, #ffb700);
+}
+
+.modal-header h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.modal-subtitle {
+  margin: 0.25rem 0 0 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+}
+
+.modal-close {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 183, 0, 0.5);
+  color: var(--yellow, #ffb700);
+}
+
+/* Modal Body */
+.modal-body {
+  padding: 2rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Toolbar */
+.post-form-toolbar {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.toolbar-button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.toolbar-button:hover {
+  background: rgba(255, 183, 0, 0.1);
+  border-color: rgba(255, 183, 0, 0.3);
+  color: #ffb700;
+}
+
+.toolbar-button svg {
+  font-size: 0.9rem;
+}
+
+.toolbar-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toolbar-button:disabled:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Emoji Picker */
+.emoji-picker-container {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0.5rem;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+/* Modulr-themed scrollbar for emoji picker */
+.emoji-picker-container ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.emoji-picker-container ::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.emoji-picker-container ::-webkit-scrollbar-thumb {
+  background: rgba(255, 193, 7, 0.5);
+  border-radius: 4px;
+}
+
+.emoji-picker-container ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 193, 7, 0.7);
+}
+
+/* Firefox scrollbar for emoji picker */
+.emoji-picker-container {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 193, 7, 0.5) rgba(255, 255, 255, 0.05);
+}
+
+/* Override emoji-picker-react default styles to match our theme */
+.emoji-picker-container .EmojiPickerReact {
+  --epr-emoji-size: 2rem;
+  --epr-category-label-height: 1.5rem;
+  --epr-search-border-color: rgba(255, 255, 255, 0.1);
+  --epr-bg-color: transparent;
+  --epr-text-color: #fff;
+  --epr-category-label-bg-color: rgba(255, 255, 255, 0.05);
+  --epr-search-input-bg-color: rgba(255, 255, 255, 0.05);
+  --epr-search-input-text-color: #fff;
+  --epr-search-input-placeholder-color: rgba(255, 255, 255, 0.4);
+  --epr-picker-border-color: rgba(255, 255, 255, 0.1);
+  --epr-emoji-hover-color: rgba(255, 183, 0, 0.1);
+  --epr-active-skin-tone-indicator-border-color: #ffc107;
+}
+
+/* GIF Picker */
+.gif-picker {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 1rem;
+  max-height: 400px;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+}
+
+/* Modulr-themed scrollbar for GIF picker */
+.gif-picker::-webkit-scrollbar {
+  width: 8px;
+}
+
+.gif-picker::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.gif-picker::-webkit-scrollbar-thumb {
+  background: rgba(255, 193, 7, 0.5);
+  border-radius: 4px;
+}
+
+.gif-picker::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 193, 7, 0.7);
+}
+
+/* Firefox scrollbar for GIF picker */
+.gif-picker {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 193, 7, 0.5) rgba(255, 255, 255, 0.05);
+}
+
+.gif-picker-header {
+  margin-bottom: 1rem;
+}
+
+.gif-search-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.gif-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.9rem;
+}
+
+.gif-search-input {
+  width: 100%;
+  padding: 0.75rem 0.75rem 0.75rem 2.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.gif-search-input:focus {
+  outline: none;
+  border-color: rgba(255, 183, 0, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 3px rgba(255, 183, 0, 0.1);
+}
+
+.gif-search-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.gif-picker-content {
+  min-height: 200px;
+}
+
+.gif-loading {
+  text-align: center;
+  padding: 2rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.gif-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.gif-item {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+  aspect-ratio: 1;
+}
+
+.gif-item:hover {
+  border-color: rgba(255, 183, 0, 0.5);
+  transform: scale(1.05);
+}
+
+.gif-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gif-placeholder {
+  text-align: center;
+  padding: 2rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.gif-placeholder p {
+  margin: 0.5rem 0;
+}
+
+.gif-placeholder-hint {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.gif-attribution {
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: center;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* Textarea */
+.post-form-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.post-content-textarea {
+  width: 100%;
+  min-height: 300px;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 1rem;
+  /* Emoji-friendly font stack for proper emoji rendering, especially flags */
+  font-family: 
+    "Apple Color Emoji",
+    "Segoe UI Emoji",
+    "Segoe UI Symbol",
+    "Noto Color Emoji",
+    "Android Emoji",
+    "EmojiOne Color",
+    "Twemoji Mozilla",
+    inherit;
+  line-height: 1.6;
+  resize: vertical;
+  transition: all 0.2s ease;
+  /* Ensure normal font weight for emoji rendering */
+  font-weight: normal;
+  /* Force emoji rendering mode */
+  text-rendering: optimizeLegibility;
+  -webkit-font-feature-settings: "liga", "kern";
+  font-feature-settings: "liga", "kern";
+  /* Force emoji rendering for regional indicators (flags) */
+  font-variant-emoji: emoji;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Modulr-themed scrollbar for textarea */
+.post-content-textarea::-webkit-scrollbar {
+  width: 8px;
+}
+
+.post-content-textarea::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.post-content-textarea::-webkit-scrollbar-thumb {
+  background: rgba(255, 193, 7, 0.5);
+  border-radius: 4px;
+}
+
+.post-content-textarea::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 193, 7, 0.7);
+}
+
+/* Firefox scrollbar for textarea */
+.post-content-textarea {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 193, 7, 0.5) rgba(255, 255, 255, 0.05);
+}
+
+/* Post Preview */
+.post-preview {
+  margin-top: 0.75rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.post-preview-label {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.post-preview-content {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  /* Emoji-friendly font for preview */
+  font-family: 
+    "Apple Color Emoji",
+    "Segoe UI Emoji",
+    "Segoe UI Symbol",
+    "Noto Color Emoji",
+    "Android Emoji",
+    inherit;
+}
+
+.post-content-textarea:focus {
+  outline: none;
+  border-color: rgba(255, 183, 0, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 3px rgba(255, 183, 0, 0.1);
+}
+
+.post-content-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* Footer */
+.post-form-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.post-form-hints {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.post-form-hints span {
+  white-space: nowrap;
+}
+
+.char-count {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Modal Actions */
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-button-primary,
+.modal-button-secondary {
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.modal-button-primary {
+  background: #ffc107;
+  color: #10131a;
+}
+
+.modal-button-primary:hover:not(:disabled) {
+  background: #ffb300;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 193, 7, 0.4);
+}
+
+.modal-button-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.modal-button-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modal-button-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.modal-button-secondary:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .create-post-modal {
+    width: 95%;
+    max-height: 95vh;
+  }
+
+  .modal-header {
+    padding: 1.5rem;
+  }
+
+  .modal-body {
+    padding: 1.5rem;
+  }
+
+  .modal-header h2 {
+    font-size: 1.5rem;
+  }
+
+  .post-form-toolbar {
+    gap: 0.5rem;
+  }
+
+  .toolbar-button {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .post-content-textarea {
+    min-height: 250px;
+    font-size: 0.95rem;
+  }
+
+  .post-form-hints {
+    font-size: 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .modal-actions {
+    flex-direction: column-reverse;
+  }
+
+  .modal-button-primary,
+  .modal-button-secondary {
+    width: 100%;
+  }
+}

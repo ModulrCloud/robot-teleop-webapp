@@ -77,6 +77,7 @@
 .social-content {
   max-width: 1200px;
   margin: 0 auto;
+  position: relative;
 }
 
 .social-feed {
@@ -134,6 +135,42 @@
   font-size: 1rem;
 }
 
+/* Floating Action Button - Create Post */
+.social-fab {
+  position: fixed;
+  bottom: 2rem;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #ffc107;
+  border: none;
+  color: #000;
+  font-size: 1.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(255, 193, 7, 0.4);
+  transition: all 0.3s ease;
+  z-index: 1000;
+  /* Align to right edge of content area (max-width 1200px centered) */
+  right: max(2rem, calc((100vw - 1200px) / 2 + 2rem));
+}
+
+.social-fab:hover {
+  background: #ffb300;
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(255, 193, 7, 0.6);
+}
+
+.social-fab:active {
+  transform: scale(0.95);
+}
+
+.social-fab svg {
+  font-size: 1.5rem;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .social-page {
@@ -168,6 +205,22 @@
 
   .placeholder-content h2 {
     font-size: 1.5rem;
+  }
+
+  .social-tabs {
+    flex-wrap: wrap;
+  }
+
+  .social-fab {
+    bottom: 1.5rem;
+    right: 1.5rem;
+    width: 50px;
+    height: 50px;
+    font-size: 1.35rem;
+  }
+
+  .social-fab svg {
+    font-size: 1.35rem;
   }
 }
 
