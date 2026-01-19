@@ -1,5 +1,5 @@
 .robot-detail-container {
-  max-width: 1200px;
+  max-width: 1320px;
   margin: 0 auto;
   padding: 2rem;
   color: #fff;
@@ -16,7 +16,6 @@
   border-radius: 8px;
   cursor: pointer;
   font-size: 1rem;
-  margin-bottom: 2rem;
   transition: all 0.3s ease;
   width: auto !important;
   max-width: fit-content !important;
@@ -29,10 +28,16 @@
   border-color: #ffb700;
 }
 
-.robot-detail-header {
+.robot-detail-topbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   margin-bottom: 2rem;
+}
+
+.robot-detail-topbar .back-button {
+  margin-bottom: 0;
 }
 
 .start-session-button {
@@ -70,6 +75,10 @@
   color: #f44336;
 }
 
+.robot-detail-reservation-banner {
+  margin-bottom: 1.5rem;
+}
+
 .robot-detail-content {
   display: flex;
   flex-direction: column;
@@ -104,7 +113,7 @@
 
 .robot-info-boxes {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1.2fr;
   gap: 2rem;
   align-items: start;
 }
