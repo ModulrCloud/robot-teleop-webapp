@@ -7,6 +7,7 @@ import { setRobotLambda } from './functions/set-robot/resource';
 import { updateRobotLambda } from './functions/update-robot/resource';
 import { signaling } from './functions/signaling/resource';
 import { revokeTokenLambda } from './functions/revoke-token/resource';
+import { globalSignOutLambda } from './functions/global-sign-out/resource';
 import { manageRobotOperator } from './functions/manage-robot-operator/resource';
 import { deleteRobotLambda } from './functions/delete-robot/resource';
 import { manageRobotACL } from './functions/manage-robot-acl/resource';
@@ -64,6 +65,7 @@ const backend = defineBackend({
   updateRobotLambda,
   signaling,
   revokeTokenLambda,
+  globalSignOutLambda,
   manageRobotOperator,
   deleteRobotLambda,
   manageRobotACL,
@@ -138,6 +140,7 @@ const setRobotLambdaFunction = backend.setRobotLambda.resources.lambda;
 const updateRobotLambdaFunction = backend.updateRobotLambda.resources.lambda;
 const signalingFunction = backend.signaling.resources.lambda;
 const revokeTokenLambdaFunction = backend.revokeTokenLambda.resources.lambda;
+const globalSignOutLambdaFunction = backend.globalSignOutLambda.resources.lambda;
 const manageRobotOperatorFunction = backend.manageRobotOperator.resources.lambda;
 const deleteRobotLambdaFunction = backend.deleteRobotLambda.resources.lambda;
 const manageRobotACLFunction = backend.manageRobotACL.resources.lambda;
@@ -201,6 +204,16 @@ const revokedTokensTable = new Table(dataStack, 'RevokedTokensTable', {
   timeToLiveAttribute: 'ttl', // Automatically delete after TTL expires
 });
 
+// User invalidation table - stores when a user globally signed out
+// Allows us to reject ALL tokens issued before the invalidation timestamp
+// Uses TTL (7 days) to automatically clean up - longer than token lifetime (4 hours)
+const userInvalidationTable = new Table(dataStack, 'UserInvalidationTable', {
+  partitionKey: { name: 'userId', type: AttributeType.STRING },
+  billingMode: BillingMode.PAY_PER_REQUEST,
+  removalPolicy: RemovalPolicy.DESTROY, // For sandbox/dev
+  timeToLiveAttribute: 'ttl', // Automatically delete after 7 days (longer than token lifetime)
+});
+
 // Robot operator delegation table - tracks which users can operate which robots
 const robotOperatorTable = new Table(dataStack, 'RobotOperatorTable', {
   partitionKey: { name: 'id', type: AttributeType.STRING },
@@ -246,6 +259,7 @@ const signalingCdkFunction = signalingFunction as CdkFunction;
 signalingCdkFunction.addEnvironment('CONN_TABLE', connTable.tableName);
 signalingCdkFunction.addEnvironment('ROBOT_PRESENCE_TABLE', robotPresenceTable.tableName);
 signalingCdkFunction.addEnvironment('REVOKED_TOKENS_TABLE', revokedTokensTable.tableName);
+signalingCdkFunction.addEnvironment('USER_INVALIDATION_TABLE', userInvalidationTable.tableName);
 signalingCdkFunction.addEnvironment('ROBOT_OPERATOR_TABLE', robotOperatorTable.tableName);
 signalingCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 signalingCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
@@ -263,6 +277,7 @@ signalingCdkFunction.addEnvironment('WS_MGMT_ENDPOINT',
 connTable.grantReadWriteData(signalingFunction);
 robotPresenceTable.grantReadWriteData(signalingFunction);
 revokedTokensTable.grantReadData(signalingFunction); // Read-only for checking blacklist
+userInvalidationTable.grantReadData(signalingFunction); // Read-only for checking session invalidation
 robotOperatorTable.grantReadData(signalingFunction); // Read-only for checking delegations
 tables.Robot.grantReadData(signalingFunction); // Read-only for checking ACLs
 tables.Session.grantReadWriteData(signalingFunction); // Read/write for session management
@@ -286,6 +301,13 @@ revokedTokensTable.grantWriteData(revokeTokenLambdaFunction);
 // Revoke token Lambda environment variables
 const revokeTokenCdkFunction = revokeTokenLambdaFunction as CdkFunction;
 revokeTokenCdkFunction.addEnvironment('REVOKED_TOKENS_TABLE', revokedTokensTable.tableName);
+
+// Global sign-out Lambda environment variables and permissions
+const globalSignOutCdkFunction = globalSignOutLambdaFunction as CdkFunction;
+globalSignOutCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+globalSignOutCdkFunction.addEnvironment('USER_INVALIDATION_TABLE', userInvalidationTable.tableName);
+userPool.grant(globalSignOutLambdaFunction, 'cognito-idp:AdminUserGlobalSignOut');
+userInvalidationTable.grantWriteData(globalSignOutLambdaFunction); // Write permission to set invalidation timestamp
 
 // Add WebSocket URL to outputs for frontend access
 // Format: wss://{api-id}.execute-api.{region}.amazonaws.com/{stage}
@@ -354,6 +376,9 @@ setRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
     ]
 }));
 tables.Robot.grantWriteData(setRobotLambdaFunction);
+userInvalidationTable.grantReadData(setRobotLambdaFunction); // Read-only for checking session invalidation
+const setRobotCdkFunction = setRobotLambdaFunction as CdkFunction;
+setRobotCdkFunction.addEnvironment('USER_INVALIDATION_TABLE', userInvalidationTable.tableName);
 tables.Partner.grantReadData(updateRobotLambdaFunction);
 updateRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
   actions: ['dynamodb:Query'],
@@ -362,10 +387,14 @@ updateRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
   ],
 }));
 tables.Robot.grantReadWriteData(updateRobotLambdaFunction);
+userInvalidationTable.grantReadData(updateRobotLambdaFunction); // Read-only for checking session invalidation
+const updateRobotCdkFunction = updateRobotLambdaFunction as CdkFunction;
+updateRobotCdkFunction.addEnvironment('USER_INVALIDATION_TABLE', userInvalidationTable.tableName);
 
 // Grant DynamoDB permissions to delete robot function
 tables.Robot.grantReadWriteData(deleteRobotLambdaFunction);
 tables.Partner.grantReadData(deleteRobotLambdaFunction);
+userInvalidationTable.grantReadData(deleteRobotLambdaFunction); // Read-only for checking session invalidation
 // Grant permission to query the cognitoUsernameIndex (needed for ownership verification)
 deleteRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
   actions: ["dynamodb:Query", "dynamodb:GetItem", "dynamodb:Scan"],
@@ -373,6 +402,8 @@ deleteRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
     `${tables.Partner.tableArn}/index/cognitoUsernameIndex`
   ]
 }));
+const deleteRobotCdkFunction = deleteRobotLambdaFunction as CdkFunction;
+deleteRobotCdkFunction.addEnvironment('USER_INVALIDATION_TABLE', userInvalidationTable.tableName);
 
 // Grant DynamoDB permissions to manage robot ACL function
 tables.Robot.grantReadWriteData(manageRobotACLFunction);
@@ -389,6 +420,7 @@ manageRobotACLFunction.addToRolePolicy(new PolicyStatement({
 tables.Robot.grantReadData(listAccessibleRobotsFunction);
 tables.Partner.grantReadData(listAccessibleRobotsFunction);
 robotOperatorTable.grantReadData(listAccessibleRobotsFunction);
+userInvalidationTable.grantReadData(listAccessibleRobotsFunction); // Read-only for checking session invalidation
 // Grant permission to query the cognitoUsernameIndex (needed for ownership verification)
 listAccessibleRobotsFunction.addToRolePolicy(new PolicyStatement({
   actions: ["dynamodb:Query", "dynamodb:GetItem", "dynamodb:Scan"],
@@ -397,6 +429,8 @@ listAccessibleRobotsFunction.addToRolePolicy(new PolicyStatement({
     `${robotOperatorTable.tableArn}/index/robotIdIndex`
   ]
 }));
+const listAccessibleRobotsCdkFunction = listAccessibleRobotsFunction as CdkFunction;
+listAccessibleRobotsCdkFunction.addEnvironment('USER_INVALIDATION_TABLE', userInvalidationTable.tableName);
 
 // Stripe checkout Lambda - FRONTEND_URL is set via secret in resource.ts
 const createStripeCheckoutCdkFunction = createStripeCheckoutFunction as CdkFunction;

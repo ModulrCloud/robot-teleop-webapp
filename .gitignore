@@ -25,6 +25,9 @@ dist-ssr
 *.sln
 *.sw?
 
+# TypeScript build info
+*.tsbuildinfo
+
 # Amplify-specific files
 amplify_outputs.json
 .amplify
@@ -34,3 +37,6 @@ rust/
 
 # Documentation/explanation files (not for commit)
 explanations/
+
+# Interface specification files
+interface-spec/

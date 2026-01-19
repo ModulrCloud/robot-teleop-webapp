@@ -3,6 +3,7 @@ import { setUserGroupLambda } from "../functions/set-user-group/resource";
 import { setRobotLambda } from "../functions/set-robot/resource";
 import { updateRobotLambda } from "../functions/update-robot/resource";
 import { revokeTokenLambda } from "../functions/revoke-token/resource";
+import { globalSignOutLambda } from "../functions/global-sign-out/resource";
 import { manageRobotOperator } from "../functions/manage-robot-operator/resource";
 import { deleteRobotLambda } from "../functions/delete-robot/resource";
 import { manageRobotACL } from "../functions/manage-robot-acl/resource";
@@ -556,6 +557,12 @@ const schema = a.schema({
     .returns(LambdaResult)
     .authorization(allow => [allow.authenticated()])
     .handler(a.handler.function(revokeTokenLambda)),
+
+  globalSignOutLambda: a
+    .mutation()
+    .returns(LambdaResult)
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(globalSignOutLambda)),
 
   manageRobotOperatorLambda: a
     .mutation()

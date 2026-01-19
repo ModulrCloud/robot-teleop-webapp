@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import { logger } from '../utils/logger';
+import { useAuthStatus } from './useAuthStatus';
 
 export interface WebRTCStatus {
   connecting: boolean;
@@ -87,6 +88,7 @@ function releaseConnectionLock(): void {
 
 export function useWebRTC(options: WebRTCOptions) {
   const { wsUrl, myId, robotId = 'robot1' } = options;
+  const { signOut } = useAuthStatus(); // Get signOut function for automatic sign-out on token expiration
   const [status, setStatus] = useState<WebRTCStatus>({
     connecting: false,
     connected: false,
@@ -187,12 +189,18 @@ export function useWebRTC(options: WebRTCOptions) {
 
       ws.onerror = (error) => {
         logger.error('[WEBRTC] WebSocket error:', error);
+        logger.debug('[WEBRTC] WebSocket error details:', { 
+          error, 
+          readyState: ws.readyState,
+          url: wsUrl 
+        });
         releaseConnectionLock();
         isThisInstanceConnecting.current = false;
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
         }
+        // Note: We'll check for token expiration in onclose handler for more reliable detection
         setStatus(prev => ({ ...prev, connecting: false, error: 'WebSocket connection error' }));
       };
 
@@ -204,13 +212,44 @@ export function useWebRTC(options: WebRTCOptions) {
         }
         // Only set error if connection closed before being established
         if (!connectionEstablished) {
-          logger.error('[WEBRTC] Connection closed before establishing');
-          setStatus(prev => ({ 
-            ...prev, 
-            connecting: false, 
-            connected: false,
-            error: prev.error || 'Connection closed before establishing. Please check the server and try again.'
-          }));
+          // Check for authentication/authorization errors (401, 403, or immediate closure)
+          // WebSocket close codes: 1006 = abnormal closure (often auth failure), 1008 = policy violation
+          const isAuthError = event.code === 1008 || // Policy violation (401 Unauthorized)
+                             event.code === 1006 || // Abnormal closure (often auth failure)
+                             (event.code === 1000 && !event.wasClean) || // Clean close but not clean (unlikely but possible)
+                             event.reason?.toLowerCase().includes('unauthorized') ||
+                             event.reason?.toLowerCase().includes('token');
+          
+          if (isAuthError) {
+            logger.warn('[WEBRTC] Connection closed due to authentication failure - token may be expired or revoked');
+            logger.debug('[WEBRTC] Auth error details:', { 
+              code: event.code, 
+              reason: event.reason, 
+              wasClean: event.wasClean 
+            });
+            setStatus(prev => ({ 
+              ...prev, 
+              connecting: false, 
+              connected: false,
+              error: 'Token expired. Please sign in again.'
+            }));
+            
+            // Automatically sign out user when token expiration/invalidation is detected
+            // This ensures all tokens are invalidated and user must re-authenticate
+            logger.debug('[WEBRTC] Token expired/invalidated - triggering automatic sign-out');
+            signOut().catch((signOutError) => {
+              // Log but don't throw - sign-out error shouldn't block cleanup
+              logger.warn('[WEBRTC] Failed to sign out automatically:', signOutError);
+            });
+          } else {
+            logger.error('[WEBRTC] Connection closed before establishing');
+            setStatus(prev => ({ 
+              ...prev, 
+              connecting: false, 
+              connected: false,
+              error: prev.error || 'Connection closed before establishing. Please check the server and try again.'
+            }));
+          }
         } else {
           setStatus(prev => ({ ...prev, connecting: false, connected: false }));
         }
