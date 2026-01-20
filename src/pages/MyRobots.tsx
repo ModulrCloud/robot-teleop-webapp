@@ -388,6 +388,10 @@ export default function MyRobots() {
   return (
     <div className="my-robots-page">
       <div className="my-robots-header">
+        <button onClick={() => navigate('/robots')} className="back-button">
+          <FontAwesomeIcon icon={faArrowLeft} />
+          Back to Robots
+        </button>
         <h1>My Robots</h1>
         <p className="subtitle">Manage your registered robots</p>
       </div>

@@ -21,6 +21,13 @@
   margin-bottom: 2rem;
 }
 
+.robot-directory-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
 .robot-directory-header h1 {
   font-size: 2rem;
   font-weight: 700;
@@ -31,6 +38,44 @@
   color: rgba(255, 255, 255, 0.6);
   font-size: 1rem;
   margin: 0;
+}
+
+.robot-directory-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.robot-directory-action {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.5rem 0.95rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.robot-directory-action:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.robot-directory-action.primary {
+  background: #ffc107;
+  border-color: #ffc107;
+  color: #111;
+}
+
+.robot-directory-action.primary:hover {
+  background: #ffd54f;
+  border-color: #ffd54f;
 }
 
 .robot-directory-controls {
@@ -191,6 +236,17 @@
     text-align: left;
   }
 
+  .robot-directory-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .robot-directory-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
   .robot-directory-controls {
     justify-content: stretch;
   }
@@ -199,10 +255,11 @@
     flex-direction: column;
     align-items: stretch;
   }
-  
+
   .robot-pagination {
     flex-direction: column;
   }
+
   .next-services-button {
     position: fixed;
     right: 1rem;
