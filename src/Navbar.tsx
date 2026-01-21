@@ -7,18 +7,17 @@ import { PurchaseCreditsModal } from "./components/PurchaseCreditsModal";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faRobot,
-  faClockRotateLeft,
   faUser,
   faChevronDown,
   faRightFromBracket,
   faCog,
-  faList,
   faBuilding,
   faHandshake,
   faUsers,
   faCoins,
   faWallet,
   faShieldAlt,
+  faGaugeHigh,
   faGlobe
 } from '@fortawesome/free-solid-svg-icons';
 import "./Navbar.css";
@@ -57,9 +56,9 @@ export default function Navbar() {
           <img src="/logo-large.png" alt="Modulr" />
         </Link>
 
-        <a 
-          href="https://modulr.cloud" 
-          target="_blank" 
+        <a
+          href="https://modulr.cloud"
+          target="_blank"
           rel="noopener noreferrer"
           className="navbar-external-link"
         >
@@ -69,52 +68,34 @@ export default function Navbar() {
 
         {isLoggedIn && (
           <div className="navbar-links">
-            <Link 
-              to="/robots" 
+            <Link
+              to="/"
+              className={`nav-link ${isActive('/') ? 'active' : ''}`}
+            >
+              <FontAwesomeIcon icon={faGaugeHigh} />
+              <span>Dashboard</span>
+            </Link>
+            <Link
+              to="/robots"
               className={`nav-link ${isActive('/robots') ? 'active' : ''}`}
             >
               <FontAwesomeIcon icon={faRobot} />
               <span>Robots</span>
             </Link>
-            <Link 
-              to="/services" 
+            <Link
+              to="/services"
               className={`nav-link ${isActive('/services') ? 'active' : ''}`}
             >
               <FontAwesomeIcon icon={faHandshake} />
               <span>Services</span>
             </Link>
-            {user?.group === "PARTNERS" && (
-              <Link 
-                to="/my-robots" 
-                className={`nav-link ${isActive('/my-robots') ? 'active' : ''}`}
-              >
-                <FontAwesomeIcon icon={faList} />
-                <span>My Robots</span>
-              </Link>
-            )}
-            <Link 
-              to="/sessions" 
-              className={`nav-link ${isActive('/sessions') ? 'active' : ''}`}
-            >
-              <FontAwesomeIcon icon={faClockRotateLeft} />
-              <span>Sessions</span>
-            </Link>
-            <Link 
-              to="/social" 
+            <Link
+              to="/social"
               className={`nav-link ${isActive('/social') ? 'active' : ''}`}
             >
               <FontAwesomeIcon icon={faUsers} />
               <span>Social</span>
             </Link>
-            {user?.group === "PARTNERS" && (
-              <Link 
-                to="/create-robot-listing" 
-                className={`nav-link ${isActive('/create-robot-listing') ? 'active' : ''}`}
-              >
-                <FontAwesomeIcon icon={faRobot} />
-                <span>List Robot</span>
-              </Link>
-            )}
           </div>
         )}
 
@@ -122,7 +103,7 @@ export default function Navbar() {
           {isLoggedIn ? (
             <>
               {/* Credits Balance Display - Clickable to open purchase modal */}
-              <button 
+              <button
                 className="credits-balance"
                 onClick={() => setShowPurchaseModal(true)}
                 title="Click to purchase credits"
@@ -132,9 +113,9 @@ export default function Navbar() {
                   {creditsLoading ? '...' : formattedBalance}
                 </span>
               </button>
-              
+
               <div className="user-menu-wrapper" ref={menuRef}>
-                <button 
+                <button
                   className="user-menu-button"
                   onClick={() => setShowUserMenu(!showUserMenu)}
                 >
@@ -145,64 +126,64 @@ export default function Navbar() {
                   <FontAwesomeIcon icon={faChevronDown} className="dropdown-icon" />
                 </button>
 
-              {showUserMenu && (
-                <div className="user-dropdown">
-                  <div className="dropdown-header">
-                    <div className="dropdown-user-info">
-                      <div className="dropdown-avatar">
-                        {user?.email?.[0].toUpperCase() || 'U'}
-                      </div>
-                      <div>
-                        <div className="dropdown-name">{capitalizeName(user?.email?.split('@')[0])}</div>
-                        <div className="dropdown-email">{user?.email}</div>
-                        {user?.group && (
-                          <div className="dropdown-role">{formatGroupName(user.group)}</div>
-                        )}
+                {showUserMenu && (
+                  <div className="user-dropdown">
+                    <div className="dropdown-header">
+                      <div className="dropdown-user-info">
+                        <div className="dropdown-avatar">
+                          {user?.email?.[0].toUpperCase() || 'U'}
+                        </div>
+                        <div>
+                          <div className="dropdown-name">{capitalizeName(user?.email?.split('@')[0])}</div>
+                          <div className="dropdown-email">{user?.email}</div>
+                          {user?.group && (
+                            <div className="dropdown-role">{formatGroupName(user.group)}</div>
+                          )}
+                        </div>
                       </div>
                     </div>
+                    <div className="dropdown-divider"></div>
+                    <Link to="/profile" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
+                      <FontAwesomeIcon icon={faUser} />
+                      <span>Profile</span>
+                    </Link>
+                    {user?.group === "PARTNERS" && (
+                      <Link to="/partner-profile/edit" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
+                        <FontAwesomeIcon icon={faBuilding} />
+                        <span>Edit Company Profile</span>
+                      </Link>
+                    )}
+                    <Link to="/settings" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
+                      <FontAwesomeIcon icon={faCog} />
+                      <span>Settings</span>
+                    </Link>
+                    <Link to="/credits" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
+                      <FontAwesomeIcon icon={faCoins} />
+                      <span>Credits</span>
+                    </Link>
+                    {hasAdminAccess(user?.email, user?.group ? [user.group] : undefined) && (
+                      <Link to="/admin" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
+                        <FontAwesomeIcon icon={faShieldAlt} />
+                        <span>Admin</span>
+                      </Link>
+                    )}
+                    <button
+                      className="dropdown-item"
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        setShowPurchaseModal(true);
+                      }}
+                    >
+                      <FontAwesomeIcon icon={faWallet} />
+                      <span>Purchase Credits</span>
+                    </button>
+                    <div className="dropdown-divider"></div>
+                    <button className="dropdown-item danger" onClick={handleSignOut}>
+                      <FontAwesomeIcon icon={faRightFromBracket} />
+                      <span>Sign Out</span>
+                    </button>
                   </div>
-                  <div className="dropdown-divider"></div>
-                  <Link to="/profile" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
-                    <FontAwesomeIcon icon={faUser} />
-                    <span>Profile</span>
-                  </Link>
-                  {user?.group === "PARTNERS" && (
-                    <Link to="/partner-profile/edit" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
-                      <FontAwesomeIcon icon={faBuilding} />
-                      <span>Edit Company Profile</span>
-                    </Link>
-                  )}
-                  <Link to="/settings" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
-                    <FontAwesomeIcon icon={faCog} />
-                    <span>Settings</span>
-                  </Link>
-                  <Link to="/credits" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
-                    <FontAwesomeIcon icon={faCoins} />
-                    <span>Credits</span>
-                  </Link>
-                  {hasAdminAccess(user?.email, user?.group ? [user.group] : undefined) && (
-                    <Link to="/admin" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
-                      <FontAwesomeIcon icon={faShieldAlt} />
-                      <span>Admin</span>
-                    </Link>
-                  )}
-                  <button 
-                    className="dropdown-item" 
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      setShowPurchaseModal(true);
-                    }}
-                  >
-                    <FontAwesomeIcon icon={faWallet} />
-                    <span>Purchase Credits</span>
-                  </button>
-                  <div className="dropdown-divider"></div>
-                  <button className="dropdown-item danger" onClick={handleSignOut}>
-                    <FontAwesomeIcon icon={faRightFromBracket} />
-                    <span>Sign Out</span>
-                  </button>
-                </div>
-              )}
+                )}
               </div>
             </>
           ) : (
@@ -212,7 +193,7 @@ export default function Navbar() {
           )}
 
           {isLoggedIn && (
-            <button 
+            <button
               className="mobile-menu-toggle"
               onClick={() => setShowMobileMenu(!showMobileMenu)}
             >
@@ -228,9 +209,9 @@ export default function Navbar() {
 
       {isLoggedIn && showMobileMenu && (
         <div className="mobile-menu">
-          <a 
-            href="https://modulr.cloud" 
-            target="_blank" 
+          <a
+            href="https://modulr.cloud"
+            target="_blank"
             rel="noopener noreferrer"
             className="mobile-nav-link external"
             onClick={() => setShowMobileMenu(false)}
@@ -238,6 +219,10 @@ export default function Navbar() {
             <FontAwesomeIcon icon={faGlobe} />
             <span>Website ↗</span>
           </a>
+          <Link to="/" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
+            <FontAwesomeIcon icon={faGaugeHigh} />
+            <span>Dashboard</span>
+          </Link>
           <Link to="/robots" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
             <FontAwesomeIcon icon={faRobot} />
             <span>Robots</span>
@@ -246,26 +231,10 @@ export default function Navbar() {
             <FontAwesomeIcon icon={faHandshake} />
             <span>Services</span>
           </Link>
-          {user?.group === "PARTNERS" && (
-            <Link to="/my-robots" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
-              <FontAwesomeIcon icon={faList} />
-              <span>My Robots</span>
-            </Link>
-          )}
-          <Link to="/sessions" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
-            <FontAwesomeIcon icon={faClockRotateLeft} />
-            <span>Sessions</span>
-          </Link>
           <Link to="/social" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
             <FontAwesomeIcon icon={faUsers} />
             <span>Social</span>
           </Link>
-          {user?.group === "PARTNERS" && (
-            <Link to="/create-robot-listing" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
-              <FontAwesomeIcon icon={faRobot} />
-              <span>List Robot</span>
-            </Link>
-          )}
           <Link to="/profile" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
             <FontAwesomeIcon icon={faUser} />
             <span>Profile</span>
@@ -278,9 +247,9 @@ export default function Navbar() {
       )}
 
       {/* Purchase Credits Modal */}
-      <PurchaseCreditsModal 
-        isOpen={showPurchaseModal} 
-        onClose={() => setShowPurchaseModal(false)} 
+      <PurchaseCreditsModal
+        isOpen={showPurchaseModal}
+        onClose={() => setShowPurchaseModal(false)}
       />
     </nav>
   );
