@@ -2,7 +2,8 @@ body {
   margin: 0;
   padding: 0;
   overflow-x: hidden;
-  background: #08090a; /* Modulr black */
+  background: #08090a;
+  /* Modulr black */
   min-height: 100vh;
 }
 
@@ -67,6 +68,7 @@ body {
     transform: translateX(100%);
     opacity: 0;
   }
+
   to {
     transform: translateX(0);
     opacity: 1;
@@ -190,8 +192,15 @@ html {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .teleop-error-alert {
@@ -215,7 +224,8 @@ html {
 
 .error-content {
   flex: 1;
-  min-width: 0; /* Allows flex item to shrink below content size */
+  min-width: 0;
+  /* Allows flex item to shrink below content size */
   overflow-wrap: break-word;
 }
 
@@ -224,7 +234,8 @@ html {
   font-size: 0.85rem;
   opacity: 0.9;
   font-family: monospace;
-  word-break: break-all; /* Break long URLs */
+  word-break: break-all;
+  /* Break long URLs */
   overflow-wrap: break-word;
 }
 
@@ -246,7 +257,8 @@ html {
   position: relative;
   z-index: 1001;
   pointer-events: auto;
-  flex-shrink: 0; /* Prevents button from shrinking */
+  flex-shrink: 0;
+  /* Prevents button from shrinking */
   min-width: fit-content;
 }
 
@@ -275,7 +287,7 @@ html {
 }
 
 .teleop-video-container {
-  background: rgba(0, 0, 0, 0.8);
+  background: #0c0c0c;
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
@@ -283,31 +295,35 @@ html {
   align-items: center;
   justify-content: center;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(10px);
 }
 
 .video-wrapper {
   position: relative;
   width: 100%;
   height: 100%;
+  min-height: 400px;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: #0a0a0a;
 }
 
 .teleop-video {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  background: #000;
+  border: none;
+  outline: none;
 }
 
 .video-placeholder {
   position: absolute;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 1.3rem;
+  inset: 0;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  justify-content: center;
+  background: transparent;
   user-select: none;
 }
 
@@ -317,12 +333,16 @@ html {
   align-items: center;
   gap: 1rem;
   color: rgba(255, 255, 255, 0.4);
-  font-size: 1.1rem;
+  font-size: 1rem;
   user-select: none;
 }
 
 .placeholder-content svg {
-  opacity: 0.3;
+  color: rgba(255, 193, 7, 0.4);
+}
+
+.placeholder-content span {
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .teleop-controls-panel {
@@ -885,6 +905,7 @@ html {
     opacity: 0;
     transform: translateY(-10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -897,7 +918,7 @@ html {
   gap: 1rem;
 }
 
-.security-badge > svg {
+.security-badge>svg {
   font-size: 1.5rem;
   color: #28a745;
   filter: drop-shadow(0 2px 8px rgba(40, 167, 69, 0.3));

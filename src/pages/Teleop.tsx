@@ -392,7 +392,8 @@ export default function Teleop() {
 
   const handleKeyboardInput = useCallback((input: { forward: number; turn: number }) => {
     const forward = input.forward;
-    const turn = input.turn;
+    // Invert turn to match joystick/gamepad convention (positive turn = visual right)
+    const turn = input.turn * -1.0;
     setCurrentSpeed({ forward, turn });
     setIsJoystickActive(forward !== 0 || turn !== 0);
 
