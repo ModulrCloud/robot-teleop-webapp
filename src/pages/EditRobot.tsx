@@ -991,14 +991,25 @@ export const EditRobot = () => {
                 </div>
               )}
 
-              {!isViewMode && robotIdForStatus && isFeatureEnabled('CUSTOM_ROS_COMMANDS') && (
+              {!isViewMode && robotIdForStatus && (
                 <div className="form-section">
-                  <CustomCommandsManager
-                    robotId={robotIdForStatus}
-                    onSave={(commands) => {
-                      logger.log('Custom commands saved:', commands);
-                    }}
-                  />
+                  {isFeatureEnabled('CUSTOM_ROS_COMMANDS') ? (
+                    <CustomCommandsManager
+                      robotId={robotIdForStatus}
+                      onSave={(commands) => {
+                        logger.log('Custom commands saved:', commands);
+                      }}
+                    />
+                  ) : (
+                    <div className="coming-soon-section">
+                      <h3>
+                        <FontAwesomeIcon icon={faLock} style={{ marginRight: '0.5rem', opacity: 0.6 }} />
+                        Custom ROS Commands
+                      </h3>
+                      <p>Define custom keyboard and gamepad bindings for your robot's ROS commands.</p>
+                      <span className="coming-soon-badge">Coming Soon</span>
+                    </div>
+                  )}
                 </div>
               )}
 
