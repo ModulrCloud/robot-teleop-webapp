@@ -34,6 +34,7 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import outputs from '../../amplify_outputs.json';
 import { logger } from '../utils/logger';
 import { PurchaseCreditsModal } from '../components/PurchaseCreditsModal';
+import { isFeatureEnabled } from '../utils/featureFlags';
 
 const client = generateClient<Schema>();
 
@@ -837,14 +838,21 @@ export default function Teleop() {
             <h3>Settings</h3>
           </div>
           <div className="settings-content">
-            <button
-              type="button"
-              className="settings-button"
-              onClick={() => setShowInputBindingsModal(true)}
-            >
-              <FontAwesomeIcon icon={faKeyboard} />
-              <span>Input Bindings</span>
-            </button>
+            {isFeatureEnabled('CUSTOM_ROS_COMMANDS') ? (
+              <button
+                type="button"
+                className="settings-button"
+                onClick={() => setShowInputBindingsModal(true)}
+              >
+                <FontAwesomeIcon icon={faKeyboard} />
+                <span>Input Bindings</span>
+              </button>
+            ) : (
+              <div className="settings-coming-soon">
+                <FontAwesomeIcon icon={faLock} />
+                <span>Custom bindings coming soon</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

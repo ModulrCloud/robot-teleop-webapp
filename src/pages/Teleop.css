@@ -687,11 +687,12 @@ html {
 }
 
 .teleop-settings-card {
+  grid-column: 1 / -1;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 183, 0, 0.2);
   border-radius: 12px;
   padding: 1.5rem;
-  margin-top: 1.5rem;
+  margin-top: 0.5rem;
 }
 
 .settings-header {
@@ -742,6 +743,24 @@ html {
 
 .settings-button svg {
   font-size: 1.1rem;
+}
+
+.settings-coming-soon {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.9rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-coming-soon svg {
+  opacity: 0.5;
 }
 
 .joystick-wrapper {
