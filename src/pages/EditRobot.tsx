@@ -12,9 +12,10 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
 import { RobotAvailabilityManager } from '../components/RobotAvailabilityManager';
 import { CustomCommandsManager } from '../components/partner/CustomCommandsManager';
-import { 
-  faRobot, 
-  faCheckCircle, 
+import { isFeatureEnabled } from '../utils/featureFlags';
+import {
+  faRobot,
+  faCheckCircle,
   faExclamationCircle,
   faInfoCircle,
   faTrash,
@@ -62,7 +63,7 @@ export const EditRobot = () => {
   const [searchParams] = useSearchParams();
   const robotId = searchParams.get('robotId');
   const isViewMode = searchParams.get('mode') === 'view';
-  
+
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingRobot, setIsLoadingRobot] = useState(true);
   const [success, setSuccess] = useState<boolean | undefined>();
@@ -99,6 +100,12 @@ export const EditRobot = () => {
   const [currencyDisplay, setCurrencyDisplay] = useState<string>('USD');
   const [currencyCode, setCurrencyCode] = useState<CurrencyCode>('USD');
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | undefined>();
+
+  // Refs to access current values in effects without triggering re-runs
+  const exchangeRatesRef = useRef<Record<string, number> | undefined>(undefined);
+  const currencyCodeRef = useRef<CurrencyCode>('USD');
+  exchangeRatesRef.current = exchangeRates;
+  currencyCodeRef.current = currencyCode;
   const [hourlyRateCurrency, setHourlyRateCurrency] = useState<number>(1.00);
 
   // Fetch exchange rates on mount
@@ -127,7 +134,7 @@ export const EditRobot = () => {
         });
 
         let preferredCurrency: CurrencyCode = 'USD';
-        
+
         if (partners && partners.length > 0) {
           // User is a partner - use Partner record's currency preference
           preferredCurrency = (partners[0]?.preferredCurrency || "USD").toUpperCase() as CurrencyCode;
@@ -139,13 +146,13 @@ export const EditRobot = () => {
           const clientRecord = clients?.[0];
           preferredCurrency = (clientRecord?.preferredCurrency || "USD").toUpperCase() as CurrencyCode;
         }
-        
+
         setCurrencyCode(preferredCurrency);
-        
+
         const currencyInfo = getCurrencyInfo(preferredCurrency);
         // Show currency code (USD, EUR, etc.) or "?" if currency info is invalid
         setCurrencyDisplay(currencyInfo.symbol === '?' ? '?' : preferredCurrency);
-        
+
         // Convert current credits value to new currency for display
         const currencyValue = creditsToCurrencySync(robotListing.hourlyRateCredits, preferredCurrency, exchangeRates);
         setHourlyRateCurrency(currencyValue);
@@ -180,16 +187,16 @@ export const EditRobot = () => {
       try {
         setIsLoadingRobot(true);
         setError(null);
-        
+
         // Try to get robot by ID
         const robot = await client.models.Robot.get({ id: robotId });
-        
+
         if (robot.errors || !robot.data) {
           throw new Error(robot.errors?.[0]?.message || 'Robot not found');
         }
 
         const robotData = robot.data;
-        
+
         // Extract allowed users (excluding default users)
         const allowedUsers = robotData.allowedUsers || [];
         const defaultUsers = ['chris@modulr.cloud', 'mike@modulr.cloud'];
@@ -200,23 +207,25 @@ export const EditRobot = () => {
         const name = robotData.name || "";
         setRobotName(name);
         setRobotIdForStatus(robotData.robotId || ''); // Store robotId for status check
-        
+
         // Type-safe access to extended robot fields
         const extendedData = robotData as typeof robotData & { isVerified?: boolean; robotType?: string };
         setIsVerified(extendedData.isVerified || false); // Store verification status
-        
+
         // Get robotType, falling back to model for backwards compatibility
         const robotTypeValue = extendedData.robotType || robotData.model || ROBOT_TYPES[0].value;
         // Validate that the robotType is one of the allowed values
-        const validRobotType = ROBOT_TYPES.some(t => t.value === robotTypeValue.toLowerCase()) 
-          ? robotTypeValue.toLowerCase() 
+        const validRobotType = ROBOT_TYPES.some(t => t.value === robotTypeValue.toLowerCase())
+          ? robotTypeValue.toLowerCase()
           : ROBOT_TYPES[0].value;
-        
+
+        const loadedHourlyRateCredits = robotData.hourlyRateCredits ?? 100;
+
         setRobotListing({
           robotName: name,
           description: robotData.description || "",
           robotType: validRobotType,
-          hourlyRateCredits: robotData.hourlyRateCredits || 100,
+          hourlyRateCredits: loadedHourlyRateCredits,
           enableAccessControl: allowedUsers.length > 0,
           allowedUserEmails: additionalUsers.join('\n'),
           city: robotData.city || "",
@@ -225,6 +234,12 @@ export const EditRobot = () => {
           latitude: robotData.latitude?.toString() || "",
           longitude: robotData.longitude?.toString() || "",
         });
+
+        // Immediately update currency display if exchange rates are available
+        if (exchangeRatesRef.current && currencyCodeRef.current) {
+          const currencyValue = creditsToCurrencySync(loadedHourlyRateCredits, currencyCodeRef.current, exchangeRatesRef.current);
+          setHourlyRateCurrency(currencyValue);
+        }
 
         // Load existing image if available (only for verified robots with custom images)
         if (robotData.imageUrl && extendedData.isVerified) {
@@ -269,7 +284,7 @@ export const EditRobot = () => {
         const status = await client.queries.getRobotStatusLambda({
           robotId: robotIdForStatus,
         });
-        
+
         if (status.data) {
           setRobotStatus({
             isOnline: status.data.isOnline || false,
@@ -287,7 +302,7 @@ export const EditRobot = () => {
     };
 
     loadRobotStatus();
-    
+
     // Poll status every 10 seconds
     const interval = setInterval(loadRobotStatus, 10000);
     return () => clearInterval(interval);
@@ -296,18 +311,18 @@ export const EditRobot = () => {
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = event.target;
     const checked = (event.target as HTMLInputElement).checked;
-    
+
     // Handle hourly rate input (user enters currency value, we convert to credits)
     if (type === 'number' && name === 'hourlyRateCredits') {
       // Remove any non-numeric characters except decimal point
       const sanitized = value.replace(/[^0-9.]/g, '');
       // Convert to number, default to 0 if empty or invalid
       const currencyValue = sanitized === '' || sanitized === '.' ? 0 : parseFloat(sanitized);
-      
+
       if (!isNaN(currencyValue) && currencyValue >= 0) {
         // Update displayed currency value
         setHourlyRateCurrency(currencyValue);
-        
+
         // Convert currency value back to credits for storage
         const creditsValue = currencyToCreditsSync(currencyValue, currencyCode, exchangeRates);
         setRobotListing(prev => ({
@@ -320,7 +335,7 @@ export const EditRobot = () => {
         ...prev,
         [name]: type === 'checkbox' ? checked : value,
       }));
-      
+
       // If robotType changed and no custom image is set, update preview to default
       if (name === 'robotType' && !imageFile && !existingImageKey) {
         setImagePreview(getDefaultRobotImage(value));
@@ -416,19 +431,19 @@ export const EditRobot = () => {
     // Parse email list (split by comma or newline, trim, filter empty)
     const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
       ? robotListing.allowedUserEmails
-          .split(/[,\n]/)
-          .map(email => email.trim())
-          .filter(email => email.length > 0 && email.includes('@'))
+        .split(/[,\n]/)
+        .map(email => email.trim())
+        .filter(email => email.length > 0 && email.includes('@'))
       : [];
 
     // Ensure robotType is valid before sending
-    const validRobotType = robotListing.robotType && robotListing.robotType.trim() !== '' 
+    const validRobotType = robotListing.robotType && robotListing.robotType.trim() !== ''
       ? robotListing.robotType.trim().toLowerCase()
       : ROBOT_TYPES[0].value;
-    const robotTypeToSend = ROBOT_TYPES.some(t => t.value === validRobotType) 
-      ? validRobotType 
+    const robotTypeToSend = ROBOT_TYPES.some(t => t.value === validRobotType)
+      ? validRobotType
       : ROBOT_TYPES[0].value;
-    
+
     const robotData = {
       robotName: robotListing.robotName,
       description: robotListing.description,
@@ -485,14 +500,14 @@ export const EditRobot = () => {
     try {
       setIsDeleting(true);
       setError(null);
-      
+
       const result = await client.mutations.deleteRobotLambda({ robotId });
-      
+
       if (result.errors && result.errors.length > 0) {
         const errorMessages = result.errors.map((e: { message?: string }) => e.message || JSON.stringify(e)).join(', ');
         throw new Error(errorMessages);
       }
-      
+
       if (result.data?.statusCode === 200) {
         navigate('/robots');
       } else {
@@ -546,20 +561,20 @@ export const EditRobot = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <h1>{isViewMode ? 'Robot Details' : 'Edit Robot'}</h1>
             {robotIdForStatus && (
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
                 gap: '0.5rem',
                 fontSize: '0.9rem',
                 color: robotStatus?.isOnline ? '#ffb700' : '#666',
                 fontWeight: 500
               }}>
-                <FontAwesomeIcon 
-                  icon={faCircle} 
-                  style={{ 
+                <FontAwesomeIcon
+                  icon={faCircle}
+                  style={{
                     fontSize: '0.6rem',
                     color: robotStatus?.isOnline ? '#ffb700' : '#666'
-                  }} 
+                  }}
                 />
                 <span>
                   {isLoadingStatus ? 'Checking...' : (robotStatus?.isOnline ? 'Online' : 'Offline')}
@@ -577,24 +592,24 @@ export const EditRobot = () => {
             <div className="robot-view-details">
               <div className="view-section">
                 <h3>Robot Information</h3>
-                
+
                 <div className="view-row">
                   <span className="view-label">Name</span>
                   <span className="view-value">{robotListing.robotName || 'N/A'}</span>
                 </div>
-                
+
                 <div className="view-row">
                   <span className="view-label">Type</span>
                   <span className="view-value" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <img 
-                      src={ROBOT_TYPES.find(t => t.value === robotListing.robotType)?.image || "/default/humanoid.png"} 
+                    <img
+                      src={ROBOT_TYPES.find(t => t.value === robotListing.robotType)?.image || "/default/humanoid.png"}
                       alt={robotListing.robotType}
                       style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '6px' }}
                     />
                     {ROBOT_TYPES.find(t => t.value === robotListing.robotType)?.label || robotListing.robotType}
                   </span>
                 </div>
-                
+
                 <div className="view-row">
                   <span className="view-label">Description</span>
                   <span className="view-value">{robotListing.description || 'No description'}</span>
@@ -604,9 +619,9 @@ export const EditRobot = () => {
                   <div className="view-row">
                     <span className="view-label">Image</span>
                     <div className="view-value">
-                      <img 
-                        src={imagePreview} 
-                        alt={robotListing.robotName} 
+                      <img
+                        src={imagePreview}
+                        alt={robotListing.robotName}
                         style={{ maxWidth: '200px', borderRadius: '8px' }}
                       />
                     </div>
@@ -648,7 +663,7 @@ export const EditRobot = () => {
             </div>
 
             <div className="form-actions">
-              <button 
+              <button
                 type="button"
                 className="submit-btn"
                 onClick={() => navigate('/robots')}
@@ -665,402 +680,411 @@ export const EditRobot = () => {
             </div>
 
             <form className="listing-form" onSubmit={onConfirmUpdate}>
-          <div className="form-section">
-            <h3>Robot Details</h3>
-            
-            <div className="form-group">
-              <label htmlFor="robot-name">
-                Robot Name <span className="required">*</span>
-              </label>
-              <input 
-                id="robot-name" 
-                type="text" 
-                name="robotName"
-                value={robotListing.robotName}
-                onChange={handleInputChange}
-                placeholder="Enter a unique name for your robot"
-                required
-                disabled={isLoading || isViewMode}
-              />
-            </div>
+              <div className="form-section">
+                <h3>Robot Details</h3>
 
-            <div className="form-group">
-              <label htmlFor="robot-type">
-                Robot Type <span className="required">*</span>
-              </label>
-              <div className="robot-type-selector">
-                {ROBOT_TYPES.map(type => (
-                  <label 
-                    key={type.value}
-                    className={`robot-type-option ${robotListing.robotType === type.value ? 'selected' : ''}`}
-                  >
+                <div className="form-group">
+                  <label htmlFor="robot-name">
+                    Robot Name <span className="required">*</span>
+                  </label>
+                  <input
+                    id="robot-name"
+                    type="text"
+                    name="robotName"
+                    value={robotListing.robotName}
+                    onChange={handleInputChange}
+                    placeholder="Enter a unique name for your robot"
+                    required
+                    disabled={isLoading || isViewMode}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="robot-type">
+                    Robot Type <span className="required">*</span>
+                  </label>
+                  <div className="robot-type-selector">
+                    {ROBOT_TYPES.map(type => (
+                      <label
+                        key={type.value}
+                        className={`robot-type-option ${robotListing.robotType === type.value ? 'selected' : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name="robotType"
+                          value={type.value}
+                          checked={robotListing.robotType === type.value}
+                          onChange={handleInputChange}
+                          disabled={isLoading || isViewMode}
+                        />
+                        <div className="robot-type-card">
+                          <div className="robot-type-image">
+                            <img src={type.image} alt={type.label} />
+                          </div>
+                          <span className="robot-type-label">{type.label}</span>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="form-help-text">
+                    Select the type that best matches your robot. This image will be displayed in listings.
+                  </p>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="robot-description">
+                    Description <span className="optional">(optional)</span>
+                  </label>
+                  <textarea
+                    id="robot-description"
+                    name="description"
+                    value={robotListing.description}
+                    onChange={handleInputChange}
+                    placeholder="Describe your robot's capabilities, specifications, and use cases..."
+                    rows={5}
+                    maxLength={280}
+                    disabled={isLoading || isViewMode}
+                  />
+                  <div className={`char-count ${robotListing.description.length >= 280 ? 'char-count-limit' : ''}`}>
+                    {robotListing.description.length}/280 characters
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="hourly-rate">
+                    Hourly Rate ({currencyDisplay}) <span className="required">*</span>
+                  </label>
+                  <input
+                    id="hourly-rate"
+                    type="number"
+                    name="hourlyRateCredits"
+                    value={hourlyRateCurrency.toFixed(2)}
+                    onChange={handleInputChange}
+                    placeholder="1.00"
+                    min="0"
+                    step="0.01"
+                    required
+                    disabled={isLoading}
+                  />
+                  <small className="form-help-text">
+                    Set the hourly rate in your preferred currency that clients will pay to use this robot.
+                    The platform will add a markup on top of this rate.
+                  </small>
+                </div>
+              </div>
+
+              <div className="form-section">
+                <h3>Robot Image</h3>
+
+                <div className="form-group">
+                  {/* Show current image (default or custom) */}
+                  <div className="preview-container" style={{ marginBottom: '1rem' }}>
+                    <img
+                      src={imagePreview || getDefaultRobotImage(robotListing.robotType)}
+                      alt="Robot preview"
+                    />
+                    {isVerified && (imageFile || existingImageKey) && (
+                      <button type="button" className="remove-image" onClick={clearImage}>
+                        <FontAwesomeIcon icon={faTimes} />
+                      </button>
+                    )}
+                    {uploadProgress > 0 && uploadProgress < 100 && (
+                      <div className="upload-progress">
+                        <div className="progress-bar" style={{ width: `${uploadProgress}%` }} />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Conditional upload section based on verification */}
+                  {isVerified ? (
+                    <>
+                      <label>
+                        Custom Image <span className="optional">(optional)</span>
+                      </label>
+                      <div
+                        className={`upload-zone ${isDragging ? 'dragging' : ''}`}
+                        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                        onDragLeave={() => setIsDragging(false)}
+                        onDrop={handleDrop}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileInput}
+                          hidden
+                        />
+                        <div className="upload-prompt">
+                          <FontAwesomeIcon icon={faCloudUploadAlt} />
+                          <span>Drop an image here or click to browse</span>
+                          <small>PNG, JPG up to 5MB</small>
+                        </div>
+                      </div>
+                      {uploadError && (
+                        <div className="upload-error">
+                          <FontAwesomeIcon icon={faExclamationCircle} />
+                          <span>{uploadError}</span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div style={{
+                      background: 'rgba(255, 183, 0, 0.1)',
+                      border: '1px solid rgba(255, 183, 0, 0.3)',
+                      borderRadius: '8px',
+                      padding: '1rem',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '0.75rem'
+                    }}>
+                      <FontAwesomeIcon icon={faLock} style={{ color: '#ffc107', marginTop: '0.125rem' }} />
+                      <div>
+                        <p style={{
+                          color: 'rgba(255, 255, 255, 0.9)',
+                          margin: 0,
+                          fontWeight: 500
+                        }}>
+                          Custom images available after verification
+                        </p>
+                        <p style={{
+                          color: 'rgba(255, 255, 255, 0.6)',
+                          margin: '0.5rem 0 0 0',
+                          fontSize: '0.85rem'
+                        }}>
+                          Your robot is using the default image based on its type. Once our team verifies your robot,
+                          you'll be able to upload custom photos.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="form-section">
+                <h3>Access Control</h3>
+
+                <div className="form-group">
+                  <label className="checkbox-label">
                     <input
-                      type="radio"
-                      name="robotType"
-                      value={type.value}
-                      checked={robotListing.robotType === type.value}
+                      type="checkbox"
+                      name="enableAccessControl"
+                      checked={robotListing.enableAccessControl}
                       onChange={handleInputChange}
                       disabled={isLoading || isViewMode}
                     />
-                    <div className="robot-type-card">
-                      <div className="robot-type-image">
-                        <img src={type.image} alt={type.label} />
-                      </div>
-                      <span className="robot-type-label">{type.label}</span>
-                    </div>
+                    <span>Restrict access to specific users</span>
                   </label>
-                ))}
-              </div>
-              <p className="form-help-text">
-                Select the type that best matches your robot. This image will be displayed in listings.
-              </p>
-            </div>
+                  <p className="form-help-text">
+                    {robotListing.enableAccessControl
+                      ? "Access will be restricted to you, chris@modulr.cloud, mike@modulr.cloud, and any users you add below. You can manage the access list after updating the robot."
+                      : "Robot will be accessible to all authenticated users. You can enable access control later if needed."}
+                  </p>
+                </div>
 
-            <div className="form-group">
-              <label htmlFor="robot-description">
-                Description <span className="optional">(optional)</span>
-              </label>
-              <textarea 
-                id="robot-description"
-                name="description"
-                value={robotListing.description}
-                onChange={handleInputChange}
-                placeholder="Describe your robot's capabilities, specifications, and use cases..."
-                rows={5}
-                maxLength={280}
-                disabled={isLoading || isViewMode}
-              />
-              <div className={`char-count ${robotListing.description.length >= 280 ? 'char-count-limit' : ''}`}>
-                {robotListing.description.length}/280 characters
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="hourly-rate">
-                Hourly Rate ({currencyDisplay}) <span className="required">*</span>
-              </label>
-              <input 
-                id="hourly-rate" 
-                type="number" 
-                name="hourlyRateCredits"
-                value={hourlyRateCurrency.toFixed(2)}
-                onChange={handleInputChange}
-                placeholder="1.00"
-                min="0"
-                step="0.01"
-                required
-                disabled={isLoading}
-              />
-              <small className="form-help-text">
-                Set the hourly rate in your preferred currency that clients will pay to use this robot. 
-                The platform will add a markup on top of this rate.
-              </small>
-            </div>
-          </div>
-
-          <div className="form-section">
-            <h3>Robot Image</h3>
-            
-            <div className="form-group">
-              {/* Show current image (default or custom) */}
-              <div className="preview-container" style={{ marginBottom: '1rem' }}>
-                <img 
-                  src={imagePreview || getDefaultRobotImage(robotListing.robotType)} 
-                  alt="Robot preview" 
-                />
-                {isVerified && (imageFile || existingImageKey) && (
-                  <button type="button" className="remove-image" onClick={clearImage}>
-                    <FontAwesomeIcon icon={faTimes} />
-                  </button>
-                )}
-                {uploadProgress > 0 && uploadProgress < 100 && (
-                  <div className="upload-progress">
-                    <div className="progress-bar" style={{ width: `${uploadProgress}%` }} />
-                  </div>
-                )}
-              </div>
-
-              {/* Conditional upload section based on verification */}
-              {isVerified ? (
-                <>
-                  <label>
-                    Custom Image <span className="optional">(optional)</span>
-                  </label>
-                  <div
-                    className={`upload-zone ${isDragging ? 'dragging' : ''}`}
-                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                    onDragLeave={() => setIsDragging(false)}
-                    onDrop={handleDrop}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileInput}
-                      hidden
+                {robotListing.enableAccessControl && (
+                  <div className="form-group">
+                    <label htmlFor="allowed-user-emails">
+                      Additional Allowed Users <span className="optional">(optional)</span>
+                    </label>
+                    <textarea
+                      id="allowed-user-emails"
+                      name="allowedUserEmails"
+                      value={robotListing.allowedUserEmails}
+                      onChange={handleInputChange}
+                      placeholder="Enter email addresses, one per line or separated by commas&#10;Example:&#10;alice@example.com&#10;bob@example.com"
+                      rows={4}
+                      disabled={isLoading || isViewMode}
                     />
-                    <div className="upload-prompt">
-                      <FontAwesomeIcon icon={faCloudUploadAlt} />
-                      <span>Drop an image here or click to browse</span>
-                      <small>PNG, JPG up to 5MB</small>
-                    </div>
+                    <p className="form-help-text">
+                      Enter email addresses of users who should have access to this robot.
+                      You (the owner), chris@modulr.cloud, and mike@modulr.cloud are automatically included.
+                    </p>
                   </div>
-                  {uploadError && (
-                    <div className="upload-error">
-                      <FontAwesomeIcon icon={faExclamationCircle} />
-                      <span>{uploadError}</span>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div style={{ 
-                  background: 'rgba(255, 183, 0, 0.1)', 
-                  border: '1px solid rgba(255, 183, 0, 0.3)', 
-                  borderRadius: '8px', 
-                  padding: '1rem',
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '0.75rem'
-                }}>
-                  <FontAwesomeIcon icon={faLock} style={{ color: '#ffc107', marginTop: '0.125rem' }} />
-                  <div>
-                    <p style={{ 
-                      color: 'rgba(255, 255, 255, 0.9)', 
-                      margin: 0,
-                      fontWeight: 500
-                    }}>
-                      Custom images available after verification
-                    </p>
-                    <p style={{ 
-                      color: 'rgba(255, 255, 255, 0.6)', 
-                      margin: '0.5rem 0 0 0',
-                      fontSize: '0.85rem'
-                    }}>
-                      Your robot is using the default image based on its type. Once our team verifies your robot, 
-                      you'll be able to upload custom photos.
-                    </p>
+                )}
+              </div>
+
+              <div className="form-section">
+                <h3>Location <span className="optional">(optional)</span></h3>
+                <p className="form-help-text">
+                  Location information helps clients find robots in their area. All fields are optional.
+                </p>
+
+                <div className="form-group">
+                  <label htmlFor="robot-city">City</label>
+                  <input
+                    id="robot-city"
+                    type="text"
+                    name="city"
+                    value={robotListing.city}
+                    onChange={handleInputChange}
+                    placeholder="e.g., San Francisco"
+                    disabled={isLoading || isViewMode}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="robot-state">State / Province</label>
+                  <input
+                    id="robot-state"
+                    type="text"
+                    name="state"
+                    value={robotListing.state}
+                    onChange={handleInputChange}
+                    placeholder="e.g., California"
+                    disabled={isLoading || isViewMode}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="robot-country">Country</label>
+                  <input
+                    id="robot-country"
+                    type="text"
+                    name="country"
+                    value={robotListing.country}
+                    onChange={handleInputChange}
+                    placeholder="e.g., United States"
+                    disabled={isLoading || isViewMode}
+                  />
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label htmlFor="robot-latitude">Latitude</label>
+                    <input
+                      id="robot-latitude"
+                      type="text"
+                      name="latitude"
+                      value={robotListing.latitude}
+                      onChange={handleInputChange}
+                      placeholder="e.g., 37.7749"
+                      disabled={isLoading || isViewMode}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="robot-longitude">Longitude</label>
+                    <input
+                      id="robot-longitude"
+                      type="text"
+                      name="longitude"
+                      value={robotListing.longitude}
+                      onChange={handleInputChange}
+                      placeholder="e.g., -122.4194"
+                      disabled={isLoading || isViewMode}
+                    />
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
-
-          <div className="form-section">
-            <h3>Access Control</h3>
-            
-            <div className="form-group">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  name="enableAccessControl"
-                  checked={robotListing.enableAccessControl}
-                  onChange={handleInputChange}
-                  disabled={isLoading || isViewMode}
-                />
-                <span>Restrict access to specific users</span>
-              </label>
-              <p className="form-help-text">
-                {robotListing.enableAccessControl 
-                  ? "Access will be restricted to you, chris@modulr.cloud, mike@modulr.cloud, and any users you add below. You can manage the access list after updating the robot."
-                  : "Robot will be accessible to all authenticated users. You can enable access control later if needed."}
-              </p>
-            </div>
-
-            {robotListing.enableAccessControl && (
-              <div className="form-group">
-                <label htmlFor="allowed-user-emails">
-                  Additional Allowed Users <span className="optional">(optional)</span>
-                </label>
-                <textarea 
-                  id="allowed-user-emails"
-                  name="allowedUserEmails"
-                  value={robotListing.allowedUserEmails}
-                  onChange={handleInputChange}
-                  placeholder="Enter email addresses, one per line or separated by commas&#10;Example:&#10;alice@example.com&#10;bob@example.com"
-                  rows={4}
-                  disabled={isLoading || isViewMode}
-                />
                 <p className="form-help-text">
-                  Enter email addresses of users who should have access to this robot. 
-                  You (the owner), chris@modulr.cloud, and mike@modulr.cloud are automatically included.
+                  Latitude and longitude are optional but useful for distance-based searches.
+                  You can find coordinates using <a href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer">Google Maps</a>.
                 </p>
               </div>
-            )}
-          </div>
 
-          <div className="form-section">
-            <h3>Location <span className="optional">(optional)</span></h3>
-            <p className="form-help-text">
-              Location information helps clients find robots in their area. All fields are optional.
-            </p>
-            
-            <div className="form-group">
-              <label htmlFor="robot-city">City</label>
-              <input 
-                id="robot-city" 
-                type="text" 
-                name="city"
-                value={robotListing.city}
-                onChange={handleInputChange}
-                placeholder="e.g., San Francisco"
-                disabled={isLoading || isViewMode}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="robot-state">State / Province</label>
-              <input 
-                id="robot-state" 
-                type="text" 
-                name="state"
-                value={robotListing.state}
-                onChange={handleInputChange}
-                placeholder="e.g., California"
-                disabled={isLoading || isViewMode}
-              />
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="robot-country">Country</label>
-              <input 
-                id="robot-country" 
-                type="text" 
-                name="country"
-                value={robotListing.country}
-                onChange={handleInputChange}
-                placeholder="e.g., United States"
-                disabled={isLoading || isViewMode}
-              />
-            </div>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="robot-latitude">Latitude</label>
-                <input 
-                  id="robot-latitude" 
-                  type="text" 
-                  name="latitude"
-                  value={robotListing.latitude}
-                  onChange={handleInputChange}
-                  placeholder="e.g., 37.7749"
-                  disabled={isLoading || isViewMode}
-                />
-              </div>
-
-              <div className="form-group">
-                <label htmlFor="robot-longitude">Longitude</label>
-                <input 
-                  id="robot-longitude" 
-                  type="text" 
-                  name="longitude"
-                  value={robotListing.longitude}
-                  onChange={handleInputChange}
-                  placeholder="e.g., -122.4194"
-                  disabled={isLoading || isViewMode}
-                />
-              </div>
-            </div>
-            <p className="form-help-text">
-              Latitude and longitude are optional but useful for distance-based searches. 
-              You can find coordinates using <a href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer">Google Maps</a>.
-            </p>
-          </div>
-
-          {robotIdForStatus && (
-            <div className="form-section">
-              <RobotAvailabilityManager 
-                robotId={robotIdForStatus}
-                robotUuid={robotId || undefined}
-              />
-            </div>
-          )}
-
-          {!isViewMode && robotIdForStatus && (
-            <div className="form-section">
-              <CustomCommandsManager
-                robotId={robotIdForStatus}
-                onSave={(commands) => {
-                  // In real implementation, save to backend
-                  // For now, just log
-                  logger.log('Custom commands saved:', commands);
-                }}
-              />
-            </div>
-          )}
-
-          <div className="form-actions">
-            <button 
-              type="button"
-              className="submit-btn"
-              onClick={handleDeleteRobot}
-              disabled={isLoading || isDeleting}
-              style={{ 
-                background: '#dc2626',
-                backgroundImage: 'none',
-                color: 'white',
-                border: 'none',
-                padding: '0.875rem',
-                minWidth: '48px',
-                boxShadow: 'none'
-              }}
-              title="Delete Robot"
-            >
-              {isDeleting ? (
-                <LoadingWheel />
-              ) : (
-                <FontAwesomeIcon icon={faTrash} />
+              {robotIdForStatus && (
+                <div className="form-section">
+                  <RobotAvailabilityManager
+                    robotId={robotIdForStatus}
+                    robotUuid={robotId || undefined}
+                  />
+                </div>
               )}
-            </button>
-            <div style={{ display: 'flex', gap: '1rem', marginLeft: 'auto' }}>
-              <button 
-                type="button"
-                className="submit-btn cancel-btn"
-                onClick={() => navigate('/robots')}
-                disabled={isLoading || isDeleting}
-              >
-                Cancel
-              </button>
-              <button 
-                type="submit" 
-                className="submit-btn"
-                disabled={isLoading || isDeleting || !robotListing.robotName.trim()}
-              >
-                {isLoading ? (
-                  <>
+
+              {!isViewMode && robotIdForStatus && (
+                <div className="form-section">
+                  {isFeatureEnabled('CUSTOM_ROS_COMMANDS') ? (
+                    <CustomCommandsManager
+                      robotId={robotIdForStatus}
+                      onSave={(commands) => {
+                        logger.log('Custom commands saved:', commands);
+                      }}
+                    />
+                  ) : (
+                    <div className="coming-soon-section">
+                      <h3>
+                        <FontAwesomeIcon icon={faLock} style={{ marginRight: '0.5rem', opacity: 0.6 }} />
+                        Custom ROS Commands
+                      </h3>
+                      <p>Define custom keyboard and gamepad bindings for your robot's ROS commands.</p>
+                      <span className="coming-soon-badge">Coming Soon</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="form-actions">
+                <button
+                  type="button"
+                  className="submit-btn"
+                  onClick={handleDeleteRobot}
+                  disabled={isLoading || isDeleting}
+                  style={{
+                    background: '#dc2626',
+                    backgroundImage: 'none',
+                    color: 'white',
+                    border: 'none',
+                    padding: '0.875rem',
+                    minWidth: '48px',
+                    boxShadow: 'none'
+                  }}
+                  title="Delete Robot"
+                >
+                  {isDeleting ? (
                     <LoadingWheel />
-                    <span>Updating...</span>
-                  </>
-                ) : (
-                  <>
-                    <FontAwesomeIcon icon={faRobot} />
-                    <span>Update Robot</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </form>
+                  ) : (
+                    <FontAwesomeIcon icon={faTrash} />
+                  )}
+                </button>
+                <div style={{ display: 'flex', gap: '1rem', marginLeft: 'auto' }}>
+                  <button
+                    type="button"
+                    className="submit-btn cancel-btn"
+                    onClick={() => navigate('/robots')}
+                    disabled={isLoading || isDeleting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="submit-btn"
+                    disabled={isLoading || isDeleting || !robotListing.robotName.trim()}
+                  >
+                    {isLoading ? (
+                      <>
+                        <LoadingWheel />
+                        <span>Updating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FontAwesomeIcon icon={faRobot} />
+                        <span>Update Robot</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
 
-        {success === true && (
-          <div className="feedback-message success">
-            <FontAwesomeIcon icon={faCheckCircle} />
-            <div className="message-content">
-              <strong>Success!</strong>
-              <p>Your robot has been updated successfully. Redirecting...</p>
-            </div>
-          </div>
-        )}
+            {success === true && (
+              <div className="feedback-message success">
+                <FontAwesomeIcon icon={faCheckCircle} />
+                <div className="message-content">
+                  <strong>Success!</strong>
+                  <p>Your robot has been updated successfully. Redirecting...</p>
+                </div>
+              </div>
+            )}
 
-        {success === false && error && (
-          <div className="feedback-message error">
-            <FontAwesomeIcon icon={faExclamationCircle} />
-            <div className="message-content">
-              <strong>Error</strong>
-              <p>{error}</p>
-            </div>
-          </div>
-        )}
+            {success === false && error && (
+              <div className="feedback-message error">
+                <FontAwesomeIcon icon={faExclamationCircle} />
+                <div className="message-content">
+                  <strong>Error</strong>
+                  <p>{error}</p>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

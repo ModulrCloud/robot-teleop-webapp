@@ -15,7 +15,8 @@ import { RobotSchedulingModal } from '../components/RobotSchedulingModal';
 import { UserReservations } from '../components/UserReservations';
 import { InputBindingsModal } from '../components/InputBindingsModal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar, faCalendarAlt, faKeyboard, faCog, faTools } from '@fortawesome/free-solid-svg-icons';
+import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar, faCalendarAlt, faKeyboard, faCog, faTools, faLock } from '@fortawesome/free-solid-svg-icons';
+import { isFeatureEnabled } from '../utils/featureFlags';
 import "./RobotDetail.css";
 
 const client = generateClient<Schema>();
@@ -466,13 +467,25 @@ export default function RobotDetail() {
                       <FontAwesomeIcon icon={faCalendarAlt} />
                       Schedule Robot Time
                     </button>
-                    <button
-                      className="schedule-button"
-                      onClick={() => setShowInputBindingsModal(true)}
-                    >
-                      <FontAwesomeIcon icon={faKeyboard} />
-                      Input Bindings
-                    </button>
+                    {isFeatureEnabled('CUSTOM_ROS_COMMANDS') ? (
+                      <button
+                        className="schedule-button"
+                        onClick={() => setShowInputBindingsModal(true)}
+                      >
+                        <FontAwesomeIcon icon={faKeyboard} />
+                        Input Bindings
+                      </button>
+                    ) : (
+                      <button
+                        className="schedule-button schedule-button-disabled"
+                        disabled
+                        aria-disabled="true"
+                        title="Input bindings are coming soon"
+                      >
+                        <FontAwesomeIcon icon={faLock} />
+                        Input Bindings (coming soon)
+                      </button>
+                    )}
                     <button
                       className="schedule-button schedule-button-disabled"
                       disabled
