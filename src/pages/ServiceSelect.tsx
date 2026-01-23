@@ -7,9 +7,9 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
-import { 
-  faSearch, 
-  faStar, 
+import {
+  faSearch,
+  faStar,
   faArrowRight,
   faFilter
 } from '@fortawesome/free-solid-svg-icons';
@@ -17,7 +17,7 @@ import "./ServiceSelect.css";
 
 const client = generateClient<Schema>();
 
-const COMPANY_TYPES = ['All', 'AI Provider', 'Data Service Provider', 'Compute Provider', 'Software Platform'];
+const COMPANY_TYPES = ['All', 'Robot Provider', 'AI Provider', 'Data Service Provider', 'Compute Provider'];
 
 interface PartnerData {
   id: string;
@@ -50,7 +50,7 @@ export default function ServiceSelect() {
         for (const p of result.data || []) {
           // Skip Robot Providers - they belong in the Robots tab
           if (p.companyType === 'Robot Provider') continue;
-          
+
           const robots = await p.robots();
           partnerData.push({
             id: p.id!,
@@ -105,8 +105,8 @@ export default function ServiceSelect() {
 
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      result = result.filter(p => 
-        p.name.toLowerCase().includes(term) || 
+      result = result.filter(p =>
+        p.name.toLowerCase().includes(term) ||
         p.description.toLowerCase().includes(term)
       );
     }
@@ -167,8 +167,8 @@ export default function ServiceSelect() {
               onClick={() => navigate(`/partner/${partner.id}`)}
             >
               <div className="card-logo">
-                <img 
-                  src={resolvedLogos[partner.id] || '/logo-thumb.png'} 
+                <img
+                  src={resolvedLogos[partner.id] || '/logo-thumb.png'}
                   alt={partner.name}
                   onError={(e) => { e.currentTarget.src = '/logo-thumb.png'; }}
                 />
@@ -180,8 +180,8 @@ export default function ServiceSelect() {
                   <span className="card-type">{partner.companyType}</span>
                 )}
                 <p className="card-description">
-                  {partner.description.length > 100 
-                    ? partner.description.slice(0, 100) + '...' 
+                  {partner.description.length > 100
+                    ? partner.description.slice(0, 100) + '...'
                     : partner.description}
                 </p>
 

@@ -220,7 +220,7 @@ export function RobotSchedulingCalendar({
     const now = new Date();
     const maxAdvanceDate = new Date(now);
     maxAdvanceDate.setDate(maxAdvanceDate.getDate() + 30);
-    
+
     if (clickedTime > maxAdvanceDate) {
       return; // Too far in advance
     }
@@ -229,7 +229,7 @@ export function RobotSchedulingCalendar({
     if (!isAvailabilityMode) {
       minAdvanceDate.setHours(minAdvanceDate.getHours() + 1);
     }
-    
+
     if (clickedTime < minAdvanceDate) {
       return; // Too soon
     }
@@ -262,38 +262,38 @@ export function RobotSchedulingCalendar({
 
     const handleGlobalMouseUp = () => {
       const startTime = new Date(dragStart.day.getFullYear(), dragStart.day.getMonth(), dragStart.day.getDate(), dragStart.hour, dragStart.minute, 0, 0);
-      
+
       const endTime = new Date(dragEnd.day.getFullYear(), dragEnd.day.getMonth(), dragEnd.day.getDate(), dragEnd.hour, dragEnd.minute, 0, 0);
-      
+
       let finalStart = startTime;
       let finalEnd = endTime;
-      
+
       if (finalEnd < finalStart) {
         [finalStart, finalEnd] = [finalEnd, finalStart];
       }
-      
+
       finalEnd = new Date(finalEnd.getTime() + 15 * 60000);
-      
+
       const now = new Date();
       const maxAdvanceDate = new Date(now);
       maxAdvanceDate.setDate(maxAdvanceDate.getDate() + 30);
-      
+
       const minAdvanceDate = new Date(now);
       if (!isAvailabilityMode) {
         minAdvanceDate.setHours(minAdvanceDate.getHours() + 1);
       }
-      
+
       if (finalStart >= minAdvanceDate && finalStart <= maxAdvanceDate) {
         const duration = (finalEnd.getTime() - finalStart.getTime()) / 60000;
         if (duration >= 15) {
           const roundedDuration = Math.ceil(duration / 15) * 15;
           finalEnd = new Date(finalStart.getTime() + roundedDuration * 60000);
-          
+
           onTimeSelect(finalStart, finalEnd);
           onDurationChange(roundedDuration);
         }
       }
-      
+
       setIsDragging(false);
       setDragStart(null);
       setDragEnd(null);
@@ -317,7 +317,7 @@ export function RobotSchedulingCalendar({
       const now = new Date();
       const maxAdvanceDate = new Date(now);
       maxAdvanceDate.setDate(maxAdvanceDate.getDate() + 30);
-      
+
       if (clickedTime > maxAdvanceDate) {
         return;
       }
@@ -326,7 +326,7 @@ export function RobotSchedulingCalendar({
       if (!isAvailabilityMode) {
         minAdvanceDate.setHours(minAdvanceDate.getHours() + 1);
       }
-      
+
       if (clickedTime < minAdvanceDate) {
         if (!isAvailabilityMode) {
           showToast('Cannot schedule times in the past. Please select a time at least 1 hour from now.', 'warning');
@@ -363,13 +363,13 @@ export function RobotSchedulingCalendar({
   return (
     <div className={`scheduling-calendar ${isDragging ? 'dragging' : ''}`}>
       <div className="calendar-header">
-        <button className="nav-button" onClick={() => navigateWeek('prev')}>
+        <button type="button" className="nav-button" onClick={() => navigateWeek('prev')}>
           <FontAwesomeIcon icon={faChevronLeft} />
         </button>
-        <button className="today-button" onClick={goToToday}>
+        <button type="button" className="today-button" onClick={goToToday}>
           Today
         </button>
-        <button className="nav-button" onClick={() => navigateWeek('next')}>
+        <button type="button" className="nav-button" onClick={() => navigateWeek('next')}>
           <FontAwesomeIcon icon={faChevronRight} />
         </button>
         <div className="week-range">
@@ -382,108 +382,108 @@ export function RobotSchedulingCalendar({
         <div className="calendar-grid">
           <div className="time-column sticky-column">
             <div className="time-header sticky-header"></div>
-          {timeSlots.map((slot, index) => {
-            // Only show label on the first segment of each hour (when minute is 0)
-            if (slot.minute === 0) {
+            {timeSlots.map((slot, index) => {
+              // Only show label on the first segment of each hour (when minute is 0)
+              if (slot.minute === 0) {
+                return (
+                  <div key={index} className="time-slot hour-label">
+                    {formatTime(slot.hour)}
+                  </div>
+                );
+              }
               return (
-                <div key={index} className="time-slot hour-label">
-                  {formatTime(slot.hour)}
+                <div key={index} className="time-slot quarter-slot">
+                  {/* Empty for visual spacing */}
                 </div>
               );
-            }
+            })}
+          </div>
+
+          {weekDays.map((day, dayIndex) => {
+            const isToday = day.toDateString() === new Date().toDateString();
             return (
-              <div key={index} className="time-slot quarter-slot">
-                {/* Empty for visual spacing */}
+              <div key={dayIndex} className="day-column">
+                <div className={`day-header sticky-header ${isToday ? 'today' : ''}`}>
+                  <div className="day-name">{day.toLocaleDateString('en-US', { weekday: 'short' })}</div>
+                  <div className="day-number">{day.getDate()}</div>
+                </div>
+                <div className="day-time-slots">
+                  {timeSlots.map((slot, slotIndex) => {
+                    const blocked = isTimeBlocked(day, slot.hour, slot.minute);
+                    const isPast = isTimeInPast(day, slot.hour, slot.minute);
+                    // Create a clean date at midnight first to avoid timezone/rollover issues
+                    const slotTime = new Date(day.getFullYear(), day.getMonth(), day.getDate(), slot.hour, slot.minute, 0, 0);
+
+                    // Check if selected (either from props or from drag)
+                    let isSelected = false;
+                    if (selectedStartTime && selectedEndTime) {
+                      isSelected = slotTime >= selectedStartTime && slotTime < selectedEndTime;
+                    } else if (isDragging && dragStart && dragEnd) {
+                      // Show drag selection - create clean dates to avoid timezone/rollover issues
+                      const dragStartTime = new Date(dragStart.day.getFullYear(), dragStart.day.getMonth(), dragStart.day.getDate(), dragStart.hour, dragStart.minute, 0, 0);
+
+                      const dragEndTime = new Date(dragEnd.day.getFullYear(), dragEnd.day.getMonth(), dragEnd.day.getDate(), dragEnd.hour, dragEnd.minute, 0, 0);
+
+                      const minTime = dragStartTime < dragEndTime ? dragStartTime : dragEndTime;
+                      const maxTime = dragStartTime > dragEndTime ? dragStartTime : dragEndTime;
+                      const maxTimeEnd = new Date(maxTime.getTime() + 15 * 60000); // Include the end segment
+
+                      isSelected = slotTime >= minTime && slotTime < maxTimeEnd;
+                    }
+
+                    const isHovered = hoveredTime &&
+                      hoveredTime.day === dayIndex &&
+                      hoveredTime.hour === slot.hour &&
+                      hoveredTime.minute === slot.minute;
+
+                    // Build title tooltip
+                    let titleText = `${formatTime(slot.hour, slot.minute)} - Available`;
+                    if (blocked) {
+                      titleText = blocked.type === 'reservation' ? 'Reserved' : 'Blocked by partner';
+                    } else if (isPast) {
+                      titleText = `${formatTime(slot.hour, slot.minute)} - Past time (cannot schedule)`;
+                    }
+
+                    return (
+                      <div
+                        key={slotIndex}
+                        className={`time-cell quarter-cell ${blocked ? 'blocked' : ''} ${isPast ? 'past-time' : ''} ${isSelected ? 'selected' : ''} ${isHovered && !isDragging ? 'hovered' : ''} ${isDragging ? 'dragging' : ''}`}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          if (!isPast) {
+                            handleTimeMouseDown(day, slot.hour, slot.minute);
+                          }
+                        }}
+                        onMouseEnter={() => {
+                          if (!isPast) {
+                            handleTimeMouseEnter(day, slot.hour, slot.minute);
+                          }
+                        }}
+                        onMouseLeave={() => {
+                          if (!isDragging) {
+                            setHoveredTime(null);
+                          }
+                        }}
+                        onClick={() => {
+                          if (!isPast) {
+                            handleTimeClick(day, slot.hour, slot.minute);
+                          }
+                        }}
+                        title={titleText}
+                      >
+                        {blocked && (
+                          <div className={`block-indicator ${blocked.type === 'reservation' ? 'reserved' : 'blocked'}`} />
+                        )}
+                        {isPast && !blocked && (
+                          <div className="block-indicator past-time" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             );
           })}
-        </div>
-
-        {weekDays.map((day, dayIndex) => {
-          const isToday = day.toDateString() === new Date().toDateString();
-          return (
-            <div key={dayIndex} className="day-column">
-              <div className={`day-header sticky-header ${isToday ? 'today' : ''}`}>
-                <div className="day-name">{day.toLocaleDateString('en-US', { weekday: 'short' })}</div>
-                <div className="day-number">{day.getDate()}</div>
-              </div>
-              <div className="day-time-slots">
-                {timeSlots.map((slot, slotIndex) => {
-                  const blocked = isTimeBlocked(day, slot.hour, slot.minute);
-                  const isPast = isTimeInPast(day, slot.hour, slot.minute);
-                  // Create a clean date at midnight first to avoid timezone/rollover issues
-                  const slotTime = new Date(day.getFullYear(), day.getMonth(), day.getDate(), slot.hour, slot.minute, 0, 0);
-                  
-                  // Check if selected (either from props or from drag)
-                  let isSelected = false;
-                  if (selectedStartTime && selectedEndTime) {
-                    isSelected = slotTime >= selectedStartTime && slotTime < selectedEndTime;
-                  } else if (isDragging && dragStart && dragEnd) {
-                    // Show drag selection - create clean dates to avoid timezone/rollover issues
-                    const dragStartTime = new Date(dragStart.day.getFullYear(), dragStart.day.getMonth(), dragStart.day.getDate(), dragStart.hour, dragStart.minute, 0, 0);
-                    
-                    const dragEndTime = new Date(dragEnd.day.getFullYear(), dragEnd.day.getMonth(), dragEnd.day.getDate(), dragEnd.hour, dragEnd.minute, 0, 0);
-                    
-                    const minTime = dragStartTime < dragEndTime ? dragStartTime : dragEndTime;
-                    const maxTime = dragStartTime > dragEndTime ? dragStartTime : dragEndTime;
-                    const maxTimeEnd = new Date(maxTime.getTime() + 15 * 60000); // Include the end segment
-                    
-                    isSelected = slotTime >= minTime && slotTime < maxTimeEnd;
-                  }
-                  
-                  const isHovered = hoveredTime &&
-                    hoveredTime.day === dayIndex &&
-                    hoveredTime.hour === slot.hour &&
-                    hoveredTime.minute === slot.minute;
-
-                  // Build title tooltip
-                  let titleText = `${formatTime(slot.hour, slot.minute)} - Available`;
-                  if (blocked) {
-                    titleText = blocked.type === 'reservation' ? 'Reserved' : 'Blocked by partner';
-                  } else if (isPast) {
-                    titleText = `${formatTime(slot.hour, slot.minute)} - Past time (cannot schedule)`;
-                  }
-
-                  return (
-                    <div
-                      key={slotIndex}
-                      className={`time-cell quarter-cell ${blocked ? 'blocked' : ''} ${isPast ? 'past-time' : ''} ${isSelected ? 'selected' : ''} ${isHovered && !isDragging ? 'hovered' : ''} ${isDragging ? 'dragging' : ''}`}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        if (!isPast) {
-                          handleTimeMouseDown(day, slot.hour, slot.minute);
-                        }
-                      }}
-                      onMouseEnter={() => {
-                        if (!isPast) {
-                          handleTimeMouseEnter(day, slot.hour, slot.minute);
-                        }
-                      }}
-                      onMouseLeave={() => {
-                        if (!isDragging) {
-                          setHoveredTime(null);
-                        }
-                      }}
-                      onClick={() => {
-                        if (!isPast) {
-                          handleTimeClick(day, slot.hour, slot.minute);
-                        }
-                      }}
-                      title={titleText}
-                    >
-                      {blocked && (
-                        <div className={`block-indicator ${blocked.type === 'reservation' ? 'reserved' : 'blocked'}`} />
-                      )}
-                      {isPast && !blocked && (
-                        <div className="block-indicator past-time" />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
         </div>
       </div>
 

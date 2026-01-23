@@ -69,9 +69,9 @@ const schema = a.schema({
     partner: a.belongsTo('Partner', 'partnerId'),
     tag: a.belongsTo('Tag', 'tagId'),
   })
-  .authorization((allow) => [
-    allow.authenticated().to(['read']),
-  ]),
+    .authorization((allow) => [
+      allow.authenticated().to(['read']),
+    ]),
 
   // Join table between clients and tags
   ClientTag: a.model({
@@ -80,9 +80,9 @@ const schema = a.schema({
     client: a.belongsTo('Client', 'clientId'),
     tag: a.belongsTo('Tag', 'tagId'),
   })
-  .authorization((allow) => [
-    allow.authenticated().to(['read']),
-  ]),
+    .authorization((allow) => [
+      allow.authenticated().to(['read']),
+    ]),
 
   // Descriptive tags for types of robots/services available
   Tag: a.model({
@@ -91,9 +91,9 @@ const schema = a.schema({
     partners: a.hasMany('PartnerTag', 'tagId'),
     clients: a.hasMany('ClientTag', 'tagId'),
   })
-  .authorization((allow) => [
-    allow.authenticated().to(['read']),
-  ]),
+    .authorization((allow) => [
+      allow.authenticated().to(['read']),
+    ]),
 
   // Table containing partner details
   Partner: a.model({
@@ -118,12 +118,13 @@ const schema = a.schema({
     twitterUrl: a.string(),
     telegramUrl: a.string(),
     githubUrl: a.string(),
+    discordUrl: a.string(),
   })
-  .secondaryIndexes(index => [index("cognitoUsername").name("cognitoUsernameIndex")])
-  .authorization((allow) => [
-    allow.authenticated().to(['read']),
-    allow.owner(),
-  ]),
+    .secondaryIndexes(index => [index("cognitoUsername").name("cognitoUsernameIndex")])
+    .authorization((allow) => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+    ]),
 
   // Table containing client details
   Client: a.model({
@@ -136,11 +137,11 @@ const schema = a.schema({
     preferredCurrency: a.string(), // User's preferred currency (e.g., 'USD', 'EUR', 'GBP')
     tags: a.hasMany('ClientTag', 'clientId'),
   })
-  .secondaryIndexes(index => [index("cognitoUsername").name("cognitoUsernameIndex")])
-  .authorization((allow) => [
-    allow.authenticated().to(['read']),
-    allow.owner(),
-  ]),
+    .secondaryIndexes(index => [index("cognitoUsername").name("cognitoUsernameIndex")])
+    .authorization((allow) => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+    ]),
 
   // Master credits table - only Modulr (admins/Lambdas) can modify
   UserCredits: a.model({
@@ -155,15 +156,15 @@ const schema = a.schema({
     stripePaymentMethodId: a.string(), // Saved payment method ID for auto top-up
     lastUpdated: a.datetime(), // When credits were last modified
   })
-  .secondaryIndexes(index => [
-    index("userId").name("userIdIndex"), // For quick lookups
-  ])
-  .authorization((allow) => [
-    // SECURITY: Removed allow.authenticated().to(['read']) - users can read other users' credits via GraphQL
-    // All user credit reads now go through getUserCreditsLambda which enforces ownership
-    // Only ADMINS can access via GraphQL (for admin operations)
-    allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
-  ]),
+    .secondaryIndexes(index => [
+      index("userId").name("userIdIndex"), // For quick lookups
+    ])
+    .authorization((allow) => [
+      // SECURITY: Removed allow.authenticated().to(['read']) - users can read other users' credits via GraphQL
+      // All user credit reads now go through getUserCreditsLambda which enforces ownership
+      // Only ADMINS can access via GraphQL (for admin operations)
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
 
   // Credit transaction history
   CreditTransaction: a.model({
@@ -178,16 +179,16 @@ const schema = a.schema({
     description: a.string(), // Human-readable description
     createdAt: a.datetime().required(),
   })
-  .secondaryIndexes(index => [
-    index("userId").name("userIdIndex"), // For user transaction history
-    index("createdAt").name("createdAtIndex"), // For sorting by date
-  ])
-  .authorization((allow) => [
-    // Authenticated users can read (filtering by userId happens in app code)
-    allow.authenticated().to(['read']),
-    // Only ADMINS can create (via Lambda after Stripe verification)
-    allow.groups(['ADMINS']).to(['create', 'read']),
-  ]),
+    .secondaryIndexes(index => [
+      index("userId").name("userIdIndex"), // For user transaction history
+      index("createdAt").name("createdAtIndex"), // For sorting by date
+    ])
+    .authorization((allow) => [
+      // Authenticated users can read (filtering by userId happens in app code)
+      allow.authenticated().to(['read']),
+      // Only ADMINS can create (via Lambda after Stripe verification)
+      allow.groups(['ADMINS']).to(['create', 'read']),
+    ]),
 
   // Admin audit log - tracks all admin assignments/removals and credit adjustments
   AdminAudit: a.model({
@@ -200,16 +201,16 @@ const schema = a.schema({
     logType: a.string(), // 'AUDIT' - for GSI timestampIndexV2 (partition key)
     metadata: a.json(), // Additional metadata (admin groups, counts, credits amount, old/new balance, etc.)
   })
-  .secondaryIndexes(index => [
-    index("adminUserId").name("adminUserIdIndex"), // Track actions by admin
-    index("targetUserId").name("targetUserIdIndex"), // Track actions on user
-    // Note: timestampIndexV2 is defined in backend.ts (CDK) because it requires partition + sort key
-    // The old timestampIndex is removed - new GSI uses logType (partition) + timestamp (sort)
-  ])
-  .authorization((allow) => [
-    // Only ADMINS can read and create audit logs (creates happen via assignAdmin/removeAdmin Lambdas)
-    allow.groups(['ADMINS']).to(['create', 'read']),
-  ]),
+    .secondaryIndexes(index => [
+      index("adminUserId").name("adminUserIdIndex"), // Track actions by admin
+      index("targetUserId").name("targetUserIdIndex"), // Track actions on user
+      // Note: timestampIndexV2 is defined in backend.ts (CDK) because it requires partition + sort key
+      // The old timestampIndex is removed - new GSI uses logType (partition) + timestamp (sort)
+    ])
+    .authorization((allow) => [
+      // Only ADMINS can read and create audit logs (creates happen via assignAdmin/removeAdmin Lambdas)
+      allow.groups(['ADMINS']).to(['create', 'read']),
+    ]),
 
   // Dynamic credit tier configuration (supports sales/offers)
   CreditTier: a.model({
@@ -230,15 +231,15 @@ const schema = a.schema({
     createdAt: a.datetime(),
     updatedAt: a.datetime(),
   })
-  .secondaryIndexes(index => [
-    index("tierId").name("tierIdIndex"), // For quick tier lookups
-  ])
-  .authorization((allow) => [
-    // Everyone can read tiers (for purchase UI - filtering by isActive happens in app code)
-    allow.authenticated().to(['read']),
-    // Only ADMINS can create/update (Modulr control for sales/offers)
-    allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
-  ]),
+    .secondaryIndexes(index => [
+      index("tierId").name("tierIdIndex"), // For quick tier lookups
+    ])
+    .authorization((allow) => [
+      // Everyone can read tiers (for purchase UI - filtering by isActive happens in app code)
+      allow.authenticated().to(['read']),
+      // Only ADMINS can create/update (Modulr control for sales/offers)
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
 
   // Platform settings (markup percentage, etc.) - managed by ADMINS
   PlatformSettings: a.model({
@@ -249,15 +250,15 @@ const schema = a.schema({
     updatedBy: a.string(), // Admin user who last updated
     updatedAt: a.datetime().required(),
   })
-  .secondaryIndexes(index => [
-    index("settingKey").name("settingKeyIndex"), // For quick lookups
-  ])
-  .authorization((allow) => [
-    // Everyone can read (for calculating costs)
-    allow.authenticated().to(['read']),
-    // Only ADMINS can create/update
-    allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
-  ]),
+    .secondaryIndexes(index => [
+      index("settingKey").name("settingKeyIndex"), // For quick lookups
+    ])
+    .authorization((allow) => [
+      // Everyone can read (for calculating costs)
+      allow.authenticated().to(['read']),
+      // Only ADMINS can create/update
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
 
   // Partner payout tracking - tracks earnings and payouts for robot partners
   PartnerPayout: a.model({
@@ -277,17 +278,17 @@ const schema = a.schema({
     payoutDate: a.datetime(), // When payout was processed (if paid)
     createdAt: a.datetime().required(), // When payout was created
   })
-  .secondaryIndexes(index => [
-    index("partnerId").name("partnerIdIndex"), // For partner earnings view
-    index("status").name("statusIndex"), // For filtering by payout status
-    index("createdAt").name("createdAtIndex"), // For sorting by date
-  ])
-  .authorization((allow) => [
-    // Partners can read their own payouts
-    allow.owner().to(['read']),
-    // ADMINS can read all and manage payouts
-    allow.groups(['ADMINS']).to(['read', 'update', 'delete']),
-  ]),
+    .secondaryIndexes(index => [
+      index("partnerId").name("partnerIdIndex"), // For partner earnings view
+      index("status").name("statusIndex"), // For filtering by payout status
+      index("createdAt").name("createdAtIndex"), // For sorting by date
+    ])
+    .authorization((allow) => [
+      // Partners can read their own payouts
+      allow.owner().to(['read']),
+      // ADMINS can read all and manage payouts
+      allow.groups(['ADMINS']).to(['read', 'update', 'delete']),
+    ]),
 
   Robot: a.model({
     id: a.id(),
@@ -313,13 +314,13 @@ const schema = a.schema({
     reservations: a.hasMany('RobotReservation', 'robotUuid'), // Relationship to reservations
     availability: a.hasMany('RobotAvailability', 'robotUuid'), // Relationship to availability blocks
   })
-  .secondaryIndexes(index => [
-    index("robotId").name("robotIdIndex"), // For lookups by robotId string (robot-XXXXXXXX)
-  ])
-  .authorization((allow) => [
-    allow.owner().to(["update", "delete"]),
-    allow.authenticated().to(["read"]),
-  ]),
+    .secondaryIndexes(index => [
+      index("robotId").name("robotIdIndex"), // For lookups by robotId string (robot-XXXXXXXX)
+    ])
+    .authorization((allow) => [
+      allow.owner().to(["update", "delete"]),
+      allow.authenticated().to(["read"]),
+    ]),
 
   // Delegation table: Partners can assign operators to their robots
   RobotOperator: a.model({
@@ -330,14 +331,14 @@ const schema = a.schema({
     assignedBy: a.string().required(), // Cognito user ID who assigned this delegation
     assignedAt: a.string().required(), // ISO timestamp
   })
-  .secondaryIndexes(index => [
-    index("robotId").name("robotIdIndex"),
-    index("operatorUserId").name("operatorUserIdIndex"),
-  ])
-  .authorization((allow) => [
-    allow.authenticated().to(["read"]),
-    allow.owner(), // Only the partner who owns the robot can manage operators
-  ]),
+    .secondaryIndexes(index => [
+      index("robotId").name("robotIdIndex"),
+      index("operatorUserId").name("operatorUserIdIndex"),
+    ])
+    .authorization((allow) => [
+      allow.authenticated().to(["read"]),
+      allow.owner(), // Only the partner who owns the robot can manage operators
+    ]),
 
   // Session history for teleoperation sessions
   Session: a.model({
@@ -360,16 +361,16 @@ const schema = a.schema({
     platformFee: a.float(),               // Platform markup in credits
     hourlyRateCredits: a.float(),        // Robot's hourly rate at time of session (snapshot)
   })
-  .secondaryIndexes(index => [
-    index("userId").name("userIdIndex"),
-    index("partnerId").name("partnerIdIndex"),
-    index("robotId").name("robotIdIndex"),
-    index("connectionId").name("connectionIdIndex") // GSI for fast lookup by connection ID (for cleanup on disconnect)
-  ])
-  .authorization((allow) => [
-    allow.owner().to(['create', 'read', 'update']),
-    allow.groups(['ADMINS']).to(['read', 'delete']),
-  ]),
+    .secondaryIndexes(index => [
+      index("userId").name("userIdIndex"),
+      index("partnerId").name("partnerIdIndex"),
+      index("robotId").name("robotIdIndex"),
+      index("connectionId").name("connectionIdIndex") // GSI for fast lookup by connection ID (for cleanup on disconnect)
+    ])
+    .authorization((allow) => [
+      allow.owner().to(['create', 'read', 'update']),
+      allow.groups(['ADMINS']).to(['read', 'delete']),
+    ]),
 
   // Robot ratings and reviews - one rating + one comment per user per robot
   RobotRating: a.model({
@@ -389,18 +390,18 @@ const schema = a.schema({
     updatedAt: a.datetime(),              // When rating/comment was last updated
     responses: a.hasMany('RobotRatingResponse', 'ratingId'), // Partner responses to this rating
   })
-  .secondaryIndexes(index => [
-    index("robotId").name("robotIdIndex"), // For fetching all ratings for a robot (using robotId string)
-    index("userId").name("userIdIndex"),   // For fetching all ratings by a user
-    // Composite index for enforcing one rating per user per robot
-    // Note: Amplify doesn't support composite unique constraints directly,
-    // so we'll enforce this in the Lambda function
-  ])
-  .authorization((allow) => [
-    allow.authenticated().to(['read']),    // Everyone can read ratings
-    allow.owner().to(['create', 'update']), // Users can create/update their own ratings
-    allow.groups(['ADMINS']).to(['read', 'delete']), // Admins can delete inappropriate ratings
-  ]),
+    .secondaryIndexes(index => [
+      index("robotId").name("robotIdIndex"), // For fetching all ratings for a robot (using robotId string)
+      index("userId").name("userIdIndex"),   // For fetching all ratings by a user
+      // Composite index for enforcing one rating per user per robot
+      // Note: Amplify doesn't support composite unique constraints directly,
+      // so we'll enforce this in the Lambda function
+    ])
+    .authorization((allow) => [
+      allow.authenticated().to(['read']),    // Everyone can read ratings
+      allow.owner().to(['create', 'update']), // Users can create/update their own ratings
+      allow.groups(['ADMINS']).to(['read', 'delete']), // Admins can delete inappropriate ratings
+    ]),
 
   // Partner responses to ratings
   RobotRatingResponse: a.model({
@@ -414,15 +415,15 @@ const schema = a.schema({
     createdAt: a.datetime().required(),   // When response was created
     updatedAt: a.datetime(),              // When response was last updated
   })
-  .secondaryIndexes(index => [
-    index("ratingId").name("ratingIdIndex"), // For fetching responses to a rating
-    index("partnerId").name("partnerIdIndex"), // For fetching all responses by a partner
-  ])
-  .authorization((allow) => [
-    allow.authenticated().to(['read']),    // Everyone can read responses
-    allow.owner().to(['create', 'update']), // Partners can create/update their own responses
-    allow.groups(['ADMINS']).to(['read', 'delete']), // Admins can delete inappropriate responses
-  ]),
+    .secondaryIndexes(index => [
+      index("ratingId").name("ratingIdIndex"), // For fetching responses to a rating
+      index("partnerId").name("partnerIdIndex"), // For fetching all responses by a partner
+    ])
+    .authorization((allow) => [
+      allow.authenticated().to(['read']),    // Everyone can read responses
+      allow.owner().to(['create', 'update']), // Partners can create/update their own responses
+      allow.groups(['ADMINS']).to(['read', 'delete']), // Admins can delete inappropriate responses
+    ]),
 
   // Robot availability - partners can block dates/times when robots are unavailable
   RobotAvailability: a.model({
@@ -439,16 +440,16 @@ const schema = a.schema({
     createdAt: a.datetime().required(),
     updatedAt: a.datetime(),
   })
-  .secondaryIndexes(index => [
-    index("robotId").name("robotIdIndex"), // For fetching availability for a robot
-    index("partnerId").name("partnerIdIndex"), // For fetching all availability blocks by a partner
-    index("startTime").name("startTimeIndex"), // For querying by time range
-  ])
-  .authorization((allow) => [
-    allow.authenticated().to(['read']),    // Everyone can read availability (to check if robot is available)
-    allow.owner().to(['create', 'update', 'delete']), // Partners can manage their own robot availability
-    allow.groups(['ADMINS']).to(['read', 'update', 'delete']), // Admins can manage all availability
-  ]),
+    .secondaryIndexes(index => [
+      index("robotId").name("robotIdIndex"), // For fetching availability for a robot
+      index("partnerId").name("partnerIdIndex"), // For fetching all availability blocks by a partner
+      index("startTime").name("startTimeIndex"), // For querying by time range
+    ])
+    .authorization((allow) => [
+      allow.authenticated().to(['read']),    // Everyone can read availability (to check if robot is available)
+      allow.owner().to(['create', 'update', 'delete']), // Partners can manage their own robot availability
+      allow.groups(['ADMINS']).to(['read', 'update', 'delete']), // Admins can manage all availability
+    ]),
 
   // Robot reservations - users can book robots in advance
   RobotReservation: a.model({
@@ -480,19 +481,19 @@ const schema = a.schema({
     createdAt: a.datetime().required(),
     updatedAt: a.datetime(),
   })
-  .secondaryIndexes(index => [
-    index("robotId").name("robotIdIndex"), // For fetching reservations for a robot
-    index("userId").name("userIdIndex"),   // For fetching user's reservations
-    index("partnerId").name("partnerIdIndex"), // For fetching partner's robot reservations
-    index("startTime").name("startTimeIndex"), // For querying by time range
-    index("status").name("statusIndex"),   // For filtering by status
-  ])
-  .authorization((allow) => [
-    allow.owner().to(['create', 'read', 'update']), // Users can create and view their own reservations
-    allow.groups(['ADMINS']).to(['read', 'update', 'delete']), // Admins can manage all reservations
-    // Partners can read reservations for their robots (for visibility)
-    // This is handled via a Lambda function since we need to check robot ownership
-  ]),
+    .secondaryIndexes(index => [
+      index("robotId").name("robotIdIndex"), // For fetching reservations for a robot
+      index("userId").name("userIdIndex"),   // For fetching user's reservations
+      index("partnerId").name("partnerIdIndex"), // For fetching partner's robot reservations
+      index("startTime").name("startTimeIndex"), // For querying by time range
+      index("status").name("statusIndex"),   // For filtering by status
+    ])
+    .authorization((allow) => [
+      allow.owner().to(['create', 'read', 'update']), // Users can create and view their own reservations
+      allow.groups(['ADMINS']).to(['read', 'update', 'delete']), // Admins can manage all reservations
+      // Partners can read reservations for their robots (for visibility)
+      // This is handled via a Lambda function since we need to check robot ownership
+    ]),
 
   setUserGroupLambda: a
     .mutation()
