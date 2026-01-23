@@ -8,7 +8,7 @@ import { usePageTitle } from '../hooks/usePageTitle';
 import { useAuthStatus } from '../hooks/useAuthStatus';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
-import { 
+import {
   faBuilding,
   faCheckCircle,
   faExclamationCircle,
@@ -48,6 +48,7 @@ export default function EditPartnerProfile() {
     twitterUrl: '',
     telegramUrl: '',
     githubUrl: '',
+    discordUrl: '',
   });
 
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -65,16 +66,16 @@ export default function EditPartnerProfile() {
 
       try {
         logger.log('[EditPartnerProfile] Searching for partner with username:', user.username, 'or email:', user.email);
-        
+
         const allPartners = await client.models.Partner.list({ limit: 100 });
         const emailPrefix = user.email?.split('@')[0] || '';
-        
-        const matchingPartner = allPartners.data?.find(p => 
+
+        const matchingPartner = allPartners.data?.find(p =>
           p.cognitoUsername === user.username ||
           p.cognitoUsername === user.email ||
           (emailPrefix && p.cognitoUsername?.includes(emailPrefix))
         );
-        
+
         logger.log('[EditPartnerProfile] Found partner:', matchingPartner ? { id: matchingPartner.id, name: matchingPartner.name } : 'none');
 
         const partner = matchingPartner;
@@ -92,6 +93,7 @@ export default function EditPartnerProfile() {
             twitterUrl: partner.twitterUrl || '',
             telegramUrl: partner.telegramUrl || '',
             githubUrl: partner.githubUrl || '',
+            discordUrl: partner.discordUrl || '',
           });
 
           if (partner.logoUrl) {
@@ -117,11 +119,12 @@ export default function EditPartnerProfile() {
 
   const validateField = (name: string, value: string): string => {
     if (!value) return '';
-    
+
     const socialPatterns: Record<string, { prefix: string; hint: string }> = {
       twitterUrl: { prefix: 'https://x.com/', hint: 'https://x.com/username' },
       telegramUrl: { prefix: 'https://t.me/', hint: 'https://t.me/username' },
       githubUrl: { prefix: 'https://github.com/', hint: 'https://github.com/username' },
+      discordUrl: { prefix: 'https://discord.gg/', hint: 'https://discord.gg/invitecode' },
     };
 
     if (socialPatterns[name]) {
@@ -157,7 +160,7 @@ export default function EditPartnerProfile() {
       [name]: type === 'checkbox' ? checked : value,
     }));
 
-    const validatedFields = ['twitterUrl', 'telegramUrl', 'githubUrl', 'websiteUrl', 'integrationDocsUrl', 'contactEmail'];
+    const validatedFields = ['twitterUrl', 'telegramUrl', 'githubUrl', 'discordUrl', 'websiteUrl', 'integrationDocsUrl', 'contactEmail'];
     if (validatedFields.includes(name)) {
       setFieldErrors(prev => ({ ...prev, [name]: validateField(name, value) }));
     }
@@ -249,6 +252,7 @@ export default function EditPartnerProfile() {
         twitterUrl: form.twitterUrl || null,
         telegramUrl: form.telegramUrl || null,
         githubUrl: form.githubUrl || null,
+        discordUrl: form.discordUrl || null,
       };
 
       if (partnerId) {
@@ -256,16 +260,16 @@ export default function EditPartnerProfile() {
       } else {
         const allPartners = await client.models.Partner.list({ limit: 100 });
         const emailPrefix = user?.email?.split('@')[0] || '';
-        const existingPartner = allPartners.data?.find(p => 
+        const existingPartner = allPartners.data?.find(p =>
           p.cognitoUsername === user?.username ||
           p.cognitoUsername === user?.email ||
           (emailPrefix && p.cognitoUsername?.includes(emailPrefix))
         );
-        
+
         if (existingPartner) {
           await client.models.Partner.update({ id: existingPartner.id!, ...data });
           setSuccess(true);
-          setTimeout(() => navigate('/'), 1500);
+          setTimeout(() => navigate('/services'), 1500);
           return;
         }
         await client.models.Partner.create({
@@ -275,7 +279,7 @@ export default function EditPartnerProfile() {
       }
 
       setSuccess(true);
-      setTimeout(() => navigate('/'), 1500);
+      setTimeout(() => navigate('/services'), 1500);
     } catch (err) {
       logger.error('Error saving profile:', err);
       setError('Failed to save profile');
@@ -302,18 +306,18 @@ export default function EditPartnerProfile() {
         <div className="header-content">
           <h1>{partnerId ? 'Edit' : 'Create'} Company Profile</h1>
           <p>
-            {partnerId 
+            {partnerId
               ? 'Update your company profile and integration details'
               : 'Set up your company profile for clients to discover'}
           </p>
           {partnerId && (
-            <a 
-              href={`/partner/${partnerId}`} 
-              target="_blank" 
+            <a
+              href={`/partner/${partnerId}`}
+              target="_blank"
               rel="noopener noreferrer"
-              style={{ 
-                color: '#ffc107', 
-                fontSize: '0.9rem', 
+              style={{
+                color: '#ffc107',
+                fontSize: '0.9rem',
                 marginTop: '0.5rem',
                 display: 'inline-block'
               }}
@@ -489,6 +493,21 @@ export default function EditPartnerProfile() {
                 <span className="field-error">{fieldErrors.githubUrl}</span>
               )}
             </div>
+
+            <div className={`form-group ${fieldErrors.discordUrl ? 'has-error' : ''}`}>
+              <label>Discord</label>
+              <input
+                type="url"
+                name="discordUrl"
+                value={form.discordUrl}
+                onChange={handleChange}
+                placeholder="https://discord.gg/yourserver"
+                disabled={isLoading}
+              />
+              {fieldErrors.discordUrl && (
+                <span className="field-error">{fieldErrors.discordUrl}</span>
+              )}
+            </div>
           </div>
 
           <div className="form-section">
@@ -539,7 +558,7 @@ export default function EditPartnerProfile() {
           </div>
 
           <div className="form-actions">
-            <button type="button" className="submit-btn cancel-btn" onClick={() => navigate('/')} disabled={isLoading}>
+            <button type="button" className="submit-btn cancel-btn" onClick={() => navigate('/services')} disabled={isLoading}>
               Cancel
             </button>
             <button type="submit" className="submit-btn" disabled={isLoading || !form.name || !form.description || Object.values(fieldErrors).some(e => e)}>
