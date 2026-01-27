@@ -678,8 +678,49 @@ export default function RobotSelect() {
   if (robots.length === 0 && !(import.meta.env.DEV || import.meta.env.VITE_WS_URL)) {
     return (
       <div className="robot-select-container">
-        <h2>Select Robot</h2>
-        <p>No robots available. Partners can create robot listings.</p>
+        <div className="robot-directory-header">
+          <div className="robot-directory-header-row">
+            <div>
+              <h1>Select Robot</h1>
+              <p>Choose a robot to start a teleop session.</p>
+            </div>
+            {isPartner && (
+              <div className="robot-directory-actions">
+                <button
+                  type="button"
+                  className="robot-directory-action"
+                  onClick={() => navigate('/my-robots')}
+                >
+                  <FontAwesomeIcon icon={faList} />
+                  My Robots
+                </button>
+                <button
+                  type="button"
+                  className="robot-directory-action primary"
+                  onClick={() => navigate('/create-robot-listing')}
+                >
+                  <FontAwesomeIcon icon={faPlus} />
+                  List Robot
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="robot-empty-state-container">
+          <p className="robot-empty-state">No robots available.</p>
+          {isPartner ? (
+            <button
+              type="button"
+              className="robot-empty-state-cta"
+              onClick={() => navigate('/create-robot-listing')}
+            >
+              <FontAwesomeIcon icon={faPlus} />
+              Create Your First Robot Listing
+            </button>
+          ) : (
+            <p className="robot-empty-state-hint">Partners can create robot listings to get started.</p>
+          )}
+        </div>
       </div>
     );
   }
