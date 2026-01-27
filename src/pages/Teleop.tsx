@@ -25,7 +25,9 @@ import {
   faExclamationTriangle,
   faKeyboard,
   faMapMarkerAlt,
-  faCog
+  faCog,
+  faWifi,
+  faSignal
 } from '@fortawesome/free-solid-svg-icons';
 import { InputBindingsModal } from '../components/InputBindingsModal';
 import { useCustomCommandBindings } from '../hooks/useCustomCommandBindings';
@@ -609,6 +611,53 @@ export default function Teleop() {
               muted
               className="teleop-video"
             />
+            
+            {status.connected && status.videoStream && (
+              <div className="viewport-stats-overlay">
+                <div className="viewport-stats-left">
+                  <div className="viewport-stat">
+                    <FontAwesomeIcon 
+                      icon={faWifi} 
+                      className={`stat-icon ${status.stats.latencyMs !== null && status.stats.latencyMs < 100 ? 'good' : status.stats.latencyMs !== null && status.stats.latencyMs < 200 ? 'medium' : 'poor'}`}
+                    />
+                    <span className="stat-label">Ping:</span>
+                    <span className={`stat-value ${status.stats.latencyMs !== null && status.stats.latencyMs < 100 ? 'good' : status.stats.latencyMs !== null && status.stats.latencyMs < 200 ? 'medium' : 'poor'}`}>
+                      {status.stats.latencyMs !== null ? `${status.stats.latencyMs}ms` : '--'}
+                    </span>
+                  </div>
+                  <div className="viewport-stat">
+                    <FontAwesomeIcon icon={faSignal} className="stat-icon" />
+                    <span className="stat-label">Bitrate:</span>
+                    <span className="stat-value">
+                      {status.stats.bitrate !== null ? `${status.stats.bitrate} kbps` : '--'}
+                    </span>
+                  </div>
+                </div>
+                <div className="viewport-stats-center">
+                  <div className={`connection-indicator ${status.stats.connectionState === 'connected' ? 'connected' : ''}`}>
+                    <span className="connection-dot"></span>
+                    <span className="connection-text">LIVE</span>
+                  </div>
+                </div>
+                <div className="viewport-stats-right">
+                  <div className="viewport-stat">
+                    <span className="stat-label">FPS:</span>
+                    <span className="stat-value">
+                      {status.stats.frameRate !== null ? status.stats.frameRate : '--'}
+                    </span>
+                  </div>
+                  <div className="viewport-stat">
+                    <span className="stat-label">Res:</span>
+                    <span className="stat-value">
+                      {status.stats.frameWidth && status.stats.frameHeight 
+                        ? `${status.stats.frameWidth}×${status.stats.frameHeight}` 
+                        : '--'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {!status.videoStream && (
               <div className="video-placeholder">
                 {status.connecting ? (

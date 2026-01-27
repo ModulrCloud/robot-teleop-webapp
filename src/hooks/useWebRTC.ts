@@ -3,6 +3,19 @@ import { fetchAuthSession } from 'aws-amplify/auth';
 import { logger } from '../utils/logger';
 import { useAuthStatus } from './useAuthStatus';
 
+export interface ConnectionStats {
+  latencyMs: number | null;       // Round-trip time in milliseconds
+  packetsLost: number;            // Total packets lost
+  packetsReceived: number;        // Total packets received
+  bytesReceived: number;          // Total bytes received
+  frameRate: number | null;       // Current frame rate
+  frameWidth: number | null;      // Video width
+  frameHeight: number | null;     // Video height
+  connectionState: string;        // ICE connection state
+  jitter: number | null;          // Jitter in seconds
+  bitrate: number | null;         // Current bitrate in kbps
+}
+
 export interface WebRTCStatus {
   connecting: boolean;
   connected: boolean;
@@ -11,6 +24,7 @@ export interface WebRTCStatus {
   robotBusy: boolean;
   busyUser: string | null;
   sessionId: string | null;
+  stats: ConnectionStats;
 }
 
 export interface WebRTCOptions {
@@ -89,6 +103,19 @@ function releaseConnectionLock(): void {
 export function useWebRTC(options: WebRTCOptions) {
   const { wsUrl, myId, robotId = 'robot1' } = options;
   const { signOut } = useAuthStatus(); // Get signOut function for automatic sign-out on token expiration
+  const defaultStats: ConnectionStats = {
+    latencyMs: null,
+    packetsLost: 0,
+    packetsReceived: 0,
+    bytesReceived: 0,
+    frameRate: null,
+    frameWidth: null,
+    frameHeight: null,
+    connectionState: 'new',
+    jitter: null,
+    bitrate: null,
+  };
+
   const [status, setStatus] = useState<WebRTCStatus>({
     connecting: false,
     connected: false,
@@ -97,7 +124,12 @@ export function useWebRTC(options: WebRTCOptions) {
     robotBusy: false,
     busyUser: null,
     sessionId: null,
+    stats: defaultStats,
   });
+
+  const lastBytesReceivedRef = useRef<number>(0);
+  const lastStatsTimeRef = useRef<number>(Date.now());
+  const statsIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -108,6 +140,80 @@ export function useWebRTC(options: WebRTCOptions) {
   const webrtcConnectedRef = useRef<boolean>(false);
   const myIdRef = useRef<string>(myId || ''); // Store actual connection ID
   const isThisInstanceConnecting = useRef<boolean>(false); // Track if this instance initiated the connection
+
+  // Collect WebRTC stats
+  const collectStats = useCallback(async () => {
+    const pc = pcRef.current;
+    if (!pc) return;
+
+    try {
+      const stats = await pc.getStats();
+      let latencyMs: number | null = null;
+      let packetsLost = 0;
+      let packetsReceived = 0;
+      let bytesReceived = 0;
+      let frameRate: number | null = null;
+      let frameWidth: number | null = null;
+      let frameHeight: number | null = null;
+      let jitter: number | null = null;
+
+      stats.forEach((report) => {
+        // Get RTT from candidate-pair
+        if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+          if (report.currentRoundTripTime !== undefined) {
+            latencyMs = Math.round(report.currentRoundTripTime * 1000);
+          }
+        }
+
+        // Get video stats from inbound-rtp
+        if (report.type === 'inbound-rtp' && report.kind === 'video') {
+          packetsLost = report.packetsLost || 0;
+          packetsReceived = report.packetsReceived || 0;
+          bytesReceived = report.bytesReceived || 0;
+          
+          if (report.framesPerSecond !== undefined) {
+            frameRate = Math.round(report.framesPerSecond);
+          }
+          if (report.frameWidth !== undefined) {
+            frameWidth = report.frameWidth;
+          }
+          if (report.frameHeight !== undefined) {
+            frameHeight = report.frameHeight;
+          }
+          if (report.jitter !== undefined) {
+            jitter = report.jitter;
+          }
+        }
+      });
+
+      // Calculate bitrate
+      const now = Date.now();
+      const timeDiff = (now - lastStatsTimeRef.current) / 1000; // in seconds
+      const bytesDiff = bytesReceived - lastBytesReceivedRef.current;
+      const bitrate = timeDiff > 0 ? Math.round((bytesDiff * 8) / timeDiff / 1000) : null; // kbps
+
+      lastBytesReceivedRef.current = bytesReceived;
+      lastStatsTimeRef.current = now;
+
+      setStatus(prev => ({
+        ...prev,
+        stats: {
+          latencyMs,
+          packetsLost,
+          packetsReceived,
+          bytesReceived,
+          frameRate,
+          frameWidth,
+          frameHeight,
+          connectionState: pc.iceConnectionState,
+          jitter,
+          bitrate,
+        },
+      }));
+    } catch (err) {
+      logger.debug('[WEBRTC] Error collecting stats:', err);
+    }
+  }, []);
 
   const cleanup = useCallback(() => {
     // Note: Connection lock is intentionally NOT released here.
@@ -126,6 +232,10 @@ export function useWebRTC(options: WebRTCOptions) {
       clearTimeout(welcomeTimeoutRef.current);
       welcomeTimeoutRef.current = null;
     }
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+      statsIntervalRef.current = null;
+    }
     if (pcRef.current) {
       pcRef.current.close();
       pcRef.current = null;
@@ -135,6 +245,8 @@ export function useWebRTC(options: WebRTCOptions) {
       wsRef.current = null;
     }
     rosBridgeRef.current = null;
+    lastBytesReceivedRef.current = 0;
+    lastStatsTimeRef.current = Date.now();
   }, []);
 
   const connect = useCallback(async () => {
@@ -149,7 +261,7 @@ export function useWebRTC(options: WebRTCOptions) {
       cleanup();
     }
 
-    setStatus({ connecting: true, connected: false, error: null, videoStream: null, robotBusy: false, busyUser: null, sessionId: null });
+    setStatus({ connecting: true, connected: false, error: null, videoStream: null, robotBusy: false, busyUser: null, sessionId: null, stats: defaultStats });
 
     try {
       // Get JWT token for WebSocket authentication
@@ -404,6 +516,14 @@ export function useWebRTC(options: WebRTCOptions) {
               error: null,
               videoStream: stream,
             }));
+
+            // Start collecting stats every second
+            if (statsIntervalRef.current) {
+              clearInterval(statsIntervalRef.current);
+            }
+            statsIntervalRef.current = setInterval(collectStats, 1000);
+            // Collect initial stats immediately
+            collectStats();
           };
 
           const channel = pc.createDataChannel('control');
@@ -467,7 +587,7 @@ export function useWebRTC(options: WebRTCOptions) {
       }));
       cleanup();
     }
-  }, [wsUrl, myId, robotId, cleanup]);
+  }, [wsUrl, myId, robotId, cleanup, collectStats]);
 
   const sendCommand = useCallback((linearX: number, angularZ: number) => {
     if (!rosBridgeRef.current) return;

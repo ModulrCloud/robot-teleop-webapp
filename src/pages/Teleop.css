@@ -308,6 +308,143 @@ html {
   background: #0a0a0a;
 }
 
+/* Viewport Connection Stats Overlay */
+.viewport-stats-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.4) 70%, transparent 100%);
+  z-index: 10;
+  pointer-events: none;
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-size: 0.75rem;
+}
+
+.viewport-stats-left,
+.viewport-stats-right {
+  display: flex;
+  gap: 1rem;
+}
+
+.viewport-stats-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.viewport-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.viewport-stat .stat-icon {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.viewport-stat .stat-icon.good {
+  color: #4caf50;
+}
+
+.viewport-stat .stat-icon.medium {
+  color: #ff9800;
+}
+
+.viewport-stat .stat-icon.poor {
+  color: #f44336;
+}
+
+.viewport-stat .stat-label {
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+}
+
+.viewport-stat .stat-value {
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+}
+
+.viewport-stat .stat-value.good {
+  color: #4caf50;
+}
+
+.viewport-stat .stat-value.medium {
+  color: #ff9800;
+}
+
+.viewport-stat .stat-value.poor {
+  color: #f44336;
+}
+
+.connection-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.6rem;
+  background: rgba(76, 175, 80, 0.15);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  border-radius: 4px;
+}
+
+.connection-indicator .connection-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4caf50;
+  box-shadow: 0 0 6px rgba(76, 175, 80, 0.8);
+  animation: pulseDot 2s ease-in-out infinite;
+}
+
+.connection-indicator .connection-text {
+  color: #4caf50;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+@keyframes pulseDot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(0.9);
+  }
+}
+
+/* Mobile responsive for viewport stats */
+@media (max-width: 768px) {
+  .viewport-stats-overlay {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.65rem;
+  }
+  
+  .viewport-stats-left,
+  .viewport-stats-right {
+    gap: 0.5rem;
+  }
+  
+  .viewport-stat .stat-label {
+    display: none;
+  }
+  
+  .connection-indicator {
+    padding: 0.2rem 0.4rem;
+  }
+  
+  .connection-indicator .connection-text {
+    font-size: 0.6rem;
+  }
+}
+
 .teleop-video {
   width: 100%;
   height: 100%;
