@@ -191,6 +191,53 @@
   text-align: center;
 }
 
+.robot-empty-state-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+.robot-empty-state-container .robot-empty-state {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.robot-empty-state-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.875rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #ffc107 0%, #ffb300 100%);
+  color: #111;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3);
+}
+
+.robot-empty-state-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(255, 193, 7, 0.5);
+  background: linear-gradient(135deg, #ffd54f 0%, #ffc107 100%);
+}
+
+.robot-empty-state-cta:active {
+  transform: translateY(0);
+}
+
+.robot-empty-state-hint {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
 .next-services-button {
   position: fixed;
   right: 2rem;
