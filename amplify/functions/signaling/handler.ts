@@ -502,15 +502,28 @@ async function findRobotConn(robotId: string): Promise<string | null> {
     return res.Item?.connectionId?.S ?? null;
 }
 
+/** DynamoDB Item shape for robot presence (subset we use when reusing a single read). */
+type RobotPresenceItem = { connectionId?: { S?: string }; ownerUserId?: { S?: string } } | undefined;
+
 // If caller is the robot owner, a delegated operator, or in an admin group return True
-async function isOwnerOrAdmin(robotId: string, claims: { sub?: string; groups?: string[] }) : Promise<boolean> {
-    const res = await db.send(
-        new GetItemCommand({
-            TableName: ROBOT_PRESENCE_TABLE,
-            Key: { robotId: {S: robotId} },
-        }),
-    );
-    const owner = res.Item?.ownerUserId?.S;
+// Optional presenceItem: when provided (from a prior GetItem in the same request), avoids an extra DB read.
+async function isOwnerOrAdmin(
+    robotId: string,
+    claims: { sub?: string; groups?: string[] },
+    presenceItem?: RobotPresenceItem,
+): Promise<boolean> {
+    let owner: string | undefined;
+    if (presenceItem != null && ('ownerUserId' in presenceItem) && presenceItem.ownerUserId?.S) {
+        owner = presenceItem.ownerUserId.S;
+    } else {
+        const res = await db.send(
+            new GetItemCommand({
+                TableName: ROBOT_PRESENCE_TABLE,
+                Key: { robotId: { S: robotId } },
+            }),
+        );
+        owner = res.Item?.ownerUserId?.S;
+    }
     const isAdmin = (claims.groups ?? []).some((g) => g === 'ADMINS' || g === 'admin');
     
     // Check if user is owner
@@ -558,9 +571,14 @@ async function isOwnerOrAdmin(robotId: string, claims: { sub?: string; groups?: 
  * - User is owner, admin, or delegate → always allowed
  * - User's email/username is in the ACL
  */
-async function canAccessRobot(robotId: string, claims: Claims, userEmailOrUsername?: string): Promise<boolean> {
+async function canAccessRobot(
+    robotId: string,
+    claims: Claims,
+    userEmailOrUsername?: string,
+    presenceItem?: RobotPresenceItem,
+): Promise<boolean> {
     // Owner, admin, and delegates are always allowed
-    const isAuthorized = await isOwnerOrAdmin(robotId, claims);
+    const isAuthorized = await isOwnerOrAdmin(robotId, claims, presenceItem);
     if (isAuthorized) {
         return true;
     }
@@ -1543,22 +1561,23 @@ async function handleSignal(
   // Get source connection ID (needed for logging and ACL checks)
   const sourceConnId = event.requestContext.connectionId!;
   
-  // Auto-detect if message is from a robot by checking RobotPresenceTable
-  // If source connection is registered as a robot, then this is a robot-to-client message
+  // Fetch robot presence once and reuse for: is-from-robot check, ACL (owner), and target connectionId.
+  // This avoids 2 extra GetItem calls per message (saves DynamoDB read cost and latency).
+  let robotPresenceItem: RobotPresenceItem = undefined;
   let isFromRobot = false;
   try {
     const robotPresence = await db.send(new GetItemCommand({
       TableName: ROBOT_PRESENCE_TABLE,
       Key: { robotId: { S: robotId } },
-      ProjectionExpression: 'connectionId',
+      ProjectionExpression: 'connectionId, ownerUserId',
     }));
-    // If the source connection matches the robot's connection, this message is from the robot
-    if (robotPresence.Item?.connectionId?.S === sourceConnId) {
+    robotPresenceItem = robotPresence.Item as RobotPresenceItem;
+    if (robotPresenceItem?.connectionId?.S === sourceConnId) {
       isFromRobot = true;
       console.log('[ROBOT_DETECTED]', {
         robotId,
         sourceConnectionId: sourceConnId,
-        robotConnectionId: robotPresence.Item.connectionId.S,
+        robotConnectionId: robotPresenceItem.connectionId.S,
       });
     }
   } catch (e) {
@@ -1618,8 +1637,8 @@ async function handleSignal(
       console.warn('Failed to get username from connection table:', e);
     }
 
-    // Check ACL - pass email as the primary identifier
-    const hasAccess = await canAccessRobot(robotId, claims, userEmail || userEmailOrUsername);
+    // Check ACL - pass email and cached presence so we don't re-read RobotPresenceTable
+    const hasAccess = await canAccessRobot(robotId, claims, userEmail || userEmailOrUsername, robotPresenceItem);
     if (!hasAccess) {
       const userIdentifier = userEmailOrUsername || (claims as Claims).email || claims.sub || 'unknown';
       console.log(`Access denied: User ${userIdentifier} attempted to access robot ${robotId}`);
@@ -1708,12 +1727,8 @@ async function handleSignal(
       targetConn = ccid;
     }
   } else {
-    const robotItem = await db.send(new GetItemCommand({
-      TableName: ROBOT_PRESENCE_TABLE,
-      Key: { robotId: { S: robotId } },
-      ProjectionExpression: 'connectionId',
-    }));
-    const robotConn = robotItem.Item?.connectionId?.S;
+    // Reuse presence we already fetched (same row as is-from-robot check).
+    const robotConn = robotPresenceItem?.connectionId?.S;
     if (!robotConn) {
       return errorResponse(404, 'target offline');
     }
