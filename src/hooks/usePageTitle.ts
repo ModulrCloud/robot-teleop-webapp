@@ -24,6 +24,12 @@ export function usePageTitle() {
       case "/settings":
         title = "Settings";
         break;
+      case "/credits":
+        title = "Credits";
+        break;
+      case "/admin":
+        title = "Admin";
+        break;
       case "/robots":
         title = "Select Robot";
         break;
@@ -50,6 +56,9 @@ export function usePageTitle() {
         break;
       case "/my-robots":
         title = "My Robots";
+        break;
+      case "/social":
+        title = "Social";
         break;
       default:
         title = location.pathname

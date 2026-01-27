@@ -1,11 +1,13 @@
 .app-layout {
   min-height: 100vh;
+  background-color: #08090a;
 }
 
 .global-banner-container {
   padding: 1rem 1.5rem 0;
   max-width: 1400px;
   margin: 0 auto;
+  background-color: #08090a;
 }
 
 @media (max-width: 768px) {

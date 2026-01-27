@@ -32,7 +32,18 @@ async function signOut() {
     const session = await fetchAuthSession();
     const idToken = session.tokens?.idToken?.toString();
     
-    // Revoke the token before signing out
+    // Perform complete sign-out: invalidate ALL tokens (including refresh tokens) across ALL devices
+    // This forces the user to re-authenticate via Google SSO on their next login
+    try {
+      const client = generateClient<Schema>();
+      await client.mutations.globalSignOutLambda();
+      // logger.log("Global sign-out successful - all tokens invalidated");
+    } catch (globalSignOutError) {
+      // Log but don't block sign-out if global sign-out fails
+      logger.warn("Failed to perform global sign-out (continuing with sign-out):", globalSignOutError);
+    }
+    
+    // Revoke the current idToken as well (defense in depth)
     if (idToken) {
       try {
         const client = generateClient<Schema>();
@@ -104,23 +115,93 @@ export function useAuthStatus(): AuthStatus {
         const currentUser = await getCurrentUser();
         logger.log('✅ Current user:', { username: currentUser.username });
         
-        const attrs = await fetchUserAttributes();
-        logger.log('✅ User attributes:', { 
-          name: attrs.name, 
-          email: attrs.email,
-          allAttributes: attrs,
-        });
+        // Fetch user attributes - wrap in try-catch to handle Cognito API errors gracefully
+        // These can occur if the token is expired or there's a network issue
+        let attrs;
+        try {
+          attrs = await fetchUserAttributes();
+          logger.log('✅ User attributes:', { 
+            name: attrs.name, 
+            email: attrs.email,
+            allAttributes: attrs,
+          });
+        } catch (attrError) {
+          // Check if this is an authentication error (NotAuthorizedException from Cognito)
+          // This specifically indicates the token is invalid/expired/revoked
+          // 
+          // NOTE: We only check for NotAuthorizedException (specific Cognito auth error),
+          // NOT generic 400 errors, because 400 can also occur for:
+          // - Malformed requests (missing parameters, wrong data types)
+          // - Network issues
+          // - User pool configuration issues
+          const isAuthError = attrError instanceof Error && (
+            attrError.name === 'NotAuthorizedException' ||
+            attrError.name === 'UnauthorizedException' ||
+            // Also check for specific Cognito error messages indicating token issues
+            (attrError.message?.toLowerCase().includes('not authorized') && 
+             (attrError.message?.toLowerCase().includes('token') || 
+              attrError.message?.toLowerCase().includes('session') ||
+              attrError.message?.toLowerCase().includes('invalid'))) ||
+            attrError.message?.toLowerCase().includes('token expired') ||
+            attrError.message?.toLowerCase().includes('invalid token') ||
+            attrError.message?.toLowerCase().includes('session expired')
+          );
+          
+          if (isAuthError) {
+            logger.error('❌ Authentication error detected - token is invalid/expired/revoked:', {
+              errorName: attrError instanceof Error ? attrError.name : 'Unknown',
+              errorMessage: attrError instanceof Error ? attrError.message : String(attrError),
+              reason: 'Token was invalidated by global sign-out or expired',
+            });
+            
+            // Automatically sign out when token is invalidated
+            logger.warn('🔐 Triggering automatic sign-out due to invalid token...');
+            try {
+              await signOut();
+              logger.log('✅ Automatic sign-out completed');
+            } catch (signOutError) {
+              logger.error('❌ Failed to sign out automatically:', signOutError);
+            }
+            
+            // Stop loading user data - user is being signed out
+            if (mounted) {
+              setIsLoggedIn(false);
+              setUser(null);
+            }
+            return; // Exit early - don't proceed with user data loading
+          }
+          
+          // Not an auth error - log but don't throw (could be network issue)
+          logger.warn('⚠️ Failed to fetch user attributes (non-blocking):', attrError);
+          // Create minimal attributes object with just username
+          attrs = {
+            name: null,
+            email: null,
+          };
+        }
         
-        const session = await fetchAuthSession();
-        logger.log('✅ Auth session:', {
-          isValid: !!session.tokens,
-          hasAccessToken: !!session.tokens?.accessToken,
-          hasIdToken: !!session.tokens?.idToken,
-          accessTokenPayload: session.tokens?.accessToken?.payload,
-          idTokenPayload: session.tokens?.idToken?.payload,
-        });
+        // Fetch auth session - wrap in try-catch to handle Cognito Identity errors gracefully
+        // These errors are common in development (React Strict Mode) and are usually non-blocking
+        let session;
+        try {
+          session = await fetchAuthSession();
+          logger.log('✅ Auth session:', {
+            isValid: !!session.tokens,
+            hasAccessToken: !!session.tokens?.accessToken,
+            hasIdToken: !!session.tokens?.idToken,
+            accessTokenPayload: session.tokens?.accessToken?.payload,
+            idTokenPayload: session.tokens?.idToken?.payload,
+          });
+        } catch (sessionError) {
+          // Cognito Identity errors (400 Bad Request) are common in development
+          // They occur when trying to get AWS credentials and are usually non-blocking
+          // Log but don't throw - the app can still function without Identity Pool credentials
+          logger.log('⚠️ Auth session fetch warning (non-blocking):', sessionError);
+          // Create a minimal session object to prevent errors downstream
+          session = { tokens: null };
+        }
         
-        const groups = session.tokens?.accessToken?.payload['cognito:groups'];
+        const groups = session.tokens?.accessToken?.payload?.['cognito:groups'];
         const group = highestPriorityGroup(groups as string[] | undefined);
         logger.log('✅ User groups:', { groups, highestPriority: group });
 

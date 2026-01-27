@@ -7,10 +7,9 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
-import { 
-  faSearch, 
-  faStar, 
-  faRobot,
+import {
+  faSearch,
+  faStar,
   faArrowRight,
   faFilter
 } from '@fortawesome/free-solid-svg-icons';
@@ -49,6 +48,9 @@ export default function ServiceSelect() {
 
         const partnerData: PartnerData[] = [];
         for (const p of result.data || []) {
+          // Skip Robot Providers - they belong in the Robots tab
+          if (p.companyType === 'Robot Provider') continue;
+
           const robots = await p.robots();
           partnerData.push({
             id: p.id!,
@@ -103,8 +105,8 @@ export default function ServiceSelect() {
 
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      result = result.filter(p => 
-        p.name.toLowerCase().includes(term) || 
+      result = result.filter(p =>
+        p.name.toLowerCase().includes(term) ||
         p.description.toLowerCase().includes(term)
       );
     }
@@ -165,8 +167,8 @@ export default function ServiceSelect() {
               onClick={() => navigate(`/partner/${partner.id}`)}
             >
               <div className="card-logo">
-                <img 
-                  src={resolvedLogos[partner.id] || '/logo-thumb.png'} 
+                <img
+                  src={resolvedLogos[partner.id] || '/logo-thumb.png'}
                   alt={partner.name}
                   onError={(e) => { e.currentTarget.src = '/logo-thumb.png'; }}
                 />
@@ -178,8 +180,8 @@ export default function ServiceSelect() {
                   <span className="card-type">{partner.companyType}</span>
                 )}
                 <p className="card-description">
-                  {partner.description.length > 100 
-                    ? partner.description.slice(0, 100) + '...' 
+                  {partner.description.length > 100
+                    ? partner.description.slice(0, 100) + '...'
                     : partner.description}
                 </p>
 
@@ -188,12 +190,6 @@ export default function ServiceSelect() {
                     <span className="meta-item">
                       <FontAwesomeIcon icon={faStar} />
                       {partner.averageRating.toFixed(1)}
-                    </span>
-                  )}
-                  {partner.companyType === 'Robot Provider' && partner.robotCount > 0 && (
-                    <span className="meta-item">
-                      <FontAwesomeIcon icon={faRobot} />
-                      {partner.robotCount} robots
                     </span>
                   )}
                 </div>

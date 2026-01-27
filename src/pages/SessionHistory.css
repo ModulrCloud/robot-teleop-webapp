@@ -8,6 +8,13 @@
   margin-bottom: 2rem;
 }
 
+.page-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
 .page-header h1 {
   color: #fff;
   font-size: 1.75rem;
@@ -17,6 +24,76 @@
 .page-header .subtitle {
   color: rgba(255, 255, 255, 0.6);
   margin: 0;
+}
+
+.review-button {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.review-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.review-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Stats Summary */
+.session-history-page .stats-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.session-history-page .stats-summary .stat-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+.session-history-page .stats-summary .stat-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 193, 7, 0.15);
+  border-radius: 10px;
+  color: #ffc107;
+  flex-shrink: 0;
+}
+
+.session-history-page .stats-summary .stat-content {
+  min-width: 0;
+}
+
+.session-history-page .stats-summary .stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.session-history-page .stats-summary .stat-label {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 0.125rem;
 }
 
 .loading {
@@ -101,9 +178,9 @@
 }
 
 .session-status {
-  padding: 0.3rem 0.75rem;
+  padding: 0.25rem 0.7rem;
   border-radius: 12px;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 600;
   text-transform: capitalize;
 }
@@ -129,17 +206,26 @@
 }
 
 @media (max-width: 600px) {
+  .page-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .session-history-page .stats-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
   .session-card {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.75rem;
   }
-  
+
   .session-details {
     flex-direction: column;
     gap: 0.5rem;
   }
-  
+
   .session-status {
     align-self: flex-start;
   }

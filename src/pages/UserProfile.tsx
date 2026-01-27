@@ -17,6 +17,7 @@ interface PartnerData {
   id: string;
   name: string;
   description: string;
+  displayName?: string | null;
   averageRating?: number | null;
   reliabilityScore?: number | null;
   publicKey?: string | null;
@@ -24,9 +25,11 @@ interface PartnerData {
 
 interface ClientData {
   id: string;
+  displayName?: string | null;
   averageRating?: number | null;
   reliabilityScore?: number | null;
   publicKey?: string | null;
+  preferredCurrency?: string | null;
 }
 
 export function UserProfile() {
@@ -45,7 +48,18 @@ export function UserProfile() {
   const [editForm, setEditForm] = useState({
     name: "",
     description: "",
+    displayName: "",
   });
+  
+  const [displayNameForm, setDisplayNameForm] = useState({
+    displayName: "",
+  });
+  const [isEditingDisplayName, setIsEditingDisplayName] = useState(false);
+  
+  const [currencyForm, setCurrencyForm] = useState({
+    preferredCurrency: "USD",
+  });
+  const [isEditingCurrency, setIsEditingCurrency] = useState(false);
 
   const isPartner = user?.group === "PARTNERS";
   const isClient = user?.group === "CLIENTS";
@@ -74,6 +88,7 @@ export function UserProfile() {
             id: partner.id || "",
             name: partner.name || "",
             description: partner.description || "",
+            displayName: partner.displayName || null,
             averageRating: partner.averageRating,
             reliabilityScore: partner.reliabilityScore,
             publicKey: partner.publicKey,
@@ -81,6 +96,10 @@ export function UserProfile() {
           setEditForm({
             name: partner.name || "",
             description: partner.description || "",
+            displayName: partner.displayName || "",
+          });
+          setDisplayNameForm({
+            displayName: partner.displayName || "",
           });
         }
       } else if (isClient) {
@@ -92,9 +111,17 @@ export function UserProfile() {
           const clientRecord = clients[0];
           setClientData({
             id: clientRecord.id || "",
+            displayName: clientRecord.displayName || null,
             averageRating: clientRecord.averageRating,
             reliabilityScore: clientRecord.reliabilityScore,
             publicKey: clientRecord.publicKey,
+            preferredCurrency: clientRecord.preferredCurrency || "USD",
+          });
+          setCurrencyForm({
+            preferredCurrency: clientRecord.preferredCurrency || "USD",
+          });
+          setDisplayNameForm({
+            displayName: clientRecord.displayName || "",
           });
         }
       }
@@ -134,6 +161,7 @@ export function UserProfile() {
           id: partnerData.id,
           name: editForm.name.trim(),
           description: editForm.description.trim(),
+          displayName: editForm.displayName.trim() || null,
         });
 
         if (errors) {
@@ -143,6 +171,7 @@ export function UserProfile() {
             ...prev,
             name: editForm.name.trim(),
             description: editForm.description.trim(),
+            displayName: editForm.displayName.trim() || null,
           } : null);
           setSuccess("Profile updated successfully!");
           setIsEditing(false);
@@ -162,10 +191,132 @@ export function UserProfile() {
       setEditForm({
         name: partnerData.name,
         description: partnerData.description,
+        displayName: partnerData.displayName || "",
       });
     }
     setIsEditing(false);
     setError("");
+  };
+
+  const handleDisplayNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setDisplayNameForm({
+      displayName: e.target.value,
+    });
+  };
+
+  const handleSaveDisplayName = async () => {
+    setSaving(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      if (isPartner && partnerData) {
+        const { errors } = await client.models.Partner.update({
+          id: partnerData.id,
+          displayName: displayNameForm.displayName.trim() || null,
+        });
+
+        if (errors) {
+          setError("Failed to update display name");
+        } else {
+          setPartnerData(prev => prev ? {
+            ...prev,
+            displayName: displayNameForm.displayName.trim() || null,
+          } : null);
+          setEditForm(prev => ({
+            ...prev,
+            displayName: displayNameForm.displayName.trim(),
+          }));
+          setSuccess("Display name updated successfully!");
+          setIsEditingDisplayName(false);
+          setTimeout(() => setSuccess(""), 3000);
+        }
+      } else if (isClient && clientData) {
+        const { errors } = await client.models.Client.update({
+          id: clientData.id,
+          displayName: displayNameForm.displayName.trim() || null,
+        });
+
+        if (errors) {
+          setError("Failed to update display name");
+        } else {
+          setClientData(prev => prev ? {
+            ...prev,
+            displayName: displayNameForm.displayName.trim() || null,
+          } : null);
+          setSuccess("Display name updated successfully!");
+          setIsEditingDisplayName(false);
+          setTimeout(() => setSuccess(""), 3000);
+        }
+      }
+    } catch (err) {
+      logger.error("Error updating display name:", err);
+      setError("An error occurred while updating display name");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelDisplayName = () => {
+    if (isPartner && partnerData) {
+      setDisplayNameForm({
+        displayName: partnerData.displayName || "",
+      });
+    } else if (isClient && clientData) {
+      setDisplayNameForm({
+        displayName: clientData.displayName || "",
+      });
+    }
+    setIsEditingDisplayName(false);
+  };
+
+  const handleCurrencyChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setCurrencyForm({
+      preferredCurrency: e.target.value,
+    });
+  };
+
+  const handleSaveCurrency = async () => {
+    if (!clientData?.id) return;
+
+    setSaving(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const { errors } = await client.models.Client.update({
+        id: clientData.id,
+        preferredCurrency: currencyForm.preferredCurrency,
+      });
+
+      if (errors) {
+        setError("Failed to update currency preference");
+      } else {
+        setClientData(prev => prev ? {
+          ...prev,
+          preferredCurrency: currencyForm.preferredCurrency,
+        } : null);
+        setSuccess("Currency preference updated successfully!");
+        setIsEditingCurrency(false);
+        setTimeout(() => setSuccess(""), 3000);
+        // Reload page to update credits display
+        window.location.reload();
+      }
+    } catch (err) {
+      logger.error("Error updating currency:", err);
+      setError("An error occurred while updating currency");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelCurrency = () => {
+    if (clientData) {
+      setCurrencyForm({
+        preferredCurrency: clientData.preferredCurrency || "USD",
+      });
+    }
+    setIsEditingCurrency(false);
   };
 
   if (loading) {
@@ -207,6 +358,97 @@ export function UserProfile() {
               <label>Username</label>
               <p>{capitalizeName(user?.username)}</p>
             </div>
+            <div className="info-item">
+              <label>Display Name</label>
+              {isEditingDisplayName ? (
+                <div className="display-name-edit">
+                  <input
+                    type="text"
+                    value={displayNameForm.displayName}
+                    onChange={handleDisplayNameChange}
+                    className="form-input"
+                    placeholder="Enter display name (leave empty for Anonymous)"
+                    maxLength={50}
+                    disabled={saving}
+                  />
+                  <div className="display-name-edit-actions">
+                    <button 
+                      onClick={handleSaveDisplayName} 
+                      className="btn-save-small"
+                      disabled={saving}
+                    >
+                      <FontAwesomeIcon icon={faSave} /> Save
+                    </button>
+                    <button 
+                      onClick={handleCancelDisplayName} 
+                      className="btn-cancel-small"
+                      disabled={saving}
+                    >
+                      <FontAwesomeIcon icon={faTimes} /> Cancel
+                    </button>
+                  </div>
+                  <p className="display-name-hint">This name will be shown in your reviews and ratings instead of your email. Leave empty to show as "Anonymous".</p>
+                </div>
+              ) : (
+                <div className="display-name-display">
+                  <p>{isPartner ? (partnerData?.displayName || "Anonymous") : (clientData?.displayName || "Anonymous")}</p>
+                  <button 
+                    onClick={() => setIsEditingDisplayName(true)} 
+                    className="btn-edit-small"
+                  >
+                    <FontAwesomeIcon icon={faEdit} />
+                  </button>
+                </div>
+              )}
+            </div>
+            {isClient && (
+              <div className="info-item">
+                <label>Preferred Currency</label>
+                {isEditingCurrency ? (
+                  <div className="currency-edit">
+                    <select
+                      value={currencyForm.preferredCurrency}
+                      onChange={handleCurrencyChange}
+                      className="form-select"
+                      disabled={saving}
+                    >
+                      <option value="USD">USD - US Dollar ($)</option>
+                      <option value="EUR">EUR - Euro (€)</option>
+                      <option value="GBP">GBP - British Pound (£)</option>
+                      <option value="CAD">CAD - Canadian Dollar (C$)</option>
+                      <option value="AUD">AUD - Australian Dollar (A$)</option>
+                      <option value="JPY">JPY - Japanese Yen (¥)</option>
+                    </select>
+                    <div className="currency-edit-actions">
+                      <button 
+                        onClick={handleSaveCurrency} 
+                        className="btn-save-small"
+                        disabled={saving}
+                      >
+                        <FontAwesomeIcon icon={faSave} /> Save
+                      </button>
+                      <button 
+                        onClick={handleCancelCurrency} 
+                        className="btn-cancel-small"
+                        disabled={saving}
+                      >
+                        <FontAwesomeIcon icon={faTimes} /> Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="currency-display">
+                    <p>{clientData?.preferredCurrency || "USD"}</p>
+                    <button 
+                      onClick={() => setIsEditingCurrency(true)} 
+                      className="btn-edit-small"
+                    >
+                      <FontAwesomeIcon icon={faEdit} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

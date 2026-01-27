@@ -9,7 +9,8 @@ export interface CardGridItemProps {
   imageUrl?: string;
   uuid?: string | undefined; // Optional UUID for identifying deletable items
   disabled?: boolean; // If true, robot is not accessible (grayed out, not clickable)
-  onClick?: (item: Omit<CardGridItemProps, 'onClick' | 'disabled' | 'location'>) => void;
+  hourlyRate?: string; // Formatted hourly rate (e.g., "$10.00/hour")
+  onClick?: (item: Omit<CardGridItemProps, 'onClick' | 'disabled' | 'location' | 'hourlyRate'>) => void;
 }
 
 export interface CardGridItemHandle {
@@ -17,7 +18,7 @@ export interface CardGridItemHandle {
   isSelected: boolean;
 }
 
-const CardGridItem = forwardRef<CardGridItemHandle, CardGridItemProps>(function CardGridItem({id, title, description, location, imageUrl, uuid, disabled, onClick}, ref) {
+const CardGridItem = forwardRef<CardGridItemHandle, CardGridItemProps>(function CardGridItem({id, title, description, location, imageUrl, uuid, disabled, hourlyRate, onClick}, ref) {
   const [isSelected, setIsSelected] = useState(false)
 
   useImperativeHandle(ref, () => ({
@@ -52,6 +53,7 @@ const CardGridItem = forwardRef<CardGridItemHandle, CardGridItemProps>(function 
       <div className="card-grid-content">
         <h3>{title}</h3>
         {description && <p className="card-grid-description">{description}</p>}
+        {hourlyRate && <p className="card-grid-price">{hourlyRate}</p>}
         {location && <p className="card-grid-location">{location}</p>}
       </div>
     </div>

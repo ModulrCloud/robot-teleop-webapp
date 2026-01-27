@@ -296,7 +296,7 @@
 
 .btn-primary,
 .btn-secondary {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.875rem 1.5rem;
@@ -305,6 +305,9 @@
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s ease;
+  width: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .btn-primary {

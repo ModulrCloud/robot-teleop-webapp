@@ -12,7 +12,8 @@ import {
   faCircle,
   faEdit,
   faArrowLeft,
-  faClock
+  faClock,
+  faDollarSign
 } from '@fortawesome/free-solid-svg-icons';
 import outputs from '../../amplify_outputs.json';
 import './MyRobots.css';
@@ -25,6 +26,7 @@ interface Robot {
   name: string;
   description: string;
   model: string;
+  robotType?: string;
   robotId: string;
   imageUrl?: string;
   city?: string;
@@ -43,6 +45,7 @@ export default function MyRobots() {
   const { user } = useAuthStatus();
   const [robots, setRobots] = useState<Robot[]>([]);
   const [robotStatuses, setRobotStatuses] = useState<Record<string, RobotStatus>>({});
+  const [robotRevenues, setRobotRevenues] = useState<Record<string, number>>({});
   const [selectedRobot, setSelectedRobot] = useState<Robot | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,12 +91,13 @@ export default function MyRobots() {
         }
 
         const robotsList = (robotsResponse.data || [])
-          .filter(robot => robot.id != null) // Filter out robots without IDs
+          .filter(robot => robot.id != null)
           .map(robot => ({
             id: robot.id!,
             name: robot.name || '',
             description: robot.description || '',
             model: robot.model || '',
+            robotType: robot.robotType || undefined,
             robotId: robot.robotId || '',
             imageUrl: robot.imageUrl || undefined,
             city: robot.city || undefined,
@@ -103,9 +107,10 @@ export default function MyRobots() {
 
         setRobots(robotsList);
 
-        // Load statuses for all robots
+        // Load statuses and revenues for all robots
         if (robotsList.length > 0) {
           loadRobotStatuses(robotsList);
+          loadRobotRevenues(robotsList);
         }
       } catch (err) {
         logger.error('Error loading robots:', err);
@@ -119,6 +124,56 @@ export default function MyRobots() {
       loadMyRobots();
     }
   }, [user]);
+
+  // Load revenue for all robots
+  const loadRobotRevenues = async (_robotsList: Robot[]) => {
+    try {
+      if (!user?.username) return;
+
+      // Get partner ID
+      const partners = await client.models.Partner.list({
+        filter: {
+          cognitoUsername: { eq: user.username }
+        }
+      });
+
+      if (!partners.data || partners.data.length === 0) return;
+      const partnerId = partners.data[0].id;
+      if (!partnerId) return;
+
+      // Load payouts for this partner
+      const payoutsResult = await client.queries.listPartnerPayoutsLambda({
+        partnerId: user.username,
+        limit: 1000, // Get all payouts
+      });
+
+      let payoutsData: { success?: boolean; payouts?: any[] } | null = null;
+      if (typeof payoutsResult.data === 'string') {
+        try {
+          const firstParse = JSON.parse(payoutsResult.data);
+          payoutsData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+        } catch (e) {
+          payoutsData = { success: false };
+        }
+      } else {
+        payoutsData = payoutsResult.data as typeof payoutsData;
+      }
+
+      if (!payoutsData?.success || !payoutsData.payouts) return;
+
+      // Calculate revenue per robot
+      const revenueMap: Record<string, number> = {};
+      payoutsData.payouts.forEach((payout: any) => {
+        if (payout.robotId && payout.creditsEarnedDollars) {
+          revenueMap[payout.robotId] = (revenueMap[payout.robotId] || 0) + payout.creditsEarnedDollars;
+        }
+      });
+
+      setRobotRevenues(revenueMap);
+    } catch (err) {
+      logger.error('Error loading robot revenues:', err);
+    }
+  };
 
   // Load status for all robots
   const loadRobotStatuses = async (robotsList: Robot[]) => {
@@ -181,17 +236,21 @@ export default function MyRobots() {
     return new Date(timestamp).toLocaleString();
   };
 
-  const getRobotImage = (model?: string, imageUrl?: string): string => {
-    if (imageUrl) return imageUrl;
-    
-    const normalized = model?.toLowerCase()?.trim();
-    switch (normalized) {
-      case 'rover': return '/racer.png';
-      case 'humanoid': return '/humaniod.png';
-      case 'drone': return '/drone.png';
-      case 'submarine': return '/submarine.png';
-      default: return '/racer.png';
+  const getRobotImage = (robotType?: string, imageUrl?: string): string => {
+    if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('/'))) {
+      return imageUrl;
     }
+    
+    const typeImages: Record<string, string> = {
+      'rover': '/default/rover.png',
+      'humanoid': '/default/robot.png',
+      'drone': '/default/drone.png',
+      'sub': '/default/sub.png',
+      'robodog': '/default/robodog.png',
+      'robot': '/default/humanoid.png',
+    };
+    
+    return typeImages[robotType?.toLowerCase() || ''] || '/default/humanoid.png';
   };
 
   if (isLoading) {
@@ -331,7 +390,7 @@ export default function MyRobots() {
       <div className="my-robots-header">
         <button onClick={() => navigate('/robots')} className="back-button">
           <FontAwesomeIcon icon={faArrowLeft} />
-          Back
+          Back to Robots
         </button>
         <h1>My Robots</h1>
         <p className="subtitle">Manage your registered robots</p>
@@ -360,7 +419,7 @@ export default function MyRobots() {
                 onClick={() => handleRobotClick(robot)}
               >
                 <div className="robot-card-image">
-                  <img src={getRobotImage(robot.model, robot.imageUrl)} alt={robot.name} />
+                  <img src={getRobotImage(robot.robotType, robot.imageUrl)} alt={robot.name} />
                 </div>
                 <div className="robot-card-header">
                   <div className="robot-card-title">
@@ -379,6 +438,20 @@ export default function MyRobots() {
                   </div>
                 </div>
                 <p className="robot-card-description">{robot.description || 'No description'}</p>
+                {robotRevenues[robot.robotId] !== undefined && (
+                  <div className="robot-card-revenue" style={{
+                    marginTop: '0.5rem',
+                    padding: '0.5rem',
+                    backgroundColor: 'rgba(255, 183, 0, 0.1)',
+                    borderRadius: '0.5rem',
+                    border: '1px solid rgba(255, 183, 0, 0.2)',
+                  }}>
+                    <FontAwesomeIcon icon={faDollarSign} style={{ marginRight: '0.5rem', color: '#ffb700' }} />
+                    <strong style={{ color: '#ffb700' }}>
+                      Revenue: ${robotRevenues[robot.robotId].toFixed(2)}
+                    </strong>
+                  </div>
+                )}
                 <div className="robot-card-footer">
                   <span className="robot-card-id">ID: {robot.robotId || 'N/A'}</span>
                   <div className="robot-card-actions">

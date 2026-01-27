@@ -1,0 +1,367 @@
+.datetime-picker-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.datetime-picker-wrapper label {
+  display: block;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+.datetime-input {
+  position: relative;
+  cursor: pointer;
+}
+
+.datetime-input input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 0.75rem;
+  padding-right: 2.5rem;
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.datetime-input input:focus {
+  outline: none;
+  border-color: #ffb700;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 3px rgba(255, 183, 0, 0.1);
+}
+
+.datetime-input input.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.datetime-input input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.calendar-icon {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+}
+
+.datetime-picker-modal {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  z-index: 1000;
+  background: rgba(26, 26, 26, 0.98);
+  border: 1px solid rgba(255, 183, 0, 0.3);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  width: max-content;
+  max-width: min(750px, calc(100vw - 4rem));
+  overflow: visible;
+}
+
+.datetime-picker-modal.open-upward {
+  top: auto;
+  bottom: calc(100% + 0.5rem);
+}
+
+.picker-content {
+  display: flex;
+  gap: 1rem;
+  padding: 1.5rem;
+  max-width: 100%;
+  overflow: visible;
+  border-top: 1px solid rgba(255, 183, 0, 0.1);
+  min-height: 400px;
+}
+
+.date-picker-section {
+  flex: 1.5;
+  min-width: 320px;
+  overflow: hidden;
+}
+
+.datetime-picker-modal .date-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.datetime-picker-modal .nav-button {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  color: #fff;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.datetime-picker-modal .nav-button:hover {
+  background: rgba(255, 183, 0, 0.2);
+  border-color: rgba(255, 183, 0, 0.4);
+  color: #ffb700;
+}
+
+.datetime-picker-modal .month-year {
+  font-weight: 600;
+  color: #ffb700;
+  font-size: 0.95rem;
+}
+
+.calendar-grid {
+  margin-bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  width: 100%;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+}
+
+.weekday {
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  padding: 0.4rem 0;
+  line-height: 1.4;
+  min-height: 1.4em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.25rem;
+  width: 100%;
+  margin-top: 0.75rem;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 0;
+}
+
+.datetime-picker-modal .calendar-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.85rem;
+  background: rgba(255, 255, 255, 0.02);
+  height: 36px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.datetime-picker-modal .calendar-day:hover:not(.empty):not(.selected) {
+  background: rgba(255, 183, 0, 0.15);
+  color: #ffb700;
+}
+
+.datetime-picker-modal .calendar-day.today {
+  border: 1px solid rgba(255, 183, 0, 0.5);
+  background: rgba(255, 183, 0, 0.1);
+}
+
+.datetime-picker-modal .calendar-day.selected {
+  background: #ffb700;
+  color: #000;
+  font-weight: 600;
+}
+
+.datetime-picker-modal .calendar-day.empty {
+  cursor: default;
+  background: transparent;
+}
+
+.datetime-picker-modal .picker-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.action-link {
+  background: transparent;
+  border: none;
+  color: rgba(255, 183, 0, 0.8);
+  cursor: pointer;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  text-decoration: underline;
+}
+
+.action-link:hover {
+  color: #ffb700;
+}
+
+.time-picker-section {
+  flex: 1;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  padding-left: 1rem;
+  min-width: 180px;
+  overflow: visible;
+}
+
+.time-picker-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  color: #ffb700;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.time-selectors {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.time-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.time-label {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+
+.time-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 0.2rem;
+}
+
+.time-options::-webkit-scrollbar {
+  width: 6px;
+}
+
+.time-options::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.time-options::-webkit-scrollbar-thumb {
+  background: rgba(255, 193, 7, 0.5);
+  border-radius: 3px;
+}
+
+.time-options::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 193, 7, 0.7);
+}
+
+.time-option {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.8);
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 0.85rem;
+  min-width: 45px;
+  text-align: center;
+}
+
+.time-option:hover {
+  background: rgba(255, 183, 0, 0.15);
+  border-color: rgba(255, 183, 0, 0.4);
+  color: #ffb700;
+}
+
+.time-option.selected {
+  background: #ffb700;
+  border-color: #ffb700;
+  color: #000;
+  font-weight: 600;
+}
+
+.picker-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid rgba(255, 183, 0, 0.2);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.btn-primary,
+.btn-secondary {
+  padding: 0.6rem 1.25rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+  font-size: 0.9rem;
+}
+
+.btn-primary {
+  background: #ffb700;
+  color: #000;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #ffa000;
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 183, 0, 0.3);
+}
+
+.required {
+  color: #ffb700;
+}
+

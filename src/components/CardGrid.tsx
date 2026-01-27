@@ -2,7 +2,7 @@ import { useMemo, useRef, useCallback } from "react";
 import CardGridItem, {type CardGridItemProps} from "./CardGridItem";
 import type { CardGridItemHandle } from "./CardGridItem";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faSearch, faPen, faTimes, faSpinner } from "@fortawesome/free-solid-svg-icons";
+import { faPen, faTimes, faSpinner } from "@fortawesome/free-solid-svg-icons";
 import "./CardGrid.css";
 
 interface CardGridProps {
@@ -11,18 +11,24 @@ interface CardGridProps {
   multiple: boolean;
   selected: Array<Omit<CardGridItemProps, 'onClick'>>;
   setSelected: (selected: Array<Omit<CardGridItemProps, 'onClick'>>) => void;
-  onView?: (item: Omit<CardGridItemProps, 'onClick'>, event: React.MouseEvent) => void;
   onEdit?: (item: Omit<CardGridItemProps, 'onClick'>, event: React.MouseEvent) => void;
   editingItemId?: string | number | null;
   onDelete?: (item: Omit<CardGridItemProps, 'onClick'>, event: React.MouseEvent) => void;
   deletingItemId?: string | number | null;
+  onItemClick?: (item: Omit<CardGridItemProps, 'onClick'>) => void;
 }
 
-export function CardGrid({ items, columns = 3, multiple, selected, setSelected, onView, onEdit, editingItemId, onDelete, deletingItemId }: CardGridProps) {
+export function CardGrid({ items, columns = 3, multiple, selected, setSelected, onEdit, editingItemId, onDelete, deletingItemId, onItemClick }: CardGridProps) {
 
   const itemRefs = useRef<Record<string | number, CardGridItemHandle | null>>({})
 
   const onCardClick = useCallback((item: Omit<CardGridItemProps, 'onClick'>) => {
+    // If custom click handler is provided, use it instead of selection logic
+    if (onItemClick) {
+      onItemClick(item);
+      return;
+    }
+
     const clickedRef = itemRefs.current[item.id]
 
     if (!multiple) {
@@ -40,7 +46,7 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
       clickedRef?.setSelected(true)
       setSelected([...selected, item])
     }
-  }, [multiple, selected, setSelected])
+  }, [multiple, selected, setSelected, onItemClick])
 
   const cards = useMemo(() => items.map(item => (
     <div key={item.id} style={{ position: 'relative', height: '100%' }}>
@@ -49,46 +55,6 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
         {...item}
         onClick={(clicked) => onCardClick(clicked)}
       />
-      {onView && (item as any).uuid && (
-        <button
-          className="card-view-button"
-          onClick={(e) => onView(item, e)}
-          title="View details"
-          style={{
-            position: 'absolute',
-            top: '8px',
-            right: '8px',
-            background: '#ffc107',
-            color: '#000',
-            border: 'none',
-            borderRadius: '50%',
-            width: '32px',
-            height: '32px',
-            minWidth: '32px',
-            minHeight: '32px',
-            cursor: 'pointer',
-            fontSize: '14px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 10,
-            padding: 0,
-            margin: 0,
-            transition: 'all 0.2s',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'scale(1.1)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(255, 193, 7, 0.5)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'scale(1)';
-            e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.3)';
-          }}
-        >
-          <FontAwesomeIcon icon={faSearch} />
-        </button>
-      )}
       {onEdit && (item as any).uuid && (
         <button
           className="card-edit-button"
@@ -98,7 +64,7 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
           style={{
             position: 'absolute',
             top: '8px',
-            right: onView ? '48px' : '8px',
+            right: '8px',
             background: '#ffc107',
             color: '#000',
             border: 'none',
@@ -142,7 +108,7 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
           style={{
             position: 'absolute',
             top: '8px',
-            right: onEdit ? '88px' : (onView ? '48px' : '8px'),
+            right: onEdit ? '48px' : '8px',
             background: 'rgba(220, 38, 38, 0.9)',
             color: 'white',
             border: 'none',
@@ -176,7 +142,7 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
         </button>
       )}
     </div>
-  )), [items, onCardClick, onView, onDelete, deletingItemId, onEdit, editingItemId])
+  )), [items, onCardClick, onDelete, deletingItemId, onEdit, editingItemId])
 
   return (
     <div className="card-grid" style={{ gridTemplateColumns: `repeat(${columns}, 1fr)` }}>

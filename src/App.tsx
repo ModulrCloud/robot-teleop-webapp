@@ -5,76 +5,58 @@ import {
   Routes,
   Route,
 } from "react-router-dom";
-import RobotSelect from "./pages/RobotSelect";
-import ServiceSelect from "./pages/ServiceSelect";
-import SignIn from "./pages/SignIn";
-import Teleop from "./pages/Teleop";
-import EndSession from "./pages/EndSession";
-import { PrivateRoute } from "./PrivateRoute";
-import { UserSetup } from "./pages/UserSetup";
-import { Dashboard } from "./pages/Dashboard";
-import { CreateRobotListing } from "./pages/CreateRobotListing";
-import { UserProfile } from "./pages/UserProfile";
-import { SessionHistory } from "./pages/SessionHistory";
-import { AppLayout } from "./components/AppLayout";
-import { Settings } from "./pages/Settings";
-import RobotSetup from "./pages/RobotSetup";
-import { EditRobot } from "./pages/EditRobot";
-import MyRobots from "./pages/MyRobots";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { fetchAuthSession } from "aws-amplify/auth";
-import PartnerProfile from './pages/PartnerProfile';
-import EditPartnerProfile from './pages/EditPartnerProfile';
-import { DebugPanel } from './components/DebugPanel';
+import { PrivateRoute } from "./PrivateRoute";
+import { AppLayout } from "./components/AppLayout";
+import { RouteLoadingSpinner } from "./components/RouteLoadingSpinner";
 import { logger } from './utils/logger';
+
+// Lazy load all page components for code splitting
+const Dashboard = lazy(() => import("./pages/Dashboard").then(module => ({ default: module.Dashboard })));
+const SignIn = lazy(() => import("./pages/SignIn"));
+const UserSetup = lazy(() => import("./pages/UserSetup").then(module => ({ default: module.UserSetup })));
+const UserProfile = lazy(() => import("./pages/UserProfile").then(module => ({ default: module.UserProfile })));
+const CreateRobotListing = lazy(() => import("./pages/CreateRobotListing").then(module => ({ default: module.CreateRobotListing })));
+const RobotSetup = lazy(() => import("./pages/RobotSetup"));
+const EditRobot = lazy(() => import("./pages/EditRobot").then(module => ({ default: module.EditRobot })));
+const MyRobots = lazy(() => import("./pages/MyRobots"));
+const RobotSelect = lazy(() => import("./pages/RobotSelect"));
+const RobotDetail = lazy(() => import("./pages/RobotDetail"));
+const ServiceSelect = lazy(() => import("./pages/ServiceSelect"));
+const Teleop = lazy(() => import("./pages/Teleop"));
+const EndSession = lazy(() => import("./pages/EndSession"));
+const SessionHistory = lazy(() => import("./pages/SessionHistory").then(module => ({ default: module.SessionHistory })));
+const Settings = lazy(() => import("./pages/Settings").then(module => ({ default: module.Settings })));
+const Credits = lazy(() => import("./pages/Credits").then(module => ({ default: module.Credits })));
+const Admin = lazy(() => import("./pages/Admin").then(module => ({ default: module.Admin })));
+const PartnerProfile = lazy(() => import("./pages/PartnerProfile"));
+const EditPartnerProfile = lazy(() => import("./pages/EditPartnerProfile"));
+const Social = lazy(() => import("./pages/Social").then(module => ({ default: module.Social })));
+const DebugPanel = lazy(() => import("./components/DebugPanel").then(module => ({ default: module.DebugPanel })));
 
 // Amplify configuration is now in main.tsx
 import '@aws-amplify/ui-react/styles.css';
 
 function App() {
-  // Debug: Log OAuth callback handling (commented out - uncomment for debugging)
+  // Handle OAuth callback errors
   useEffect(() => {
-    // Check if we're coming back from OAuth redirect
     const urlParams = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.substring(1));
     
-    // const code = urlParams.get('code') || hashParams.get('code'); // Unused for now
     const error = urlParams.get('error') || hashParams.get('error');
     const errorDescription = urlParams.get('error_description') || hashParams.get('error_description');
     
-    // if (code) {
-    //   console.log('🔵 OAuth callback detected - Authorization code received:', {
-    //     code: code.substring(0, 20) + '...',
-    //     fullUrl: window.location.href,
-    //     searchParams: Object.fromEntries(urlParams),
-    //     hashParams: Object.fromEntries(hashParams)
-    //   });
-    // }
-    
     if (error) {
-      // Keep error logging for actual errors
-      logger.error('🔴 OAuth callback error:', {
+      logger.error('OAuth callback error:', {
         error,
         errorDescription: decodeURIComponent(errorDescription || ''),
-        fullUrl: window.location.href,
-        searchParams: Object.fromEntries(urlParams),
-        hashParams: Object.fromEntries(hashParams)
       });
       
-      // Try to get more details from the session
-      fetchAuthSession().then(() => {
-        // logger.log('Session after OAuth error:', session);
-      }).catch(err => {
+      fetchAuthSession().catch(err => {
         logger.error('Failed to fetch session after OAuth error:', err);
       });
     }
-    
-    // Log current URL for debugging (commented out)
-    // if (window.location.search || window.location.hash) {
-    //   console.log('📍 Current URL:', window.location.href);
-    //   console.log('📍 Search params:', Object.fromEntries(urlParams));
-    //   console.log('📍 Hash params:', Object.fromEntries(hashParams));
-    // }
   }, []);
 
   return (
@@ -84,101 +66,169 @@ function App() {
         <main className="main-content">
           <Routes>
             <Route path='/' element={
-              <PrivateRoute>
-                <Dashboard />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <Dashboard />
+                </PrivateRoute>
+              </Suspense>
             } />
-            <Route path='/signin' element={<SignIn />} />
+            <Route path='/signin' element={
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <SignIn />
+              </Suspense>
+            } />
 
             {/* Authenticated Routes */}
             <Route path='/user-setup' element={
-              <PrivateRoute>
-                <UserSetup />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <UserSetup />
+                </PrivateRoute>
+              </Suspense>
             }
             />
             <Route path='/profile' element={
-              <PrivateRoute>
-                <UserProfile />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <UserProfile />
+                </PrivateRoute>
+              </Suspense>
             }
             />
             <Route path='/create-robot-listing' element={
-              <PrivateRoute>
-                <CreateRobotListing />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <CreateRobotListing />
+                </PrivateRoute>
+              </Suspense>
             }
             />
             <Route path='/robot-setup' element={
-              <PrivateRoute>
-                <RobotSetup />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <RobotSetup />
+                </PrivateRoute>
+              </Suspense>
             }
             />
             <Route path='/edit-robot' element={
-              <PrivateRoute>
-                <EditRobot />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <EditRobot />
+                </PrivateRoute>
+              </Suspense>
             }
             />
             <Route path='/my-robots' element={
-              <PrivateRoute>
-                <MyRobots />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <MyRobots />
+                </PrivateRoute>
+              </Suspense>
             }
             />
             <Route path='/robots' element={
-              <PrivateRoute>
-                <RobotSelect />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <RobotSelect />
+                </PrivateRoute>
+              </Suspense>
+            }
+            />
+            <Route path='/robot/:robotId' element={
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <RobotDetail />
+                </PrivateRoute>
+              </Suspense>
             }
             />
             <Route path='/services' element={
-              <PrivateRoute>
-                <ServiceSelect />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <ServiceSelect />
+                </PrivateRoute>
+              </Suspense>
             }
             />
             <Route path='/teleop' element={
-              <PrivateRoute>
-                <Teleop />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <Teleop />
+                </PrivateRoute>
+              </Suspense>
             }
             />
             <Route path='/endsession' element={
-              <PrivateRoute>
-                <EndSession />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <EndSession />
+                </PrivateRoute>
+              </Suspense>
             }
             />
             <Route path='/sessions' element={
-              <PrivateRoute>
-                <SessionHistory />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <SessionHistory />
+                </PrivateRoute>
+              </Suspense>
             }
             />
             <Route path='/settings' element={
-              <PrivateRoute>
-                <Settings />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <Settings />
+                </PrivateRoute>
+              </Suspense>
+            } 
+            />
+            <Route path='/credits' element={
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <Credits />
+                </PrivateRoute>
+              </Suspense>
+            } 
+            />
+            <Route path='/admin' element={
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <Admin />
+                </PrivateRoute>
+              </Suspense>
             } 
             />
             <Route path='/partner/:partnerId' element={
-              <PrivateRoute>
-                <PartnerProfile />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <PartnerProfile />
+                </PrivateRoute>
+              </Suspense>
             }
             />
             <Route path='/partner-profile/edit' element={
-              <PrivateRoute>
-                <EditPartnerProfile />
-              </PrivateRoute>
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <EditPartnerProfile />
+                </PrivateRoute>
+              </Suspense>
+            }
+            />
+            <Route path='/social' element={
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <Social />
+                </PrivateRoute>
+              </Suspense>
             }
             />
           </Routes>
         </main>
       </AppLayout>
-      {(import.meta.env.DEV || import.meta.env.VITE_SHOW_DEBUG_PANEL === 'true') && <DebugPanel />}
+      <Suspense fallback={null}>
+        <DebugPanel />
+      </Suspense>
     </Router>
   );
 }

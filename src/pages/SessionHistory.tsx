@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { generateClient } from 'aws-amplify/api';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faClock, faRobot, faCalendar } from '@fortawesome/free-solid-svg-icons';
+import { faClock, faRobot, faCalendar, faChartLine, faGaugeHigh, faCheckCircle } from '@fortawesome/free-solid-svg-icons';
+import { useNavigate } from "react-router-dom";
 import "./SessionHistory.css";
 import { logger } from '../utils/logger';
 
@@ -22,11 +23,25 @@ interface Session {
 
 const STALE_SESSION_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
+interface SessionStats {
+  totalSessions: number;
+  completedSessions: number;
+  totalTime: number;
+  avgSessionTime: number;
+}
+
 export const SessionHistory = () => {
   usePageTitle();
+  const navigate = useNavigate();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [userGroup, setUserGroup] = useState<string | null>(null);
+  const [stats, setStats] = useState<SessionStats>({
+    totalSessions: 0,
+    completedSessions: 0,
+    totalTime: 0,
+    avgSessionTime: 0,
+  });
 
   useEffect(() => {
     loadSessions();
@@ -37,7 +52,7 @@ export const SessionHistory = () => {
       const authSession = await fetchAuthSession();
       const groups = authSession.tokens?.idToken?.payload?.['cognito:groups'] as string[] | undefined;
       const username = authSession.tokens?.idToken?.payload?.['cognito:username'] as string;
-      
+
       const group = groups?.[0] || null;
       setUserGroup(group);
 
@@ -60,7 +75,7 @@ export const SessionHistory = () => {
         if (session.status === 'active') {
           const startTime = new Date(session.startedAt).getTime();
           const elapsed = now - startTime;
-          
+
           // If session is active but older than threshold, mark as disconnected
           if (elapsed > STALE_SESSION_THRESHOLD_MS) {
             try {
@@ -90,9 +105,20 @@ export const SessionHistory = () => {
       }));
 
       // Sort by most recent first
-      sessionData.sort((a, b) => 
+      sessionData.sort((a, b) =>
         new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
       );
+
+      const completed = sessionData.filter(s => s.status === 'completed');
+      const totalTime = completed.reduce((sum, s) => sum + (s.durationSeconds || 0), 0);
+      const avgTime = completed.length > 0 ? Math.round(totalTime / completed.length) : 0;
+
+      setStats({
+        totalSessions: sessionData.length,
+        completedSessions: completed.length,
+        totalTime,
+        avgSessionTime: avgTime,
+      });
 
       setSessions(sessionData as Session[]);
     } catch (err) {
@@ -123,6 +149,11 @@ export const SessionHistory = () => {
     });
   };
 
+  const latestCompletedSession = useMemo(
+    () => sessions.find((session) => session.status === 'completed' && session.robotId),
+    [sessions]
+  );
+
   if (loading) {
     return (
       <div className="session-history-page">
@@ -134,10 +165,69 @@ export const SessionHistory = () => {
   return (
     <div className="session-history-page">
       <div className="page-header">
-        <h1>Session History</h1>
-        <p className="subtitle">
-          {userGroup === 'ADMINS' ? 'All user sessions' : 'Your teleoperation sessions'}
-        </p>
+        <div className="page-header-row">
+          <div>
+            <h1>Session History</h1>
+            <p className="subtitle">
+              {userGroup === 'ADMINS' ? 'All user sessions' : 'Your teleoperation sessions'}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="review-button"
+            onClick={() => latestCompletedSession && navigate(`/robot/${latestCompletedSession.robotId}`)}
+            disabled={!latestCompletedSession}
+            title={
+              latestCompletedSession
+                ? 'Leave a review for your most recent completed session'
+                : 'Complete a session to leave a review'
+            }
+          >
+            Leave a Review
+          </button>
+        </div>
+      </div>
+
+      <div className="stats-summary">
+        <div className="stat-card">
+          <div className="stat-icon">
+            <FontAwesomeIcon icon={faChartLine} />
+          </div>
+          <div className="stat-content">
+            <div className="stat-value">{stats.totalSessions}</div>
+            <div className="stat-label">Total Sessions</div>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">
+            <FontAwesomeIcon icon={faCheckCircle} />
+          </div>
+          <div className="stat-content">
+            <div className="stat-value">{stats.completedSessions}</div>
+            <div className="stat-label">Completed</div>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">
+            <FontAwesomeIcon icon={faClock} />
+          </div>
+          <div className="stat-content">
+            <div className="stat-value">{formatDuration(stats.totalTime)}</div>
+            <div className="stat-label">Total Time</div>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon">
+            <FontAwesomeIcon icon={faGaugeHigh} />
+          </div>
+          <div className="stat-content">
+            <div className="stat-value">{formatDuration(stats.avgSessionTime)}</div>
+            <div className="stat-label">Avg Duration</div>
+          </div>
+        </div>
       </div>
 
       {sessions.length === 0 ? (
@@ -154,7 +244,7 @@ export const SessionHistory = () => {
                 <FontAwesomeIcon icon={faRobot} />
                 <span>{session.robotName || session.robotId}</span>
               </div>
-              
+
               <div className="session-details">
                 <div className="session-stat">
                   <FontAwesomeIcon icon={faCalendar} />

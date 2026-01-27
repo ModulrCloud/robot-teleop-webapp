@@ -4,16 +4,13 @@ import { Schema } from '../../data/resource';
 const ddbClient = new DynamoDBClient({});
 
 export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (event) => {
-  console.log('Received event:', JSON.stringify(event, null, 2));
-
-  const { robotId, robotName, description, model, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude } = event.arguments;
+  const { robotId, robotName, description, model, robotType, hourlyRateCredits, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude } = event.arguments;
 
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
     throw new Error("Unauthorised: must be logged in with Cognito");
   }
 
-  // Type guard: check if identity has groups (Cognito identity)
   const hasGroups = "groups" in identity;
 
   const robotTableName = process.env.ROBOT_TABLE_NAME!;
@@ -23,7 +20,6 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     throw new Error("ROBOT_TABLE_NAME or PARTNER_TABLE_NAME environment variable not set");
   }
 
-  // Get the robot to verify ownership
   const robotResult = await ddbClient.send(
     new GetItemCommand({
       TableName: robotTableName,
@@ -40,14 +36,11 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     throw new Error("Robot has no partnerId - data corruption detected");
   }
 
-  // Check if user is an admin
   const isAdminUser = hasGroups && identity.groups
     ? identity.groups.some((g: string) => g.toUpperCase() === 'ADMINS' || g.toUpperCase() === 'ADMIN')
     : false;
 
-  // If not admin, verify the requester is the robot owner
   if (!isAdminUser) {
-    // Lookup the Partner record for this user
     const partnerQuery = await ddbClient.send(
       new QueryCommand({
         TableName: partnerTableName,
@@ -64,56 +57,69 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     if (!partnerItem || !partnerItem.id?.S) {
       throw new Error("No Partner found for this user");
     }
-    const requesterPartnerId = partnerItem.id.S;
 
-    if (requesterPartnerId !== robotPartnerId) {
+    if (partnerItem.id.S !== robotPartnerId) {
       throw new Error("Unauthorised: only the robot owner or admins can update robots");
     }
   }
 
-  // Get current timestamp for updatedAt
   const now = new Date().toISOString();
 
-  // Build update expression
   const updateExpressions: string[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const expressionAttributeValues: Record<string, any> = {};
   const expressionAttributeNames: Record<string, string> = {};
 
-  // Update name if provided
   if (robotName !== undefined && robotName !== null) {
     updateExpressions.push('#name = :name');
     expressionAttributeNames['#name'] = 'name';
     expressionAttributeValues[':name'] = { S: robotName };
   }
 
-  // Update description if provided
   if (description !== undefined && description !== null) {
     updateExpressions.push('#description = :description');
     expressionAttributeNames['#description'] = 'description';
     expressionAttributeValues[':description'] = { S: description };
   }
 
-  // Update model if provided and not empty
   if (model !== undefined && model !== null && model.trim() !== '') {
     updateExpressions.push('#model = :model');
     expressionAttributeNames['#model'] = 'model';
     expressionAttributeValues[':model'] = { S: model.trim() };
   }
 
-  // Update imageUrl if provided
-  if (imageUrl !== undefined) {
-    updateExpressions.push('#imageUrl = :imageUrl');
-    expressionAttributeNames['#imageUrl'] = 'imageUrl';
-    expressionAttributeValues[':imageUrl'] = { S: imageUrl };
+  if (robotType !== undefined && robotType !== null && robotType.trim() !== '') {
+    updateExpressions.push('#robotType = :robotType');
+    expressionAttributeNames['#robotType'] = 'robotType';
+    expressionAttributeValues[':robotType'] = { S: robotType.trim() };
   }
 
-  // Update location fields if provided
+  if (hourlyRateCredits !== undefined && hourlyRateCredits !== null) {
+    updateExpressions.push('#hourlyRateCredits = :hourlyRateCredits');
+    expressionAttributeNames['#hourlyRateCredits'] = 'hourlyRateCredits';
+    expressionAttributeValues[':hourlyRateCredits'] = { N: hourlyRateCredits.toString() };
+  }
+
+  // Update imageUrl if provided
+  // If imageUrl is null, undefined, or empty string, remove it (use default robot image)
+  if (imageUrl !== undefined) {
+    if (imageUrl !== null && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
+      // Valid imageUrl - set it
+      updateExpressions.push('#imageUrl = :imageUrl');
+      expressionAttributeNames['#imageUrl'] = 'imageUrl';
+      expressionAttributeValues[':imageUrl'] = { S: imageUrl.trim() };
+    } else {
+      // null, undefined, or empty string - remove imageUrl attribute (will use default based on model)
+      updateExpressions.push('REMOVE #imageUrl');
+      expressionAttributeNames['#imageUrl'] = 'imageUrl';
+    }
+  }
+
   if (city !== undefined && city !== null) {
     updateExpressions.push('#city = :city');
     expressionAttributeNames['#city'] = 'city';
     expressionAttributeValues[':city'] = { S: city };
   } else if (city === null) {
-    // Remove city if explicitly set to null
     updateExpressions.push('REMOVE #city');
     expressionAttributeNames['#city'] = 'city';
   }
@@ -154,17 +160,15 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     expressionAttributeNames['#longitude'] = 'longitude';
   }
 
-  // Always update updatedAt
   updateExpressions.push('#updatedAt = :updatedAt');
   expressionAttributeNames['#updatedAt'] = 'updatedAt';
   expressionAttributeValues[':updatedAt'] = { S: now };
 
-  // Handle ACL updates
   if (enableAccessControl !== undefined) {
     if (enableAccessControl === true) {
-      // Create or update ACL
       const ownerUsername = identity.username;
-      const ownerEmail = (identity as any).email || (identity as any).claims?.email;
+      const identityAny = identity as unknown as { email?: string; claims?: { email?: string } };
+      const ownerEmail = identityAny.email || identityAny.claims?.email;
       
       const defaultAllowedUsers = [
         ownerUsername.toLowerCase().trim(),
@@ -172,25 +176,21 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
         'mike@modulr.cloud',
       ];
       
-      // Also add owner's email if it's different from username
       if (ownerEmail && ownerEmail.toLowerCase().trim() !== ownerUsername.toLowerCase().trim()) {
         defaultAllowedUsers.push(ownerEmail.toLowerCase().trim());
       }
       
-      // Add any additional users provided (normalize to lowercase)
       const additionalUsers = (additionalAllowedUsers || [])
         .filter((email): email is string => email != null && typeof email === 'string')
         .map((email: string) => email.trim().toLowerCase())
         .filter((email: string) => email.length > 0 && email.includes('@'));
       
-      // Combine defaults with additional users, removing duplicates
       const allAllowedUsers = Array.from(new Set([...defaultAllowedUsers, ...additionalUsers]));
       
       updateExpressions.push('#allowedUsers = :allowedUsers');
       expressionAttributeNames['#allowedUsers'] = 'allowedUsers';
       expressionAttributeValues[':allowedUsers'] = { SS: allAllowedUsers };
     } else {
-      // Remove ACL (make robot open access)
       updateExpressions.push('REMOVE #allowedUsers');
       expressionAttributeNames['#allowedUsers'] = 'allowedUsers';
     }
@@ -200,7 +200,6 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     throw new Error("No fields to update");
   }
 
-  // Separate SET and REMOVE expressions
   const setExpressions = updateExpressions.filter(expr => !expr.startsWith('REMOVE '));
   const removeExpressions = updateExpressions.filter(expr => expr.startsWith('REMOVE ')).map(expr => expr.replace('REMOVE ', ''));
 
@@ -213,33 +212,22 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     updateExpression += 'REMOVE ' + removeExpressions.join(', ');
   }
 
-  const updateItemInput: any = {
+  await ddbClient.send(new UpdateItemCommand({
     TableName: robotTableName,
     Key: { id: { S: robotId } },
     UpdateExpression: updateExpression,
     ExpressionAttributeValues: expressionAttributeValues,
     ExpressionAttributeNames: expressionAttributeNames,
     ReturnValues: 'ALL_NEW',
-  };
+  }));
 
-  console.log('📝 Updating robot in DynamoDB:', {
-    robotId,
-    updateExpression,
-    expressionAttributeNames,
-    expressionAttributeValues: Object.keys(expressionAttributeValues),
-  });
-
-  const result = await ddbClient.send(new UpdateItemCommand(updateItemInput));
-
-  console.log('✅ Robot successfully updated in DynamoDB:', robotId);
-
-  // Return the updated robot data
   const updatedRobot = {
     id: robotId,
     robotId: robotResult.Item.robotId?.S,
     name: robotName || robotResult.Item.name?.S,
     description: description !== undefined ? description : robotResult.Item.description?.S,
     model: model !== undefined ? model : robotResult.Item.model?.S,
+    robotType: robotType !== undefined ? robotType : robotResult.Item.robotType?.S,
     imageUrl: imageUrl !== undefined ? imageUrl : robotResult.Item.imageUrl?.S,
     partnerId: robotPartnerId,
     updatedAt: now,
@@ -247,4 +235,3 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
 
   return JSON.stringify(updatedRobot);
 };
-

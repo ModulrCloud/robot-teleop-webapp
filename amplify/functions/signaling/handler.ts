@@ -8,6 +8,7 @@ import {
     ScanCommand,
     UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand as DocQueryCommand } from '@aws-sdk/lib-dynamodb';
 import { createHash } from 'crypto';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
@@ -15,14 +16,21 @@ import { jwtVerify, createRemoteJWKSet } from 'jose';
 const CONN_TABLE = process.env.CONN_TABLE!;
 const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
 const REVOKED_TOKENS_TABLE = process.env.REVOKED_TOKENS_TABLE!;
+const USER_INVALIDATION_TABLE = process.env.USER_INVALIDATION_TABLE!;
 const ROBOT_OPERATOR_TABLE = process.env.ROBOT_OPERATOR_TABLE!;
 const ROBOT_TABLE_NAME = process.env.ROBOT_TABLE_NAME!;
 const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME; // For session lock enforcement
+const USER_CREDITS_TABLE = process.env.USER_CREDITS_TABLE;
+const PLATFORM_SETTINGS_TABLE = process.env.PLATFORM_SETTINGS_TABLE;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!; // HTTPS management API
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 
+// Default platform markup (30%) if not set
+const DEFAULT_PLATFORM_MARKUP_PERCENT = 30;
+
 const db = new DynamoDBClient({});
+const docClient = DynamoDBDocumentClient.from(db); // For UserCredits and PlatformSettings queries
 const mgmt = new ApiGatewayManagementApiClient({ endpoint: WS_MGMT_ENDPOINT});
 
 // Cognito JWKS URL - public keys for verifying JWT signatures
@@ -33,7 +41,7 @@ const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
 // Types
 // ---------------------------------
 
-type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor';
+type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong';
 type Target = 'robot' | 'client';
 
 // ---------------------------------
@@ -91,6 +99,34 @@ type RawMessage = any;
 const nowMs = () => Date.now();
 
 /**
+ * Checks if a user's session has been invalidated (global sign-out).
+ * Returns the invalidation timestamp if user was invalidated, null otherwise.
+ * 
+ * This catches tokens from other devices that weren't explicitly blacklisted.
+ * If a token was issued (iat) before the invalidation timestamp, it's invalid.
+ */
+async function getUserInvalidationTimestamp(userId: string): Promise<number | null> {
+    try {
+        const result = await db.send(
+            new GetItemCommand({
+                TableName: USER_INVALIDATION_TABLE,
+                Key: { userId: { S: userId } },
+            })
+        );
+        
+        if (result?.Item?.invalidatedAt?.N) {
+            // Return the timestamp when user signed out (in milliseconds)
+            return parseInt(result.Item.invalidatedAt.N, 10);
+        }
+        return null; // No invalidation record
+    } catch (error) {
+        // If we can't check invalidation, log but don't block (fail open for availability)
+        console.warn('Failed to check user invalidation timestamp', error);
+        return null; // Fail open - allow if we can't check
+    }
+}
+
+/**
  * Checks if a token is in the revocation blacklist.
  * Returns true if token is revoked, false otherwise.
  */
@@ -145,6 +181,33 @@ async function verifyCognitoJWT(token: string | null | undefined): Promise<Claim
             return null;
         }
 
+        // Extract userId from claims (need this to check invalidation)
+        const userId = (payload['cognito:username'] as string | undefined) || 
+                      (payload.email as string | undefined) || 
+                      (payload.sub as string | undefined);
+        
+        // Check if user's session has been invalidated (global sign-out)
+        // If token was issued (iat) before invalidation timestamp, reject it
+        if (userId) {
+            const invalidatedAt = await getUserInvalidationTimestamp(userId);
+            if (invalidatedAt) {
+                // Token's iat is in seconds, invalidatedAt is in milliseconds
+                // Convert invalidatedAt to seconds for comparison
+                const tokenIat = payload.iat as number | undefined;
+                const invalidatedAtSeconds = Math.floor(invalidatedAt / 1000);
+                
+                if (tokenIat && tokenIat < invalidatedAtSeconds) {
+                    console.warn('Token issued before user global sign-out', { 
+                        userId,
+                        tokenIat, 
+                        invalidatedAtSeconds,
+                        hasToken: !!token 
+                    });
+                    return null; // Token was issued before global sign-out
+                }
+            }
+        }
+
         // Extract claims
         return {
             sub: payload.sub as string | undefined,
@@ -163,105 +226,194 @@ async function verifyCognitoJWT(token: string | null | undefined): Promise<Claim
     }
 }
 
-// Normalize message to this implementation
-function normalizeMessage(raw: RawMessage): InboundMessage {
-  if (!raw || typeof raw !== 'object') return {};
+/**
+ * Extracts and normalizes the message type from a raw message.
+ * Maps legacy 'candidate' to 'ice-candidate' for backward compatibility.
+ */
+function extractMessageType(raw: RawMessage): MessageType | undefined {
+  if (typeof raw.type !== 'string') return undefined;
+  
+  const t = raw.type.toLowerCase();
+  if (t === 'candidate') {
+    return 'ice-candidate'; // map legacy name to internal name
+  } else if (
+    t === 'offer' ||
+    t === 'answer' ||
+    t === 'register' ||
+    t === 'takeover' ||
+    t === 'ice-candidate' ||
+    t === 'monitor'
+  ) {
+    return t as MessageType;
+  }
+  
+  return undefined;
+}
 
-  let type: MessageType | undefined;
-    if (typeof raw.type === 'string') {
-    const t = raw.type.toLowerCase();
-    if (t === 'candidate') {
-      type = 'ice-candidate'; // map legacy name to internal name
-    } else if (
-      t === 'offer' ||
-      t === 'answer' ||
-      t === 'register' ||
-      t === 'takeover' ||
-      t === 'ice-candidate' ||
-      t === 'monitor'
-    ) {
-      type = t as MessageType;
-    }
+/**
+ * Extracts the robotId from a raw message.
+ * 
+ * Strategy:
+ * 1. Explicit 'robotId' field (preferred)
+ * 2. For 'register' messages: 'from' field contains robotId
+ * 3. For WebRTC messages (offer/answer/candidate):
+ *    - Check if 'to' field starts with "robot-" (client-to-robot)
+ *    - Check if 'from' field starts with "robot-" (robot-to-client)
+ *    - Fallback to 'to' or 'from' if they exist
+ * 
+ * Examples:
+ * - Rust agent: { type: "register", from: "robot-id" }
+ * - Rust agent: { type: "offer", from: "robot-id", to: "client-id", sdp: "..." }
+ * - Browser: { type: "offer", to: "robot-id", from: "browser1", sdp: "..." }
+ */
+function extractRobotId(raw: RawMessage, type: MessageType | undefined): string | undefined {
+  // Preferred: explicit 'robotId' field
+  if (typeof raw.robotId === 'string' && raw.robotId.trim().length > 0) {
+    return raw.robotId.trim();
   }
 
-  // ---- robotId ----
-  // Preferred: explicit 'robotId' (Robot.id / UUID).
-  // For robot messages: 'from' field contains robotId
-  // For client messages: 'to' field contains robotId
-  //   - Rust agent sends: { type: "register", from: "robot-id" }
-  //   - Rust agent sends: { type: "offer", from: "robot-id", to: "client-id", sdp: "..." }
-  //   - Browser sends: { type: "offer", to: "robot-id", from: "browser1", sdp: "..." }
-  let robotId: string | undefined;
-  if (typeof raw.robotId === 'string' && raw.robotId.trim().length > 0) {
-    robotId = raw.robotId.trim();
-  } else if (type === 'register') {
-    // Registration messages always come from robots: { type: "register", from: "robot-id" }
+  // Registration messages always come from robots
+  if (type === 'register') {
     if (typeof raw.from === 'string' && raw.from.trim().length > 0) {
-      robotId = raw.from.trim();
+      return raw.from.trim();
     }
-  } else if (type === 'offer' || type === 'answer' || type === 'candidate' || type === 'ice-candidate') {
-    // For offer/answer/candidate messages, we need to determine if it's client-to-robot or robot-to-client
-    // Strategy: Check if 'to' field looks like a robotId (starts with "robot-"), if so, it's client-to-robot
-    // Otherwise, check if 'from' field looks like a robotId, if so, it's robot-to-client
+    return undefined;
+  }
+
+  // For WebRTC signaling messages, determine direction and extract robotId
+  if (type === 'offer' || type === 'answer' || type === 'candidate' || type === 'ice-candidate') {
     const toField = typeof raw.to === 'string' ? raw.to.trim() : '';
     const fromField = typeof raw.from === 'string' ? raw.from.trim() : '';
     
-    // Check 'to' field first - if it starts with "robot-", it's likely the robotId (client-to-robot message)
+    // Check 'to' field first - if it starts with "robot-", it's likely the robotId (client-to-robot)
     if (toField.startsWith('robot-')) {
-      robotId = toField;
-    } else if (fromField.startsWith('robot-')) {
-      // If 'from' starts with "robot-", it's likely the robotId (robot-to-client message)
-      robotId = fromField;
-    } else if (toField.length > 0) {
-      // Fallback: use 'to' if it exists (for client-to-robot messages where robotId doesn't start with "robot-")
-      robotId = toField;
-    } else if (fromField.length > 0) {
-      // Last resort: use 'from' (for robot-to-client messages where robotId doesn't start with "robot-")
-      robotId = fromField;
+      return toField;
+    }
+    
+    // If 'from' starts with "robot-", it's likely the robotId (robot-to-client)
+    if (fromField.startsWith('robot-')) {
+      return fromField;
+    }
+    
+    // Fallback: use 'to' if it exists (for client-to-robot messages where robotId doesn't start with "robot-")
+    if (toField.length > 0) {
+      return toField;
+    }
+    
+    // Last resort: use 'from' (for robot-to-client messages where robotId doesn't start with "robot-")
+    if (fromField.length > 0) {
+      return fromField;
     }
   }
 
-  // ---- payload ----
-  // Preferred: 'payload' object.
-  // Also fold in 'sdp' and 'candidate' if present (Mike's WebRTC messages).
+  return undefined;
+}
+
+/**
+ * Extracts and combines payload data from a raw message.
+ * 
+ * Combines:
+ * - Explicit 'payload' object (preferred)
+ * - Top-level 'sdp' field (for WebRTC SDP offers/answers)
+ * - Top-level 'candidate' field (for ICE candidates)
+ * 
+ * This supports both formats:
+ * - Payload-wrapped: { payload: { sdp: "...", candidate: "..." } }
+ * - Top-level: { sdp: "...", candidate: "..." }
+ */
+function extractPayload(raw: RawMessage): Record<string, unknown> | undefined {
   let payload: Record<string, unknown> | undefined;
+  
+  // Start with explicit payload object if present
   if (raw.payload && typeof raw.payload === 'object') {
     payload = { ...raw.payload };
   }
 
+  // Fold in top-level 'sdp' field (Mike's WebRTC format)
   if (raw.sdp) {
     payload = payload ?? {};
     payload.sdp = raw.sdp;
   }
+
+  // Fold in top-level 'candidate' field (Mike's WebRTC format)
   if (raw.candidate) {
     payload = payload ?? {};
     payload.candidate = raw.candidate;
   }
 
-  // ---- target / clientConnectionId ----
-  const target =
-    typeof raw.target === 'string'
-      ? (raw.target.toLowerCase() as Target)
-      : undefined;
+  return payload;
+}
 
-  // Extract clientConnectionId:
-  // 1. Explicit clientConnectionId field
-  // 2. For robot-to-client messages: 'to' field contains client connection ID
-  //    (Rust format: { type: "answer", from: "robot-id", to: "client-connection-id" })
-  let clientConnectionId: string | undefined;
+/**
+ * Extracts the target direction from a raw message.
+ * Target indicates whether message is intended for 'robot' or 'client'.
+ */
+function extractTarget(raw: RawMessage): Target | undefined {
+  if (typeof raw.target === 'string') {
+    return raw.target.toLowerCase() as Target;
+  }
+  return undefined;
+}
+
+/**
+ * Extracts the client connection ID from a raw message.
+ * 
+ * Strategy:
+ * 1. Explicit 'clientConnectionId' field (preferred)
+ * 2. For robot-to-client messages: 'to' field contains client connection ID
+ *    - Only valid if 'from' matches the extracted robotId (confirms message is from robot)
+ * 
+ * Example (Rust format):
+ * { type: "answer", from: "robot-id", to: "client-connection-id" }
+ */
+function extractClientConnectionId(
+  raw: RawMessage,
+  type: MessageType | undefined,
+  robotId: string | undefined
+): string | undefined {
+  // Preferred: explicit clientConnectionId field
   if (typeof raw.clientConnectionId === 'string') {
-    clientConnectionId = raw.clientConnectionId.trim();
-  } else if (
-    typeof raw.to === 'string' && 
+    return raw.clientConnectionId.trim();
+  }
+
+  // For robot-to-client WebRTC messages, 'to' field is the client connection ID
+  // Only use this if:
+  // 1. Message type is a WebRTC signaling message
+  // 2. We have a robotId
+  // 3. 'from' field matches the robotId (confirms message is from robot)
+  if (
+    typeof raw.to === 'string' &&
     raw.to.trim().length > 0 &&
     (type === 'offer' || type === 'answer' || type === 'candidate' || type === 'ice-candidate') &&
-    robotId && // If we have a robotId, this might be from robot
-    typeof raw.from === 'string' && raw.from.trim() === robotId // Confirm 'from' matches robotId
+    robotId &&
+    typeof raw.from === 'string' &&
+    raw.from.trim() === robotId
   ) {
-    // For robot-to-client messages, 'to' field is the client connection ID
-    // Only use this if 'from' matches the robotId we extracted (confirms message is from robot)
-    clientConnectionId = raw.to.trim();
+    return raw.to.trim();
   }
+
+  return undefined;
+}
+
+/**
+ * Normalizes a raw message into the internal InboundMessage format.
+ * 
+ * This function handles multiple message formats and normalizes them into a consistent
+ * structure. It supports both legacy formats and current formats for backward compatibility.
+ * 
+ * @param raw - The raw message object (can be any shape)
+ * @returns Normalized InboundMessage with type, robotId, target, clientConnectionId, and payload
+ */
+function normalizeMessage(raw: RawMessage): InboundMessage {
+  if (!raw || typeof raw !== 'object') {
+    return {};
+  }
+
+  const type = extractMessageType(raw);
+  const robotId = extractRobotId(raw, type);
+  const payload = extractPayload(raw);
+  const target = extractTarget(raw);
+  const clientConnectionId = extractClientConnectionId(raw, type, robotId);
 
   return {
     type,
@@ -269,6 +421,56 @@ function normalizeMessage(raw: RawMessage): InboundMessage {
     target,
     clientConnectionId,
     payload,
+  };
+}
+
+/**
+ * Creates a standardized error response for API Gateway.
+ * 
+ * All error responses follow a consistent format:
+ * - statusCode: HTTP status code
+ * - body: JSON string with 'error' message and optional details
+ * - headers: Content-Type set to application/json
+ * 
+ * @param statusCode - HTTP status code (e.g., 400, 401, 403, 404, 500)
+ * @param message - Human-readable error message
+ * @param details - Optional additional error details (will be merged into response)
+ * @returns Standardized error response object
+ * 
+ * @example
+ * return errorResponse(400, 'robotId required');
+ * return errorResponse(403, 'Access denied', { robotId: 'robot-123' });
+ */
+function errorResponse(
+  statusCode: number,
+  message: string,
+  details?: Record<string, unknown>
+): APIGatewayProxyResult {
+  return {
+    statusCode,
+    body: JSON.stringify({
+      error: message,
+      ...details,
+    }),
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  };
+}
+
+/**
+ * Creates a standardized success response for API Gateway.
+ * 
+ * @param body - Optional response body (defaults to empty string)
+ * @returns Standardized success response object
+ */
+function successResponse(body: string | object = ''): APIGatewayProxyResult {
+  return {
+    statusCode: 200,
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+    },
   };
 }
 
@@ -371,12 +573,12 @@ async function canAccessRobot(robotId: string, claims: Claims, userEmailOrUserna
 
     try {
         // Find the robot by robotId (string) in the Robot table
-        // Since there's no index on robotId, we need to scan (less efficient but works)
-        // In production, consider adding a GSI on robotId for better performance
-        const scanResult = await db.send(
-            new ScanCommand({
+        // Use GSI (robotIdIndex) for fast, direct lookup instead of scanning entire table
+        const queryResult = await db.send(
+            new QueryCommand({
                 TableName: ROBOT_TABLE_NAME,
-                FilterExpression: 'robotId = :robotId',
+                IndexName: 'robotIdIndex', // Use GSI for efficient lookup
+                KeyConditionExpression: 'robotId = :robotId',
                 ExpressionAttributeValues: {
                     ':robotId': { S: robotId },
                 },
@@ -384,19 +586,36 @@ async function canAccessRobot(robotId: string, claims: Claims, userEmailOrUserna
             })
         );
         
-        const robotItem = scanResult.Items?.[0];
+        const robotItem = queryResult.Items?.[0];
 
         if (!robotItem) {
             // Robot not found in Robot table - might be a legacy robot or not registered
-            // For now, allow access (fail open)
-            console.warn(`Robot ${robotId} not found in Robot table, allowing access`);
+            // For now, allow access (fail open for backward compatibility)
+            console.warn(`[ACL_CHECK] Robot ${robotId} not found in Robot table, allowing access (legacy robot)`);
             return true;
         }
 
-        const allowedUsers = robotItem.allowedUsers?.SS || [];
+        // Check if robot has an ACL field
+        // If allowedUsers field doesn't exist, robot is open access (no ACL configured)
+        if (!robotItem.allowedUsers) {
+            console.log(`[ACL_CHECK] Robot ${robotId} has no ACL field - open access`);
+            return true;
+        }
+
+        // Get the allowedUsers StringSet (SS) from DynamoDB
+        // Handle both SS (StringSet) and other possible formats
+        let allowedUsers: string[] = [];
+        if (robotItem.allowedUsers.SS) {
+            // Standard StringSet format
+            allowedUsers = robotItem.allowedUsers.SS;
+        } else if (Array.isArray(robotItem.allowedUsers)) {
+            // Fallback: if it's already an array
+            allowedUsers = robotItem.allowedUsers;
+        }
         
         // If ACL is empty/null, robot is open access
         if (allowedUsers.length === 0) {
+            console.log(`[ACL_CHECK] Robot ${robotId} has empty ACL - open access`);
             return true;
         }
 
@@ -411,19 +630,38 @@ async function canAccessRobot(robotId: string, claims: Claims, userEmailOrUserna
 
         const normalizedAllowedUsers = allowedUsers.map(u => u.toLowerCase());
         
+        console.log(`[ACL_CHECK] Checking access for robot ${robotId}:`, {
+            userIdentifiers,
+            allowedUsers: normalizedAllowedUsers,
+        });
+        
         for (const identifier of userIdentifiers) {
             if (normalizedAllowedUsers.includes(identifier.toLowerCase())) {
+                console.log(`[ACL_CHECK] User ${identifier} found in ACL for robot ${robotId}`);
                 return true;
             }
         }
 
         // User is not in ACL
-        console.log(`User ${userEmailOrUsername || claims.email || claims.sub} not in ACL for robot ${robotId}`);
+        console.log(`[ACL_CHECK] User ${userEmailOrUsername || claims.email || claims.sub} not in ACL for robot ${robotId}`);
         return false;
     } catch (error) {
-        console.warn('Failed to check robot ACL:', error);
-        // Fail open - if we can't check ACL, allow access (availability over security)
-        return true;
+        // Log detailed error for debugging
+        console.error('[ACL_CHECK_ERROR] Failed to check robot ACL:', {
+            robotId,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+        });
+        
+        // IMPORTANT: If we can't check the ACL due to an error, we need to decide:
+        // - Fail closed (deny) = more secure but blocks legitimate users if there's a bug
+        // - Fail open (allow) = less secure but better UX for legacy robots or temporary issues
+        // 
+        // For now, we'll fail open for robots that might not be in the table yet,
+        // but log the error so we can investigate. This prevents blocking legitimate access
+        // when there are infrastructure issues or robots that haven't been migrated yet.
+        console.warn(`[ACL_CHECK] Error checking ACL for robot ${robotId}, allowing access (fail open for backward compatibility)`);
+        return true; // Fail open to prevent blocking legitimate access
     }
 }
 
@@ -497,6 +735,126 @@ async function checkSessionLock(
 }
 
 /**
+<<<<<<< HEAD
+ * Checks if user has sufficient credits for at least 1 minute of robot usage
+ * Returns { sufficient: boolean, currentCredits: number, requiredCredits: number, error?: string }
+ */
+async function checkUserBalance(
+  userId: string,
+  robotId: string
+): Promise<{ sufficient: boolean; currentCredits: number; requiredCredits: number; error?: string }> {
+  if (!USER_CREDITS_TABLE || !ROBOT_TABLE_NAME) {
+    console.warn('[BALANCE_CHECK] Missing environment variables, skipping balance check');
+    return { sufficient: true, currentCredits: 0, requiredCredits: 0 }; // Allow if tables not configured
+  }
+
+  try {
+    // 1. Get user's current credit balance (using DocumentClient for UserCredits table)
+    let currentCredits = 0;
+    if (USER_CREDITS_TABLE) {
+      const userCreditsResult = await docClient.send(
+        new DocQueryCommand({
+          TableName: USER_CREDITS_TABLE,
+          IndexName: 'userIdIndex',
+          KeyConditionExpression: 'userId = :userId',
+          ExpressionAttributeValues: {
+            ':userId': userId,
+          },
+          Limit: 1,
+        })
+      );
+      currentCredits = userCreditsResult.Items?.[0]?.credits || 0;
+    }
+
+    // 2. Get robot's hourly rate (using low-level API for Robot table)
+    const robotResult = await db.send(new QueryCommand({
+      TableName: ROBOT_TABLE_NAME,
+      IndexName: 'robotIdIndex',
+      KeyConditionExpression: 'robotId = :robotId',
+      ExpressionAttributeValues: {
+        ':robotId': { S: robotId },
+      },
+      Limit: 1,
+    }));
+
+    const robot = robotResult.Items?.[0];
+    if (!robot) {
+      return {
+        sufficient: false,
+        currentCredits,
+        requiredCredits: 0,
+        error: `Robot not found: ${robotId}`,
+      };
+    }
+
+    const hourlyRateCredits = parseFloat(robot.hourlyRateCredits?.N || '100'); // Default 100 credits/hour
+
+    // If robot is free (0 hourly rate), skip credit check
+    if (hourlyRateCredits === 0) {
+      console.log('[BALANCE_CHECK] Robot is free (0 hourly rate), skipping credit check', { robotId });
+      return { sufficient: true, currentCredits, requiredCredits: 0 };
+    }
+
+    // 3. Get platform markup percentage (using DocumentClient for PlatformSettings table)
+    let platformMarkupPercent = DEFAULT_PLATFORM_MARKUP_PERCENT;
+    if (PLATFORM_SETTINGS_TABLE) {
+      try {
+        const settingsResult = await docClient.send(
+          new DocQueryCommand({
+            TableName: PLATFORM_SETTINGS_TABLE,
+            IndexName: 'settingKeyIndex',
+            KeyConditionExpression: 'settingKey = :key',
+            ExpressionAttributeValues: {
+              ':key': 'platformMarkupPercent',
+            },
+            Limit: 1,
+          })
+        );
+        if (settingsResult.Items?.[0]?.settingValue) {
+          platformMarkupPercent = parseFloat(settingsResult.Items[0].settingValue) || DEFAULT_PLATFORM_MARKUP_PERCENT;
+        }
+      } catch (err) {
+        console.warn('[BALANCE_CHECK] Failed to fetch platform markup, using default:', err);
+      }
+    }
+
+    // 4. Calculate cost for 1 minute (minimum session time)
+    const durationMinutes = 1;
+    const durationHours = durationMinutes / 60;
+    const baseCostCredits = hourlyRateCredits * durationHours;
+    const platformFeeCredits = baseCostCredits * (platformMarkupPercent / 100);
+    const requiredCredits = baseCostCredits + platformFeeCredits;
+
+    const sufficient = currentCredits >= requiredCredits;
+
+    console.log('[BALANCE_CHECK]', {
+      userId,
+      robotId,
+      currentCredits,
+      requiredCredits,
+      hourlyRateCredits,
+      platformMarkupPercent,
+      sufficient,
+    });
+
+    return {
+      sufficient,
+      currentCredits,
+      requiredCredits,
+      error: sufficient ? undefined : `Insufficient credits: have ${currentCredits.toFixed(2)}, need ${requiredCredits.toFixed(2)} for 1 minute`,
+    };
+  } catch (err) {
+    console.error('[BALANCE_CHECK_ERROR]', {
+      userId,
+      robotId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    // On error, allow session creation (fail open) but log the error
+    return { sufficient: true, currentCredits: 0, requiredCredits: 0 };
+  }
+}
+
+/**
  * Creates a new session for billing and tracking.
  * Checks for existing active sessions to prevent duplicates (e.g., from React StrictMode).
  * Returns existing session ID if one is already active for this user+robot combination.
@@ -536,6 +894,20 @@ async function createSession(
   } catch (err) {
     console.warn('[SESSION] Failed to check for existing session:', err);
     // Continue with creation attempt
+  }
+
+  // Check user balance before creating session
+  const balanceCheck = await checkUserBalance(userId, robotId);
+  if (!balanceCheck.sufficient) {
+    console.warn('[SESSION_CREATE_BLOCKED]', {
+      userId,
+      robotId,
+      reason: 'insufficient_funds',
+      currentCredits: balanceCheck.currentCredits,
+      requiredCredits: balanceCheck.requiredCredits,
+      error: balanceCheck.error,
+    });
+    return null; // Return null to indicate session creation was blocked
   }
 
   const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -661,9 +1033,12 @@ async function endConnectionSessions(connectionId: string): Promise<void> {
   if (!SESSION_TABLE_NAME) return;
 
   try {
-    const result = await db.send(new ScanCommand({
+    // Use GSI (connectionIdIndex) for fast, direct lookup instead of scanning entire table
+    const result = await db.send(new QueryCommand({
       TableName: SESSION_TABLE_NAME,
-      FilterExpression: 'connectionId = :connId AND #status = :active',
+      IndexName: 'connectionIdIndex', // Use GSI for efficient lookup
+      KeyConditionExpression: 'connectionId = :connId',
+      FilterExpression: '#status = :active', // Filter for active sessions only
       ExpressionAttributeNames: {
         '#status': 'status',
       },
@@ -749,12 +1124,18 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
     // Verify JWT token signature and expiration
     const claims = await verifyCognitoJWT(token);
     if (!claims?.sub) {
+        // Check if token was revoked (for better logging)
+        const tokenRevoked = token ? await isTokenRevoked(token) : false;
+        const reason = tokenRevoked 
+            ? 'Token has been revoked (user signed out)' 
+            : 'Invalid or missing token';
         console.error('[CONNECTION_REJECTED]', {
             connectionId,
-            reason: 'Invalid or missing token',
+            reason,
             hasToken: !!token,
+            tokenRevoked,
         });
-        return {statusCode: 401, body: 'unauthorized'};
+        return errorResponse(401, reason); // Include reason in response for debugging
     }
 
     try {
@@ -830,7 +1211,7 @@ async function handleRegister(
       reason: 'robotId required',
       receivedMessage: msg,
     });
-    return { statusCode: 400, body: 'robotId required' };
+    return errorResponse(400, 'robotId required');
   }
 
   const caller = claims.sub!;
@@ -862,7 +1243,7 @@ async function handleRegister(
   } catch (e: any) {
     const code = e?.name || e?.Code || e?.code;
     if (code === 'ConditionalCheckFailedException' && !admin) {
-      return { statusCode: 409, body: 'Robot is already registered by another owner' };
+      return errorResponse(409, 'Robot is already registered by another owner');
     }
     if (code === 'ConditionalCheckFailedException' && admin) {
       // Admin may force-claim
@@ -886,7 +1267,7 @@ async function handleRegister(
         error: String(e),
         errorCode: e?.name || e?.Code || e?.code,
       });
-      return { statusCode: 500, body: 'DynamoDB error' };
+      return errorResponse(500, 'DynamoDB error');
     }
   }
   
@@ -925,7 +1306,7 @@ async function handleMonitor(
   const connectionId = event.requestContext.connectionId!;
   
   if (!robotId) {
-    return { statusCode: 400, body: 'robotId required for monitoring' };
+    return errorResponse(400, 'robotId required for monitoring');
   }
 
   // Verify user has access to monitor this robot (must be owner, admin, or have ACL access)
@@ -936,7 +1317,21 @@ async function handleMonitor(
       robotId,
       userId: claims.sub,
     });
-    return { statusCode: 403, body: 'Access denied: You are not authorized to monitor this robot' };
+    
+    // Send error message to client through WebSocket (not just HTTP 403)
+    // This ensures the user sees a clear error message
+    try {
+      await postTo(connectionId, {
+        type: 'error',
+        error: 'access_denied',
+        message: 'You are not authorized to monitor this robot. The robot owner may have restricted access to specific users. Please contact the robot owner if you believe this is an error.',
+        robotId: robotId,
+      });
+    } catch (e) {
+      console.warn('Failed to send access denied message to client:', e);
+    }
+    
+    return errorResponse(403, 'Access denied: You are not authorized to monitor this robot');
   }
 
     // Store monitoring subscription in ConnectionsTable
@@ -986,7 +1381,7 @@ async function handleMonitor(
       robotId,
       error: String(e),
     });
-    return { statusCode: 500, body: 'Failed to subscribe to monitoring' };
+    return errorResponse(500, 'Failed to subscribe to monitoring');
   }
 
   return { statusCode: 200, body: '' };
@@ -995,13 +1390,13 @@ async function handleMonitor(
 // Helper function to get all monitoring connections for a robot
 async function getMonitoringConnections(robotId: string): Promise<string[]> {
   try {
-    // Scan ConnectionsTable for connections monitoring this robot
-    // Note: This is a scan operation. For better performance, consider adding a GSI on monitoringRobotId
+    // Use GSI (monitoringRobotIdIndex) for fast, direct lookup instead of scanning entire table
     console.log('[MONITOR_QUERY_START]', { robotId });
     const result = await db.send(
-      new ScanCommand({
+      new QueryCommand({
         TableName: CONN_TABLE,
-        FilterExpression: 'monitoringRobotId = :robotId',
+        IndexName: 'monitoringRobotIdIndex', // Use GSI for efficient lookup
+        KeyConditionExpression: 'monitoringRobotId = :robotId',
         ExpressionAttributeValues: {
           ':robotId': { S: robotId },
         },
@@ -1075,7 +1470,7 @@ async function handleTakeover(
   msg: InboundMessage,
 ): Promise<APIGatewayProxyResult> {
   const robotId = msg.robotId?.trim();
-  if (!robotId) return { statusCode: 400, body: 'robotId required' };
+  if (!robotId) return errorResponse(400, 'robotId required');
 
   // Need owner + connection to notify
   const got = await db.send(new GetItemCommand({
@@ -1088,7 +1483,7 @@ async function handleTakeover(
   const robotConn = got.Item?.connectionId?.S;
 
   if (!owner || !robotConn) {
-    return { statusCode: 404, body: 'robot offline' };
+    return errorResponse(404, 'robot offline');
   }
 
   const caller = claims.sub ?? '';
@@ -1097,7 +1492,7 @@ async function handleTakeover(
   // Check if caller is owner, admin, or delegated operator
   const isAuthorized = await isOwnerOrAdmin(robotId, claims);
   if (!isAuthorized) {
-    return { statusCode: 403, body: 'forbidden' };
+    return errorResponse(403, 'forbidden');
   }
 
   await mgmt.send(new PostToConnectionCommand({
@@ -1142,7 +1537,7 @@ async function handleSignal(
       type,
       message: JSON.stringify(msg),
     });
-    return { statusCode: 400, body: 'Invalid Signal' };
+    return errorResponse(400, 'Invalid Signal');
   }
 
   // Get source connection ID (needed for logging and ACL checks)
@@ -1204,7 +1599,7 @@ async function handleSignal(
   }
   
   if (target !== 'robot' && target !== 'client') {
-    return { statusCode: 400, body: 'invalid target' };
+    return errorResponse(400, 'invalid target');
   }
 
   // If target is robot, check ACL before allowing access
@@ -1228,7 +1623,21 @@ async function handleSignal(
     if (!hasAccess) {
       const userIdentifier = userEmailOrUsername || (claims as Claims).email || claims.sub || 'unknown';
       console.log(`Access denied: User ${userIdentifier} attempted to access robot ${robotId}`);
-      return { statusCode: 403, body: 'Access denied: You are not authorized to access this robot' };
+      
+      // Send error message to client through WebSocket (not just HTTP 403)
+      // This ensures the user sees a clear error message
+      try {
+        await postTo(sourceConnId, {
+          type: 'error',
+          error: 'access_denied',
+          message: 'You are not authorized to access this robot. The robot owner may have restricted access to specific users. Please contact the robot owner if you believe this is an error.',
+          robotId: robotId,
+        });
+      } catch (e) {
+        console.warn('Failed to send access denied message to client:', e);
+      }
+      
+      return errorResponse(403, 'Access denied: You are not authorized to access this robot');
     }
 
     // Server-side session lock enforcement
@@ -1257,13 +1666,9 @@ async function handleSignal(
           console.warn('[SESSION_LOCK_NOTIFY_ERROR]', e);
         }
         
-        return { 
-          statusCode: 423,
-          body: JSON.stringify({
-            error: 'Robot is currently controlled by another user',
-            lockedBy: sessionLock.userEmail || sessionLock.userId,
-          })
-        };
+        return errorResponse(423, 'Robot is currently controlled by another user', {
+          lockedBy: sessionLock.userEmail || sessionLock.userId,
+        });
       }
     }
   }
@@ -1310,7 +1715,7 @@ async function handleSignal(
     }));
     const robotConn = robotItem.Item?.connectionId?.S;
     if (!robotConn) {
-      return { statusCode: 404, body: 'target offline' };
+      return errorResponse(404, 'target offline');
     }
     targetConn = robotConn;
   }
@@ -1431,7 +1836,32 @@ async function handleSignal(
         const sessionUserId = username || claims.sub;
         const sessionId = await createSession(sourceConnId, sessionUserId, userEmail, robotId);
         
-        if (sessionId) {
+        // If session creation was blocked due to insufficient funds, send error to client
+        if (!sessionId) {
+          const balanceCheck = await checkUserBalance(sessionUserId, robotId);
+          if (!balanceCheck.sufficient) {
+            try {
+              await postTo(sourceConnId, {
+                type: 'error',
+                error: 'insufficient_funds',
+                message: balanceCheck.error || 'Insufficient credits to start session',
+                currentCredits: balanceCheck.currentCredits,
+                requiredCredits: balanceCheck.requiredCredits,
+              });
+              console.log('[INSUFFICIENT_FUNDS_NOTIFICATION_SENT]', {
+                connectionId: sourceConnId,
+                userId: sessionUserId,
+                robotId,
+              });
+            } catch (err) {
+              console.error('[FAILED_TO_SEND_INSUFFICIENT_FUNDS_ERROR]', {
+                connectionId: sourceConnId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
+        } else {
+          // Send session ID to client when session is created
           try {
             await mgmt.send(new PostToConnectionCommand({
               ConnectionId: sourceConnId,
@@ -1573,7 +2003,7 @@ export async function handler(
           hasToken: !!token,
           reason: 'No claims from connection table and token verification failed',
         });
-        return { statusCode: 401, body: 'Unauthorized' };
+        return errorResponse(401, 'Unauthorized');
       }
     }
   }
@@ -1583,7 +2013,7 @@ export async function handler(
   try {
     raw = JSON.parse(event.body ?? '{}');
   } catch {
-    return { statusCode: 400, body: 'Invalid JSON' };
+    return errorResponse(400, 'Invalid JSON');
   }
 
   // Normalize to our canonical shape
@@ -1611,7 +2041,7 @@ export async function handler(
       return { statusCode: 200, body: 'ok' };
     } catch (e) {
       console.error('Failed to send welcome:', e);
-      return { statusCode: 500, body: 'failed to send welcome' };
+      return errorResponse(500, 'failed to send welcome');
     }
   }
 
@@ -1648,6 +2078,44 @@ export async function handler(
     return handleSignal(claims, event, msg);
   }
 
+  // Handle pong responses to keepalive pings
+  if (type === 'pong') {
+    // Access timestamp from raw message body if present
+    const rawBody = event.body ? JSON.parse(event.body) : {};
+    console.log('[PONG_RECEIVED]', {
+      connectionId: event.requestContext.connectionId,
+      robotId: msg.robotId,
+      userId: claims?.sub,
+      timestamp: rawBody.timestamp || 'not provided',
+    });
+    // Pong messages don't need special handling - just acknowledge receipt
+    // The connection stays alive from receiving/sending the message
+    return successResponse({ type: 'pong-acknowledged' });
+  }
+
+  // Handle ping messages (though these are typically sent via Management API, not through signaling)
+  if (type === 'ping') {
+    console.log('[PING_RECEIVED]', {
+      connectionId: event.requestContext.connectionId,
+      robotId: msg.robotId,
+      userId: claims?.sub,
+    });
+    // If a client/robot sends a ping, respond with pong
+    try {
+      await postTo(connectionId, {
+        type: 'pong',
+        timestamp: Date.now(),
+        keepalive: true,
+      });
+    } catch (err) {
+      console.warn('[PING_RESPONSE_ERROR]', {
+        connectionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return successResponse({ type: 'ping-acknowledged' });
+  }
+
   // Log unknown message types for debugging
   console.warn('[UNKNOWN_MESSAGE_TYPE]', {
     type,
@@ -1656,5 +2124,5 @@ export async function handler(
     rawBody: event.body,
   });
 
-  return { statusCode: 400, body: 'Unknown message type' };
+  return errorResponse(400, 'Unknown message type');
 }
