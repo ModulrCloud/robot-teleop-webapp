@@ -4,6 +4,28 @@
   padding: 2rem;
 }
 
+.listing-topbar {
+  margin-bottom: 1.5rem;
+}
+
+.listing-back-button {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.listing-back-button:hover {
+  border-color: rgba(255, 193, 7, 0.6);
+  color: #ffc107;
+}
+
 .listing-header {
   display: flex;
   align-items: center;
@@ -17,11 +39,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 193, 7, 0.2),
-    rgba(255, 152, 0, 0.15)
-  );
+  background: linear-gradient(135deg,
+      rgba(255, 193, 7, 0.2),
+      rgba(255, 152, 0, 0.15));
   border: 2px solid rgba(255, 193, 7, 0.3);
   border-radius: 16px;
   font-size: 2rem;
@@ -89,11 +109,11 @@
   gap: 0.5rem;
 }
 
-.form-group + .form-group {
+.form-group+.form-group {
   margin-top: 1.5rem;
 }
 
-.form-row .form-group + .form-group {
+.form-row .form-group+.form-group {
   margin-top: 1rem;
 }
 
@@ -331,7 +351,7 @@
   color: #ffc107;
 }
 
-.robot-type-option input:disabled ~ .robot-type-card {
+.robot-type-option input:disabled~.robot-type-card {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -400,7 +420,7 @@
   color: #fff;
 }
 
-.model-option input:disabled ~ .model-card {
+.model-option input:disabled~.model-card {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -470,6 +490,7 @@
     opacity: 0;
     transform: translateY(-10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -761,4 +782,41 @@
     flex: none;
     font-size: 0.8rem;
   }
+}
+
+/* Coming Soon Section */
+.coming-soon-section {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+}
+
+.coming-soon-section h3 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+}
+
+.coming-soon-section p {
+  margin: 0 0 1rem 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.4);
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.coming-soon-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #d4a017 0%, #b8860b 100%);
+  color: #000;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }

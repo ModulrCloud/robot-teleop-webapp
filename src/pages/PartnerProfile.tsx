@@ -20,7 +20,7 @@ import {
   faCode,
   faBook
 } from '@fortawesome/free-solid-svg-icons';
-import { faXTwitter, faTelegram, faGithub } from '@fortawesome/free-brands-svg-icons';
+import { faXTwitter, faTelegram, faGithub, faDiscord } from '@fortawesome/free-brands-svg-icons';
 import { getSafeHttpHref, getSafeMailtoHref } from '../utils/safeHref';
 import './PartnerProfile.css';
 
@@ -41,6 +41,7 @@ interface Partner {
   twitterUrl?: string;
   telegramUrl?: string;
   githubUrl?: string;
+  discordUrl?: string;
 }
 
 interface RobotItem {
@@ -93,6 +94,7 @@ export default function PartnerProfile() {
           twitterUrl: data.twitterUrl || undefined,
           telegramUrl: data.telegramUrl || undefined,
           githubUrl: data.githubUrl || undefined,
+          discordUrl: data.discordUrl || undefined,
         });
 
         if (data.logoUrl && !data.logoUrl.startsWith('http')) {
@@ -157,6 +159,7 @@ export default function PartnerProfile() {
   const twitterHref = getSafeHttpHref(partner.twitterUrl);
   const telegramHref = getSafeHttpHref(partner.telegramUrl);
   const githubHref = getSafeHttpHref(partner.githubUrl);
+  const discordHref = getSafeHttpHref(partner.discordUrl);
   const integrationDocsHref = getSafeHttpHref(partner.integrationDocsUrl);
 
   return (
@@ -213,7 +216,7 @@ export default function PartnerProfile() {
               </a>
             )}
           </div>
-          {(twitterHref || telegramHref || githubHref) && (
+          {(twitterHref || telegramHref || githubHref || discordHref) && (
             <div className="hero-socials">
               {twitterHref && (
                 <a href={twitterHref} target="_blank" rel="noopener noreferrer" className="social-link">
@@ -228,6 +231,11 @@ export default function PartnerProfile() {
               {githubHref && (
                 <a href={githubHref} target="_blank" rel="noopener noreferrer" className="social-link">
                   <FontAwesomeIcon icon={faGithub} />
+                </a>
+              )}
+              {discordHref && (
+                <a href={discordHref} target="_blank" rel="noopener noreferrer" className="social-link">
+                  <FontAwesomeIcon icon={faDiscord} />
                 </a>
               )}
             </div>

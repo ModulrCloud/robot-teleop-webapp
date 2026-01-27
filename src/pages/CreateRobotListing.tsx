@@ -9,12 +9,13 @@ import { useAuthStatus } from "../hooks/useAuthStatus";
 import { getCurrencyInfo, creditsToCurrencySync, currencyToCreditsSync, fetchExchangeRates, type CurrencyCode } from '../utils/credits';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
-import { 
-  faRobot, 
-  faCheckCircle, 
+import {
+  faRobot,
+  faCheckCircle,
   faExclamationCircle,
   faInfoCircle,
-  faCalendarAlt
+  faCalendarAlt,
+  faArrowLeft
 } from '@fortawesome/free-solid-svg-icons';
 
 // Robot types with their default images
@@ -63,7 +64,7 @@ export const CreateRobotListing = () => {
     latitude: "",
     longitude: "",
   });
-  
+
   // Raw input value as string to allow free typing
   const [hourlyRateInput, setHourlyRateInput] = useState<string>('1.00');
   const { user } = useAuthStatus();
@@ -100,7 +101,7 @@ export const CreateRobotListing = () => {
         });
 
         let preferredCurrency: CurrencyCode = 'USD';
-        
+
         if (partners && partners.length > 0) {
           // User is a partner - use Partner record's currency preference
           preferredCurrency = (partners[0]?.preferredCurrency || "USD").toUpperCase() as CurrencyCode;
@@ -112,13 +113,13 @@ export const CreateRobotListing = () => {
           const clientRecord = clients?.[0];
           preferredCurrency = (clientRecord?.preferredCurrency || "USD").toUpperCase() as CurrencyCode;
         }
-        
+
         setCurrencyCode(preferredCurrency);
-        
+
         const currencyInfo = getCurrencyInfo(preferredCurrency);
         // Show currency code (USD, EUR, etc.) or "?" if currency info is invalid
         setCurrencyDisplay(currencyInfo.symbol === '?' ? '?' : preferredCurrency);
-        
+
         // Convert current credits value to new currency for display
         const currencyValue = creditsToCurrencySync(robotListing.hourlyRateCredits, preferredCurrency, exchangeRates);
         setHourlyRateInput(currencyValue.toFixed(2));
@@ -141,7 +142,7 @@ export const CreateRobotListing = () => {
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = event.target;
     const checked = (event.target as HTMLInputElement).checked;
-    
+
     // Handle hourly rate input - just let user type freely, no validation while typing
     if (type === 'number' && name === 'hourlyRateCredits') {
       // Clear any previous error
@@ -180,9 +181,9 @@ export const CreateRobotListing = () => {
 
     const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
       ? robotListing.allowedUserEmails
-          .split(/[,\n]/)
-          .map(email => email.trim())
-          .filter(email => email.length > 0 && email.includes('@'))
+        .split(/[,\n]/)
+        .map(email => email.trim())
+        .filter(email => email.length > 0 && email.includes('@'))
       : [];
 
     const robotData = {
@@ -246,6 +247,16 @@ export const CreateRobotListing = () => {
 
   return (
     <div className="create-listing-page">
+      <div className="listing-topbar">
+        <button
+          type="button"
+          className="listing-back-button"
+          onClick={() => navigate('/robots')}
+        >
+          <FontAwesomeIcon icon={faArrowLeft} />
+          Back to Robots
+        </button>
+      </div>
       <div className="listing-header">
         <div className="header-icon">
           <FontAwesomeIcon icon={faRobot} />
@@ -265,14 +276,14 @@ export const CreateRobotListing = () => {
         <form className="listing-form" onSubmit={onConfirmCreate}>
           <div className="form-section">
             <h3>Robot Details</h3>
-            
+
             <div className="form-group">
               <label htmlFor="robot-name">
                 Robot Name <span className="required">*</span>
               </label>
-              <input 
-                id="robot-name" 
-                type="text" 
+              <input
+                id="robot-name"
+                type="text"
                 name="robotName"
                 value={robotListing.robotName}
                 onChange={handleInputChange}
@@ -288,7 +299,7 @@ export const CreateRobotListing = () => {
               </label>
               <div className="robot-type-selector">
                 {ROBOT_TYPES.map(type => (
-                  <label 
+                  <label
                     key={type.value}
                     className={`robot-type-option ${robotListing.robotType === type.value ? 'selected' : ''}`}
                   >
@@ -318,7 +329,7 @@ export const CreateRobotListing = () => {
               <label htmlFor="robot-description">
                 Description <span className="optional">(optional)</span>
               </label>
-              <textarea 
+              <textarea
                 id="robot-description"
                 name="description"
                 value={robotListing.description}
@@ -337,9 +348,9 @@ export const CreateRobotListing = () => {
               <label htmlFor="hourly-rate">
                 Hourly Rate ({currencyDisplay}) <span className="required">*</span>
               </label>
-              <input 
-                id="hourly-rate" 
-                type="number" 
+              <input
+                id="hourly-rate"
+                type="number"
                 name="hourlyRateCredits"
                 value={hourlyRateInput}
                 onChange={handleInputChange}
@@ -356,7 +367,7 @@ export const CreateRobotListing = () => {
                 </div>
               )}
               <small className="form-help-text">
-                Set the hourly rate in your preferred currency that clients will pay to use this robot. 
+                Set the hourly rate in your preferred currency that clients will pay to use this robot.
                 The platform will add a markup on top of this rate.
               </small>
             </div>
@@ -365,7 +376,7 @@ export const CreateRobotListing = () => {
 
           <div className="form-section">
             <h3>Access Control</h3>
-            
+
             <div className="form-group">
               <label className="checkbox-label">
                 <input
@@ -378,7 +389,7 @@ export const CreateRobotListing = () => {
                 <span>Restrict access to specific users</span>
               </label>
               <p className="form-help-text">
-                {robotListing.enableAccessControl 
+                {robotListing.enableAccessControl
                   ? "Access will be restricted to you, chris@modulr.cloud, mike@modulr.cloud, and any users you add below. You can manage the access list after creating the robot."
                   : "Robot will be accessible to all authenticated users. You can enable access control later if needed."}
               </p>
@@ -389,7 +400,7 @@ export const CreateRobotListing = () => {
                 <label htmlFor="allowed-user-emails">
                   Additional Allowed Users <span className="optional">(optional)</span>
                 </label>
-                <textarea 
+                <textarea
                   id="allowed-user-emails"
                   name="allowedUserEmails"
                   value={robotListing.allowedUserEmails}
@@ -399,7 +410,7 @@ export const CreateRobotListing = () => {
                   disabled={isLoading}
                 />
                 <p className="form-help-text">
-                  Enter email addresses of users who should have access to this robot. 
+                  Enter email addresses of users who should have access to this robot.
                   You (the owner), chris@modulr.cloud, and mike@modulr.cloud are automatically included.
                 </p>
               </div>
@@ -411,12 +422,12 @@ export const CreateRobotListing = () => {
             <p className="form-help-text">
               Location information helps clients find robots in their area. All fields are optional.
             </p>
-            
+
             <div className="form-group">
               <label htmlFor="robot-city">City</label>
-              <input 
-                id="robot-city" 
-                type="text" 
+              <input
+                id="robot-city"
+                type="text"
                 name="city"
                 value={robotListing.city}
                 onChange={handleInputChange}
@@ -427,9 +438,9 @@ export const CreateRobotListing = () => {
 
             <div className="form-group">
               <label htmlFor="robot-state">State / Province</label>
-              <input 
-                id="robot-state" 
-                type="text" 
+              <input
+                id="robot-state"
+                type="text"
                 name="state"
                 value={robotListing.state}
                 onChange={handleInputChange}
@@ -440,9 +451,9 @@ export const CreateRobotListing = () => {
 
             <div className="form-group">
               <label htmlFor="robot-country">Country</label>
-              <input 
-                id="robot-country" 
-                type="text" 
+              <input
+                id="robot-country"
+                type="text"
                 name="country"
                 value={robotListing.country}
                 onChange={handleInputChange}
@@ -454,9 +465,9 @@ export const CreateRobotListing = () => {
             <div className="form-row">
               <div className="form-group">
                 <label htmlFor="robot-latitude">Latitude</label>
-                <input 
-                  id="robot-latitude" 
-                  type="text" 
+                <input
+                  id="robot-latitude"
+                  type="text"
                   name="latitude"
                   value={robotListing.latitude}
                   onChange={handleInputChange}
@@ -467,9 +478,9 @@ export const CreateRobotListing = () => {
 
               <div className="form-group">
                 <label htmlFor="robot-longitude">Longitude</label>
-                <input 
-                  id="robot-longitude" 
-                  type="text" 
+                <input
+                  id="robot-longitude"
+                  type="text"
                   name="longitude"
                   value={robotListing.longitude}
                   onChange={handleInputChange}
@@ -479,7 +490,7 @@ export const CreateRobotListing = () => {
               </div>
             </div>
             <p className="form-help-text">
-              Latitude and longitude are optional but useful for distance-based searches. 
+              Latitude and longitude are optional but useful for distance-based searches.
               You can find coordinates using <a href="https://www.google.com/maps" target="_blank" rel="noopener noreferrer">Google Maps</a>.
             </p>
           </div>
@@ -489,15 +500,15 @@ export const CreateRobotListing = () => {
               <FontAwesomeIcon icon={faCalendarAlt} style={{ marginRight: '0.5rem' }} />
               Robot Availability
             </h3>
-            <div style={{ 
-              background: 'rgba(255, 183, 0, 0.1)', 
-              border: '1px solid rgba(255, 183, 0, 0.3)', 
-              borderRadius: '8px', 
+            <div style={{
+              background: 'rgba(255, 183, 0, 0.1)',
+              border: '1px solid rgba(255, 183, 0, 0.3)',
+              borderRadius: '8px',
               padding: '1.5rem',
               marginTop: '1rem'
             }}>
-              <p style={{ 
-                color: 'rgba(255, 255, 255, 0.9)', 
+              <p style={{
+                color: 'rgba(255, 255, 255, 0.9)',
                 margin: 0,
                 display: 'flex',
                 alignItems: 'flex-start',
@@ -505,7 +516,7 @@ export const CreateRobotListing = () => {
               }}>
                 <FontAwesomeIcon icon={faInfoCircle} style={{ color: '#17a2b8', marginTop: '0.25rem', flexShrink: 0 }} />
                 <span>
-                  You can manage robot availability (block dates/times when your robot is unavailable) after creating the robot. 
+                  You can manage robot availability (block dates/times when your robot is unavailable) after creating the robot.
                   Once your robot is created, you'll be able to set availability blocks from the Edit Robot page.
                 </span>
               </p>
@@ -513,8 +524,8 @@ export const CreateRobotListing = () => {
           </div>
 
           <div className="form-actions">
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               className="submit-btn"
               disabled={isLoading || !robotListing.robotName.trim()}
             >

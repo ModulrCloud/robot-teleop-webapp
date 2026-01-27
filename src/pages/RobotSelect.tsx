@@ -8,7 +8,7 @@ import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from "../components/LoadingWheel";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch, faFilter } from '@fortawesome/free-solid-svg-icons';
+import { faSearch, faFilter, faList, faPlus } from '@fortawesome/free-solid-svg-icons';
 import "./RobotSelect.css";
 import { getUrl } from 'aws-amplify/storage';
 import { logger } from '../utils/logger';
@@ -20,7 +20,7 @@ const getRobotImage = (robotType: string, imageUrl?: string): string => {
   if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('/'))) {
     return imageUrl;
   }
-  
+
   const typeImages: Record<string, string> = {
     'rover': '/default/rover.png',
     'humanoid': '/default/robot.png',
@@ -29,7 +29,7 @@ const getRobotImage = (robotType: string, imageUrl?: string): string => {
     'robodog': '/default/robodog.png',
     'robot': '/default/humanoid.png',
   };
-  
+
   return typeImages[robotType?.toLowerCase() || ''] || '/default/humanoid.png';
 };
 
@@ -47,7 +47,6 @@ export default function RobotSelect() {
   const [robots, setRobots] = useState<RobotData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [deletingRobotId, setDeletingRobotId] = useState<string | null>(null);
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [platformMarkup, setPlatformMarkup] = useState<number>(30); // Default 30%
@@ -57,9 +56,8 @@ export default function RobotSelect() {
   const [page, setPage] = useState(1);
   const pageSize = 9;
   const navigate = useNavigate();
-  
-  // Check if user can edit robots (Partners or Admins)
-  const canEditRobots = user?.group === 'PARTNERS' || user?.group === 'ADMINS';
+
+  const isPartner = user?.group === 'PARTNERS';
 
   // Load platform markup and user currency preference
   useEffect(() => {
@@ -108,7 +106,7 @@ export default function RobotSelect() {
       try {
         setIsLoading(true);
         setError(null);
-        
+
         // Check if the new ACL-filtered query is available (schema needs to be regenerated)
         let response: any;
         if (client.queries.listAccessibleRobotsLambda) {
@@ -118,7 +116,7 @@ export default function RobotSelect() {
             const queryResponse = await client.queries.listAccessibleRobotsLambda({
               limit: 50, // Load 50 robots per page
             });
-            
+
             logger.log('📥 Raw Lambda response:', {
               hasData: !!queryResponse.data,
               dataType: typeof queryResponse.data,
@@ -126,7 +124,7 @@ export default function RobotSelect() {
               hasErrors: !!queryResponse.errors,
               errors: queryResponse.errors,
             });
-            
+
             // The response.data is a JSON string that needs to be parsed
             let responseData: any = { robots: [], nextToken: '' };
             try {
@@ -159,22 +157,22 @@ export default function RobotSelect() {
                   if (match) {
                     logger.warn('⚠️ Found robots in string but parse failed, trying manual extraction');
                   }
-                } catch {}
+                } catch { }
               }
             }
-            
+
             logger.log('📦 Final responseData before setting response:', {
               hasRobots: !!responseData.robots,
               robotsType: typeof responseData.robots,
               robotsIsArray: Array.isArray(responseData.robots),
               robotsCount: responseData.robots?.length || 0,
             });
-            
+
             response = {
               data: responseData,
               errors: queryResponse.errors,
             };
-            
+
             logger.log('📦 Final response object:', {
               hasData: !!response.data,
               hasRobots: !!response.data?.robots,
@@ -208,7 +206,7 @@ export default function RobotSelect() {
             errors: oldResponse.errors,
           };
         }
-        
+
         // Log the raw response to see what's in the database
         logger.log('📊 ACL-filtered robots response:', {
           hasData: !!response.data,
@@ -223,7 +221,7 @@ export default function RobotSelect() {
           // If data is still a string, try to parse it here
           dataStringPreview: typeof response.data === 'string' ? response.data.substring(0, 200) : 'N/A',
         });
-        
+
         // If response.data is still a string, parse it now
         if (typeof response.data === 'string') {
           logger.warn('⚠️ response.data is still a string! Parsing now...');
@@ -238,7 +236,7 @@ export default function RobotSelect() {
             logger.error('❌ Failed to re-parse response.data:', e);
           }
         }
-        
+
         // Log each robot's actual fields
         if (response.data?.robots && response.data.robots.length > 0) {
           logger.log(`🤖 Found ${response.data.robots.length} accessible robot(s):`);
@@ -253,15 +251,15 @@ export default function RobotSelect() {
               name: robot.name || '❌ MISSING',
               description: robot.description || '❌ MISSING',
               model: robot.model || '❌ MISSING',
-              location: robot.city || robot.state || robot.country ? 
+              location: robot.city || robot.state || robot.country ?
                 [robot.city, robot.state, robot.country].filter(Boolean).join(', ') : 'Not specified',
               allowedUsers: robot.allowedUsers || [],
             });
           });
         }
-        
+
         let robotItems: CardGridItemProps[] = [];
-        
+
         // Log errors but don't block - we'll still try to use valid robots from response.data
         if (response.errors && response.errors.length > 0) {
           logger.warn('⚠️ Some robots have errors (will be filtered out):', response.errors.length);
@@ -279,7 +277,7 @@ export default function RobotSelect() {
         // Transform robots from database to RobotData (includes UUID for deletion)
         // Filter out null robots (GraphQL returns null for items with errors)
         // This allows us to show valid robots even if some have errors
-        
+
         // Handle case where response.data might still be a string (double-wrapped JSON)
         let robotsData = response.data;
         if (typeof robotsData === 'string') {
@@ -295,23 +293,23 @@ export default function RobotSelect() {
             robotsData = { robots: [], nextToken: '' };
           }
         }
-        
+
         const robotsArray = robotsData?.robots && Array.isArray(robotsData.robots) ? robotsData.robots : [];
-        
+
         logger.log('🔍 Processing robots array:', {
           robotsArrayLength: robotsArray.length,
           responseDataRobots: robotsData?.robots,
           isArray: Array.isArray(robotsData?.robots),
           robotsDataType: typeof robotsData,
         });
-        
+
         if (robotsArray.length > 0) {
           // Get user info for ACL checking
           // If user object is missing, try to get it from auth session directly
           let userEmail = user?.email?.toLowerCase().trim();
           let userUsername = user?.username?.toLowerCase().trim();
           const isAdmin = user?.group === 'ADMINS';
-          
+
           // If user object is empty, try to fetch from auth session
           if (!userEmail && !userUsername) {
             logger.warn('⚠️ User object is empty, trying to fetch from auth session...');
@@ -320,10 +318,10 @@ export default function RobotSelect() {
               const currentUser = await getCurrentUser();
               const attrs = await fetchUserAttributes();
               const session = await fetchAuthSession();
-              
+
               userEmail = attrs.email?.toLowerCase().trim();
               userUsername = currentUser.username?.toLowerCase().trim();
-              
+
               logger.log('📥 Fetched user info from auth:', {
                 email: userEmail,
                 username: userUsername,
@@ -334,7 +332,7 @@ export default function RobotSelect() {
               logger.error('❌ Failed to fetch user from auth:', e);
             }
           }
-          
+
           logger.log('👤 User identifiers for ACL matching:', {
             email: userEmail || '❌ MISSING',
             username: userUsername || '❌ MISSING',
@@ -343,9 +341,9 @@ export default function RobotSelect() {
             isAdmin,
             fullUserObject: user,
           });
-          
+
           logger.log(`✅ Found ${robotsArray.length} robots to process`);
-          
+
           robotItems = robotsArray
             .filter((robot: any) => robot !== null && robot !== undefined) // Filter out null robots
             .filter((robot: any) => robot.robotId != null || robot.id != null) // Ensure we have a valid ID
@@ -353,16 +351,16 @@ export default function RobotSelect() {
               // Build location string
               const locationParts = [robot.city, robot.state, robot.country].filter(Boolean);
               const location = locationParts.length > 0 ? locationParts.join(', ') : undefined;
-              
+
               // Build description - keep location separate for display on new line
               const description = robot.description || '';
-              
+
               // Check if user can access this robot (for graying out)
               const allowedUsers = robot.allowedUsers || [];
               const hasACL = allowedUsers.length > 0;
               let canAccess = false;
               let accessReason = '';
-              
+
               if (!hasACL) {
                 // No ACL = open access
                 canAccess = true;
@@ -376,15 +374,15 @@ export default function RobotSelect() {
                 const normalizedAllowedUsers = allowedUsers.map((email: string) => email.toLowerCase().trim());
                 const emailMatch = userEmail && normalizedAllowedUsers.includes(userEmail);
                 const usernameMatch = userUsername && normalizedAllowedUsers.includes(userUsername);
-                
+
                 canAccess = emailMatch || usernameMatch;
-                
+
                 if (canAccess) {
                   accessReason = emailMatch ? `Email match: ${userEmail}` : `Username match: ${userUsername}`;
                 } else {
                   accessReason = `Not in ACL. User identifiers: email=${userEmail || 'none'}, username=${userUsername || 'none'}. ACL: ${normalizedAllowedUsers.join(', ')}`;
                 }
-                
+
                 // Log ACL check details for debugging
                 if (robot.name === 'Tugga' || robot.name === 'ACL test') {
                   logger.log(`🔍 ACL check for robot "${robot.name}":`, {
@@ -399,29 +397,29 @@ export default function RobotSelect() {
                     accessReason,
                   });
                 }
-                
+
                 // TODO: Also check if user is the owner (would need partnerId lookup)
                 // For now, we'll rely on the ACL check
               }
-              
+
               // Calculate hourly rate (partner rate + platform fee)
               let hourlyRateDisplay: string | undefined = undefined;
-              
+
               if (robot.hourlyRateCredits !== null && robot.hourlyRateCredits !== undefined && robot.hourlyRateCredits > 0) {
                 // Partner's base rate in credits
                 const baseRateCredits = robot.hourlyRateCredits;
-                
+
                 // Calculate total rate with platform markup
                 // Formula: totalRate = baseRate * (1 + markupPercent / 100)
                 const totalRateCredits = baseRateCredits * (1 + platformMarkup / 100);
-                
+
                 // Convert to user's currency for display
                 const formattedRate = formatCreditsAsCurrencySync(
                   totalRateCredits,
                   userCurrency as any,
                   exchangeRates || undefined
                 );
-                
+
                 hourlyRateDisplay = `${formattedRate}/hour`;
               } else if (robot.hourlyRateCredits === 0) {
                 hourlyRateDisplay = "Free";
@@ -439,10 +437,10 @@ export default function RobotSelect() {
                 hourlyRate: hourlyRateDisplay,
               };
             });
-          
+
           logger.log(`✅ Successfully loaded ${robotItems.length} valid robot(s) from database`);
           logger.log('📋 Robot items details:', robotItems.map(r => ({ id: r.id, title: r.title, disabled: r.disabled })));
-          
+
           // Update pagination state (nextToken is empty string when no more pages)
           const token = response.data.nextToken || '';
           setNextToken(token || null);
@@ -539,97 +537,26 @@ export default function RobotSelect() {
   }, [rawRobotData]);
 
   const handleRobotClick = (robot: CardGridItemProps) => {
-    // Navigate to robot detail page
     navigate(`/robot/${robot.id}`);
-  };
-
-  const handleEditRobot = (robot: RobotData, event: React.MouseEvent) => {
-    event.stopPropagation(); // Prevent card selection when clicking edit
-    
-    if (!robot.uuid) {
-      logger.error('Cannot edit robot: missing UUID');
-      return;
-    }
-    
-    navigate(`/edit-robot?robotId=${robot.uuid}`);
-  };
-
-  const handleDeleteRobot = async (robot: RobotData, event: React.MouseEvent) => {
-    event.stopPropagation(); // Prevent card selection when clicking delete
-    
-    if (!robot.uuid) {
-      logger.error('Cannot delete robot: missing UUID');
-      return;
-    }
-
-    const robotName = robot.title || 'Unknown Robot';
-    const confirmMessage = `Are you sure you want to delete "${robotName}"? This action cannot be undone.`;
-    if (!confirm(confirmMessage)) {
-      return;
-    }
-
-    try {
-      setDeletingRobotId(robot.uuid);
-      logger.log(`🗑️ Attempting to delete robot: ${robotName} (${robot.uuid})`);
-      
-      const result = await client.mutations.deleteRobotLambda({ robotId: robot.uuid });
-      
-      logger.log('📊 Delete robot response:', {
-        hasData: !!result.data,
-        hasErrors: !!result.errors,
-        data: result.data,
-        errors: result.errors,
-      });
-      
-      let resultData: { success?: boolean; error?: string; message?: string } | null = null;
-      if (typeof result.data === 'string') {
-        try {
-          const firstParse = JSON.parse(result.data);
-          resultData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
-        } catch (e) {
-          resultData = { success: false };
-        }
-      } else {
-        resultData = result.data as typeof resultData;
-      }
-
-      if (resultData?.success) {
-        logger.log('✅ Robot deleted successfully');
-        // Remove robot from local state
-        setRobots(prev => prev.filter(r => r.uuid !== robot.uuid));
-        // Show success message
-        alert(`Robot "${robotName}" has been deleted successfully.`);
-      } else {
-        const errorMessage = resultData?.error || resultData?.message || 'Failed to delete robot';
-        logger.error('❌ Failed to delete robot:', errorMessage);
-        alert(errorMessage || 'Failed to delete robot. Please check the console for details.');
-      }
-    } catch (err) {
-      logger.error('❌ Exception deleting robot:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to delete robot';
-      alert(errorMessage);
-    } finally {
-      setDeletingRobotId(null);
-    }
   };
 
   const loadMoreRobots = async () => {
     if (!nextToken || isLoading) return false;
-    
+
     try {
       setIsLoading(true);
-      
+
       if (!client.queries.listAccessibleRobotsLambda) {
         logger.warn('⚠️ listAccessibleRobotsLambda not available. Cannot load more robots.');
         setHasMore(false);
         return false;
       }
-      
+
       const queryResponse = await client.queries.listAccessibleRobotsLambda({
         limit: 50,
         nextToken: nextToken,
       });
-      
+
       // The response.data is a JSON string that needs to be parsed
       let responseData = { robots: [], nextToken: '' };
       try {
@@ -653,7 +580,7 @@ export default function RobotSelect() {
             if (location) {
               description = description ? `${description} • ${location}` : location;
             }
-            
+
             return {
               id: (robot.robotId || robot.id) as string,
               uuid: robot.id || undefined,
@@ -663,7 +590,7 @@ export default function RobotSelect() {
               robotType: robot.robotType || robot.model,
             };
           });
-        
+
         setRobots(prev => [...prev, ...newRobotItems]);
         const token = responseData.nextToken || '';
         setNextToken(token || null);
@@ -760,8 +687,32 @@ export default function RobotSelect() {
   return (
     <div className="robot-select-container">
       <div className="robot-directory-header">
-        <h1>Select Robot</h1>
-        <p>Choose a robot to start a teleop session.</p>
+        <div className="robot-directory-header-row">
+          <div>
+            <h1>Select Robot</h1>
+            <p>Choose a robot to start a teleop session.</p>
+          </div>
+          {isPartner && (
+            <div className="robot-directory-actions">
+              <button
+                type="button"
+                className="robot-directory-action"
+                onClick={() => navigate('/my-robots')}
+              >
+                <FontAwesomeIcon icon={faList} />
+                My Robots
+              </button>
+              <button
+                type="button"
+                className="robot-directory-action primary"
+                onClick={() => navigate('/create-robot-listing')}
+              >
+                <FontAwesomeIcon icon={faPlus} />
+                List Robot
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       <div className="robot-directory-controls">
         <div className="robot-search-box">
@@ -783,8 +734,8 @@ export default function RobotSelect() {
       ) : (
         <>
           <CardGrid
-            items={pagedRobots.map(robot => ({ 
-              ...robot, 
+            items={pagedRobots.map(robot => ({
+              ...robot,
               imageUrl: resolvedImages[robot.id] || robot.imageUrl || getRobotImage(robot.robotType || 'robot')
             }))}
             columns={3}
@@ -792,9 +743,6 @@ export default function RobotSelect() {
             selected={selected}
             setSelected={setSelected}
             onItemClick={handleRobotClick}
-            onEdit={canEditRobots ? handleEditRobot : undefined}
-            onDelete={canEditRobots ? handleDeleteRobot : undefined}
-            deletingItemId={deletingRobotId}
           />
           <div className="robot-pagination">
             <button
@@ -814,9 +762,8 @@ export default function RobotSelect() {
                     {showGap && <span className="robot-pagination-ellipsis">…</span>}
                     <button
                       type="button"
-                      className={`robot-pagination-number ${
-                        pageNumber === currentPage ? 'active' : ''
-                      }`}
+                      className={`robot-pagination-number ${pageNumber === currentPage ? 'active' : ''
+                        }`}
                       onClick={() => setPage(pageNumber)}
                       disabled={isLoading}
                     >
