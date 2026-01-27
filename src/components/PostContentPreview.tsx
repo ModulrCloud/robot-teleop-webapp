@@ -216,12 +216,26 @@ export function PostContentPreview({ content }: PostContentPreviewProps) {
                       {part.text}
                     </code>
                   );
+                } else if (part.type === "bold") {
+                  return (
+                    <strong key={key} className="post-bold">
+                      {part.text}
+                    </strong>
+                  );
+                } else if (part.type === "italic") {
+                  return (
+                    <em key={key} className="post-italic">
+                      {part.text}
+                    </em>
+                  );
                 } else if (part.type === "codeblock") {
                   return (
                     <div key={key} className="post-code-block">
                       <div className="post-code-header">
                         {part.language && (
-                          <span className="post-code-language">{part.language}</span>
+                          <span className="post-code-language">
+                            {part.language.charAt(0).toUpperCase() + part.language.slice(1).toLowerCase()}
+                          </span>
                         )}
                         <div className="post-code-actions">
                           <span className="post-code-language" style={{ opacity: 0.5 }}>

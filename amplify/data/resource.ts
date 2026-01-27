@@ -6,6 +6,7 @@ import { revokeTokenLambda } from "../functions/revoke-token/resource";
 import { globalSignOutLambda } from "../functions/global-sign-out/resource";
 import { manageRobotOperator } from "../functions/manage-robot-operator/resource";
 import { deleteRobotLambda } from "../functions/delete-robot/resource";
+import { deletePostLike } from "../functions/delete-post-like/resource";
 import { manageRobotACL } from "../functions/manage-robot-acl/resource";
 import { listAccessibleRobots } from "../functions/list-accessible-robots/resource";
 import { getRobotStatus } from "../functions/get-robot-status/resource";
@@ -37,6 +38,10 @@ import { getSessionLambda } from "../functions/get-session/resource";
 import { triggerConnectionCleanup } from "../functions/trigger-connection-cleanup/resource";
 import { getActiveRobots } from "../functions/get-active-robots/resource";
 import { manageCreditTier } from "../functions/manage-credit-tier/resource";
+import { purchaseUsername } from "../functions/purchase-username/resource";
+import { purchaseSubscription } from "../functions/purchase-subscription/resource";
+import { getSocialProfile } from "../functions/get-social-profile/resource";
+import { validatePromoCode } from "../functions/validate-promo-code/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -585,6 +590,15 @@ const schema = a.schema({
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (owner/admin check)
     .handler(a.handler.function(deleteRobotLambda)),
 
+  deletePostLikeLambda: a
+    .mutation()
+    .arguments({
+      id: a.string().required(), // PostLike ID (UUID) to delete
+    })
+    .returns(LambdaResult)
+    .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (ownership check)
+    .handler(a.handler.function(deletePostLike)),
+
   manageRobotACLLambda: a
     .mutation()
     .arguments({
@@ -666,6 +680,42 @@ const schema = a.schema({
     .authorization(allow => [allow.authenticated()]) // Authorization is handled in Lambda (checks owner/admin)
     .handler(a.handler.function(addCredits)),
 
+  purchaseUsernameLambda: a
+    .mutation()
+    .arguments({
+      username: a.string().required(), // Desired username (will be normalized to lowercase)
+      promoCode: a.string(), // Optional promo code for discount
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(purchaseUsername)),
+
+  purchaseSubscriptionLambda: a
+    .mutation()
+    .arguments({
+      plan: a.string().required(), // 'monthly' or 'annual'
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(purchaseSubscription)),
+
+  // Get social profile via Lambda (bypasses Amplify Data authorization issues)
+  getSocialProfileLambda: a
+    .query()
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(getSocialProfile)),
+
+  // Validate promo code
+  validatePromoCodeLambda: a
+    .query()
+    .arguments({
+      code: a.string().required(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(validatePromoCode)),
+
   getUserCreditsLambda: a
     .query()
     .returns(a.json())
@@ -690,7 +740,10 @@ const schema = a.schema({
       reason: a.string(),
     })
     .returns(a.json())
-    .authorization(allow => [allow.authenticated()]) // Auth check happens in Lambda (domain-based + group-based)
+    .authorization(allow => [allow.authenticated()]) // GraphQL allows authenticated users, but Lambda enforces actual authorization:
+    // - Super admin: chris@modulr.cloud (can always assign admins - solves chicken-and-egg problem)
+    // - ADMINS group members (can assign admins)
+    // All other users are rejected by Lambda
     .handler(a.handler.function(assignAdmin)),
 
   removeAdminLambda: a
@@ -898,6 +951,294 @@ const schema = a.schema({
     .returns(a.json())
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (admins only)
     .handler(a.handler.function(getActiveRobots)),
+
+  // Social Platform Models
+
+  // Post - Main posts table
+  Post: a.model({
+    id: a.id(),
+    
+    // User info (denormalized for fast access)
+    userId: a.string().required(),           // Cognito username - DB only
+    username: a.string().required(),         // Display name - shown in UI ✅
+    userAvatar: a.string(),                  // Profile pic URL
+    
+    // Content
+    content: a.string().required(),          // Markdown (max 1024 chars)
+    postType: a.enum(['text', 'image', 'code', 'gif', 'poll']), // 'poll' = post contains poll
+    
+    // Media
+    imageUrls: a.string().array(),           // S3 URLs (max 4) - extracted from markdown ![](url) syntax
+    gifUrl: a.string(),                      // GIF URL - from Giphy, Tenor, or Modulr (S3)
+    gifProvider: a.enum(['giphy', 'modulr']), // Who provided GIF (Phase 1: Giphy only, Phase 2: add Modulr)
+    
+    // Poll (if postType === 'poll')
+    pollId: a.id(),                          // Reference to PostPoll table (null if not a poll post)
+    
+    // Parsed content (for search/indexing)
+    hashtags: a.string().array(),            // Extracted hashtags
+    mentions: a.string().array(),            // Extracted mentions
+    linkedRobotId: a.string(),               // Robot this post mentions
+    
+    // Engagement (denormalized for fast reads)
+    likesCount: a.integer().default(0),
+    dislikesCount: a.integer().default(0),
+    commentsCount: a.integer().default(0),
+    sharesCount: a.integer().default(0),
+    
+    // Metadata
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime(),
+    editedAt: a.datetime(),                  // Last edit time
+    
+    // Moderation
+    isModerated: a.boolean().default(false), // Image review status (Phase 2: AI + manual)
+    moderationStatus: a.enum(['pending', 'approved', 'rejected']), // AI moderation status (default: 'pending')
+    moderationScore: a.float(),              // AI confidence score (0-1, Phase 2)
+    flaggedCount: a.integer().default(0),
+    isDeleted: a.boolean().default(false),   // Soft delete
+    
+    // AI Analysis (Phase 2)
+    sentimentScore: a.float(),               // AI sentiment analysis (-1 to +1, Phase 2)
+    sentimentLabel: a.string(),              // AI sentiment label ('positive', 'negative', 'neutral', Phase 2)
+    isAITagged: a.boolean().default(false),  // Were tags auto-generated by AI? (Phase 2)
+    
+    // Visibility
+    visibility: a.enum(['public', 'followers']), // Default: 'public'
+  })
+  .secondaryIndexes(index => [
+    index('userId').name('userIdIndex'),              // User's posts
+    index('linkedRobotId').name('robotPostsIndex'),   // Robot's posts
+    index('createdAt').name('createdAtIndex'),        // Chronological feed
+    // Note: hashtags is an array, cannot be indexed directly
+    // Hashtag search will need PostSubject table (Phase 2)
+  ])
+  .authorization((allow) => [
+    allow.authenticated().to(['create', 'read']),
+    allow.owner().to(['update', 'delete']),
+    allow.groups(['ADMINS']).to(['update', 'delete']), // Admins can moderate
+  ]),
+
+  // PostLike - Likes & Dislikes (Separate Table)
+  PostLike: a.model({
+    id: a.id(),
+    postId: a.id().required(),
+    userId: a.string().required(),           // Cognito username
+    type: a.enum(['like', 'dislike']),
+    createdAt: a.datetime().required(),
+  })
+  .secondaryIndexes(index => [
+    index('postId').name('postIdIndex'),      // All likes for a post
+    index('userId').name('userIdIndex'),      // User's liked/disliked posts
+    // Note: Amplify Data doesn't support composite indexes directly in schema.
+    // The duplicate check queries filter by postId + userId + type, which uses
+    // the postIdIndex efficiently. The application-level checks prevent duplicates
+    // and work well for this use case. See migration guide for advanced options.
+  ])
+  .authorization((allow) => [
+    // Allow authenticated users to create, read, and delete PostLike records
+    // Note: We enforce ownership in application logic (only query/delete user's own likes)
+    // allow.owner() doesn't work because we use userId instead of owner field
+    allow.authenticated().to(['create', 'read', 'delete']),
+  ]),
+
+  // PostPoll - Polls within posts
+  PostPoll: a.model({
+    id: a.id(),
+    postId: a.id().required(),                // Reference to Post
+    question: a.string(),                     // Optional poll question (extracted from post content)
+    options: a.string().array().required(),   // Poll options (e.g., ["Option 1", "Option 2"])
+    totalVotes: a.integer().default(0),      // Denormalized total vote count (for fast reads)
+    createdAt: a.datetime().required(),
+  })
+  .secondaryIndexes(index => [
+    index('postId').name('postIdIndex'),      // Poll for a post (one-to-one)
+  ])
+  .authorization((allow) => [
+    allow.authenticated().to(['read', 'create', 'update']), // Authenticated users can create and update polls
+  ]),
+
+  // PostPollVote - User votes on polls
+  PostPollVote: a.model({
+    id: a.id(),
+    pollId: a.id().required(),                // Reference to PostPoll
+    postId: a.id().required(),                // Reference to Post (for convenience)
+    userId: a.string().required(),            // Cognito username
+    optionIndex: a.integer().required(),     // Which option they voted for (0, 1, 2, etc.)
+    createdAt: a.datetime().required(),
+  })
+  .secondaryIndexes(index => [
+    index('pollId').name('pollIdIndex'),      // All votes for a poll
+    index('userId').name('userIdIndex'),      // User's poll votes
+    index('postId').name('postIdIndex'),      // Votes for posts (for convenience)
+  ])
+  .authorization((allow) => [
+    allow.authenticated().to(['create', 'read', 'delete']),
+    // Users can only delete their own votes (enforced in application logic)
+  ]),
+
+  // PostComment - Comments on posts
+  PostComment: a.model({
+    id: a.id(),
+    postId: a.id().required(),                // Reference to Post
+    userId: a.string().required(),            // Cognito username
+    username: a.string().required(),          // Display name (denormalized for fast access)
+    userAvatar: a.string(),                   // Profile pic URL (denormalized)
+    content: a.string().required(),           // Comment text (markdown, max 512 chars)
+    parentCommentId: a.id(),                  // For nested replies (null = top-level comment)
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime(),
+    editedAt: a.datetime(),                   // Last edit time
+    isDeleted: a.boolean().default(false),    // Soft delete
+  })
+  .secondaryIndexes(index => [
+    index('postId').name('postIdIndex'),      // All comments for a post
+    index('userId').name('userIdIndex'),      // User's comments
+    index('parentCommentId').name('parentCommentIdIndex'), // Replies to a comment
+  ])
+  .authorization((allow) => [
+    allow.authenticated().to(['create', 'read', 'update', 'delete']),
+    // Users can only update/delete their own comments (enforced in application logic)
+  ]),
+
+  // ============================================
+  // SOCIAL PROFILE SYSTEM
+  // ============================================
+
+  // SocialProfile - Central identity for social features (username registration, subscriptions)
+  SocialProfile: a.model({
+    id: a.id(),
+    
+    // Identity
+    cognitoId: a.string().required(),           // OAuth ID (e.g., google_112222052048042829509)
+    email: a.string(),                          // Private, never displayed publicly
+    
+    // Username (purchased with MTR credits)
+    username: a.string(),                       // Unique @handle, null until purchased (stored lowercase, no @)
+    usernameRegisteredAt: a.datetime(),         // When username was purchased
+    usernameTier: a.string(),                   // 'og', 'premium', 'standard'
+    usernamePriceMtr: a.integer(),              // MTR credits paid (for analytics)
+    
+    // Profile
+    displayName: a.string(),                    // Optional friendly name (can be duplicates, like X)
+    avatar: a.string(),                         // Profile picture URL
+    bio: a.string(),                            // User bio (max 256 chars)
+    
+    // Role (links to existing Client/Partner system)
+    role: a.enum(['user', 'client', 'partner', 'admin']),
+    
+    // Subscription (paid with MTR credits)
+    subscriptionStatus: a.enum(['none', 'trial', 'active', 'cancelled', 'expired']),
+    subscriptionPlan: a.enum(['monthly', 'annual']),
+    subscriptionStartedAt: a.datetime(),
+    subscriptionExpiresAt: a.datetime(),
+    trialEndsAt: a.datetime(),                  // 3 months for early adopters
+    pendingSubscriptionPlan: a.enum(['monthly', 'annual']), // Scheduled subscription that starts after current period
+    pendingSubscriptionStartsAt: a.datetime(),   // When the pending subscription will start
+    
+    // OG Pricing Lock
+    isOgPricing: a.boolean().default(false),
+    ogPriceMtrMonthly: a.integer(),             // Locked monthly price in MTR
+    ogPriceMtrAnnual: a.integer(),              // Locked annual price in MTR
+    
+    // Blockchain (future - grayed out initially)
+    modulrAddress: a.string(),                  // Public key for Modulr network
+    modulrAddressVerifiedAt: a.datetime(),
+    
+    // Moderation (Suspensions & Bans)
+    moderationStatus: a.enum(['active', 'suspended', 'banned']),
+    moderationAt: a.datetime(),                 // When suspended/banned
+    moderationReason: a.string(),               // Reason for action
+    moderationExpiresAt: a.datetime(),          // For suspensions: when it lifts (null = permanent ban)
+    
+    // Tenure (for badges - pauses, doesn't reset)
+    tenureBadge: a.enum(['none', 'bronze', 'silver', 'gold', 'diamond', 'founding']),
+    tenureMonthsAccumulated: a.integer().default(0), // Total months accumulated
+    
+    // Timestamps
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime(),
+  })
+  .secondaryIndexes(index => [
+    index('cognitoId').name('cognitoIdIndex'),
+    index('username').name('usernameIndex'),
+    index('email').name('emailIndex'),
+  ])
+  .authorization((allow) => [
+    allow.authenticated().to(['read', 'create']),
+    allow.owner().to(['update']),
+  ]),
+
+  // ReservedUsername - Blocked/reserved usernames (profanity, brands, system names)
+  ReservedUsername: a.model({
+    id: a.id(),
+    username: a.string().required(),            // Lowercase, no @ prefix
+    reason: a.enum(['profanity', 'trademark', 'brand', 'reserved', 'admin']),
+    brandName: a.string(),                      // For brands: official company name
+    contactRequired: a.boolean().default(false), // If true, must contact support@modulr.cloud
+    notes: a.string(),                          // Admin notes
+    createdAt: a.datetime(),
+  })
+  .secondaryIndexes(index => [
+    index('username').name('usernameIndex'),
+  ])
+  .authorization((allow) => [
+    allow.authenticated().to(['read']),
+    // Only admins can create/update (enforced via Lambda)
+  ]),
+
+  // PromoCode - Discount codes for username purchases
+  PromoCode: a.model({
+    id: a.id(),
+    code: a.string().required(),                // e.g., 'MODULRX' (stored uppercase)
+    
+    // Discounts
+    usernameDiscountPercent: a.integer(),       // e.g., 50 for 50% off
+    trialMonths: a.integer(),                   // e.g., 3 for 3 months free trial
+    
+    // Limits
+    maxUses: a.integer(),                       // e.g., 500 (null = unlimited)
+    usedCount: a.integer().default(0),
+    
+    // Validity
+    startsAt: a.datetime(),                    // When code becomes active (null = active immediately)
+    expiresAt: a.datetime(),                   // When code expires (null = never expires)
+    isActive: a.boolean().default(true),
+    
+    // Tracking
+    source: a.string(),                         // e.g., 'x_launch_campaign', 'youtube_promo'
+    createdAt: a.datetime(),
+    updatedAt: a.datetime(),
+    
+    // Relationships
+    redemptions: a.hasMany('PromoCodeRedemption', 'codeId'),
+  })
+  .secondaryIndexes(index => [
+    index('code').name('codeIndex'),            // For quick lookups by code
+  ])
+  .authorization((allow) => [
+    allow.authenticated().to(['read']),         // Users can read to validate codes
+    allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']), // Admins can manage codes
+  ]),
+
+  // PromoCodeRedemption - Audit trail for promo code usage
+  PromoCodeRedemption: a.model({
+    id: a.id(),
+    codeId: a.id().required(),                 // Reference to PromoCode
+    code: a.belongsTo('PromoCode', 'codeId'),
+    userId: a.string().required(),            // Cognito ID
+    usernameRegistered: a.string(),            // Username they registered with this code
+    discountApplied: a.float(),               // Dollar amount saved (e.g., 2.50)
+    trialMonthsGranted: a.integer(),            // Trial months granted (e.g., 3)
+    redeemedAt: a.datetime().required(),
+  })
+  .secondaryIndexes(index => [
+    index('userId').name('userIdIndex'),        // Find all redemptions by a user
+    index('codeId').name('codeIdIndex'),        // Find all redemptions for a code
+  ])
+  .authorization((allow) => [
+    allow.authenticated().to(['read', 'create']), // Users can create their own redemptions
+  ]),
 });
 
 export type Schema = ClientSchema<typeof schema>;

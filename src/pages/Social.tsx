@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { generateClient } from 'aws-amplify/api';
+import type { Schema } from '../../amplify/data/resource';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -7,15 +9,157 @@ import {
   faStar,
   faInfoCircle,
   faPlus,
+  faSpinner,
 } from "@fortawesome/free-solid-svg-icons";
 import { PostCard } from "../components/PostCard";
 import { CreatePostModal } from "../components/CreatePostModal";
+import { logger } from "../utils/logger";
+import { recalculatePostCounts } from "../utils/postUpdateHelpers";
 import "./Social.css";
+
+const client = generateClient<Schema>();
+
+interface Post {
+  id: string;
+  username: string;
+  userAvatar?: string | null;
+  content: string;
+  postType: 'text' | 'image' | 'code' | 'gif' | 'poll' | null;
+  imageUrls?: string[] | null;
+  gifUrl?: string | null;
+  createdAt: string;
+  likesCount: number;
+  dislikesCount?: number;
+  commentsCount: number;
+  sharesCount: number;
+  pollId?: string | null;
+}
 
 export const Social = () => {
   usePageTitle();
   const [activeTab, setActiveTab] = useState<'discovery' | 'curated'>('discovery');
   const [isCreatePostModalOpen, setIsCreatePostModalOpen] = useState(false);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch posts from database
+  const loadPosts = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      logger.log('📥 Loading posts from database...');
+      
+      // Query posts by createdAt index (latest first)
+      // Note: Amplify Data doesn't support sortDirection directly in list()
+      // We'll need to query by createdAt index and sort client-side, or use a query with filter
+      const result = await client.models.Post.list({
+        limit: 50,
+      });
+
+      if (result.errors && result.errors.length > 0) {
+        const errorMessage = result.errors.map(e => e.message || JSON.stringify(e)).join(', ');
+        logger.error('❌ Error loading posts:', result.errors);
+        setError(`Failed to load posts: ${errorMessage}`);
+        setPosts([]);
+        return;
+      }
+
+      // Filter out deleted posts
+      const validPosts = (result.data || [])
+        .filter(post => post.id && !post.isDeleted && (post.visibility === 'public' || !post.visibility));
+
+      // Recalculate counts from PostLike records for accuracy
+      const postsWithAccurateCounts = await Promise.all(
+        validPosts.map(async (post) => {
+          try {
+            // Fetch all likes/dislikes for this post
+            const { data: allLikes } = await client.models.PostLike.list({
+              filter: {
+                postId: { eq: post.id! },
+              },
+            });
+
+            // Calculate actual counts
+            const actualLikes = allLikes?.filter(like => like.type === 'like').length || 0;
+            const actualDislikes = allLikes?.filter(like => like.type === 'dislike').length || 0;
+
+            // Update Post record if counts differ (sync in background)
+            if (post.likesCount !== actualLikes || post.dislikesCount !== actualDislikes) {
+              recalculatePostCounts(post.id!).catch(updateError => {
+                logger.warn(`Failed to sync counts for post ${post.id}:`, updateError);
+              });
+            }
+
+            return {
+              id: post.id!,
+              username: post.username,
+              userAvatar: post.userAvatar,
+              content: post.content,
+              postType: post.postType,
+              imageUrls: post.imageUrls?.filter((url): url is string => url !== null) || null,
+              gifUrl: post.gifUrl,
+              createdAt: post.createdAt,
+              likesCount: actualLikes,
+              dislikesCount: actualDislikes,
+              commentsCount: post.commentsCount || 0,
+              sharesCount: post.sharesCount || 0,
+              pollId: post.pollId || null,
+            };
+          } catch (error) {
+            logger.warn(`Error calculating counts for post ${post.id}:`, error);
+            // Fallback to stored counts if calculation fails
+            return {
+              id: post.id!,
+              username: post.username,
+              userAvatar: post.userAvatar,
+              content: post.content,
+              postType: post.postType,
+              imageUrls: post.imageUrls?.filter((url): url is string => url !== null) || null,
+              gifUrl: post.gifUrl,
+              createdAt: post.createdAt,
+              likesCount: post.likesCount || 0,
+              dislikesCount: post.dislikesCount || 0,
+              commentsCount: post.commentsCount || 0,
+              sharesCount: post.sharesCount || 0,
+            };
+          }
+        })
+      );
+
+      // Sort by createdAt descending (latest first)
+      const sortedPosts = postsWithAccurateCounts.sort((a, b) => {
+        const dateA = new Date(a.createdAt).getTime();
+        const dateB = new Date(b.createdAt).getTime();
+        return dateB - dateA;
+      });
+
+      logger.log(`✅ Loaded ${sortedPosts.length} posts`);
+      setPosts(sortedPosts);
+    } catch (err) {
+      logger.error('❌ Error loading posts:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load posts. Please try again.');
+      setPosts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load posts on mount and when tab changes
+  useEffect(() => {
+    if (activeTab === 'discovery') {
+      loadPosts();
+    }
+  }, [activeTab]);
+
+  // Polling disabled - was causing full page refresh/blink
+  // For future: Implement GraphQL subscriptions for real-time updates without polling
+
+  // Reload posts when a new post is created
+  const handlePostCreated = () => {
+    loadPosts();
+  };
 
   return (
     <div className="social-page">
@@ -49,157 +193,82 @@ export const Social = () => {
       <div className="social-content">
         {activeTab === 'discovery' ? (
           <div className="social-feed discovery-feed">
-            {/* Demo Post 1 - Simple Text-Based */}
-            <PostCard
-              username="Modulr"
-              userBadge="partner"
-              content="Welcome to Modulr.Social! 🤖 This is a developer-focused social platform for the robotics community. Share your projects, discuss ideas, and connect with fellow developers working on robots, WebRTC, and teleoperation systems. #robotics #webRTC #developer"
-              createdAt={new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()} // 2 hours ago
-              likesCount={42}
-              commentsCount={12}
-              sharesCount={5}
-              onUsernameClick={(username) => {
-                // Future: Navigate to user profile
-                console.log(`Clicked on user: ${username}`);
-              }}
-            />
+            {loading ? (
+              <div className="posts-loading" style={{ 
+                display: 'flex', 
+                justifyContent: 'center', 
+                alignItems: 'center', 
+                padding: '3rem',
+                color: '#999'
+              }}>
+                <FontAwesomeIcon icon={faSpinner} spin style={{ marginRight: '0.5rem' }} />
+                <span>Loading posts...</span>
+              </div>
+            ) : error ? (
+              <div className="posts-error" style={{ 
+                padding: '2rem', 
+                textAlign: 'center',
+                color: '#ff6b6b'
+              }}>
+                <p>{error}</p>
+                <button 
+                  onClick={loadPosts}
+                  style={{
+                    marginTop: '1rem',
+                    padding: '0.5rem 1rem',
+                    backgroundColor: '#ffb700',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Try Again
+                </button>
+              </div>
+            ) : posts.length === 0 ? (
+              <div className="posts-empty" style={{ 
+                padding: '3rem', 
+                textAlign: 'center',
+                color: '#999'
+              }}>
+                <FontAwesomeIcon icon={faInfoCircle} style={{ fontSize: '3rem', marginBottom: '1rem', opacity: 0.5 }} />
+                <p style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>No posts yet</p>
+                <p>Be the first to share something with the robotics community!</p>
+              </div>
+            ) : (
+              posts.map((post) => {
+                // Extract images from markdown if not already in imageUrls
+                // For now, PostCard will handle markdown image parsing
+                const images = post.imageUrls || [];
+                
+                // If there's a GIF URL, add it to images array
+                if (post.gifUrl && !images.includes(post.gifUrl)) {
+                  images.push(post.gifUrl);
+                }
 
-            {/* Demo Post 2 - Code Block */}
-            <PostCard
-              username="dev_engineer"
-              userBadge="verified"
-              content={`Just finished building a ROS2 robot controller! 🤖
-
-Here's the code I used:
-
-\`\`\`python
-import rclpy
-from robot_msgs.msg import MovementCommand
-
-def move_forward(distance):
-    pub.publish(MovementCommand(x=distance, y=0))
-\`\`\`
-
-Works great with #robot-abc123 via #webRTC! Check out @Modulr's platform for more details.
-
-#robotics #ROS2 #python #webRTC`}
-              createdAt={new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()} // 5 hours ago
-              likesCount={128}
-              commentsCount={24}
-              sharesCount={8}
-              onUsernameClick={(username) => {
-                // Future: Navigate to user profile
-                console.log(`Clicked on user: ${username}`);
-              }}
-            />
-
-            {/* Demo Post 3 - Image Gallery (4 images, showing "+X" overlay) */}
-            <PostCard
-              username="Modulr"
-              userBadge="partner"
-              content="In Modulr, you can set your robot to these default robot image types until your custom profile image is approved! 🤖 We offer rover, humanoid, drone, submarine, and robot dog options. Perfect for getting started quickly while we review your upload. #robotics #Modulr"
-              images={[
-                "/default/rover.png",
-                "/default/robot.png",
-                "/default/drone.png",
-                "/default/sub.png",
-                "/default/robodog.png",
-                "/default/humanoid.png",
-              ]}
-              createdAt={new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString()} // 8 hours ago
-              likesCount={89}
-              commentsCount={15}
-              sharesCount={12}
-              onUsernameClick={(username) => {
-                // Future: Navigate to user profile
-                console.log(`Clicked on user: ${username}`);
-              }}
-            />
-
-            {/* Demo Post 4 - Inline Code Snippets */}
-            <PostCard
-              username="ros_dev"
-              userBadge="verified"
-              content={`Quick tip for ROS2 developers! Use \`ros2 topic list\` to see all available topics, then \`ros2 topic echo /your_topic\` to monitor messages. For teleoperation, I like using \`ros2 run teleop_twist_keyboard teleop_twist_keyboard\` for testing. Works great with #robot-abc123! 🚀
-
-#ROS2 #robotics #teleoperation`}
-              createdAt={new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString()} // 12 hours ago
-              likesCount={156}
-              commentsCount={32}
-              sharesCount={18}
-              onUsernameClick={(username) => {
-                // Future: Navigate to user profile
-                console.log(`Clicked on user: ${username}`);
-              }}
-            />
-
-            {/* Demo Post 5 - Poll */}
-            <PostCard
-              username="Modulr"
-              userBadge="partner"
-              content={`Polls are a great way to engage with the community! 📊 To create a poll, use markdown syntax with \`- ()\` for each option. Here's an example:
-
-Which robot framework do you prefer for teleoperation?
-
-- () ROS2
-- () ROS1
-- () Custom WebRTC
-- () Other (comment below!)
-
-Vote below! #robotics #polls #community`}
-              createdAt={new Date(Date.now() - 15 * 60 * 60 * 1000).toISOString()} // 15 hours ago
-              likesCount={203}
-              commentsCount={47}
-              sharesCount={28}
-              onUsernameClick={(username) => {
-                // Future: Navigate to user profile
-                console.log(`Clicked on user: ${username}`);
-              }}
-            />
-
-            {/* Demo Post 6 - GIF */}
-            <PostCard
-              username="robot_lover"
-              content="Check out this awesome robot GIF! 🤖 We're using Giphy integration for Phase 1, but later we'll add support for custom GIF uploads to S3. Perfect for sharing quick robot demos and reactions!
-
-#robotics #gifs #fun"
-              images={[
-                "https://media.giphy.com/media/3o7aCTPPm4OHfRLSH6/giphy.gif",
-              ]}
-              createdAt={new Date(Date.now() - 18 * 60 * 60 * 1000).toISOString()} // 18 hours ago
-              likesCount={312}
-              commentsCount={68}
-              sharesCount={42}
-              onUsernameClick={(username) => {
-                // Future: Navigate to user profile
-                console.log(`Clicked on user: ${username}`);
-              }}
-            />
-
-            {/* Demo Post 7 - Emoji Test */}
-            <PostCard
-              username="emoji_master"
-              userBadge="verified"
-              content={`Emoji test! Let's see how these render: 🤖🦾🦿⚙️🔧⚡🚀🎯📡🔬
-
-Reactions: 👍❤️🔥💯🎉👏🙌😊😎🤔
-
-Tech: 💻⌨️🖥️📱🌐🔌💡🔋📶🎮
-
-Flags: 🇺🇸🇬🇧🇨🇦🇫🇷🇩🇪🇯🇵🇰🇷🇧🇷🇮🇳🇦🇺
-
-General: ✅❌⚠️ℹ️💬📝🔍⭐🌟✨
-
-Testing the US flag 🇺🇸 specifically! Does it render correctly? Let me know! #emojis #testing #flags #robotics`}
-              createdAt={new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString()} // 20 hours ago
-              likesCount={89}
-              commentsCount={23}
-              sharesCount={15}
-              onUsernameClick={(username) => {
-                // Future: Navigate to user profile
-                console.log(`Clicked on user: ${username}`);
-              }}
-            />
+                return (
+                  <PostCard
+                    key={post.id}
+                    postId={post.id}
+                    username={post.username}
+                    userAvatar={post.userAvatar || undefined}
+                    content={post.content}
+                    images={images.length > 0 ? images : undefined}
+                    createdAt={post.createdAt}
+                    likesCount={post.likesCount}
+                    dislikesCount={post.dislikesCount || 0}
+                    commentsCount={post.commentsCount}
+                    sharesCount={post.sharesCount}
+                    pollId={post.pollId || undefined}
+                    onUsernameClick={(username) => {
+                      // Future: Navigate to user profile
+                      logger.log(`Clicked on user: ${username}`);
+                    }}
+                  />
+                );
+              })
+            )}
           </div>
         ) : (
           <div className="social-feed curated-feed">
@@ -232,11 +301,7 @@ Testing the US flag 🇺🇸 specifically! Does it render correctly? Let me know
       <CreatePostModal
         isOpen={isCreatePostModalOpen}
         onClose={() => setIsCreatePostModalOpen(false)}
-        onSubmit={(content) => {
-          console.log('Post submitted:', content);
-          // Future: Submit post to backend
-          alert(`Post created! (This is a demo - backend integration coming soon)\n\nContent:\n${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`);
-        }}
+        onPostCreated={handlePostCreated}
       />
     </div>
   );

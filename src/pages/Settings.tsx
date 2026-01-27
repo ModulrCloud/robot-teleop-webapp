@@ -3,7 +3,7 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { useAuthStatus } from "../hooks/useAuthStatus";
 import { generateClient } from "aws-amplify/api";
 import type { Schema } from "../../amplify/data/resource";
-import { formatGroupName, capitalizeName } from "../utils/formatters";
+import { formatGroupName } from "../utils/formatters";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faCog,
@@ -250,8 +250,8 @@ export const Settings = () => {
                 </div>
                 <div className="setting-item">
                   <div className="setting-info">
-                    <label>Username</label>
-                    <span className="setting-value">{capitalizeName(user?.username)}</span>
+                    <label>Google ID</label>
+                    <span className="setting-value google-id-text">{user?.username}</span>
                   </div>
                 </div>
                 <div className="setting-item">

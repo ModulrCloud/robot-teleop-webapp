@@ -10,6 +10,7 @@ import { revokeTokenLambda } from './functions/revoke-token/resource';
 import { globalSignOutLambda } from './functions/global-sign-out/resource';
 import { manageRobotOperator } from './functions/manage-robot-operator/resource';
 import { deleteRobotLambda } from './functions/delete-robot/resource';
+import { deletePostLike } from './functions/delete-post-like/resource';
 import { manageRobotACL } from './functions/manage-robot-acl/resource';
 import { listAccessibleRobots } from './functions/list-accessible-robots/resource';
 import { getRobotStatus } from './functions/get-robot-status/resource';
@@ -42,6 +43,11 @@ import { cleanupStaleConnections } from './functions/cleanup-stale-connections/r
 import { triggerConnectionCleanup } from './functions/trigger-connection-cleanup/resource';
 import { getActiveRobots } from './functions/get-active-robots/resource';
 import { manageCreditTier } from './functions/manage-credit-tier/resource';
+import { purchaseUsername } from './functions/purchase-username/resource';
+import { purchaseSubscription } from './functions/purchase-subscription/resource';
+import { processSubscriptionRenewals } from './functions/process-subscription-renewals/resource';
+import { getSocialProfile } from './functions/get-social-profile/resource';
+import { validatePromoCode } from './functions/validate-promo-code/resource';
 import { cleanupAuditLogs } from './functions/cleanup-audit-logs/resource';
 import { websocketKeepalive } from './functions/websocket-keepalive/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
@@ -68,6 +74,7 @@ const backend = defineBackend({
   globalSignOutLambda,
   manageRobotOperator,
   deleteRobotLambda,
+  deletePostLike,
   manageRobotACL,
   listAccessibleRobots,
   getRobotStatus,
@@ -100,6 +107,11 @@ const backend = defineBackend({
   triggerConnectionCleanup,
   getActiveRobots,
   manageCreditTier,
+  purchaseUsername,
+  purchaseSubscription,
+  processSubscriptionRenewals,
+  getSocialProfile,
+  validatePromoCode,
   cleanupAuditLogs,
   websocketKeepalive,
 });
@@ -336,6 +348,10 @@ backend.deleteRobotLambda.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableN
 backend.deleteRobotLambda.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
 backend.deleteRobotLambda.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 
+// Delete PostLike Lambda environment variables
+backend.deletePostLike.addEnvironment('POSTLIKE_TABLE_NAME', tables.PostLike.tableName);
+backend.deletePostLike.addEnvironment('POST_TABLE_NAME', tables.Post.tableName);
+
 // Manage robot ACL Lambda environment variables
 backend.manageRobotACL.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 backend.manageRobotACL.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
@@ -395,6 +411,19 @@ updateRobotCdkFunction.addEnvironment('USER_INVALIDATION_TABLE', userInvalidatio
 tables.Robot.grantReadWriteData(deleteRobotLambdaFunction);
 tables.Partner.grantReadData(deleteRobotLambdaFunction);
 userInvalidationTable.grantReadData(deleteRobotLambdaFunction); // Read-only for checking session invalidation
+
+// Grant DynamoDB permissions to delete PostLike function
+const deletePostLikeFunction = backend.deletePostLike.resources.lambda;
+tables.PostLike.grantReadWriteData(deletePostLikeFunction);
+tables.Post.grantReadWriteData(deletePostLikeFunction);
+// Grant permission to query the postIdIndex (needed for count recalculation)
+deletePostLikeFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.PostLike.tableArn}/index/postIdIndex`
+  ]
+}));
+
 // Grant permission to query the cognitoUsernameIndex (needed for ownership verification)
 deleteRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
   actions: ["dynamodb:Query", "dynamodb:GetItem", "dynamodb:Scan"],
@@ -530,6 +559,77 @@ deductSessionCreditsFunction.addToRolePolicy(new PolicyStatement({
     `${tables.UserCredits.tableArn}/index/userIdIndex`,
     `${tables.Robot.tableArn}/index/robotIdIndex`,
     `${tables.PlatformSettings.tableArn}/index/settingKeyIndex`,
+  ],
+}));
+
+// Purchase Username Lambda environment variables and permissions
+const purchaseUsernameFunction = backend.purchaseUsername.resources.lambda;
+const purchaseUsernameCdkFunction = purchaseUsernameFunction as CdkFunction;
+purchaseUsernameCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+purchaseUsernameCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
+purchaseUsernameCdkFunction.addEnvironment('SOCIAL_PROFILE_TABLE', tables.SocialProfile.tableName);
+purchaseUsernameCdkFunction.addEnvironment('RESERVED_USERNAME_TABLE', tables.ReservedUsername.tableName);
+purchaseUsernameCdkFunction.addEnvironment('PROMO_CODE_TABLE', tables.PromoCode.tableName);
+purchaseUsernameCdkFunction.addEnvironment('PROMO_CODE_REDEMPTION_TABLE', tables.PromoCodeRedemption.tableName);
+tables.UserCredits.grantReadWriteData(purchaseUsernameFunction);
+tables.CreditTransaction.grantWriteData(purchaseUsernameFunction);
+tables.SocialProfile.grantReadWriteData(purchaseUsernameFunction);
+tables.ReservedUsername.grantReadData(purchaseUsernameFunction);
+tables.PromoCode.grantReadWriteData(purchaseUsernameFunction); // Read to validate, Write to update usedCount
+tables.PromoCodeRedemption.grantWriteData(purchaseUsernameFunction); // Write to record redemption
+// Grant permission to query indexes (names must match schema secondaryIndexes)
+purchaseUsernameFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.UserCredits.tableArn}/index/userIdIndex`,
+    `${tables.SocialProfile.tableArn}/index/cognitoIdIndex`,  // Matches schema: index('cognitoId').name('cognitoIdIndex')
+    `${tables.SocialProfile.tableArn}/index/usernameIndex`,   // Matches schema: index('username').name('usernameIndex')
+    `${tables.ReservedUsername.tableArn}/index/usernameIndex`, // Matches schema: index('username').name('usernameIndex')
+    `${tables.PromoCode.tableArn}/index/codeIndex`,           // Matches schema: index('code').name('codeIndex')
+  ],
+}));
+
+// Purchase Subscription Lambda environment variables and permissions
+const purchaseSubscriptionFunction = backend.purchaseSubscription.resources.lambda;
+const purchaseSubscriptionCdkFunction = purchaseSubscriptionFunction as CdkFunction;
+purchaseSubscriptionCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+purchaseSubscriptionCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
+purchaseSubscriptionCdkFunction.addEnvironment('SOCIAL_PROFILE_TABLE', tables.SocialProfile.tableName);
+tables.UserCredits.grantReadWriteData(purchaseSubscriptionFunction);
+tables.CreditTransaction.grantWriteData(purchaseSubscriptionFunction);
+tables.SocialProfile.grantReadWriteData(purchaseSubscriptionFunction);
+// Grant permission to query indexes
+purchaseSubscriptionFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.UserCredits.tableArn}/index/userIdIndex`,
+    `${tables.SocialProfile.tableArn}/index/cognitoIdIndex`,
+  ],
+}));
+
+// Get Social Profile Lambda environment variables and permissions
+const getSocialProfileFunction = backend.getSocialProfile.resources.lambda;
+const getSocialProfileCdkFunction = getSocialProfileFunction as CdkFunction;
+getSocialProfileCdkFunction.addEnvironment('SOCIAL_PROFILE_TABLE', tables.SocialProfile.tableName);
+tables.SocialProfile.grantReadData(getSocialProfileFunction);
+// Grant permission to query indexes
+getSocialProfileFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.SocialProfile.tableArn}/index/cognitoIdIndex`,
+  ],
+}));
+
+// Validate Promo Code Lambda environment variables and permissions
+const validatePromoCodeFunction = backend.validatePromoCode.resources.lambda;
+const validatePromoCodeCdkFunction = validatePromoCodeFunction as CdkFunction;
+validatePromoCodeCdkFunction.addEnvironment('PROMO_CODE_TABLE', tables.PromoCode.tableName);
+tables.PromoCode.grantReadData(validatePromoCodeFunction);
+// Grant permission to query codeIndex
+validatePromoCodeFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.PromoCode.tableArn}/index/codeIndex`,
   ],
 }));
 
@@ -787,7 +887,7 @@ adminAuditTable.grantWriteData(backend.setUserGroupLambda.resources.lambda);
 const assignAdminCdkFunction = assignAdminFunction as CdkFunction;
 assignAdminCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 assignAdminCdkFunction.addEnvironment('ADMIN_AUDIT_TABLE', adminAuditTable.tableName);
-userPool.grant(assignAdminFunction, 'cognito-idp:AdminAddUserToGroup', 'cognito-idp:AdminListGroupsForUser');
+userPool.grant(assignAdminFunction, 'cognito-idp:AdminAddUserToGroup', 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
 adminAuditTable.grantWriteData(assignAdminFunction);
 
 // Remove admin Lambda environment variables and permissions
@@ -1029,3 +1129,40 @@ const auditCleanupRule = new Rule(backend.stack, 'CleanupAuditLogsRule', {
 
 // Add Lambda as target
 auditCleanupRule.addTarget(new LambdaFunction(cleanupAuditLogsFunction));
+
+// ============================================
+// Process Subscription Renewals Lambda Function
+// ============================================
+
+const processSubscriptionRenewalsFunction = backend.processSubscriptionRenewals.resources.lambda;
+const processSubscriptionRenewalsCdkFunction = processSubscriptionRenewalsFunction as CdkFunction;
+
+// Set environment variables
+processSubscriptionRenewalsCdkFunction.addEnvironment('SOCIAL_PROFILE_TABLE', tables.SocialProfile.tableName);
+processSubscriptionRenewalsCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+processSubscriptionRenewalsCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
+
+// Grant permissions
+tables.SocialProfile.grantReadWriteData(processSubscriptionRenewalsFunction);
+tables.UserCredits.grantReadWriteData(processSubscriptionRenewalsFunction);
+tables.CreditTransaction.grantWriteData(processSubscriptionRenewalsFunction);
+
+// Grant permission to query indexes
+processSubscriptionRenewalsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ["dynamodb:Query"],
+  resources: [
+    `${tables.UserCredits.tableArn}/index/userIdIndex`,
+  ],
+}));
+
+// Create EventBridge rule to trigger renewal processing daily (at 2 AM UTC)
+// This processes:
+// - Pending subscriptions that should start today
+// - Expired subscriptions that need status updates
+const subscriptionRenewalRule = new Rule(backend.stack, 'ProcessSubscriptionRenewalsRule', {
+  schedule: Schedule.cron({ minute: '0', hour: '2', day: '*', month: '*', year: '*' }), // Daily at 2 AM UTC
+  description: 'Process subscription renewals, activate pending subscriptions, and handle expired subscriptions',
+});
+
+// Add Lambda as target
+subscriptionRenewalRule.addTarget(new LambdaFunction(processSubscriptionRenewalsCdkFunction));

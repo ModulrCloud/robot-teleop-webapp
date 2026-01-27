@@ -1,5 +1,5 @@
 import type { Schema } from "../../data/resource";
-import { CognitoIdentityProviderClient, AdminAddUserToGroupCommand, AdminListGroupsForUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, AdminAddUserToGroupCommand, AdminListGroupsForUserCommand, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { createAuditLog } from '../shared/audit-log';
@@ -25,15 +25,40 @@ export const handler: Schema["assignAdminLambda"]["functionHandler"] = async (ev
   const adminGroups = "groups" in identity ? identity.groups : [];
   const isInAdminGroup = adminGroups?.includes("ADMINS") || adminGroups?.includes("ADMIN");
   
-  // Get user email for domain-based access check
-  const userEmail = (identity as any).email || (identity as any).claims?.email;
-  const isModulrEmployee = userEmail && 
-    typeof userEmail === 'string' && 
-    userEmail.toLowerCase().trim().endsWith('@modulr.cloud');
+  // Get user email for super admin check
+  // In GraphQL Lambda resolvers, email is typically not in identity directly
+  // Always fetch from Cognito using the username to ensure we have the email
+  let userEmail: string | undefined;
+  
+  try {
+    const userResponse = await cognito.send(
+      new AdminGetUserCommand({
+        UserPoolId: USER_POOL_ID,
+        Username: identity.username,
+      })
+    );
+    userEmail = userResponse.UserAttributes?.find(attr => attr.Name === 'email')?.Value;
+    console.log("Fetched email from Cognito:", userEmail, "for username:", identity.username);
+  } catch (error) {
+    console.error("Could not fetch email from Cognito:", error);
+    // If we can't get the email, we can't verify super admin status, so deny
+    throw new Error("Unauthorized: could not verify user email");
+  }
+  
+  if (!userEmail) {
+    console.error("No email found for user:", identity.username);
+    throw new Error("Unauthorized: user email not found");
+  }
+  
+  const normalizedEmail = userEmail.toLowerCase().trim();
+  
+  // Super admin: chris@modulr.cloud can always assign admins (solves chicken-and-egg problem)
+  const SUPER_ADMIN_EMAIL = 'chris@modulr.cloud';
+  const isSuperAdmin = normalizedEmail === SUPER_ADMIN_EMAIL;
 
-  // SECURITY: Only existing admins (ADMINS group) or Modulr employees can assign admin status
-  if (!isInAdminGroup && !isModulrEmployee) {
-    throw new Error("Unauthorized: only ADMINS or Modulr employees (@modulr.cloud) can assign admin status");
+  // SECURITY: Only super admin (chris@modulr.cloud) or existing ADMINS group members can assign admin status
+  if (!isInAdminGroup && !isSuperAdmin) {
+    throw new Error("Unauthorized: only super admin or ADMINS group members can assign admin status");
   }
 
   if (!targetUserId) {
@@ -74,10 +99,13 @@ export const handler: Schema["assignAdminLambda"]["functionHandler"] = async (ev
       reason: reason || undefined,
       metadata: {
         adminGroups: adminGroups || [],
+        isSuperAdmin: isSuperAdmin,
+        adminEmail: normalizedEmail || undefined,
       },
     });
 
-    console.log(`Admin ${adminUserId} assigned admin status to ${targetUserId}. Reason: ${reason || 'N/A'}`);
+    const adminType = isSuperAdmin ? 'Super Admin' : 'Admin';
+    console.log(`${adminType} ${adminUserId} (${normalizedEmail || 'N/A'}) assigned admin status to ${targetUserId}. Reason: ${reason || 'N/A'}`);
 
     return JSON.stringify({
       success: true,

@@ -1,0 +1,531 @@
+/* Subscription Modal Styles */
+
+.subscription-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 1rem;
+  backdrop-filter: blur(4px);
+}
+
+.subscription-modal {
+  background: #10131a;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5), 0 0 40px rgba(255, 215, 0, 0.1);
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Modulr-themed scrollbar for modal */
+.subscription-modal::-webkit-scrollbar {
+  width: 8px;
+}
+
+.subscription-modal::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.subscription-modal::-webkit-scrollbar-thumb {
+  background: rgba(255, 193, 7, 0.5);
+  border-radius: 4px;
+}
+
+.subscription-modal::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 193, 7, 0.7);
+}
+
+/* Firefox scrollbar */
+.subscription-modal {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 193, 7, 0.5) rgba(255, 255, 255, 0.05);
+}
+
+/* Header */
+.subscription-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.1) 0%, transparent 100%);
+}
+
+.subscription-modal-header-left {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.subscription-modal-icon {
+  font-size: 2rem;
+  color: #ffd700;
+  filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.5));
+}
+
+.subscription-modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #ffd700;
+}
+
+.subscription-modal-subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.subscription-modal-close {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.subscription-modal-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+.subscription-modal-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Success State */
+.subscription-modal-success {
+  padding: 3rem;
+  text-align: center;
+}
+
+.subscription-modal-success .success-icon {
+  font-size: 4rem;
+  color: #4ade80;
+  margin-bottom: 1rem;
+  animation: successPulse 0.5s ease-out;
+}
+
+@keyframes successPulse {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.subscription-modal-success h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+  color: white;
+}
+
+.subscription-modal-success p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Plan Selection */
+.subscription-modal-plans {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  padding: 1.5rem;
+}
+
+.plan-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 1.25rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.plan-card:hover {
+  border-color: rgba(255, 215, 0, 0.3);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.plan-card.selected {
+  border-color: #ffd700;
+  background: rgba(255, 215, 0, 0.1);
+}
+
+.plan-card.recommended {
+  border-color: rgba(255, 215, 0, 0.4);
+}
+
+.plan-badge {
+  position: absolute;
+  top: -10px;
+  right: 12px;
+  background: linear-gradient(135deg, #ffd700 0%, #f0b400 100%);
+  color: #1a1a2e;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.plan-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+}
+
+.plan-header svg {
+  color: #ffd700;
+}
+
+.plan-price {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.price-amount {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: white;
+}
+
+.price-unit {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.plan-price-usd {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 0.75rem;
+}
+
+.plan-monthly-equivalent {
+  display: block;
+  font-size: 0.75rem;
+  color: rgba(255, 215, 0, 0.8);
+}
+
+.plan-features {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.plan-savings {
+  color: #4ade80;
+  font-weight: 600;
+}
+
+.plan-radio {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.2s ease;
+}
+
+.plan-radio.checked {
+  border-color: #ffd700;
+  background: #ffd700;
+}
+
+.plan-radio.checked::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #1a1a2e;
+}
+
+/* OG Notice */
+.subscription-og-notice {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  margin: 0 1.5rem;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.15) 0%, rgba(255, 215, 0, 0.05) 100%);
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 8px;
+}
+
+.subscription-og-notice svg {
+  font-size: 1.5rem;
+  color: #ffd700;
+  flex-shrink: 0;
+}
+
+.subscription-og-notice strong {
+  color: #ffd700;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.subscription-og-notice p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Scheduled Subscription Notice */
+.subscription-scheduled-notice {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  margin: 0 1.5rem;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 8px;
+}
+
+.subscription-scheduled-notice svg {
+  font-size: 1.5rem;
+  color: #3b82f6;
+  flex-shrink: 0;
+}
+
+.subscription-scheduled-notice strong {
+  color: #3b82f6;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.subscription-scheduled-notice p {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.subscription-scheduled-notice .btn-cancel-scheduled {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.subscription-scheduled-notice .btn-cancel-scheduled:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.subscription-scheduled-notice .btn-cancel-scheduled:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Balance Display */
+.subscription-modal-balance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  background: rgba(0, 0, 0, 0.2);
+  margin: 1rem 1.5rem;
+  border-radius: 8px;
+}
+
+.balance-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.balance-info svg {
+  color: #ffd700;
+}
+
+.balance-info strong {
+  color: #ffd700;
+}
+
+.balance-warning {
+  color: #ef4444;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* Benefits */
+.subscription-modal-benefits {
+  padding: 0 1.5rem 1rem;
+}
+
+.subscription-modal-benefits h4 {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.subscription-modal-benefits ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.subscription-modal-benefits li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.subscription-modal-benefits li svg {
+  color: #4ade80;
+  font-size: 0.9rem;
+}
+
+/* Error Display */
+.subscription-modal-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
+  margin: 0 1.5rem 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: #ef4444;
+  font-size: 0.9rem;
+}
+
+.subscription-modal-error svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+/* Action Buttons */
+.subscription-modal-actions {
+  display: flex;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.subscription-modal-actions .btn-cancel {
+  flex: 1;
+  padding: 0.875rem 1.5rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.subscription-modal-actions .btn-cancel:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.subscription-modal-actions .btn-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.subscription-modal-actions .btn-subscribe {
+  flex: 2;
+  padding: 0.875rem 1.5rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: linear-gradient(135deg, #ffd700 0%, #f0b400 100%);
+  border: none;
+  color: #1a1a2e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.subscription-modal-actions .btn-subscribe:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(255, 215, 0, 0.4);
+}
+
+.subscription-modal-actions .btn-subscribe:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Terms Notice */
+.subscription-modal-terms {
+  text-align: center;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 0 1.5rem 1.5rem;
+  margin: 0;
+}
+
+/* Responsive */
+@media (max-width: 520px) {
+  .subscription-modal-plans {
+    grid-template-columns: 1fr;
+  }
+
+  .subscription-modal-benefits ul {
+    grid-template-columns: 1fr;
+  }
+
+  .subscription-modal-actions {
+    flex-direction: column;
+  }
+
+  .subscription-modal-actions .btn-cancel,
+  .subscription-modal-actions .btn-subscribe {
+    flex: none;
+    width: 100%;
+  }
+}

@@ -62,10 +62,10 @@
   z-index: 1000;
   background: rgba(26, 26, 26, 0.98);
   border: 1px solid rgba(255, 183, 0, 0.3);
-  border-radius: 12px;
+  border-radius: 8px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
   width: max-content;
-  max-width: min(750px, calc(100vw - 4rem));
+  max-width: min(420px, calc(100vw - 4rem));
   overflow: visible;
 }
 
@@ -76,17 +76,18 @@
 
 .picker-content {
   display: flex;
-  gap: 1rem;
-  padding: 1.5rem;
+  gap: 0.75rem;
+  padding: 0.75rem;
   max-width: 100%;
   overflow: visible;
   border-top: 1px solid rgba(255, 183, 0, 0.1);
-  min-height: 400px;
+  min-height: 200px;
 }
 
 .date-picker-section {
   flex: 1.5;
-  min-width: 320px;
+  min-width: 200px;
+  max-width: 220px;
   overflow: hidden;
 }
 
@@ -94,18 +95,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
 .datetime-picker-modal .nav-button {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 6px;
+  border-radius: 4px;
   color: #fff;
-  padding: 0.5rem 0.75rem;
+  padding: 0.25rem 0.5rem;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-size: 1.2rem;
+  font-size: 0.9rem;
   line-height: 1;
 }
 
@@ -118,11 +119,11 @@
 .datetime-picker-modal .month-year {
   font-weight: 600;
   color: #ffb700;
-  font-size: 0.95rem;
+  font-size: 0.8rem;
 }
 
 .calendar-grid {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
   display: flex;
   flex-direction: column;
 }
@@ -130,9 +131,9 @@
 .calendar-weekdays {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 0.25rem;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.5rem;
+  gap: 0.1rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.25rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   width: 100%;
   box-sizing: border-box;
@@ -142,12 +143,12 @@
 
 .weekday {
   text-align: center;
-  font-size: 0.8rem;
+  font-size: 0.65rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.6);
-  padding: 0.4rem 0;
-  line-height: 1.4;
-  min-height: 1.4em;
+  padding: 0.2rem 0;
+  line-height: 1.2;
+  min-height: 1em;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -157,9 +158,9 @@
 .calendar-days {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 0.25rem;
+  gap: 0.1rem;
   width: 100%;
-  margin-top: 0.75rem;
+  margin-top: 0.5rem;
   box-sizing: border-box;
   position: relative;
   z-index: 0;
@@ -169,15 +170,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: 3px;
   cursor: pointer;
   transition: all 0.2s ease;
   color: rgba(255, 255, 255, 0.8);
-  font-size: 0.85rem;
+  font-size: 0.7rem;
   background: rgba(255, 255, 255, 0.02);
-  height: 36px;
+  height: 24px;
   width: 100%;
   box-sizing: border-box;
+  min-width: 0;
+  padding: 0;
 }
 
 .datetime-picker-modal .calendar-day:hover:not(.empty):not(.selected) {
@@ -203,9 +206,9 @@
 
 .datetime-picker-modal .picker-actions {
   display: flex;
-  gap: 1rem;
+  gap: 0.5rem;
   justify-content: center;
-  padding-top: 0.5rem;
+  padding-top: 0.25rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -214,8 +217,8 @@
   border: none;
   color: rgba(255, 183, 0, 0.8);
   cursor: pointer;
-  padding: 0.5rem 1rem;
-  font-size: 0.9rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
   transition: all 0.2s ease;
   text-decoration: underline;
 }
@@ -227,24 +230,25 @@
 .time-picker-section {
   flex: 1;
   border-left: 1px solid rgba(255, 255, 255, 0.1);
-  padding-left: 1rem;
-  min-width: 180px;
+  padding-left: 0.5rem;
+  min-width: 100px;
+  flex-shrink: 0;
   overflow: visible;
 }
 
 .time-picker-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
   color: #ffb700;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.75rem;
 }
 
 .time-selectors {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.5rem;
   justify-content: center;
 }
 
@@ -252,24 +256,24 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.25rem;
 }
 
 .time-label {
-  font-size: 0.85rem;
+  font-size: 0.65rem;
   color: rgba(255, 255, 255, 0.6);
   font-weight: 600;
   text-transform: uppercase;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.15rem;
 }
 
 .time-options {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  max-height: 300px;
+  gap: 0.15rem;
+  max-height: 150px;
   overflow-y: auto;
-  padding: 0.2rem;
+  padding: 0.15rem;
 }
 
 .time-options::-webkit-scrollbar {
@@ -293,13 +297,13 @@
 .time-option {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
+  border-radius: 3px;
   color: rgba(255, 255, 255, 0.8);
-  padding: 0.4rem 0.6rem;
+  padding: 0.2rem 0.4rem;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-size: 0.85rem;
-  min-width: 45px;
+  font-size: 0.7rem;
+  min-width: 35px;
   text-align: center;
 }
 
@@ -319,21 +323,21 @@
 .picker-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
   border-top: 1px solid rgba(255, 183, 0, 0.2);
   background: rgba(255, 255, 255, 0.02);
 }
 
 .btn-primary,
 .btn-secondary {
-  padding: 0.6rem 1.25rem;
-  border-radius: 6px;
+  padding: 0.4rem 0.75rem;
+  border-radius: 4px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
   border: none;
-  font-size: 0.9rem;
+  font-size: 0.75rem;
 }
 
 .btn-primary {

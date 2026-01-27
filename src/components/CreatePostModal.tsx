@@ -11,13 +11,22 @@ import {
   faSearch,
 } from '@fortawesome/free-solid-svg-icons';
 import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react';
+import { generateClient } from 'aws-amplify/api';
+import type { Schema } from '../../amplify/data/resource';
+import { useAuthStatus } from '../hooks/useAuthStatus';
+import { useSocialProfile } from '../hooks/useSocialProfile';
+import { extractPostMetadata } from '../utils/postContentExtractor';
 import { PostContentPreview } from './PostContentPreview';
+import { UsernameRegistrationModal } from './UsernameRegistrationModal';
+import { logger } from '../utils/logger';
 import './CreatePostModal.css';
+
+const client = generateClient<Schema>();
 
 interface CreatePostModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit?: (content: string) => void;
+  onPostCreated?: () => void; // Callback when post is successfully created
 }
 
 // Giphy GIF type based on their API response
@@ -39,7 +48,9 @@ interface GiphyGif {
 // Get your key at: https://developers.giphy.com
 const GIPHY_API_KEY = import.meta.env.VITE_GIPHY_API_KEY || '';
 
-export function CreatePostModal({ isOpen, onClose, onSubmit }: CreatePostModalProps) {
+export function CreatePostModal({ isOpen, onClose, onPostCreated }: CreatePostModalProps) {
+  const { user } = useAuthStatus();
+  const { username: socialUsername, hasUsername, loading: profileLoading, refetch: refetchProfile } = useSocialProfile();
   const [content, setContent] = useState('');
   const [charCount, setCharCount] = useState(0);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -47,6 +58,9 @@ export function CreatePostModal({ isOpen, onClose, onSubmit }: CreatePostModalPr
   const [gifSearchQuery, setGifSearchQuery] = useState('');
   const [gifResults, setGifResults] = useState<GiphyGif[]>([]);
   const [gifLoading, setGifLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showUsernameModal, setShowUsernameModal] = useState(false);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const gifPickerRef = useRef<HTMLDivElement>(null);
 
@@ -114,11 +128,143 @@ export function CreatePostModal({ isOpen, onClose, onSubmit }: CreatePostModalPr
     setCharCount(newContent.length);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (content.trim() && onSubmit) {
-      onSubmit(content.trim());
+    
+    if (!content.trim() || content.length > 1024) {
+      return;
+    }
+
+    if (!user?.username) {
+      setError('You must be logged in to create a post');
+      return;
+    }
+
+    // Gate: Require username registration before posting
+    if (!hasUsername || !socialUsername) {
+      logger.log('[CreatePostModal] User does not have a username, showing registration modal');
+      setShowUsernameModal(true);
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      // Extract metadata from content
+      const metadata = extractPostMetadata(content);
+      
+      // Determine if it's a GIF (check images for GIF URLs)
+      const hasGif = metadata.images.some(img => {
+        const url = img.url.toLowerCase();
+        return url.includes('.gif') || url.includes('giphy') || url.includes('tenor');
+      });
+      
+      // Extract image URLs (for database storage)
+      const imageUrls = metadata.images.map(img => img.url);
+      
+      // Determine GIF URL and provider (if any)
+      const gifUrl = hasGif ? imageUrls[0] : null;
+      const gifProvider = gifUrl && (gifUrl.includes('giphy') || gifUrl.includes('tenor'))
+        ? ('giphy' as const)
+        : undefined;
+      
+      // Use the registered @username for display
+      const username = `@${socialUsername}`;
+
+      logger.log('📝 Creating post:', {
+        contentLength: content.length,
+        postType: metadata.postType,
+        hashtags: metadata.hashtags.length,
+        mentions: metadata.mentions.length,
+        images: metadata.images.length,
+        hasPoll: !!metadata.poll,
+      });
+
+      // Create post in database first (pollId will be set after poll creation)
+      const result = await client.models.Post.create({
+        userId: user.username,
+        username,
+        content: content.trim(),
+        postType: metadata.postType,
+        imageUrls: imageUrls.length > 0 ? imageUrls : undefined,
+        gifUrl: gifUrl || undefined,
+        gifProvider: gifProvider,
+        pollId: undefined, // Will be set after poll creation
+        hashtags: metadata.hashtags.length > 0 ? metadata.hashtags : undefined,
+        mentions: metadata.mentions.length > 0 ? metadata.mentions : undefined,
+        linkedRobotId: metadata.linkedRobotId || undefined,
+        likesCount: 0,
+        dislikesCount: 0,
+        commentsCount: 0,
+        sharesCount: 0,
+        createdAt: new Date().toISOString(),
+        isDeleted: false,
+        flaggedCount: 0,
+        visibility: 'public',
+        moderationStatus: 'pending',
+      });
+
+      if (result.errors && result.errors.length > 0) {
+        const errorMessage = result.errors.map(e => e.message || JSON.stringify(e)).join(', ');
+        logger.error('❌ Error creating post:', result.errors);
+        setError(`Failed to create post: ${errorMessage}`);
+        return;
+      }
+
+      const postId = result.data?.id;
+      logger.log('✅ Post created successfully:', postId);
+
+      // Create PostPoll if poll exists (after post is created so we have postId)
+      if (metadata.poll && metadata.poll.options.length >= 2 && postId) {
+        try {
+          const pollResult = await client.models.PostPoll.create({
+            postId: postId,
+            options: metadata.poll.options,
+            totalVotes: 0,
+            createdAt: new Date().toISOString(),
+          });
+
+          if (pollResult.errors && pollResult.errors.length > 0) {
+            logger.error('❌ Error creating poll:', pollResult.errors);
+            // Non-fatal - post exists but poll creation failed
+            logger.warn('⚠️ Post created but poll creation failed. Post ID:', postId);
+          } else {
+            const pollId = pollResult.data?.id;
+            logger.log('✅ Poll created:', pollId);
+
+            // Update post with pollId
+            try {
+              await client.models.Post.update({
+                id: postId,
+                pollId: pollId,
+              });
+              logger.log('✅ Poll linked to post:', { pollId, postId });
+            } catch (updateError) {
+              logger.error('❌ Error linking poll to post:', updateError);
+              // Non-fatal - poll exists but isn't linked (can be fixed manually)
+            }
+          }
+        } catch (pollError) {
+          logger.error('❌ Error creating poll:', pollError);
+          // Non-fatal - post exists but poll creation failed
+        }
+      }
+
+      // Reset form and close modal
+      setContent('');
+      setCharCount(0);
       handleClose();
+
+      // Notify parent component that post was created
+      if (onPostCreated) {
+        onPostCreated();
+      }
+    } catch (err) {
+      logger.error('❌ Error creating post:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create post. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -195,9 +341,27 @@ export function CreatePostModal({ isOpen, onClose, onSubmit }: CreatePostModalPr
     setGifResults([]);
   };
 
+  // Handle username registration success
+  const handleUsernameRegistered = (newUsername: string) => {
+    logger.log('[CreatePostModal] Username registered:', newUsername);
+    setShowUsernameModal(false);
+    refetchProfile(); // Refresh the social profile
+    // Don't auto-submit - let user click Post again
+  };
+
   if (!isOpen) return null;
 
-  return createPortal(
+  return (
+    <>
+      {/* Username Registration Modal */}
+      <UsernameRegistrationModal
+        isOpen={showUsernameModal}
+        onClose={() => setShowUsernameModal(false)}
+        onSuccess={handleUsernameRegistered}
+      />
+      
+      {/* Create Post Modal */}
+      {createPortal(
     <div className="modal-overlay" onClick={handleClose}>
       <div className="modal-content create-post-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
@@ -372,21 +536,34 @@ export function CreatePostModal({ isOpen, onClose, onSubmit }: CreatePostModalPr
             </div>
           </div>
 
+          {error && (
+            <div className="post-error" style={{ color: '#ff6b6b', padding: '0.5rem 0', fontSize: '0.875rem' }}>
+              {error}
+            </div>
+          )}
+
           <div className="modal-actions">
-            <button type="button" className="modal-button-secondary" onClick={handleClose}>
+            <button 
+              type="button" 
+              className="modal-button-secondary" 
+              onClick={handleClose}
+              disabled={isSubmitting}
+            >
               Cancel
             </button>
             <button
               type="submit"
               className="modal-button-primary"
-              disabled={!content.trim() || content.length > 1024}
+              disabled={!content.trim() || content.length > 1024 || isSubmitting}
             >
-              Post
+              {isSubmitting ? 'Posting...' : 'Post'}
             </button>
           </div>
         </form>
       </div>
     </div>,
     document.body
+      )}
+    </>
   );
 }

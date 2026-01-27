@@ -6,10 +6,12 @@ import './UserProfile.css';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faUser, faEdit, faSave, faTimes, faExternalLinkAlt } from '@fortawesome/free-solid-svg-icons';
+import { faUser, faEdit, faSave, faTimes, faExternalLinkAlt, faAt, faGlobe, faCrown, faCalendarAlt, faRocket, faGift, faCheckCircle, faExclamationCircle } from '@fortawesome/free-solid-svg-icons';
 import { useNavigate } from 'react-router-dom';
 import { formatGroupName, capitalizeName } from "../utils/formatters";
 import { logger } from '../utils/logger';
+import { UsernameRegistrationModal } from "../components/UsernameRegistrationModal";
+import { SubscriptionModal } from "../components/SubscriptionModal";
 
 const client = generateClient<Schema>();
 
@@ -61,11 +63,41 @@ export function UserProfile() {
   });
   const [isEditingCurrency, setIsEditingCurrency] = useState(false);
 
+  // Social Profile state
+  const [socialProfile, setSocialProfile] = useState<{
+    id: string;
+    username: string | null;
+    displayName: string | null;
+    subscriptionStatus: string | null;
+    subscriptionPlan: string | null;
+    subscriptionStartedAt: string | null;
+    subscriptionExpiresAt: string | null;
+    trialEndsAt: string | null;
+    pendingSubscriptionPlan: string | null;
+    pendingSubscriptionStartsAt: string | null;
+    isOgPricing: boolean;
+    ogPriceMtrMonthly: number | null;
+    ogPriceMtrAnnual: number | null;
+    modulrAddress: string | null;
+  } | null>(null);
+  const [showUsernameModal, setShowUsernameModal] = useState(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+
   const isPartner = user?.group === "PARTNERS";
   const isClient = user?.group === "CLIENTS";
 
   useEffect(() => {
     loadProfileData();
+    
+    // Listen for social profile updates (e.g., after username purchase or profile repair)
+    const handleProfileUpdate = () => {
+      loadProfileData();
+    };
+    
+    window.addEventListener('socialProfileUpdated', handleProfileUpdate);
+    return () => {
+      window.removeEventListener('socialProfileUpdated', handleProfileUpdate);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -73,7 +105,53 @@ export function UserProfile() {
     if (!user?.username) return;
     
     setLoading(true);
+    
     try {
+      // Load Social Profile via Lambda (bypasses Amplify Data authorization issues)
+      try {
+        const result = await client.queries.getSocialProfileLambda();
+        
+        // Parse the response (Lambda returns JSON string)
+        let response;
+        if (typeof result.data === 'string') {
+          const parsedData = JSON.parse(result.data);
+          if (parsedData.body) {
+            response = JSON.parse(parsedData.body);
+          } else {
+            response = parsedData;
+          }
+        } else {
+          response = result.data;
+        }
+        
+        if (response?.success && response?.profile) {
+          const profile = response.profile;
+          setSocialProfile({
+            id: profile.id || '',
+            username: profile.username || null,
+            displayName: profile.displayName || null,
+            subscriptionStatus: profile.subscriptionStatus || null,
+            subscriptionPlan: profile.subscriptionPlan || null,
+            subscriptionStartedAt: profile.subscriptionStartedAt || null,
+            subscriptionExpiresAt: profile.subscriptionExpiresAt || null,
+            trialEndsAt: profile.trialEndsAt || null,
+            pendingSubscriptionPlan: profile.pendingSubscriptionPlan || null,
+            pendingSubscriptionStartsAt: profile.pendingSubscriptionStartsAt || null,
+            isOgPricing: profile.isOgPricing || false,
+            ogPriceMtrMonthly: profile.ogPriceMtrMonthly || null,
+            ogPriceMtrAnnual: profile.ogPriceMtrAnnual || null,
+            modulrAddress: profile.modulrAddress || null,
+          });
+        }
+        // No profile found is okay - user hasn't registered a username yet
+      } catch (socialErr) {
+        // Only log errors in development
+        if (import.meta.env.DEV) {
+          logger.error("[UserProfile] Error loading social profile:", socialErr);
+        }
+        // Non-fatal - social profile may not exist yet
+      }
+      
       if (isPartner) {
         const allPartners = await client.models.Partner.list({ limit: 100 });
         const emailPrefix = user.email?.split('@')[0] || '';
@@ -319,6 +397,112 @@ export function UserProfile() {
     setIsEditingCurrency(false);
   };
 
+  const handleUsernameSuccess = (username: string) => {
+    setSocialProfile(prev => prev ? { ...prev, username } : {
+      id: '',
+      username,
+      displayName: null,
+      subscriptionStatus: 'trial',
+      subscriptionPlan: null,
+      subscriptionStartedAt: null,
+      subscriptionExpiresAt: null,
+      trialEndsAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      isOgPricing: true,
+      ogPriceMtrMonthly: 399,
+      ogPriceMtrAnnual: 4000,
+      modulrAddress: null,
+    });
+    setShowUsernameModal(false);
+    // Reload to get full profile data
+    loadProfileData();
+  };
+
+  // Helper function to format dates
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  };
+
+  // Helper function to get days remaining
+  const getDaysRemaining = (dateString: string | null) => {
+    if (!dateString) return 0;
+    const endDate = new Date(dateString);
+    const now = new Date();
+    const diffTime = endDate.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return Math.max(0, diffDays);
+  };
+
+  // Get subscription display info
+  const getSubscriptionInfo = () => {
+    if (!socialProfile) return null;
+    
+    const status = socialProfile.subscriptionStatus;
+    const trialDaysLeft = getDaysRemaining(socialProfile.trialEndsAt);
+    const subscriptionDaysLeft = getDaysRemaining(socialProfile.subscriptionExpiresAt);
+    
+    switch (status) {
+      case 'trial':
+        return {
+          label: 'Pro Trial',
+          badgeClass: 'trial',
+          icon: faGift,
+          message: trialDaysLeft > 0 
+            ? `${trialDaysLeft} days remaining in your free trial`
+            : 'Your trial has ended',
+          expiresAt: socialProfile.trialEndsAt,
+          canUpgrade: true,
+          showWarning: trialDaysLeft <= 7 && trialDaysLeft > 0,
+        };
+      case 'active':
+        return {
+          label: 'Pro',
+          badgeClass: 'active',
+          icon: faCrown,
+          message: `${socialProfile.subscriptionPlan === 'annual' ? 'Annual' : 'Monthly'} subscription`,
+          expiresAt: socialProfile.subscriptionExpiresAt,
+          canUpgrade: socialProfile.subscriptionPlan === 'monthly',
+          showWarning: subscriptionDaysLeft <= 7 && subscriptionDaysLeft > 0,
+        };
+      case 'cancelled':
+        return {
+          label: 'Pro (Cancelled)',
+          badgeClass: 'cancelled',
+          icon: faExclamationCircle,
+          message: 'Your subscription has been cancelled',
+          expiresAt: socialProfile.subscriptionExpiresAt,
+          canUpgrade: true,
+          showWarning: true,
+        };
+      case 'expired':
+        return {
+          label: 'Free',
+          badgeClass: 'expired',
+          icon: faExclamationCircle,
+          message: 'Your Pro access has expired',
+          expiresAt: null,
+          canUpgrade: true,
+          showWarning: false,
+        };
+      default:
+        return {
+          label: 'Free',
+          badgeClass: 'none',
+          icon: faUser,
+          message: 'Upgrade to Pro for unlimited posts and more',
+          expiresAt: null,
+          canUpgrade: true,
+          showWarning: false,
+        };
+    }
+  };
+
+  const subscriptionInfo = getSubscriptionInfo();
+
   if (loading) {
     return (
       <div className="loading-wrapper">
@@ -343,9 +527,13 @@ export function UserProfile() {
         {success && <div className="success-message">{success}</div>}
         {error && <div className="error-message">{error}</div>}
 
-        <div className="profile-section">
-          <h2>Account Information</h2>
+        <div className="profile-section account-section">
+          <h2>
+            <FontAwesomeIcon icon={faUser} className="section-icon" />
+            Account Information
+          </h2>
           <div className="profile-info-grid">
+            {/* Row 1: Email & Account Type */}
             <div className="info-item">
               <label>Email</label>
               <p>{user?.email}</p>
@@ -354,11 +542,46 @@ export function UserProfile() {
               <label>Account Type</label>
               <p>{formatGroupName(user?.group)}</p>
             </div>
-            <div className="info-item">
-              <label>Username</label>
-              <p>{capitalizeName(user?.username)}</p>
+
+            {/* Row 2: Google ID */}
+            <div className="info-item full-width">
+              <label>Google ID</label>
+              <p className="google-id">{user?.username}</p>
+              <span className="info-hint">Your OAuth identifier (private - never shown publicly)</span>
             </div>
-            <div className="info-item">
+
+            {/* Row 3: @Username */}
+            <div className="info-item full-width">
+              <label>
+                <FontAwesomeIcon icon={faAt} className="label-icon" />
+                Username
+              </label>
+              {socialProfile?.username ? (
+                <div className="username-display">
+                  <p className="username-value">@{socialProfile.username}</p>
+                  {socialProfile.subscriptionStatus === 'trial' && (
+                    <span className="subscription-badge trial">Pro Trial</span>
+                  )}
+                  {socialProfile.subscriptionStatus === 'active' && (
+                    <span className="subscription-badge active">Pro</span>
+                  )}
+                </div>
+              ) : (
+                <div className="username-not-set">
+                  <p>Not registered</p>
+                  <button 
+                    onClick={() => setShowUsernameModal(true)}
+                    className="btn-register-username"
+                  >
+                    <FontAwesomeIcon icon={faAt} /> Register Username
+                  </button>
+                  <span className="info-hint">Required to post on Modulr platforms (Social, Teleop sharing, etc.)</span>
+                </div>
+              )}
+            </div>
+
+            {/* Row 4: Display Name */}
+            <div className="info-item full-width">
               <label>Display Name</label>
               {isEditingDisplayName ? (
                 <div className="display-name-edit">
@@ -387,7 +610,7 @@ export function UserProfile() {
                       <FontAwesomeIcon icon={faTimes} /> Cancel
                     </button>
                   </div>
-                  <p className="display-name-hint">This name will be shown in your reviews and ratings instead of your email. Leave empty to show as "Anonymous".</p>
+                  <p className="display-name-hint">Friendly name shown in reviews and ratings. Can be duplicates (e.g., "John Smith").</p>
                 </div>
               ) : (
                 <div className="display-name-display">
@@ -401,6 +624,8 @@ export function UserProfile() {
                 </div>
               )}
             </div>
+
+            {/* Row 5: Preferred Currency (Clients only) */}
             {isClient && (
               <div className="info-item">
                 <label>Preferred Currency</label>
@@ -449,8 +674,198 @@ export function UserProfile() {
                 )}
               </div>
             )}
+
+            {/* Row 6: Modulr Network Address (Coming Soon) */}
+            <div className="info-item full-width">
+              <label>
+                <FontAwesomeIcon icon={faGlobe} className="label-icon" />
+                Modulr Network Address
+              </label>
+              <div className="modulr-address-section disabled">
+                <input
+                  type="text"
+                  placeholder="Coming Soon..."
+                  disabled
+                  className="modulr-address-input"
+                />
+                <span className="info-hint">
+                  Link your on-chain identity. Modulr blockchain integration coming soon.
+                  Your address will be portable to the Modulr Network!
+                </span>
+              </div>
+            </div>
           </div>
         </div>
+
+        {/* Subscription Section - Only show if user has a username */}
+        {socialProfile?.username && (
+          <div className="profile-section subscription-section">
+            <h2>
+              <FontAwesomeIcon icon={faCrown} className="section-icon" />
+              Modulr Pro Subscription
+            </h2>
+            
+            <div className="subscription-content">
+              {/* Current Status */}
+              <div className="subscription-status-card">
+                <div className="subscription-status-header">
+                  <div className="subscription-status-left">
+                    <FontAwesomeIcon 
+                      icon={subscriptionInfo?.icon || faUser} 
+                      className={`subscription-status-icon ${subscriptionInfo?.badgeClass}`}
+                    />
+                    <div>
+                      <span className={`subscription-status-badge ${subscriptionInfo?.badgeClass}`}>
+                        {subscriptionInfo?.label}
+                      </span>
+                      <p className="subscription-status-message">{subscriptionInfo?.message}</p>
+                    </div>
+                  </div>
+                  {subscriptionInfo?.expiresAt && (
+                    <div className="subscription-expires">
+                      <FontAwesomeIcon icon={faCalendarAlt} />
+                      <span>
+                        {socialProfile.subscriptionStatus === 'trial' ? 'Trial ends' : 
+                         socialProfile.subscriptionStatus === 'cancelled' ? 'Access until' : 'Renews'}
+                        : {formatDate(subscriptionInfo.expiresAt)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {subscriptionInfo?.showWarning && (
+                  <div className="subscription-warning">
+                    <FontAwesomeIcon icon={faExclamationCircle} />
+                    <span>
+                      {socialProfile.subscriptionStatus === 'trial' 
+                        ? 'Your trial is ending soon! Subscribe to keep Pro features.'
+                        : socialProfile.subscriptionStatus === 'cancelled'
+                        ? 'Your access will end soon. Resubscribe to keep Pro features.'
+                        : 'Your subscription is renewing soon.'}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* OG Pricing Badge */}
+              {socialProfile.isOgPricing && (
+                <div className="og-pricing-banner">
+                  <FontAwesomeIcon icon={faRocket} />
+                  <div>
+                    <strong>OG Pricing Locked In!</strong>
+                    <p>As an early adopter, you've locked in special pricing forever:</p>
+                    <ul>
+                      <li>Monthly: {socialProfile.ogPriceMtrMonthly?.toLocaleString()} MTR/mo (${((socialProfile.ogPriceMtrMonthly || 399) / 100).toFixed(2)}/mo)</li>
+                      <li>Annual: {socialProfile.ogPriceMtrAnnual?.toLocaleString()} MTR/yr (${((socialProfile.ogPriceMtrAnnual || 4000) / 100).toFixed(2)}/yr)</li>
+                    </ul>
+                    <span className="og-pricing-note">
+                      Keep your subscription active to maintain this pricing!
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Pro Benefits */}
+              <div className="subscription-benefits">
+                <h4>Pro Benefits</h4>
+                <div className="benefits-grid">
+                  <div className="benefit-item">
+                    <FontAwesomeIcon icon={faCheckCircle} />
+                    <span>Unlimited posts per day</span>
+                  </div>
+                  <div className="benefit-item">
+                    <FontAwesomeIcon icon={faCheckCircle} />
+                    <span>Unlimited comments per day</span>
+                  </div>
+                  <div className="benefit-item">
+                    <FontAwesomeIcon icon={faCheckCircle} />
+                    <span>Extended post length (4,096 chars)</span>
+                  </div>
+                  <div className="benefit-item">
+                    <FontAwesomeIcon icon={faCheckCircle} />
+                    <span>Pro badge on profile</span>
+                  </div>
+                  <div className="benefit-item">
+                    <FontAwesomeIcon icon={faCheckCircle} />
+                    <span>Video uploads (coming soon)</span>
+                  </div>
+                  <div className="benefit-item">
+                    <FontAwesomeIcon icon={faCheckCircle} />
+                    <span>Share Teleop sessions</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Free Tier Limits */}
+              {(socialProfile.subscriptionStatus === 'none' || 
+                socialProfile.subscriptionStatus === 'expired' || 
+                !socialProfile.subscriptionStatus) && (
+                <div className="free-tier-limits">
+                  <h4>Free Tier Limits</h4>
+                  <ul>
+                    <li>1 post per day</li>
+                    <li>1 comment per day</li>
+                    <li>1,024 character limit</li>
+                    <li>No video uploads</li>
+                  </ul>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="subscription-actions">
+                {subscriptionInfo?.canUpgrade && (
+                  <>
+                    {(socialProfile.subscriptionStatus === 'none' || 
+                      socialProfile.subscriptionStatus === 'expired' ||
+                      socialProfile.subscriptionStatus === 'trial' ||
+                      socialProfile.subscriptionStatus === 'cancelled' ||
+                      !socialProfile.subscriptionStatus) && (
+                      <button 
+                        className="btn-subscribe"
+                        onClick={() => setShowSubscriptionModal(true)}
+                      >
+                        <FontAwesomeIcon icon={faCrown} />
+                        {socialProfile.subscriptionStatus === 'trial' 
+                          ? 'Subscribe Now' 
+                          : socialProfile.subscriptionStatus === 'cancelled'
+                          ? 'Resubscribe'
+                          : 'Upgrade to Pro'}
+                      </button>
+                    )}
+                    {socialProfile.subscriptionStatus === 'active' && 
+                     socialProfile.subscriptionPlan === 'monthly' && (
+                      <button 
+                        className="btn-upgrade-annual"
+                        onClick={() => setShowSubscriptionModal(true)}
+                      >
+                        <FontAwesomeIcon icon={faRocket} />
+                        Switch to Annual (Save 16%)
+                      </button>
+                    )}
+                  </>
+                )}
+                {socialProfile.subscriptionStatus === 'active' && (
+                  <button 
+                    className="btn-manage-subscription"
+                    onClick={() => setShowSubscriptionModal(true)}
+                  >
+                    Manage Subscription
+                  </button>
+                )}
+              </div>
+
+              {/* Note about billing */}
+              <p className="subscription-note">
+                <FontAwesomeIcon icon={faCalendarAlt} />
+                {socialProfile.subscriptionStatus === 'trial' 
+                  ? 'You won\'t be charged until your trial ends. Cancel anytime.'
+                  : socialProfile.subscriptionStatus === 'active' && socialProfile.subscriptionPlan === 'monthly'
+                  ? 'Upgrade to annual takes effect after your current month ends.'
+                  : 'All subscriptions are paid using MTR credits.'}
+              </p>
+            </div>
+          </div>
+        )}
 
         {isPartner && partnerData && (
           <div className="profile-section">
@@ -542,6 +957,31 @@ export function UserProfile() {
           </div>
         )}
       </div>
+
+      {/* Username Registration Modal */}
+      <UsernameRegistrationModal
+        isOpen={showUsernameModal}
+        onClose={() => setShowUsernameModal(false)}
+        onSuccess={handleUsernameSuccess}
+      />
+
+      {/* Subscription Modal */}
+      <SubscriptionModal
+        isOpen={showSubscriptionModal}
+        onClose={() => setShowSubscriptionModal(false)}
+        onSuccess={(plan) => {
+          setShowSubscriptionModal(false);
+          loadProfileData();
+        }}
+        currentStatus={socialProfile?.subscriptionStatus || null}
+        currentPlan={socialProfile?.subscriptionPlan || null}
+        pendingSubscriptionPlan={socialProfile?.pendingSubscriptionPlan || null}
+        pendingSubscriptionStartsAt={socialProfile?.pendingSubscriptionStartsAt || null}
+        isOgPricing={socialProfile?.isOgPricing || false}
+        ogPriceMonthly={socialProfile?.ogPriceMtrMonthly || null}
+        ogPriceAnnual={socialProfile?.ogPriceMtrAnnual || null}
+        trialEndsAt={socialProfile?.trialEndsAt || null}
+      />
     </div>
   );
 }

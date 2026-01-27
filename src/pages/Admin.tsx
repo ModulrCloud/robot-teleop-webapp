@@ -13,6 +13,8 @@ import {
   faHistory,
   faSlidersH,
   faBroom,
+  faComments,
+  faTag,
 } from "@fortawesome/free-solid-svg-icons";
 import { logger } from "../utils/logger";
 import "./Admin.css";
@@ -26,6 +28,7 @@ const ConnectionCleanup = lazy(() => import("./admin/components/ConnectionCleanu
 const PlatformSettings = lazy(() => import("./admin/components/PlatformSettings").then(module => ({ default: module.PlatformSettings })));
 const PayoutManagement = lazy(() => import("./admin/components/PayoutManagement").then(module => ({ default: module.PayoutManagement })));
 const UserManagement = lazy(() => import("./admin/components/UserManagement").then(module => ({ default: module.UserManagement })));
+const PromoCodeManagement = lazy(() => import("./admin/components/PromoCodeManagement").then(module => ({ default: module.PromoCodeManagement })));
 
 export const Admin = () => {
   usePageTitle();
@@ -230,6 +233,32 @@ export const Admin = () => {
         }>
           <UserManagement />
         </Suspense>
+
+        {/* Social Platform Section */}
+        <div className="admin-section-group">
+          <div className="section-group-header">
+            <FontAwesomeIcon icon={faComments} className="section-group-icon" />
+            <h2>Social Platform</h2>
+            <p className="section-group-description">Manage social features, promo codes, and content</p>
+          </div>
+
+          {/* Promo Code Management Section - Lazy Loaded */}
+          <Suspense fallback={
+            <div className="admin-section">
+              <div className="section-header">
+                <FontAwesomeIcon icon={faTag} className="section-icon" />
+                <h3>Promo Code Management</h3>
+              </div>
+              <div className="section-content">
+                <div className="loading-state">
+                  <p>Loading promo code management...</p>
+                </div>
+              </div>
+            </div>
+          }>
+            <PromoCodeManagement />
+          </Suspense>
+        </div>
 
       </div>
     </div>

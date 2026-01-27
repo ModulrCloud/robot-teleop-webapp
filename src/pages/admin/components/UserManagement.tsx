@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuthStatus } from "../../../hooks/useAuthStatus";
-import { hasAdminAccess } from "../../../utils/admin";
+import { hasAdminAccess, canAssignAdmin } from "../../../utils/admin";
 import { generateClient } from "aws-amplify/api";
 import type { Schema } from "../../../../amplify/data/resource";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -16,6 +16,7 @@ import {
   faChevronRight,
   faEdit,
   faTrash,
+  faShieldAlt,
 } from "@fortawesome/free-solid-svg-icons";
 import { logger } from "../../../utils/logger";
 import "../../Admin.css";
@@ -714,6 +715,85 @@ export const UserManagement = () => {
                       <span className={`status-badge ${selectedUser.enabled ? 'status-active' : 'status-inactive'}`}>
                         {selectedUser.enabled ? 'Active' : 'Disabled'}
                       </span>
+                    </div>
+                  </div>
+                  <div className="detail-item">
+                    <label>Classification</label>
+                    <div>
+                      <span className={`status-badge ${selectedUser.classification === 'ADMIN' ? 'status-active' : ''}`}>
+                        {selectedUser.classification || 'CLIENT'}
+                      </span>
+                      {(() => {
+                        const canAssign = selectedUser.classification !== 'ADMIN' && user?.email && canAssignAdmin(user.email, user?.group || undefined);
+                        if (import.meta.env?.DEV) {
+                          logger.log('🔍 [ADMIN ASSIGN] Button visibility check:', {
+                            selectedUserClassification: selectedUser.classification,
+                            userEmail: user?.email,
+                            userGroup: user?.group,
+                            canAssignAdmin: canAssignAdmin(user?.email || null, user?.group || undefined),
+                            canAssign,
+                          });
+                        }
+                        return canAssign;
+                      })() && (
+                        <button
+                          className="admin-button admin-button-primary"
+                          style={{ marginTop: '0.5rem', fontSize: '0.85rem', padding: '0.5rem 1rem' }}
+                          onClick={async () => {
+                            if (!confirm(`Assign admin status to ${selectedUser.email || selectedUser.username}? This will add them to the ADMINS Cognito group.`)) {
+                              return;
+                            }
+                            try {
+                              setError(null);
+                              setSuccess(null);
+                              const result = await client.mutations.assignAdminLambda({
+                                targetUserId: selectedUser.username,
+                                reason: `Assigned by ${user.email}`,
+                              });
+                              
+                              // Parse response
+                              let responseData: any = null;
+                              if (typeof result.data === 'string') {
+                                try {
+                                  responseData = JSON.parse(result.data);
+                                } catch {
+                                  responseData = { body: result.data };
+                                }
+                              } else {
+                                responseData = result.data;
+                              }
+                              
+                              if (result.errors && result.errors.length > 0) {
+                                const errorMessages = result.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ');
+                                setError(`GraphQL Error: ${errorMessages}`);
+                              } else if (responseData?.body) {
+                                const parsed = typeof responseData.body === 'string' ? JSON.parse(responseData.body) : responseData.body;
+                                if (parsed.success) {
+                                  setSuccess(`Admin status assigned to ${selectedUser.email || selectedUser.username}`);
+                                  setTimeout(() => {
+                                    setShowUserDetail(false);
+                                    loadUsers();
+                                  }, 1500);
+                                } else {
+                                  setError(parsed.error || parsed.message || "Failed to assign admin");
+                                }
+                              } else {
+                                setSuccess(`Admin status assigned to ${selectedUser.email || selectedUser.username}`);
+                                setTimeout(() => {
+                                  setShowUserDetail(false);
+                                  loadUsers();
+                                }, 1500);
+                              }
+                            } catch (err) {
+                              logger.error("Error assigning admin:", err);
+                              setError(err instanceof Error ? err.message : "Failed to assign admin");
+                            }
+                          }}
+                        >
+                          <FontAwesomeIcon icon={faShieldAlt} />
+                          Assign Admin Status
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div className="detail-item">

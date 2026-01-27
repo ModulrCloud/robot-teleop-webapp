@@ -46,3 +46,28 @@ export function hasAdminAccess(
   return false;
 }
 
+/**
+ * Checks if a user can assign admin status to others
+ * Only super admin (chris@modulr.cloud) or ADMINS group members can assign admins
+ * @param email - User's email address
+ * @param group - Optional Cognito group (single value, e.g., "ADMINS")
+ * @returns true if user can assign admins
+ */
+export function canAssignAdmin(
+  email: string | null | undefined,
+  group?: string | null
+): boolean {
+  // Super admin: chris@modulr.cloud can always assign admins
+  const SUPER_ADMIN_EMAIL = 'chris@modulr.cloud';
+  if (email && email.toLowerCase().trim() === SUPER_ADMIN_EMAIL) {
+    return true;
+  }
+  
+  // ADMINS group members can assign admins
+  if (group && (group.toUpperCase() === 'ADMINS' || group.toUpperCase() === 'ADMIN')) {
+    return true;
+  }
+  
+  return false;
+}
+

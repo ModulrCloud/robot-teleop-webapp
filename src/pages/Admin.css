@@ -302,9 +302,9 @@
 
 /* Buttons */
 .admin-button {
-  background: #ffc107;
-  color: #000;
-  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   padding: 0.75rem 1.5rem;
   font-size: 0.9rem;
@@ -317,6 +317,17 @@
 }
 
 .admin-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.admin-button-primary {
+  background: #ffc107;
+  color: #000;
+  border: none;
+}
+
+.admin-button-primary:hover {
   background: #ffb300;
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
@@ -1115,6 +1126,315 @@
   margin-top: 1rem;
 }
 
+/* Promo Code Management Styles - Global (applies to all screen sizes) */
+.promo-code-form {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+/* Global input styling for promo code form - high specificity */
+.promo-code-form input {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 8px;
+  padding: 0.75rem !important;
+  color: #fff !important;
+  font-size: 0.95rem;
+  width: 100%;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.promo-code-form input:focus {
+  outline: none !important;
+  border-color: #ffc107 !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.1);
+}
+
+.promo-code-form input::placeholder {
+  color: rgba(255, 255, 255, 0.4) !important;
+  opacity: 1;
+}
+
+.promo-code-form h3 {
+  color: #fff;
+  margin: 0 0 1.5rem 0;
+  font-size: 1.25rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-group label {
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.promo-code-form input[type="text"],
+.promo-code-form input[type="number"],
+.promo-code-form input[type="datetime-local"],
+.promo-code-form input[type="date"],
+.promo-code-form input[type="time"],
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group input[type="datetime-local"],
+.form-group input[type="date"],
+.form-group input[type="time"] {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 8px;
+  padding: 0.75rem;
+  color: #fff !important;
+  font-size: 0.95rem;
+  width: 100%;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.promo-code-form input[type="text"]:focus,
+.promo-code-form input[type="number"]:focus,
+.promo-code-form input[type="datetime-local"]:focus,
+.promo-code-form input[type="date"]:focus,
+.promo-code-form input[type="time"]:focus,
+.form-group input[type="text"]:focus,
+.form-group input[type="number"]:focus,
+.form-group input[type="datetime-local"]:focus,
+.form-group input[type="date"]:focus,
+.form-group input[type="time"]:focus {
+  outline: none !important;
+  border-color: #ffc107 !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.1);
+}
+
+.form-group input[type="text"]:disabled,
+.form-group input[type="number"]:disabled,
+.form-group input[type="datetime-local"]:disabled,
+.form-group input[type="date"]:disabled,
+.form-group input[type="time"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Date picker calendar icon styling */
+.form-group input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+.form-group input[type="date"]::-webkit-calendar-picker-indicator,
+.promo-code-form input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+.promo-code-form input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.form-group input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+.form-group input[type="date"]::-webkit-calendar-picker-indicator:hover,
+.promo-code-form input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover,
+.promo-code-form input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+/* Placeholder text styling */
+.promo-code-form input::placeholder,
+.form-group input::placeholder {
+  color: rgba(255, 255, 255, 0.4) !important;
+  opacity: 1;
+}
+
+.form-group small {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.8rem;
+}
+
+.checkbox-group {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.checkbox-group input[type="checkbox"]:checked {
+  background: #ffc107;
+  border-color: #ffc107;
+}
+
+.checkbox-group input[type="checkbox"]:checked::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #000;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.checkbox-group input[type="checkbox"]:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.checkbox-group input[type="checkbox"]:checked:hover {
+  background: #ffb300;
+  border-color: #ffb300;
+}
+
+.form-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.form-actions .admin-button {
+  min-width: 120px;
+}
+
+.promo-codes-table {
+  overflow-x: auto;
+}
+
+.promo-codes-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.promo-codes-table th {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.promo-codes-table td {
+  padding: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Action buttons in promo codes table - ensure visibility */
+.promo-codes-table .action-buttons {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.promo-codes-table .btn-icon {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 6px;
+  padding: 0.5rem;
+  color: rgba(255, 255, 255, 0.9) !important;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+}
+
+.promo-codes-table .btn-icon:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+  color: #fff !important;
+  transform: scale(1.05);
+}
+
+.promo-codes-table .btn-icon:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.promo-codes-table .btn-icon.btn-danger {
+  background: rgba(244, 67, 54, 0.15) !important;
+  border-color: rgba(244, 67, 54, 0.3) !important;
+  color: rgba(244, 67, 54, 0.9) !important;
+}
+
+.promo-codes-table .btn-icon.btn-danger:hover:not(:disabled) {
+  background: rgba(244, 67, 54, 0.25) !important;
+  border-color: rgba(244, 67, 54, 0.5) !important;
+  color: #f44336 !important;
+}
+
+.promo-codes-table tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.badge-discount {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.badge-trial {
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.status-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.status-badge.active {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.status-badge.inactive {
+  background: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .admin-page {
@@ -1129,6 +1449,217 @@
 
   .admin-section {
     padding: 1.5rem;
+  }
+
+  .admin-section-group {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 2rem;
+    margin-top: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .section-group-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .section-group-icon {
+    font-size: 1.75rem;
+    color: #ffc107;
+  }
+
+  .section-group-header h2 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 0;
+  }
+
+  .section-group-description {
+    margin-left: auto;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.9rem;
+  }
+
+  .admin-section-group .admin-section {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .admin-section-group .admin-section:first-child {
+    margin-top: 0;
+  }
+
+  .admin-section-group .admin-section:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Mobile-specific form grid adjustments */
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .promo-codes-table {
+    overflow-x: auto;
+  }
+
+  .promo-codes-table table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .promo-codes-table th {
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.9);
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.9rem;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .promo-codes-table td {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .promo-codes-table tr:hover {
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .promo-codes-table tr.inactive {
+    opacity: 0.6;
+  }
+
+  .promo-codes-table tr.expired {
+    opacity: 0.5;
+  }
+
+  .code-source {
+    display: block;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .badge-discount {
+    background: rgba(76, 175, 80, 0.2);
+    color: #4caf50;
+    border: 1px solid rgba(76, 175, 80, 0.3);
+  }
+
+  .badge-trial {
+    background: rgba(255, 193, 7, 0.2);
+    color: #ffc107;
+    border: 1px solid rgba(255, 193, 7, 0.3);
+  }
+
+  .status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .status-badge.active {
+    background: rgba(76, 175, 80, 0.2);
+    color: #4caf50;
+    border: 1px solid rgba(76, 175, 80, 0.3);
+  }
+
+  .status-badge.inactive {
+    background: rgba(158, 158, 158, 0.2);
+    color: #9e9e9e;
+    border: 1px solid rgba(158, 158, 158, 0.3);
+  }
+
+  .date-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .date-info small {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.8rem;
+  }
+
+  .date-info strong {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .action-buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .btn-icon {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 0.5rem;
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+  }
+
+  .btn-icon:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #fff;
+  }
+
+  .btn-icon:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-icon.btn-danger:hover:not(:disabled) {
+    background: rgba(244, 67, 54, 0.2);
+    border-color: rgba(244, 67, 54, 0.4);
+    color: #f44336;
+  }
+
+  .text-muted {
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  .section-actions {
+    margin-bottom: 1.5rem;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .empty-state svg {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
   }
 
   .admin-table {
