@@ -170,7 +170,7 @@ html {
 .teleop-status-badge.connected {
   background: rgba(40, 167, 69, 0.15);
   border-color: rgba(40, 167, 69, 0.4);
-  color: #28a745;
+  color: #ffc107;
 }
 
 .teleop-status-badge.disconnected {
@@ -989,7 +989,7 @@ html {
 }
 
 .gamepad-status.detected {
-  color: #28a745;
+  color: #ffc107;
 }
 
 .gamepad-status.not-detected-status {
@@ -1106,7 +1106,7 @@ html {
 
 .security-badge>svg {
   font-size: 1.5rem;
-  color: #28a745;
+  color: #ffc107;
   filter: drop-shadow(0 2px 8px rgba(40, 167, 69, 0.3));
 }
 
@@ -1119,7 +1119,7 @@ html {
 .security-info strong {
   font-size: 0.95rem;
   font-weight: 700;
-  color: #28a745;
+  color: #ffc107;
   letter-spacing: 0.3px;
 }
 
@@ -1137,7 +1137,7 @@ html {
   border-radius: 8px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #28a745;
+  color: #ffc107;
 }
 
 .encryption-details svg {

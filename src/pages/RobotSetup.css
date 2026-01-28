@@ -89,6 +89,14 @@
   line-height: 1.6;
 }
 
+.setup-link {
+  color: #facc15;
+  text-decoration: none;
+}
+.setup-link:hover {
+  color: #fde047;
+}
+
 .url-display {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -96,10 +104,113 @@
   padding: 1.5rem;
 }
 
+/* Standard codeblock: language label + copy button inside one dark block */
+.codeblock-wrapper {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 1rem 0;
+}
+
+.codeblock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.codeblock-lang {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: 'Courier New', monospace;
+  text-transform: capitalize;
+}
+
+.codeblock-copy-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  background: linear-gradient(135deg, #ffc107, #ff9800);
+  color: #000;
+  font-weight: 600;
+  font-size: 0.85rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.codeblock-copy-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.35);
+}
+
+.codeblock-copy-btn.copied {
+  background: linear-gradient(135deg, #ffc107, #ff9800);
+  color: #000;
+}
+
+.codeblock-body {
+  padding: 1rem;
+  min-width: 0;
+}
+
+.codeblock-pre {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.codeblock-wrapper.codeblock-large .codeblock-body {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.codeblock-wrapper.codeblock-large .codeblock-pre {
+  font-size: 0.8rem;
+}
+
+/* Scrollbar for codeblock body */
+.codeblock-body::-webkit-scrollbar,
+.codeblock-pre::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.codeblock-body::-webkit-scrollbar-track,
+.codeblock-pre::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.codeblock-body::-webkit-scrollbar-thumb,
+.codeblock-pre::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
 .url-input-group {
   display: flex;
   gap: 0.75rem;
   margin-bottom: 1rem;
+  min-width: 0;
+}
+
+/* Let the code block shrink so Copy button stays inside the card; long lines scroll */
+.url-input-group .code-block {
+  min-width: 0;
 }
 
 .url-input {
@@ -133,6 +244,7 @@
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .copy-button:hover {
@@ -141,8 +253,8 @@
 }
 
 .copy-button.copied {
-  background: linear-gradient(135deg, #28a745, #20c997);
-  color: #fff;
+  background: linear-gradient(135deg, #ffc107, #ff9800);
+  color: #000;
 }
 
 .config-values {

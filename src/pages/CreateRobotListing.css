@@ -506,11 +506,11 @@
 .feedback-message.success {
   background: rgba(40, 167, 69, 0.15);
   border: 1px solid rgba(40, 167, 69, 0.3);
-  color: #28a745;
+  color: #ffc107;
 }
 
 .feedback-message.success svg {
-  color: #28a745;
+  color: #ffc107;
 }
 
 .feedback-message.error {

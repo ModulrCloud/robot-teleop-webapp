@@ -24,9 +24,10 @@ export const handler = async (
   event: AppSyncResolverEvent<GetSessionArgs>
 ): Promise<SessionResult | null> => {
   const { sessionId } = event.arguments;
-  const userId = event.identity && 'username' in event.identity 
-    ? event.identity.username 
-    : null;
+  const identity = event.identity as { sub?: string; username?: string } | undefined;
+  const sub = identity?.sub ?? null;
+  const username = identity?.username ?? null;
+  const userId = sub ?? username;
 
   if (!userId) {
     console.error('[GET_SESSION] No user identity');
@@ -47,7 +48,12 @@ export const handler = async (
       const session = result.Items?.[0];
       if (!session) return null;
 
-      if (session.owner?.S !== userId && session.userId?.S !== userId) {
+      const owner = session.owner?.S ?? '';
+      const sessionUserId = session.userId?.S ?? '';
+      const isOwner = owner === sub || owner === username;
+      const isUser = sessionUserId === sub || sessionUserId === username;
+
+      if (!isOwner && !isUser) {
         console.warn('[GET_SESSION] User not authorized to view session');
         return null;
       }
@@ -70,7 +76,7 @@ export const handler = async (
       IndexName: 'userIdIndex',
       KeyConditionExpression: 'userId = :userId',
       ExpressionAttributeValues: {
-        ':userId': { S: userId },
+        ':userId': { S: sub ?? userId },
       },
       ScanIndexForward: false,
       Limit: 1,

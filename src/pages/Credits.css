@@ -144,10 +144,10 @@
 
 .success-message {
   padding: 0.75rem 1rem;
-  background: rgba(76, 175, 80, 0.15);
-  border: 1px solid rgba(76, 175, 80, 0.3);
+  background: rgba(255, 193, 7, 0.15);
+  border: 1px solid rgba(255, 193, 7, 0.3);
   border-radius: 8px;
-  color: #4caf50;
+  color: #ffc107;
   margin-bottom: 1rem;
   font-size: 0.9rem;
 }

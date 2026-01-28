@@ -14,6 +14,24 @@ interface RobotRatingProps {
   onRatingSubmitted?: () => void; // Callback when rating is submitted
 }
 
+interface ExistingRatingState {
+  rating?: number;
+  comment?: string;
+  isOwnRating?: boolean;
+}
+
+interface LambdaRatingBody {
+  success?: boolean;
+  error?: string;
+  details?: string;
+  ratings?: Array<{ rating?: number; comment?: string; isOwnRating?: boolean }>;
+}
+
+interface LambdaRatingResponse {
+  statusCode: number;
+  body?: string | LambdaRatingBody;
+}
+
 export function RobotRating({ robotId, sessionId, onRatingSubmitted }: RobotRatingProps) {
   const [selectedRating, setSelectedRating] = useState<number>(0);
   const [hoveredRating, setHoveredRating] = useState<number>(0);
@@ -21,7 +39,7 @@ export function RobotRating({ robotId, sessionId, onRatingSubmitted }: RobotRati
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [existingRating, setExistingRating] = useState<any>(null);
+  const [existingRating, setExistingRating] = useState<ExistingRatingState | null>(null);
 
   // Check if user has already rated this robot
   useEffect(() => {
@@ -38,7 +56,7 @@ export function RobotRating({ robotId, sessionId, onRatingSubmitted }: RobotRati
           
           if (parsed.statusCode === 200) {
             const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
-            const ownRating = body.ratings?.find((r: { isOwnRating?: boolean }) => r.isOwnRating);
+            const ownRating = body.ratings?.find((r: ExistingRatingState) => r.isOwnRating) as ExistingRatingState | undefined;
             if (ownRating) {
               setExistingRating(ownRating);
               setSelectedRating(ownRating.rating || 0);
@@ -73,20 +91,17 @@ export function RobotRating({ robotId, sessionId, onRatingSubmitted }: RobotRati
       });
 
       if (result.data) {
-        let parsed: any;
+        let parsed: LambdaRatingResponse | string;
         if (typeof result.data === 'string') {
-          parsed = JSON.parse(result.data);
+          parsed = JSON.parse(result.data) as LambdaRatingResponse | string;
         } else {
-          parsed = result.data;
+          parsed = result.data as LambdaRatingResponse;
         }
-        
-        // Handle double-encoded JSON
         if (typeof parsed === 'string') {
-          parsed = JSON.parse(parsed);
+          parsed = JSON.parse(parsed) as LambdaRatingResponse;
         }
-        
         if (parsed.statusCode === 200) {
-          const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
+          const body: LambdaRatingBody = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : (parsed.body ?? {});
           if (body.success) {
             setSuccess(true);
             setExistingRating({ rating: selectedRating, comment: comment.trim() });
@@ -100,7 +115,7 @@ export function RobotRating({ robotId, sessionId, onRatingSubmitted }: RobotRati
             setError(body.error || body.details || 'Failed to submit rating');
           }
         } else {
-          const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
+          const body: LambdaRatingBody = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : (parsed.body ?? {});
           setError(body.error || body.details || 'Failed to submit rating');
         }
       } else if (result.errors) {
