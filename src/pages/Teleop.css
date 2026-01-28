@@ -317,17 +317,16 @@ html {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.6rem 1rem;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.4) 70%, transparent 100%);
+  padding: 0.75rem 1.25rem;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.35) 80%, transparent 100%);
   z-index: 10;
   pointer-events: none;
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-  font-size: 0.75rem;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-.viewport-stats-left,
-.viewport-stats-right {
+.viewport-stats-group {
   display: flex;
+  align-items: center;
   gap: 1rem;
 }
 
@@ -337,111 +336,142 @@ html {
   transform: translateX(-50%);
 }
 
+.stat-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
 .viewport-stat {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  color: rgba(255, 255, 255, 0.85);
+  gap: 0.3rem;
 }
 
 .viewport-stat .stat-icon {
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-right: 0.25rem;
 }
 
 .viewport-stat .stat-icon.good {
-  color: #4caf50;
+  color: #4ade80;
 }
 
 .viewport-stat .stat-icon.medium {
-  color: #ff9800;
+  color: #fbbf24;
 }
 
 .viewport-stat .stat-icon.poor {
-  color: #f44336;
-}
-
-.viewport-stat .stat-label {
-  color: rgba(255, 255, 255, 0.5);
-  font-weight: 500;
+  color: #f87171;
 }
 
 .viewport-stat .stat-value {
-  color: rgba(255, 255, 255, 0.9);
+  font-family: 'Quantico', 'Inter', sans-serif;
+  font-size: 1rem;
   font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  letter-spacing: -0.01em;
 }
 
 .viewport-stat .stat-value.good {
-  color: #4caf50;
+  color: #4ade80;
 }
 
 .viewport-stat .stat-value.medium {
-  color: #ff9800;
+  color: #fbbf24;
 }
 
 .viewport-stat .stat-value.poor {
-  color: #f44336;
+  color: #f87171;
 }
 
-.connection-indicator {
+.viewport-stat .stat-value.resolution {
+  font-size: 0.9rem;
+  letter-spacing: 0;
+}
+
+.viewport-stat .stat-unit {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.live-indicator {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.25rem 0.6rem;
-  background: rgba(76, 175, 80, 0.15);
-  border: 1px solid rgba(76, 175, 80, 0.3);
+  gap: 0.45rem;
+  padding: 0.3rem 0.75rem;
+  background: rgba(255, 193, 7, 0.12);
+  border: 1px solid rgba(255, 193, 7, 0.3);
   border-radius: 4px;
 }
 
-.connection-indicator .connection-dot {
-  width: 6px;
-  height: 6px;
+.live-indicator .live-dot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: #4caf50;
-  box-shadow: 0 0 6px rgba(76, 175, 80, 0.8);
-  animation: pulseDot 2s ease-in-out infinite;
+  background: #ffc107;
+  box-shadow: 0 0 6px rgba(255, 193, 7, 0.8);
+  animation: livePulse 1.5s ease-in-out infinite;
 }
 
-.connection-indicator .connection-text {
-  color: #4caf50;
-  font-size: 0.65rem;
+.live-indicator .live-text {
+  font-family: 'Quantico', 'Inter', sans-serif;
+  color: #ffc107;
+  font-size: 0.8rem;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
 }
 
-@keyframes pulseDot {
+@keyframes livePulse {
   0%, 100% {
     opacity: 1;
-    transform: scale(1);
   }
   50% {
-    opacity: 0.7;
-    transform: scale(0.9);
+    opacity: 0.5;
   }
 }
 
 /* Mobile responsive for viewport stats */
 @media (max-width: 768px) {
   .viewport-stats-overlay {
-    padding: 0.4rem 0.6rem;
-    font-size: 0.65rem;
+    padding: 0.5rem 0.75rem;
   }
   
-  .viewport-stats-left,
-  .viewport-stats-right {
+  .viewport-stats-group {
     gap: 0.5rem;
   }
   
-  .viewport-stat .stat-label {
-    display: none;
+  .viewport-stat .stat-value {
+    font-size: 0.75rem;
   }
   
-  .connection-indicator {
-    padding: 0.2rem 0.4rem;
+  .viewport-stat .stat-unit {
+    font-size: 0.55rem;
   }
   
-  .connection-indicator .connection-text {
+  .viewport-stat .stat-icon {
+    font-size: 0.65rem;
+  }
+  
+  .live-indicator {
+    padding: 0.2rem 0.5rem;
+  }
+  
+  .live-indicator .live-text {
     font-size: 0.6rem;
+  }
+  
+  .live-indicator .live-dot {
+    width: 6px;
+    height: 6px;
+  }
+  
+  .stat-divider {
+    height: 14px;
   }
 }
 
