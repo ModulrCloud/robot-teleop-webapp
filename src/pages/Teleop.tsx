@@ -388,10 +388,11 @@ export default function Teleop() {
       : sessionTime;
     sessionStorage.setItem('endSessionState', JSON.stringify({
       duration: Math.max(0, endDuration),
-      sessionId: status.sessionId
+      sessionId: status.sessionId,
+      robotId: robotId,
     }));
     window.location.href = '/endsession';
-  }, [stopRobot, disconnect, sessionTime, status.sessionId]);
+  }, [stopRobot, disconnect, sessionTime, status.sessionId, robotId]);
 
   const handleKeyboardInput = useCallback((input: { forward: number; turn: number }) => {
     const forward = input.forward;

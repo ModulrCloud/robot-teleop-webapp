@@ -124,12 +124,12 @@
 }
 
 .rating-success {
-  background: rgba(76, 175, 80, 0.2);
-  border: 1px solid rgba(76, 175, 80, 0.5);
+  background: rgba(255, 193, 7, 0.2);
+  border: 1px solid rgba(255, 193, 7, 0.5);
   border-radius: 4px;
   padding: 0.75rem;
   margin-bottom: 1rem;
-  color: #4caf50;
+  color: #ffc107;
   display: flex;
   align-items: center;
   gap: 0.5rem;

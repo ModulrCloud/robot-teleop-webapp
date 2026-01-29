@@ -20,13 +20,29 @@ interface SessionResult {
   status: string | null;
 }
 
+const buildSessionResult = (session: Record<string, { S?: string; N?: string }> | undefined): SessionResult | null => {
+  if (!session) return null;
+  return {
+    id: session.id?.S || '',
+    userId: session.userId?.S || '',
+    userEmail: session.userEmail?.S || null,
+    robotId: session.robotId?.S || '',
+    robotName: session.robotName?.S || null,
+    startedAt: session.startedAt?.S || '',
+    endedAt: session.endedAt?.S || null,
+    durationSeconds: session.durationSeconds?.N ? parseInt(session.durationSeconds.N, 10) : null,
+    status: session.status?.S || null,
+  };
+};
+
 export const handler = async (
   event: AppSyncResolverEvent<GetSessionArgs>
 ): Promise<SessionResult | null> => {
   const { sessionId } = event.arguments;
-  const userId = event.identity && 'username' in event.identity 
-    ? event.identity.username 
-    : null;
+  const identity = event.identity as { sub?: string; username?: string } | undefined;
+  const sub = identity?.sub ?? null;
+  const username = identity?.username ?? null;
+  const userId = sub ?? username;
 
   if (!userId) {
     console.error('[GET_SESSION] No user identity');
@@ -47,22 +63,17 @@ export const handler = async (
       const session = result.Items?.[0];
       if (!session) return null;
 
-      if (session.owner?.S !== userId && session.userId?.S !== userId) {
+      const owner = session.owner?.S ?? '';
+      const sessionUserId = session.userId?.S ?? '';
+      const isOwner = owner === sub || owner === username;
+      const isUser = sessionUserId === sub || sessionUserId === username;
+
+      if (!isOwner && !isUser) {
         console.warn('[GET_SESSION] User not authorized to view session');
         return null;
       }
 
-      return {
-        id: session.id?.S || '',
-        userId: session.userId?.S || '',
-        userEmail: session.userEmail?.S || null,
-        robotId: session.robotId?.S || '',
-        robotName: session.robotName?.S || null,
-        startedAt: session.startedAt?.S || '',
-        endedAt: session.endedAt?.S || null,
-        durationSeconds: session.durationSeconds?.N ? parseInt(session.durationSeconds.N) : null,
-        status: session.status?.S || null,
-      };
+      return buildSessionResult(session);
     }
 
     const result = await db.send(new QueryCommand({
@@ -70,26 +81,13 @@ export const handler = async (
       IndexName: 'userIdIndex',
       KeyConditionExpression: 'userId = :userId',
       ExpressionAttributeValues: {
-        ':userId': { S: userId },
+        ':userId': { S: sub ?? userId },
       },
       ScanIndexForward: false,
       Limit: 1,
     }));
 
-    const session = result.Items?.[0];
-    if (!session) return null;
-
-    return {
-      id: session.id?.S || '',
-      userId: session.userId?.S || '',
-      userEmail: session.userEmail?.S || null,
-      robotId: session.robotId?.S || '',
-      robotName: session.robotName?.S || null,
-      startedAt: session.startedAt?.S || '',
-      endedAt: session.endedAt?.S || null,
-      durationSeconds: session.durationSeconds?.N ? parseInt(session.durationSeconds.N) : null,
-      status: session.status?.S || null,
-    };
+    return buildSessionResult(result.Items?.[0]);
   } catch (err) {
     console.error('[GET_SESSION_ERROR]', err);
     return null;

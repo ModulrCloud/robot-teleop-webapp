@@ -25,8 +25,9 @@ export default function RobotSetup() {
   const robotUuid = searchParams.get('robotId'); // This is the Robot.id (UUID)
   const [robotId, setRobotId] = useState<string>(''); // This is the robotId field (robot-XXXXXXXX)
   const [connectionUrl, setConnectionUrl] = useState<string>('');
-  const [copied, setCopied] = useState(false);
-  const [copiedRobotId, setCopiedRobotId] = useState(false);
+  const [copiedRosbridge, setCopiedRosbridge] = useState(false);
+  const [copiedInitialSetup, setCopiedInitialSetup] = useState(false);
+  const [copiedStartCommand, setCopiedStartCommand] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,24 +102,9 @@ export default function RobotSetup() {
     loadRobotAndGenerateUrl();
   }, [robotUuid]);
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(connectionUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      logger.error('Failed to copy:', err);
-      // Fallback: select text
-      const textArea = document.createElement('textarea');
-      textArea.value = connectionUrl;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
+  const initialSetupCommand = robotId && connectionUrl
+    ? `cargo run -- initial-setup --robot-id ${robotId} --signaling-url "${connectionUrl}" --video-source ros`
+    : '';
 
   if (!robotUuid) {
     return (
@@ -164,120 +150,180 @@ export default function RobotSetup() {
         ) : (
           <>
             <div className="setup-section">
-              <h2>Step 1: Copy Your Connection Details</h2>
+              <h2>Before you begin</h2>
               <p className="section-description">
-                Copy these values and add them to your robot's configuration file. You'll need both the <strong>Robot ID</strong> and the <strong>WebSocket Connection URL</strong>.
+                Install the <strong>Modulr robot agent</strong> on your robot so it can connect to the platform. Clone and build the agent, then follow the steps below.
               </p>
-              
-              <div className="config-values">
-                <div className="config-item">
-                  <label htmlFor="robot-id">Robot ID</label>
-                  <div className="url-input-group">
-                    <input
-                      type="text"
-                      value={robotId || ''}
-                      readOnly
-                      className="url-input"
-                      id="robot-id"
-                    />
-                    <button
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(robotId || '');
-                          setCopiedRobotId(true);
-                          setTimeout(() => setCopiedRobotId(false), 2000);
-                        } catch (err) {
-                          logger.error('Failed to copy:', err);
-                        }
-                      }}
-                      className={`copy-button ${copiedRobotId ? 'copied' : ''}`}
-                      title="Copy Robot ID"
-                    >
-                      {copiedRobotId ? (
-                        <>
-                          <FontAwesomeIcon icon={faCheckCircle} />
-                          <span>Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <FontAwesomeIcon icon={faCopy} />
-                          <span>Copy</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="config-item">
-                  <label htmlFor="connection-url">WebSocket Connection URL</label>
-                  <div className="url-input-group">
-                    <input
-                      type="text"
-                      value={connectionUrl}
-                      readOnly
-                      className="url-input"
-                      id="connection-url"
-                    />
-                    <button
-                      onClick={handleCopy}
-                      className={`copy-button ${copied ? 'copied' : ''}`}
-                      title="Copy Connection URL"
-                    >
-                      {copied ? (
-                        <>
-                          <FontAwesomeIcon icon={faCheckCircle} />
-                          <span>Copied!</span>
-                        </>
-                      ) : (
-                        <>
-                          <FontAwesomeIcon icon={faCopy} />
-                          <span>Copy</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <p className="url-note">
-                <FontAwesomeIcon icon={faInfoCircle} />
-                The connection URL includes your authentication token. Keep it secure and don't share it publicly.
+              <p>
+                <a
+                  href="https://github.com/ModulrCloud/modulr-agent"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="setup-link"
+                >
+                  Get the Modulr agent (GitHub)
+                </a>
+                {' '}
+                — follow the README for prerequisites (Rust, GStreamer, ROS) and build instructions.
               </p>
             </div>
 
             <div className="setup-section">
-              <h2>Step 2: Configure Your Robot</h2>
+              <h2>Step 1: Dependencies (ROS video source)</h2>
+              <p className="section-description">
+                If using ROS 2 with the ROS video source, start rosbridge first. It&apos;s needed for the video stream.
+              </p>
+              <div className="codeblock-wrapper" style={{ marginTop: '0.75rem' }}>
+                <div className="codeblock-header">
+                  <span className="codeblock-lang">Terminal</span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const cmd = 'ros2 launch rosbridge_server rosbridge_websocket_launch.xml';
+                      try {
+                        await navigator.clipboard.writeText(cmd);
+                        setCopiedRosbridge(true);
+                        setTimeout(() => setCopiedRosbridge(false), 2000);
+                      } catch (err) {
+                        logger.error('Failed to copy:', err);
+                      }
+                    }}
+                    className={`codeblock-copy-btn ${copiedRosbridge ? 'copied' : ''}`}
+                    title="Copy rosbridge launch command"
+                  >
+                    {copiedRosbridge ? (
+                      <>
+                        <FontAwesomeIcon icon={faCheckCircle} />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <FontAwesomeIcon icon={faCopy} />
+                        <span>Copy code</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="codeblock-body">
+                  <pre className="codeblock-pre">ros2 launch rosbridge_server rosbridge_websocket_launch.xml</pre>
+                </div>
+              </div>
+            </div>
+
+            <div className="setup-section">
+              <h2>Step 2: Run initial setup on your robot</h2>
+              <p className="section-description">
+                On your robot (in the Modulr agent project directory), run the command below. It saves your Robot ID and signaling URL into the agent config file (default: <code>~/.config/modulr_agent/config.json</code>). To use a specific file (e.g. <code>./local_config.json</code>), add <code>--config-override ./local_config.json</code> before <code>--video-source</code>.
+              </p>
+              <div className="codeblock-wrapper" style={{ marginTop: '0.75rem' }}>
+                <div className="codeblock-header">
+                  <span className="codeblock-lang">Terminal</span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!initialSetupCommand) return;
+                      try {
+                        await navigator.clipboard.writeText(initialSetupCommand);
+                        setCopiedInitialSetup(true);
+                        setTimeout(() => setCopiedInitialSetup(false), 2000);
+                      } catch (err) {
+                        logger.error('Failed to copy:', err);
+                      }
+                    }}
+                    className={`codeblock-copy-btn ${copiedInitialSetup ? 'copied' : ''}`}
+                    title="Copy initial-setup command"
+                    disabled={!initialSetupCommand}
+                  >
+                    {copiedInitialSetup ? (
+                      <>
+                        <FontAwesomeIcon icon={faCheckCircle} />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <FontAwesomeIcon icon={faCopy} />
+                        <span>Copy code</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="codeblock-body">
+                  <pre className="codeblock-pre">{initialSetupCommand || 'Loading...'}</pre>
+                </div>
+              </div>
+              <p className="url-note" style={{ marginTop: '0.75rem' }}>
+                <FontAwesomeIcon icon={faInfoCircle} />
+                The signaling URL includes your authentication token. Keep it secure and don&apos;t share it publicly.
+              </p>
+            </div>
+
+            <div className="setup-section">
+              <h2>Step 3: Configure and run your robot</h2>
               <div className="instructions">
                 <div className="instruction-step">
                   <div className="step-number">1</div>
                   <div className="step-content">
-                    <h3>Add Configuration Values to Your Robot</h3>
-                    <p>In your robot's configuration file, add both values from Step 1 above:</p>
-                    <ul>
-                      <li><strong>Robot ID:</strong> {robotId}</li>
-                      <li><strong>WebSocket URL:</strong> The connection URL (includes authentication token)</li>
-                    </ul>
-                    <p className="step-note">The connection URL includes your authentication token. Keep it secure and add it to your robot's configuration file or environment variables.</p>
+                    <h3>Run the command above on your robot</h3>
+                    <p>In the directory where you cloned and built the <a href="https://github.com/ModulrCloud/modulr-agent" target="_blank" rel="noopener noreferrer" className="setup-link">Modulr agent</a>, run the initial-setup command from Step 2. It will save your Robot ID and signaling URL into the config file.</p>
                   </div>
                 </div>
 
                 <div className="instruction-step">
                   <div className="step-number">2</div>
                   <div className="step-content">
-                    <h3>Register Your Robot</h3>
-                    <p>When your robot connects, it must send a registration message with its robot ID:</p>
-                    <code className="code-block">
-                      {JSON.stringify({
-                        type: 'register',
-                        from: robotId  // Use 'from' field (matches Rust agent format)
-                      }, null, 2)}
-                    </code>
-                    <p className="step-note">Send this message immediately after the WebSocket connection is established. The server accepts both <code>{"{ type: 'register', from: 'robot-id' }"}</code> (Rust format) and <code>{"{ type: 'register', robotId: 'robot-id' }"}</code> (legacy format) for compatibility.</p>
+                    <h3>Register your robot</h3>
+                    <p>When you start the agent (Step 4 below), it will connect to the signaling server and register automatically. No extra step needed.</p>
                   </div>
                 </div>
 
                 <div className="instruction-step">
                   <div className="step-number">3</div>
+                  <div className="step-content">
+                    <h3>Start the Agent</h3>
+                    <p>Run the agent on your robot. Use the same config path you used for initial-setup (e.g. default <code>~/.config/modulr_agent/config.json</code> or <code>./local_config.json</code> if you used <code>--config-override</code>).</p>
+                    <div className="codeblock-wrapper" style={{ marginTop: '0.75rem' }}>
+                      <div className="codeblock-header">
+                        <span className="codeblock-lang">Terminal</span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const startCommand = 'cargo run -- -vvvv start --allow-skip-cert-check';
+                            try {
+                              await navigator.clipboard.writeText(startCommand);
+                              setCopiedStartCommand(true);
+                              setTimeout(() => setCopiedStartCommand(false), 2000);
+                            } catch (err) {
+                              logger.error('Failed to copy:', err);
+                            }
+                          }}
+                          className={`codeblock-copy-btn ${copiedStartCommand ? 'copied' : ''}`}
+                          title="Copy start command"
+                        >
+                          {copiedStartCommand ? (
+                            <>
+                              <FontAwesomeIcon icon={faCheckCircle} />
+                              <span>Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <FontAwesomeIcon icon={faCopy} />
+                              <span>Copy code</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      <div className="codeblock-body">
+                        <pre className="codeblock-pre">cargo run -- -vvvv start --allow-skip-cert-check</pre>
+                      </div>
+                    </div>
+                    <p className="step-note" style={{ marginTop: '0.75rem' }}>
+                      <strong>About <code>--allow-skip-cert-check</code>:</strong> Use this when the WebSocket server uses a self-signed or untrusted TLS certificate (e.g. local development or a custom server). For production Modulr cloud (<code>wss://*.execute-api.*.amazonaws.com</code>), the server certificate is CA-signed, so you can run <code>cargo run -- start</code> (with your config path if needed) without this flag if the connection succeeds. If you see TLS/certificate errors when connecting to Modulr cloud, contact support.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="instruction-step">
+                  <div className="step-number">4</div>
                   <div className="step-content">
                     <h3>Verify Connection</h3>
                     <p>Once connected and registered, your robot will appear as "online" in the Modulr platform. You can verify the connection by:</p>
@@ -292,11 +338,17 @@ export default function RobotSetup() {
             </div>
 
             <div className="setup-section">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h2 style={{ margin: 0 }}>Example Code</h2>
-                <button
-                  onClick={async () => {
-                    const codeText = `import websocket
+              <h2>Example Code</h2>
+              <p className="section-description">
+                Here's a simple example of how to connect your robot (Python):
+              </p>
+              <div className="codeblock-wrapper codeblock-large">
+                <div className="codeblock-header">
+                  <span className="codeblock-lang">Python</span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const codeText = `import websocket
 import json
 import time
 import threading
@@ -477,27 +529,24 @@ except KeyboardInterrupt:
                       logger.error('Failed to copy:', err);
                     }
                   }}
-                  className={`copy-button ${copiedCode ? 'copied' : ''}`}
-                  title="Copy Example Code"
-                  style={{ marginLeft: 'auto' }}
-                >
-                  {copiedCode ? (
-                    <>
-                      <FontAwesomeIcon icon={faCheckCircle} />
-                      <span>Copied!</span>
-                    </>
-                  ) : (
-                    <>
-                      <FontAwesomeIcon icon={faCopy} />
-                      <span>Copy Code</span>
-                    </>
-                  )}
-                </button>
-              </div>
-              <p className="section-description">
-                Here's a simple example of how to connect your robot (Python):
-              </p>
-              <pre className="code-block large">
+                    className={`codeblock-copy-btn ${copiedCode ? 'copied' : ''}`}
+                    title="Copy Example Code"
+                  >
+                    {copiedCode ? (
+                      <>
+                        <FontAwesomeIcon icon={faCheckCircle} />
+                        <span>Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <FontAwesomeIcon icon={faCopy} />
+                        <span>Copy code</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div className="codeblock-body">
+                  <pre className="codeblock-pre">
 {`import websocket
 import json
 import time
@@ -667,7 +716,9 @@ print("Closing connection...")
 should_close = True
 ws.close()
 print("Connection closed after 10 seconds")`}
-              </pre>
+                  </pre>
+                </div>
+              </div>
             </div>
 
             <div className="setup-actions">

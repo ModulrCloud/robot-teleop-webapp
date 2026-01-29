@@ -5,7 +5,6 @@ import {
     DeleteItemCommand,
     GetItemCommand,
     QueryCommand,
-    ScanCommand,
     UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand as DocQueryCommand } from '@aws-sdk/lib-dynamodb';
@@ -95,8 +94,6 @@ type RawMessage = any;
 // ---------------------------------
 // Helpers
 // ---------------------------------
-
-const nowMs = () => Date.now();
 
 /**
  * Checks if a user's session has been invalidated (global sign-out).
@@ -491,26 +488,28 @@ async function postTo(connectionId: string, message: unknown): Promise<void> {
     }
 }
 
-// Return the active connectionId for a robot or null if it's offline
-async function findRobotConn(robotId: string): Promise<string | null> {
-    const res = await db.send(
-        new GetItemCommand({
-            TableName: ROBOT_PRESENCE_TABLE,
-            Key: { robotId: { S: robotId} },
-        }),
-    );
-    return res.Item?.connectionId?.S ?? null;
-}
+/** DynamoDB Item shape for robot presence (subset we use when reusing a single read). */
+type RobotPresenceItem = { connectionId?: { S?: string }; ownerUserId?: { S?: string } } | undefined;
 
 // If caller is the robot owner, a delegated operator, or in an admin group return True
-async function isOwnerOrAdmin(robotId: string, claims: { sub?: string; groups?: string[] }) : Promise<boolean> {
-    const res = await db.send(
-        new GetItemCommand({
-            TableName: ROBOT_PRESENCE_TABLE,
-            Key: { robotId: {S: robotId} },
-        }),
-    );
-    const owner = res.Item?.ownerUserId?.S;
+// Optional presenceItem: when provided (from a prior GetItem in the same request), avoids an extra DB read.
+async function isOwnerOrAdmin(
+    robotId: string,
+    claims: { sub?: string; groups?: string[] },
+    presenceItem?: RobotPresenceItem,
+): Promise<boolean> {
+    let owner: string | undefined;
+    if (presenceItem != null && ('ownerUserId' in presenceItem) && presenceItem.ownerUserId?.S) {
+        owner = presenceItem.ownerUserId.S;
+    } else {
+        const res = await db.send(
+            new GetItemCommand({
+                TableName: ROBOT_PRESENCE_TABLE,
+                Key: { robotId: { S: robotId } },
+            }),
+        );
+        owner = res.Item?.ownerUserId?.S;
+    }
     const isAdmin = (claims.groups ?? []).some((g) => g === 'ADMINS' || g === 'admin');
     
     // Check if user is owner
@@ -558,9 +557,14 @@ async function isOwnerOrAdmin(robotId: string, claims: { sub?: string; groups?: 
  * - User is owner, admin, or delegate → always allowed
  * - User's email/username is in the ACL
  */
-async function canAccessRobot(robotId: string, claims: Claims, userEmailOrUsername?: string): Promise<boolean> {
+async function canAccessRobot(
+    robotId: string,
+    claims: Claims,
+    userEmailOrUsername?: string,
+    presenceItem?: RobotPresenceItem,
+): Promise<boolean> {
     // Owner, admin, and delegates are always allowed
-    const isAuthorized = await isOwnerOrAdmin(robotId, claims);
+    const isAuthorized = await isOwnerOrAdmin(robotId, claims, presenceItem);
     if (isAuthorized) {
         return true;
     }
@@ -735,7 +739,6 @@ async function checkSessionLock(
 }
 
 /**
-<<<<<<< HEAD
  * Checks if user has sufficient credits for at least 1 minute of robot usage
  * Returns { sufficient: boolean, currentCredits: number, requiredCredits: number, error?: string }
  */
@@ -1487,7 +1490,6 @@ async function handleTakeover(
   }
 
   const caller = claims.sub ?? '';
-  const admin = isAdmin(claims.groups);
 
   // Check if caller is owner, admin, or delegated operator
   const isAuthorized = await isOwnerOrAdmin(robotId, claims);
@@ -1543,22 +1545,23 @@ async function handleSignal(
   // Get source connection ID (needed for logging and ACL checks)
   const sourceConnId = event.requestContext.connectionId!;
   
-  // Auto-detect if message is from a robot by checking RobotPresenceTable
-  // If source connection is registered as a robot, then this is a robot-to-client message
+  // Fetch robot presence once and reuse for: is-from-robot check, ACL (owner), and target connectionId.
+  // This avoids 2 extra GetItem calls per message (saves DynamoDB read cost and latency).
+  let robotPresenceItem: RobotPresenceItem = undefined;
   let isFromRobot = false;
   try {
     const robotPresence = await db.send(new GetItemCommand({
       TableName: ROBOT_PRESENCE_TABLE,
       Key: { robotId: { S: robotId } },
-      ProjectionExpression: 'connectionId',
+      ProjectionExpression: 'connectionId, ownerUserId',
     }));
-    // If the source connection matches the robot's connection, this message is from the robot
-    if (robotPresence.Item?.connectionId?.S === sourceConnId) {
+    robotPresenceItem = robotPresence.Item as RobotPresenceItem;
+    if (robotPresenceItem?.connectionId?.S === sourceConnId) {
       isFromRobot = true;
       console.log('[ROBOT_DETECTED]', {
         robotId,
         sourceConnectionId: sourceConnId,
-        robotConnectionId: robotPresence.Item.connectionId.S,
+        robotConnectionId: robotPresenceItem.connectionId.S,
       });
     }
   } catch (e) {
@@ -1602,24 +1605,28 @@ async function handleSignal(
     return errorResponse(400, 'invalid target');
   }
 
+  const claimsTyped = claims as Claims;
+  let userEmail = claimsTyped.email;
+  let userEmailOrUsername = claimsTyped['cognito:username'];
+
   // If target is robot, check ACL before allowing access
   if (target === 'robot') {
-    // Get user's email/username from connection table for ACL check
-    let userEmailOrUsername: string | undefined;
-    let userEmail: string | undefined;
-    try {
-      const connItem = await db.send(new GetItemCommand({
-        TableName: CONN_TABLE,
-        Key: { connectionId: { S: sourceConnId } },
-      }));
-      userEmailOrUsername = connItem.Item?.username?.S;
-      userEmail = connItem.Item?.email?.S; // Get stored email
-    } catch (e) {
-      console.warn('Failed to get username from connection table:', e);
+    if (!userEmailOrUsername && !userEmail) {
+      try {
+        const connItem = await db.send(new GetItemCommand({
+          TableName: CONN_TABLE,
+          Key: { connectionId: { S: sourceConnId } },
+          ProjectionExpression: 'username, email',
+        }));
+        userEmailOrUsername = connItem.Item?.username?.S;
+        userEmail = connItem.Item?.email?.S;
+      } catch (e) {
+        console.warn('Failed to get username from connection table:', e);
+      }
     }
 
-    // Check ACL - pass email as the primary identifier
-    const hasAccess = await canAccessRobot(robotId, claims, userEmail || userEmailOrUsername);
+    // Check ACL - pass email and cached presence so we don't re-read RobotPresenceTable
+    const hasAccess = await canAccessRobot(robotId, claims, userEmail || userEmailOrUsername, robotPresenceItem);
     if (!hasAccess) {
       const userIdentifier = userEmailOrUsername || (claims as Claims).email || claims.sub || 'unknown';
       console.log(`Access denied: User ${userIdentifier} attempted to access robot ${robotId}`);
@@ -1678,7 +1685,7 @@ async function handleSignal(
   if (target === 'client') {
     // For robot-to-client messages, clientConnectionId should be extracted from 'to' field
     // by normalizeMessage when message is from robot
-    let ccid = msg.clientConnectionId?.trim();
+    const ccid = msg.clientConnectionId?.trim();
     
     // If we don't have clientConnectionId but message is from robot, log a warning
     // but still allow the message to be monitored (for testing with placeholder values)
@@ -1708,12 +1715,8 @@ async function handleSignal(
       targetConn = ccid;
     }
   } else {
-    const robotItem = await db.send(new GetItemCommand({
-      TableName: ROBOT_PRESENCE_TABLE,
-      Key: { robotId: { S: robotId } },
-      ProjectionExpression: 'connectionId',
-    }));
-    const robotConn = robotItem.Item?.connectionId?.S;
+    // Reuse presence we already fetched (same row as is-from-robot check).
+    const robotConn = robotPresenceItem?.connectionId?.S;
     if (!robotConn) {
       return errorResponse(404, 'target offline');
     }
@@ -1819,21 +1822,7 @@ async function handleSignal(
       });
       
       if (type === 'offer' && target === 'robot' && claims?.sub) {
-        let userEmail: string | undefined;
-        let username: string | undefined;
-        try {
-          const connItem = await db.send(new GetItemCommand({
-            TableName: CONN_TABLE,
-            Key: { connectionId: { S: sourceConnId } },
-            ProjectionExpression: 'email, username',
-          }));
-          userEmail = connItem.Item?.email?.S;
-          username = connItem.Item?.username?.S;
-        } catch (e) {
-          console.warn('[SESSION_GET_USER_INFO_ERROR]', e);
-        }
-        
-        const sessionUserId = username || claims.sub;
+        const sessionUserId = userEmailOrUsername || claims.sub;
         const sessionId = await createSession(sourceConnId, sessionUserId, userEmail, robotId);
         
         // If session creation was blocked due to insufficient funds, send error to client
@@ -1938,12 +1927,13 @@ export async function handler(
     const connItem = await db.send(new GetItemCommand({
       TableName: CONN_TABLE,
       Key: { connectionId: { S: connectionId } },
-      ProjectionExpression: 'userId, username, groups',
+      ProjectionExpression: 'userId, username, email, groups',
     }));
     
     if (connItem.Item) {
       const userId = connItem.Item.userId?.S;
       const username = connItem.Item.username?.S;
+      const email = connItem.Item.email?.S;
       const groupsStr = connItem.Item.groups?.S || '';
       const groups = groupsStr ? groupsStr.split(',').filter(Boolean) : [];
       
@@ -1952,7 +1942,7 @@ export async function handler(
           sub: userId,
           groups: groups,
           'cognito:username': username,
-          email: username?.includes('@') ? username : undefined,
+          email: email || (username?.includes('@') ? username : undefined),
         };
         console.log('[AUTH_FROM_CONNECTION_TABLE]', {
           connectionId,

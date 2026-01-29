@@ -170,7 +170,7 @@ html {
 .teleop-status-badge.connected {
   background: rgba(40, 167, 69, 0.15);
   border-color: rgba(40, 167, 69, 0.4);
-  color: #28a745;
+  color: #ffc107;
 }
 
 .teleop-status-badge.disconnected {
@@ -526,79 +526,11 @@ html {
 
 .controls-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-
-.controls-header-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.input-bindings-button {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: rgba(255, 193, 7, 0.1);
-  border: 1px solid rgba(255, 193, 7, 0.3);
-  border-radius: 6px;
-  color: #ffc107;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.input-bindings-button:hover {
-  background: rgba(255, 193, 7, 0.2);
-  border-color: rgba(255, 193, 7, 0.5);
-}
-
-.input-bindings-button svg {
-  font-size: 0.9rem;
-}
-
-.controls-header {
-  display: flex;
   flex-direction: column;
   gap: 1rem;
   position: relative;
-}
-
-.controls-header-actions {
-  position: absolute;
-  top: 0;
-  right: 0;
-  display: flex;
-  gap: 0.5rem;
-}
-
-.input-bindings-button {
-  display: flex;
+  margin-bottom: 1rem;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: rgba(255, 193, 7, 0.1);
-  border: 1px solid rgba(255, 193, 7, 0.3);
-  border-radius: 6px;
-  color: #ffc107;
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.input-bindings-button:hover {
-  background: rgba(255, 193, 7, 0.2);
-  border-color: rgba(255, 193, 7, 0.5);
-}
-
-.input-bindings-button svg {
-  font-size: 0.85rem;
 }
 
 .controls-header h3 {
@@ -989,7 +921,7 @@ html {
 }
 
 .gamepad-status.detected {
-  color: #28a745;
+  color: #ffc107;
 }
 
 .gamepad-status.not-detected-status {
@@ -1106,7 +1038,7 @@ html {
 
 .security-badge>svg {
   font-size: 1.5rem;
-  color: #28a745;
+  color: #ffc107;
   filter: drop-shadow(0 2px 8px rgba(40, 167, 69, 0.3));
 }
 
@@ -1119,7 +1051,7 @@ html {
 .security-info strong {
   font-size: 0.95rem;
   font-weight: 700;
-  color: #28a745;
+  color: #ffc107;
   letter-spacing: 0.3px;
 }
 
@@ -1137,7 +1069,7 @@ html {
   border-radius: 8px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #28a745;
+  color: #ffc107;
 }
 
 .encryption-details svg {
