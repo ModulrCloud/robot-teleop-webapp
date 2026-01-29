@@ -32,6 +32,20 @@ interface LambdaRatingResponse {
   body?: string | LambdaRatingBody;
 }
 
+const parseLambdaResponse = (data: unknown): LambdaRatingResponse | null => {
+  if (!data) return null;
+  let parsed: unknown = data;
+  for (let i = 0; i < 2; i += 1) {
+    if (typeof parsed !== 'string') break;
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return null;
+    }
+  }
+  return parsed as LambdaRatingResponse;
+};
+
 export function RobotRating({ robotId, sessionId, onRatingSubmitted }: RobotRatingProps) {
   const [selectedRating, setSelectedRating] = useState<number>(0);
   const [hoveredRating, setHoveredRating] = useState<number>(0);
@@ -50,18 +64,14 @@ export function RobotRating({ robotId, sessionId, onRatingSubmitted }: RobotRati
           limit: 100,
         });
 
-        if (result.data) {
-          let parsed = typeof result.data === 'string' ? JSON.parse(result.data) : result.data;
-          if (typeof parsed === 'string') parsed = JSON.parse(parsed);
-          
-          if (parsed.statusCode === 200) {
-            const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
-            const ownRating = body.ratings?.find((r: ExistingRatingState) => r.isOwnRating) as ExistingRatingState | undefined;
-            if (ownRating) {
-              setExistingRating(ownRating);
-              setSelectedRating(ownRating.rating || 0);
-              setComment(ownRating.comment || '');
-            }
+        const parsed = parseLambdaResponse(result.data);
+        if (parsed?.statusCode === 200) {
+          const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
+          const ownRating = body?.ratings?.find((r: ExistingRatingState) => r.isOwnRating) as ExistingRatingState | undefined;
+          if (ownRating) {
+            setExistingRating(ownRating);
+            setSelectedRating(ownRating.rating || 0);
+            setComment(ownRating.comment || '');
           }
         }
       } catch (err) {
@@ -91,16 +101,8 @@ export function RobotRating({ robotId, sessionId, onRatingSubmitted }: RobotRati
       });
 
       if (result.data) {
-        let parsed: LambdaRatingResponse | string;
-        if (typeof result.data === 'string') {
-          parsed = JSON.parse(result.data) as LambdaRatingResponse | string;
-        } else {
-          parsed = result.data as LambdaRatingResponse;
-        }
-        if (typeof parsed === 'string') {
-          parsed = JSON.parse(parsed) as LambdaRatingResponse;
-        }
-        if (parsed.statusCode === 200) {
+        const parsed = parseLambdaResponse(result.data);
+        if (parsed?.statusCode === 200) {
           const body: LambdaRatingBody = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : (parsed.body ?? {});
           if (body.success) {
             setSuccess(true);
@@ -115,7 +117,7 @@ export function RobotRating({ robotId, sessionId, onRatingSubmitted }: RobotRati
             setError(body.error || body.details || 'Failed to submit rating');
           }
         } else {
-          const body: LambdaRatingBody = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : (parsed.body ?? {});
+          const body: LambdaRatingBody = typeof parsed?.body === 'string' ? JSON.parse(parsed.body) : (parsed?.body ?? {});
           setError(body.error || body.details || 'Failed to submit rating');
         }
       } else if (result.errors) {

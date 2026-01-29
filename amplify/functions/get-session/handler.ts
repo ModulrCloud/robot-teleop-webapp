@@ -20,6 +20,21 @@ interface SessionResult {
   status: string | null;
 }
 
+const buildSessionResult = (session: Record<string, { S?: string; N?: string }> | undefined): SessionResult | null => {
+  if (!session) return null;
+  return {
+    id: session.id?.S || '',
+    userId: session.userId?.S || '',
+    userEmail: session.userEmail?.S || null,
+    robotId: session.robotId?.S || '',
+    robotName: session.robotName?.S || null,
+    startedAt: session.startedAt?.S || '',
+    endedAt: session.endedAt?.S || null,
+    durationSeconds: session.durationSeconds?.N ? parseInt(session.durationSeconds.N, 10) : null,
+    status: session.status?.S || null,
+  };
+};
+
 export const handler = async (
   event: AppSyncResolverEvent<GetSessionArgs>
 ): Promise<SessionResult | null> => {
@@ -58,17 +73,7 @@ export const handler = async (
         return null;
       }
 
-      return {
-        id: session.id?.S || '',
-        userId: session.userId?.S || '',
-        userEmail: session.userEmail?.S || null,
-        robotId: session.robotId?.S || '',
-        robotName: session.robotName?.S || null,
-        startedAt: session.startedAt?.S || '',
-        endedAt: session.endedAt?.S || null,
-        durationSeconds: session.durationSeconds?.N ? parseInt(session.durationSeconds.N) : null,
-        status: session.status?.S || null,
-      };
+      return buildSessionResult(session);
     }
 
     const result = await db.send(new QueryCommand({
@@ -82,20 +87,7 @@ export const handler = async (
       Limit: 1,
     }));
 
-    const session = result.Items?.[0];
-    if (!session) return null;
-
-    return {
-      id: session.id?.S || '',
-      userId: session.userId?.S || '',
-      userEmail: session.userEmail?.S || null,
-      robotId: session.robotId?.S || '',
-      robotName: session.robotName?.S || null,
-      startedAt: session.startedAt?.S || '',
-      endedAt: session.endedAt?.S || null,
-      durationSeconds: session.durationSeconds?.N ? parseInt(session.durationSeconds.N) : null,
-      status: session.status?.S || null,
-    };
+    return buildSessionResult(result.Items?.[0]);
   } catch (err) {
     console.error('[GET_SESSION_ERROR]', err);
     return null;
