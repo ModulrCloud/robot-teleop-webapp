@@ -25,7 +25,9 @@ import {
   faExclamationTriangle,
   faKeyboard,
   faMapMarkerAlt,
-  faCog
+  faCog,
+  faGaugeHigh,
+  faBolt
 } from '@fortawesome/free-solid-svg-icons';
 import { InputBindingsModal } from '../components/InputBindingsModal';
 import { useCustomCommandBindings } from '../hooks/useCustomCommandBindings';
@@ -386,10 +388,11 @@ export default function Teleop() {
       : sessionTime;
     sessionStorage.setItem('endSessionState', JSON.stringify({
       duration: Math.max(0, endDuration),
-      sessionId: status.sessionId
+      sessionId: status.sessionId,
+      robotId: robotId,
     }));
     window.location.href = '/endsession';
-  }, [stopRobot, disconnect, sessionTime, status.sessionId]);
+  }, [stopRobot, disconnect, sessionTime, status.sessionId, robotId]);
 
   const handleKeyboardInput = useCallback((input: { forward: number; turn: number }) => {
     const forward = input.forward;
@@ -609,6 +612,54 @@ export default function Teleop() {
               muted
               className="teleop-video"
             />
+            
+            {status.connected && status.videoStream && (
+              <div className="viewport-stats-overlay">
+                <div className="viewport-stats-group">
+                  <div className="viewport-stat">
+                    <FontAwesomeIcon 
+                      icon={faBolt} 
+                      className={`stat-icon ${status.stats.latencyMs !== null && status.stats.latencyMs < 100 ? 'good' : status.stats.latencyMs !== null && status.stats.latencyMs < 200 ? 'medium' : 'poor'}`}
+                    />
+                    <span className={`stat-value ${status.stats.latencyMs !== null && status.stats.latencyMs < 100 ? 'good' : status.stats.latencyMs !== null && status.stats.latencyMs < 200 ? 'medium' : 'poor'}`}>
+                      {status.stats.latencyMs !== null ? status.stats.latencyMs : '--'}
+                    </span>
+                    <span className="stat-unit">ms</span>
+                  </div>
+                  <div className="stat-divider"></div>
+                  <div className="viewport-stat">
+                    <FontAwesomeIcon icon={faGaugeHigh} className="stat-icon" />
+                    <span className="stat-value">
+                      {status.stats.bitrate !== null ? status.stats.bitrate : '--'}
+                    </span>
+                    <span className="stat-unit">kbps</span>
+                  </div>
+                </div>
+                <div className="viewport-stats-center">
+                  <div className="live-indicator">
+                    <span className="live-dot"></span>
+                    <span className="live-text">LIVE</span>
+                  </div>
+                </div>
+                <div className="viewport-stats-group">
+                  <div className="viewport-stat">
+                    <span className="stat-value">
+                      {status.stats.frameRate !== null ? status.stats.frameRate : '--'}
+                    </span>
+                    <span className="stat-unit">fps</span>
+                  </div>
+                  <div className="stat-divider"></div>
+                  <div className="viewport-stat">
+                    <span className="stat-value resolution">
+                      {status.stats.frameWidth && status.stats.frameHeight 
+                        ? `${status.stats.frameWidth}×${status.stats.frameHeight}` 
+                        : '--'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {!status.videoStream && (
               <div className="video-placeholder">
                 {status.connecting ? (

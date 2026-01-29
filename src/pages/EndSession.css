@@ -2,18 +2,18 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: linear-gradient(135deg, rgba(40, 167, 69, 0.1) 0%, rgba(30, 30, 30, 0.9) 100%);
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.08) 0%, rgba(30, 30, 30, 0.9) 100%);
   padding: 3rem 2.5rem;
   border-radius: 1rem;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  max-width: 500px;
+  max-width: 560px;
   width: 90%;
   margin: 4rem auto;
-  border: 1px solid rgba(40, 167, 69, 0.2);
+  border: 1px solid rgba(255, 193, 7, 0.2);
 }
 
 .success-icon {
-  color: #28a745;
+  color: #ffc107;
   margin-bottom: 1.5rem;
   animation: scaleIn 0.3s ease-out;
 }
@@ -70,6 +70,11 @@
   font-size: 1.1rem;
 }
 
+.endsession-experience {
+  width: 100%;
+  margin-bottom: 2rem;
+}
+
 .action-buttons {
   display: flex;
   flex-direction: column;
@@ -90,15 +95,15 @@
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #28a745 0%, #20863a 100%);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+  background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+  color: #000;
+  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3);
 }
 
 .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(40, 167, 69, 0.5);
-  background: linear-gradient(135deg, #2fb94d 0%, #25923f 100%);
+  box-shadow: 0 4px 16px rgba(255, 193, 7, 0.5);
+  background: linear-gradient(135deg, #ffca28 0%, #fb8c00 100%);
 }
 
 .btn-secondary {

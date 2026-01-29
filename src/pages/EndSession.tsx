@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
 import { logger } from '../utils/logger';
+import { RobotRating } from '../components/RobotRating';
 import "./EndSession.css";
 import { usePageTitle } from "../hooks/usePageTitle";
 
@@ -11,6 +12,31 @@ const client = generateClient<Schema>();
 interface LocationState {
   duration?: number;
   sessionId?: string | null;
+  robotId?: string | null;
+}
+
+// Cache first read so it survives React Strict Mode double-mount (second mount would otherwise get null after we remove from sessionStorage).
+let endSessionStateCache: LocationState | null = null;
+
+function readEndSessionState(location: { state: unknown }): LocationState | null {
+  if (endSessionStateCache !== null) return endSessionStateCache;
+  const routerState = location.state as LocationState | null;
+  if (routerState?.sessionId != null) {
+    endSessionStateCache = routerState;
+    return routerState;
+  }
+  try {
+    const stored = sessionStorage.getItem('endSessionState');
+    if (stored) {
+      const parsed = JSON.parse(stored) as LocationState;
+      sessionStorage.removeItem('endSessionState');
+      endSessionStateCache = parsed;
+      return parsed;
+    }
+  } catch (e) {
+    logger.error('[END_SESSION] Failed to parse sessionStorage state:', e);
+  }
+  return null;
 }
 
 export default function EndSession() {
@@ -18,42 +44,37 @@ export default function EndSession() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Try to get state from React Router first, then fall back to sessionStorage
-  // This supports both button clicks (React Router state) and Escape key (sessionStorage)
-  const routerState = location.state as LocationState | null;
-  const sessionStorageState = (() => {
-    try {
-      const stored = sessionStorage.getItem('endSessionState');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        sessionStorage.removeItem('endSessionState'); // Clean up after reading
-        return parsed;
-      }
-    } catch (e) {
-      logger.error('[END_SESSION] Failed to parse sessionStorage state:', e);
-    }
-    return null;
-  })();
+  // Persist end-session state in React state so it survives re-renders (e.g. Strict Mode).
+  const [endSessionState] = useState<LocationState | null>(() => readEndSessionState(location));
 
-  const state = routerState || sessionStorageState;
-  const clientDuration = state?.duration ?? 0;
-  const sessionId = state?.sessionId;
+  const clientDuration = endSessionState?.duration ?? 0;
+  const sessionId = endSessionState?.sessionId ?? null;
+  const robotId = endSessionState?.robotId ?? null;
 
   const [serverDuration, setServerDuration] = useState<number | null>(null);
+  const [robotIdFromSession, setRobotIdFromSession] = useState<string | null>(null);
+
+  // Clear cache when leaving so next visit gets fresh state
+  useEffect(() => () => { endSessionStateCache = null; }, []);
 
   useEffect(() => {
-    const fetchServerDuration = async () => {
+    const fetchSession = async () => {
       if (!sessionId) return;
 
       try {
         const result = await client.queries.getSessionLambda({ sessionId });
-        if (result.data?.durationSeconds != null) {
-          setServerDuration(result.data.durationSeconds);
+        const data = result.data;
+
+        if (data?.robotId) {
+          setRobotIdFromSession(data.robotId);
+        }
+        if (data?.durationSeconds != null) {
+          setServerDuration(data.durationSeconds);
           return;
         }
 
-        const startedAt = result.data?.startedAt;
-        const endedAt = result.data?.endedAt;
+        const startedAt = data?.startedAt;
+        const endedAt = data?.endedAt;
         if (startedAt) {
           const startMs = new Date(startedAt).getTime();
           const endMs = endedAt ? new Date(endedAt).getTime() : Date.now();
@@ -61,11 +82,11 @@ export default function EndSession() {
           setServerDuration(computed);
         }
       } catch (err) {
-        logger.error('[END_SESSION] Failed to fetch server duration:', err);
+        logger.error('[END_SESSION] Failed to fetch session:', err);
       }
     };
 
-    fetchServerDuration();
+    fetchSession();
   }, [sessionId]);
 
   const displayDuration = Math.max(0, serverDuration ?? clientDuration);
@@ -94,7 +115,16 @@ export default function EndSession() {
         </div>
       </div>
 
-      <p className="thank-you">Thank you for using Modulr!</p>
+      <p className="thank-you">Thank you for using Modulr.Robotics!</p>
+
+      {(sessionId && (robotId ?? robotIdFromSession)) && (
+        <div className="endsession-experience">
+          <RobotRating
+            robotId={robotId ?? robotIdFromSession ?? ''}
+            sessionId={sessionId}
+          />
+        </div>
+      )}
 
       <div className="action-buttons">
         <button onClick={() => navigate('/robots')} className="btn-primary">
