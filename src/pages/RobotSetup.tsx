@@ -103,7 +103,7 @@ export default function RobotSetup() {
   }, [robotUuid]);
 
   const initialSetupCommand = robotId && connectionUrl
-    ? `cargo run -- initial-setup --robot-id ${robotId} --signaling-url "${connectionUrl}" --video-source ros`
+    ? `cargo run -- initial-setup --robot-id ${robotId} --signaling-url "${connectionUrl}" --video-source ros --image-format jpeg`
     : '';
 
   if (!robotUuid) {
