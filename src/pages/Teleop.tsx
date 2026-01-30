@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import Joystick, { type JoystickChange } from "../components/Joystick";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { useWebRTC } from "../hooks/useWebRTC";
@@ -43,6 +43,7 @@ const client = generateClient<Schema>();
 export default function Teleop() {
   usePageTitle();
   const navigate = useNavigate();
+  const location = useLocation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const lastSendTimeRef = useRef<number>(0);
   const sessionStartTimeRef = useRef<number | null>(null);
@@ -379,6 +380,23 @@ export default function Teleop() {
       videoRef.current.srcObject = status.videoStream;
     }
   }, [status.videoStream]);
+
+  // Send stop as soon as user clicks any in-app link that navigates away (e.g. Session tab).
+  // Capture phase so we run before navigation; avoids robot continuing when unmount cleanup is too late.
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      const anchor = (e.target as Element).closest('a[href^="/"]');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href || href === '#') return;
+      const linkPath = href.split('?')[0].split('#')[0];
+      if (linkPath !== location.pathname) {
+        stopRobot();
+      }
+    };
+    document.addEventListener('click', handleClick, true);
+    return () => document.removeEventListener('click', handleClick, true);
+  }, [location.pathname, stopRobot]);
 
   const handleEndSession = useCallback(() => {
     stopRobot();
