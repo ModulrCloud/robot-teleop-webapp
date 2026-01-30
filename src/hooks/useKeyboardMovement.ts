@@ -131,17 +131,19 @@ export function useKeyboardMovement({
       return;
     }
 
-    if (!enabled || controlMode !== 'keyboard') return;
-
+    // Always process WASD keyup: remove key and update movement so we send stop when the key
+    // is released, even if focus moved to an input/textarea or control mode changed. This
+    // prevents the robot from "sticking" when keyup was previously skipped (e.g. release
+    // while focus was in an editable).
     if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) {
-      if (isEditableTarget(event.target)) {
-        return;
-      }
-      event.preventDefault();
-      
       pressedKeysRef.current.delete(event.code);
       updatePressedKeysState();
       updateMovement();
+      // Only preventDefault when we "own" the key (keyboard mode, not in an input) so we
+      // don't steal keyup from someone typing in a text field.
+      if (enabled && controlMode === 'keyboard' && !isEditableTarget(event.target)) {
+        event.preventDefault();
+      }
     }
   }, [enabled, controlMode, updateMovement, escWorksInAllModes, updatePressedKeysState, isEditableTarget]);
 
@@ -173,12 +175,25 @@ export function useKeyboardMovement({
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        pressedKeysRef.current.clear();
+        setPressedKeys([]);
+        lastInputRef.current = { forward: 0, turn: 0 };
+        if (onStop) {
+          onStop();
+        }
+      }
+    };
+
     window.addEventListener('blur', handleBlur);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       
       pressedKeysRef.current.clear();
       lastInputRef.current = { forward: 0, turn: 0 };

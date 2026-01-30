@@ -32,6 +32,11 @@ export default function RobotSetup() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Scroll to top when navigating to this page (avoids ending up at bottom from restoration or layout)
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   useEffect(() => {
     const loadRobotAndGenerateUrl = async () => {
       try {
