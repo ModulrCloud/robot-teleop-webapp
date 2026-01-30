@@ -208,10 +208,6 @@
   min-width: 0;
 }
 
-/* Let the code block shrink so Copy button stays inside the card; long lines scroll */
-.url-input-group .code-block {
-  min-width: 0;
-}
 
 .url-input {
   flex: 1;
@@ -342,50 +338,6 @@
   font-style: italic;
 }
 
-.code-block {
-  display: block;
-  padding: 1rem;
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: #fff;
-  font-family: 'Courier New', monospace;
-  font-size: 0.85rem;
-  line-height: 1.5;
-  overflow-x: auto;
-  margin: 1rem 0;
-}
-
-.code-block.large {
-  font-size: 0.8rem;
-  padding: 1.5rem;
-  max-height: 500px;
-  overflow-y: auto;
-}
-
-/* Scrollbar styling for code blocks */
-.code-block::-webkit-scrollbar,
-.code-block.large::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.code-block::-webkit-scrollbar-track,
-.code-block.large::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 4px;
-}
-
-.code-block::-webkit-scrollbar-thumb,
-.code-block.large::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-}
-
-.code-block::-webkit-scrollbar-thumb:hover,
-.code-block.large::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
 
 .step-content ul {
   margin: 0.5rem 0;

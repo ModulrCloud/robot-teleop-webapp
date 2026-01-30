@@ -5,7 +5,6 @@ import {
     DeleteItemCommand,
     GetItemCommand,
     QueryCommand,
-    ScanCommand,
     UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand as DocQueryCommand } from '@aws-sdk/lib-dynamodb';
@@ -95,8 +94,6 @@ type RawMessage = any;
 // ---------------------------------
 // Helpers
 // ---------------------------------
-
-const nowMs = () => Date.now();
 
 /**
  * Checks if a user's session has been invalidated (global sign-out).
@@ -491,17 +488,6 @@ async function postTo(connectionId: string, message: unknown): Promise<void> {
     }
 }
 
-// Return the active connectionId for a robot or null if it's offline
-async function findRobotConn(robotId: string): Promise<string | null> {
-    const res = await db.send(
-        new GetItemCommand({
-            TableName: ROBOT_PRESENCE_TABLE,
-            Key: { robotId: { S: robotId} },
-        }),
-    );
-    return res.Item?.connectionId?.S ?? null;
-}
-
 /** DynamoDB Item shape for robot presence (subset we use when reusing a single read). */
 type RobotPresenceItem = { connectionId?: { S?: string }; ownerUserId?: { S?: string } } | undefined;
 
@@ -753,7 +739,6 @@ async function checkSessionLock(
 }
 
 /**
-<<<<<<< HEAD
  * Checks if user has sufficient credits for at least 1 minute of robot usage
  * Returns { sufficient: boolean, currentCredits: number, requiredCredits: number, error?: string }
  */
@@ -1505,7 +1490,6 @@ async function handleTakeover(
   }
 
   const caller = claims.sub ?? '';
-  const admin = isAdmin(claims.groups);
 
   // Check if caller is owner, admin, or delegated operator
   const isAuthorized = await isOwnerOrAdmin(robotId, claims);
@@ -1621,20 +1605,24 @@ async function handleSignal(
     return errorResponse(400, 'invalid target');
   }
 
+  const claimsTyped = claims as Claims;
+  let userEmail = claimsTyped.email;
+  let userEmailOrUsername = claimsTyped['cognito:username'];
+
   // If target is robot, check ACL before allowing access
   if (target === 'robot') {
-    // Get user's email/username from connection table for ACL check
-    let userEmailOrUsername: string | undefined;
-    let userEmail: string | undefined;
-    try {
-      const connItem = await db.send(new GetItemCommand({
-        TableName: CONN_TABLE,
-        Key: { connectionId: { S: sourceConnId } },
-      }));
-      userEmailOrUsername = connItem.Item?.username?.S;
-      userEmail = connItem.Item?.email?.S; // Get stored email
-    } catch (e) {
-      console.warn('Failed to get username from connection table:', e);
+    if (!userEmailOrUsername && !userEmail) {
+      try {
+        const connItem = await db.send(new GetItemCommand({
+          TableName: CONN_TABLE,
+          Key: { connectionId: { S: sourceConnId } },
+          ProjectionExpression: 'username, email',
+        }));
+        userEmailOrUsername = connItem.Item?.username?.S;
+        userEmail = connItem.Item?.email?.S;
+      } catch (e) {
+        console.warn('Failed to get username from connection table:', e);
+      }
     }
 
     // Check ACL - pass email and cached presence so we don't re-read RobotPresenceTable
@@ -1697,7 +1685,7 @@ async function handleSignal(
   if (target === 'client') {
     // For robot-to-client messages, clientConnectionId should be extracted from 'to' field
     // by normalizeMessage when message is from robot
-    let ccid = msg.clientConnectionId?.trim();
+    const ccid = msg.clientConnectionId?.trim();
     
     // If we don't have clientConnectionId but message is from robot, log a warning
     // but still allow the message to be monitored (for testing with placeholder values)
@@ -1834,21 +1822,7 @@ async function handleSignal(
       });
       
       if (type === 'offer' && target === 'robot' && claims?.sub) {
-        let userEmail: string | undefined;
-        let username: string | undefined;
-        try {
-          const connItem = await db.send(new GetItemCommand({
-            TableName: CONN_TABLE,
-            Key: { connectionId: { S: sourceConnId } },
-            ProjectionExpression: 'email, username',
-          }));
-          userEmail = connItem.Item?.email?.S;
-          username = connItem.Item?.username?.S;
-        } catch (e) {
-          console.warn('[SESSION_GET_USER_INFO_ERROR]', e);
-        }
-        
-        const sessionUserId = username || claims.sub;
+        const sessionUserId = userEmailOrUsername || claims.sub;
         const sessionId = await createSession(sourceConnId, sessionUserId, userEmail, robotId);
         
         // If session creation was blocked due to insufficient funds, send error to client
@@ -1953,12 +1927,13 @@ export async function handler(
     const connItem = await db.send(new GetItemCommand({
       TableName: CONN_TABLE,
       Key: { connectionId: { S: connectionId } },
-      ProjectionExpression: 'userId, username, groups',
+      ProjectionExpression: 'userId, username, email, groups',
     }));
     
     if (connItem.Item) {
       const userId = connItem.Item.userId?.S;
       const username = connItem.Item.username?.S;
+      const email = connItem.Item.email?.S;
       const groupsStr = connItem.Item.groups?.S || '';
       const groups = groupsStr ? groupsStr.split(',').filter(Boolean) : [];
       
@@ -1967,7 +1942,7 @@ export async function handler(
           sub: userId,
           groups: groups,
           'cognito:username': username,
-          email: username?.includes('@') ? username : undefined,
+          email: email || (username?.includes('@') ? username : undefined),
         };
         console.log('[AUTH_FROM_CONNECTION_TABLE]', {
           connectionId,
