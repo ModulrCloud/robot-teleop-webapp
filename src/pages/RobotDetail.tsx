@@ -504,7 +504,7 @@ export default function RobotDetail() {
                       <span>Estimated cost per hour</span>
                       <span>
                         {formatCreditsAsCurrencySync(
-                          (robot.hourlyRateCredits || 0) + servicesSubtotalCredits,
+                          ((robot.hourlyRateCredits || 0) + servicesSubtotalCredits) * (1 + platformMarkup / 100),
                           userCurrency as any,
                           exchangeRates || undefined
                         )}
