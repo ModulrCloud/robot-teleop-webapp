@@ -37,6 +37,7 @@ rust/
 
 # Documentation/explanation files (not for commit)
 explanations/
+docs/
 
 # Interface specification files
 interface-spec/
