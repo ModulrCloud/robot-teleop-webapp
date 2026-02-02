@@ -523,7 +523,7 @@ export default function RobotDetail() {
                           <span>Robot rate</span>
                           <span>
                             {formatCreditsAsCurrencySync(
-                              robot.hourlyRateCredits || 0,
+                              (robot.hourlyRateCredits || 0) * (1 + platformMarkup / 100),
                               userCurrency as any,
                               exchangeRates || undefined
                             )}
@@ -533,17 +533,7 @@ export default function RobotDetail() {
                           <span>Services subtotal</span>
                           <span>
                             {formatCreditsAsCurrencySync(
-                              servicesSubtotalCredits,
-                              userCurrency as any,
-                              exchangeRates || undefined
-                            )}
-                          </span>
-                        </div>
-                        <div className="cost-summary-row">
-                          <span>Platform fee ({platformMarkup}%)</span>
-                          <span>
-                            {formatCreditsAsCurrencySync(
-                              ((robot.hourlyRateCredits || 0) + servicesSubtotalCredits) * (platformMarkup / 100),
+                              servicesSubtotalCredits * (1 + platformMarkup / 100),
                               userCurrency as any,
                               exchangeRates || undefined
                             )}
