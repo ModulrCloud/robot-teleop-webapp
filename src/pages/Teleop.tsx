@@ -105,6 +105,15 @@ export default function Teleop() {
 
   // Status changes are handled by the useWebRTC hook - no need to log here
 
+  // Stop robot immediately when switching to a different robot
+  const prevRobotIdRef = useRef<string>(robotId);
+  useEffect(() => {
+    if (prevRobotIdRef.current !== robotId && prevRobotIdRef.current) {
+      stopRobot();
+    }
+    prevRobotIdRef.current = robotId;
+  }, [robotId, stopRobot]);
+
   useEffect(() => {
     connect();
 
@@ -381,22 +390,21 @@ export default function Teleop() {
     }
   }, [status.videoStream]);
 
-  // Send stop as soon as user clicks any in-app link that navigates away (e.g. Session tab).
-  // Capture phase so we run before navigation; avoids robot continuing when unmount cleanup is too late.
+  // Stop robot when user clicks a link to navigate away (capture phase runs before navigation)
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       const anchor = (e.target as Element).closest('a[href^="/"]');
       if (!anchor) return;
       const href = anchor.getAttribute('href');
       if (!href || href === '#') return;
-      const linkPath = href.split('?')[0].split('#')[0];
-      if (linkPath !== location.pathname) {
+      const currentFullPath = location.pathname + location.search;
+      if (href !== currentFullPath) {
         stopRobot();
       }
     };
     document.addEventListener('click', handleClick, true);
     return () => document.removeEventListener('click', handleClick, true);
-  }, [location.pathname, stopRobot]);
+  }, [location.pathname, location.search, stopRobot]);
 
   const handleEndSession = useCallback(() => {
     stopRobot();
