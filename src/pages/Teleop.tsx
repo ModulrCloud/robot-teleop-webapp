@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import Joystick, { type JoystickChange } from "../components/Joystick";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { useWebRTC } from "../hooks/useWebRTC";
@@ -43,6 +43,7 @@ const client = generateClient<Schema>();
 export default function Teleop() {
   usePageTitle();
   const navigate = useNavigate();
+  const location = useLocation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const lastSendTimeRef = useRef<number>(0);
   const sessionStartTimeRef = useRef<number | null>(null);
@@ -103,6 +104,15 @@ export default function Teleop() {
   });
 
   // Status changes are handled by the useWebRTC hook - no need to log here
+
+  // Stop robot immediately when switching to a different robot
+  const prevRobotIdRef = useRef<string>(robotId);
+  useEffect(() => {
+    if (prevRobotIdRef.current !== robotId && prevRobotIdRef.current) {
+      stopRobot();
+    }
+    prevRobotIdRef.current = robotId;
+  }, [robotId, stopRobot]);
 
   useEffect(() => {
     connect();
@@ -379,6 +389,22 @@ export default function Teleop() {
       videoRef.current.srcObject = status.videoStream;
     }
   }, [status.videoStream]);
+
+  // Stop robot when user clicks a link to navigate away (capture phase runs before navigation)
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      const anchor = (e.target as Element).closest('a[href^="/"]');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (!href || href === '#') return;
+      const currentFullPath = location.pathname + location.search;
+      if (href !== currentFullPath) {
+        stopRobot();
+      }
+    };
+    document.addEventListener('click', handleClick, true);
+    return () => document.removeEventListener('click', handleClick, true);
+  }, [location.pathname, location.search, stopRobot]);
 
   const handleEndSession = useCallback(() => {
     stopRobot();
