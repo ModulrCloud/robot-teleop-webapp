@@ -27,7 +27,8 @@ import {
   faMapMarkerAlt,
   faCog,
   faGaugeHigh,
-  faBolt
+  faBolt,
+  faSliders
 } from '@fortawesome/free-solid-svg-icons';
 import { InputBindingsModal } from '../components/InputBindingsModal';
 import { useCustomCommandBindings } from '../hooks/useCustomCommandBindings';
@@ -71,6 +72,12 @@ export default function Teleop() {
   const [platformMarkup, setPlatformMarkup] = useState<number>(30);
   const warningShownRef = useRef<boolean>(false);
 
+  // Joystick/gamepad sensitivity (0 = most forgiving, 100 = raw input)
+  const [steeringSensitivity, setSteeringSensitivity] = useState<number>(() => {
+    const saved = localStorage.getItem('steeringSensitivity');
+    return saved ? parseInt(saved, 10) : 30;
+  });
+
 
   // Read WebSocket URL from amplify_outputs.json (AWS signaling server)
   // Falls back to local WebSocket for development
@@ -102,8 +109,6 @@ export default function Teleop() {
       );
     },
   });
-
-  // Status changes are handled by the useWebRTC hook - no need to log here
 
   // Stop robot immediately when switching to a different robot
   const prevRobotIdRef = useRef<string>(robotId);
@@ -363,8 +368,10 @@ export default function Teleop() {
 
   useGamepad(
     (input) => {
-      const forward = input.forward * 0.5;
-      const turn = input.turn * -1.0;
+      // Apply steering sensitivity (gamepad turn = x, forward = y)
+      const adjusted = applySteeringSensitivity(input.turn, input.forward);
+      const forward = adjusted.y * 0.5;
+      const turn = adjusted.x * -1.0;
       setCurrentSpeed({ forward, turn });
       setIsJoystickActive(forward !== 0 || turn !== 0);
 
@@ -406,6 +413,37 @@ export default function Teleop() {
     return () => document.removeEventListener('click', handleClick, true);
   }, [location.pathname, location.search, stopRobot]);
 
+  const applySteeringSensitivity = useCallback((rawX: number, rawY: number): { x: number; y: number } => {
+    const magnitude = Math.sqrt(rawX * rawX + rawY * rawY);
+    if (magnitude < 0.1) return { x: 0, y: 0 };
+
+    const angleDeg = Math.atan2(rawX, rawY) * (180 / Math.PI);
+    const absAngle = Math.abs(angleDeg);
+    const forwardZoneHalf = ((100 - steeringSensitivity) / 100) * 35;
+    const transitionWidth = 25;
+
+    let turnScale = 1;
+    if (absAngle < forwardZoneHalf) {
+      turnScale = 0;
+    } else if (absAngle < forwardZoneHalf + transitionWidth) {
+      turnScale = (absAngle - forwardZoneHalf) / transitionWidth;
+    }
+
+    const backAngle = 180 - absAngle;
+    if (backAngle < forwardZoneHalf) {
+      turnScale = 0;
+    } else if (backAngle < forwardZoneHalf + transitionWidth) {
+      turnScale = Math.min(turnScale, (backAngle - forwardZoneHalf) / transitionWidth);
+    }
+
+    return { x: rawX * turnScale, y: rawY };
+  }, [steeringSensitivity]);
+
+  const handleSensitivityChange = useCallback((value: number) => {
+    setSteeringSensitivity(value);
+    localStorage.setItem('steeringSensitivity', value.toString());
+  }, []);
+
   const handleEndSession = useCallback(() => {
     stopRobot();
     disconnect();
@@ -422,7 +460,6 @@ export default function Teleop() {
 
   const handleKeyboardInput = useCallback((input: { forward: number; turn: number }) => {
     const forward = input.forward;
-    // Invert turn to match joystick/gamepad convention (positive turn = visual right)
     const turn = input.turn * -1.0;
     setCurrentSpeed({ forward, turn });
     setIsJoystickActive(forward !== 0 || turn !== 0);
@@ -454,8 +491,9 @@ export default function Teleop() {
 
     setIsJoystickActive(true);
 
-    const forward = change.y * 0.5;
-    const turn = change.x * -1.0;
+    const adjusted = applySteeringSensitivity(change.x, change.y);
+    const forward = adjusted.y * 0.5;
+    const turn = adjusted.x * -1.0;
     setCurrentSpeed({ forward, turn });
 
     const now = Date.now();
@@ -802,8 +840,59 @@ export default function Teleop() {
             </div>
           </div>
 
+          {(controlMode === 'joystick' || controlMode === 'gamepad') && (
+            <div className="sensitivity-slider-container">
+              <div className="sensitivity-header">
+                <FontAwesomeIcon icon={faSliders} />
+                <span>Steering Sensitivity</span>
+              </div>
+              <div className="sensitivity-control">
+                <span className="sensitivity-label">Forgiving</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={steeringSensitivity}
+                  onChange={(e) => handleSensitivityChange(parseInt(e.target.value, 10))}
+                  className="sensitivity-slider"
+                />
+                <span className="sensitivity-label">Precise</span>
+              </div>
+            </div>
+          )}
+
           {controlMode === 'joystick' ? (
             <div className="joystick-wrapper">
+              <svg className="joystick-zone-overlay" viewBox="0 0 220 220" width="220" height="220">
+                {(() => {
+                  const forwardZoneHalf = ((100 - steeringSensitivity) / 100) * 35;
+                  const transitionWidth = 25;
+                  const cx = 110, cy = 110, r = 95;
+                  const angleToPoint = (angle: number, radius: number) => {
+                    const rad = (angle - 90) * Math.PI / 180;
+                    return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
+                  };
+                  if (forwardZoneHalf < 1) return null;
+                  const fwdLeft = angleToPoint(-forwardZoneHalf, r);
+                  const fwdRight = angleToPoint(forwardZoneHalf, r);
+                  const transLeft = angleToPoint(-(forwardZoneHalf + transitionWidth), r);
+                  const transRight = angleToPoint(forwardZoneHalf + transitionWidth, r);
+                  const bwdLeft = angleToPoint(180 - forwardZoneHalf, r);
+                  const bwdRight = angleToPoint(180 + forwardZoneHalf, r);
+                  return (
+                    <>
+                      <path d={`M ${cx} ${cy} L ${fwdLeft.x} ${fwdLeft.y} A ${r} ${r} 0 0 1 ${fwdRight.x} ${fwdRight.y} Z`} fill="rgba(76, 175, 80, 0.1)" />
+                      <path d={`M ${cx} ${cy} L ${bwdRight.x} ${bwdRight.y} A ${r} ${r} 0 0 1 ${bwdLeft.x} ${bwdLeft.y} Z`} fill="rgba(76, 175, 80, 0.1)" />
+                      <line x1={cx} y1={cy} x2={fwdLeft.x} y2={fwdLeft.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                      <line x1={cx} y1={cy} x2={fwdRight.x} y2={fwdRight.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                      <line x1={cx} y1={cy} x2={transLeft.x} y2={transLeft.y} stroke="rgba(255, 183, 0, 0.3)" strokeWidth="1" strokeDasharray="2 4" />
+                      <line x1={cx} y1={cy} x2={transRight.x} y2={transRight.y} stroke="rgba(255, 183, 0, 0.3)" strokeWidth="1" strokeDasharray="2 4" />
+                      <line x1={cx} y1={cy} x2={bwdLeft.x} y2={bwdLeft.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                      <line x1={cx} y1={cy} x2={bwdRight.x} y2={bwdRight.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                    </>
+                  );
+                })()}
+              </svg>
               <Joystick
                 onChange={handleJoystickChange}
                 onEnd={handleJoystickEnd}
@@ -860,6 +949,36 @@ export default function Teleop() {
             <div className="gamepad-wrapper">
               {gamepadDetected ? (
                 <div className="joystick-display-wrapper">
+                  <svg className="joystick-zone-overlay" viewBox="0 0 220 220" width="220" height="220">
+                    {(() => {
+                      const forwardZoneHalf = ((100 - steeringSensitivity) / 100) * 35;
+                      const transitionWidth = 25;
+                      const cx = 110, cy = 110, r = 95;
+                      const angleToPoint = (angle: number, radius: number) => {
+                        const rad = (angle - 90) * Math.PI / 180;
+                        return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
+                      };
+                      if (forwardZoneHalf < 1) return null;
+                      const fwdLeft = angleToPoint(-forwardZoneHalf, r);
+                      const fwdRight = angleToPoint(forwardZoneHalf, r);
+                      const transLeft = angleToPoint(-(forwardZoneHalf + transitionWidth), r);
+                      const transRight = angleToPoint(forwardZoneHalf + transitionWidth, r);
+                      const bwdLeft = angleToPoint(180 - forwardZoneHalf, r);
+                      const bwdRight = angleToPoint(180 + forwardZoneHalf, r);
+                      return (
+                        <>
+                          <path d={`M ${cx} ${cy} L ${fwdLeft.x} ${fwdLeft.y} A ${r} ${r} 0 0 1 ${fwdRight.x} ${fwdRight.y} Z`} fill="rgba(76, 175, 80, 0.1)" />
+                          <path d={`M ${cx} ${cy} L ${bwdRight.x} ${bwdRight.y} A ${r} ${r} 0 0 1 ${bwdLeft.x} ${bwdLeft.y} Z`} fill="rgba(76, 175, 80, 0.1)" />
+                          <line x1={cx} y1={cy} x2={fwdLeft.x} y2={fwdLeft.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                          <line x1={cx} y1={cy} x2={fwdRight.x} y2={fwdRight.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                          <line x1={cx} y1={cy} x2={transLeft.x} y2={transLeft.y} stroke="rgba(255, 183, 0, 0.3)" strokeWidth="1" strokeDasharray="2 4" />
+                          <line x1={cx} y1={cy} x2={transRight.x} y2={transRight.y} stroke="rgba(255, 183, 0, 0.3)" strokeWidth="1" strokeDasharray="2 4" />
+                          <line x1={cx} y1={cy} x2={bwdLeft.x} y2={bwdLeft.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                          <line x1={cx} y1={cy} x2={bwdRight.x} y2={bwdRight.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                        </>
+                      );
+                    })()}
+                  </svg>
                   <div className="joystick-display" style={{ width: 220, height: 220 }}>
                     <div className="joystick-ring" />
                     <div

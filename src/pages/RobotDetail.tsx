@@ -539,6 +539,16 @@ export default function RobotDetail() {
                             )}
                           </span>
                         </div>
+                        <div className="cost-summary-row">
+                          <span>Platform fee ({platformMarkup}%)</span>
+                          <span>
+                            {formatCreditsAsCurrencySync(
+                              ((robot.hourlyRateCredits || 0) + servicesSubtotalCredits) * (platformMarkup / 100),
+                              userCurrency as any,
+                              exchangeRates || undefined
+                            )}
+                          </span>
+                        </div>
                         <p className="cost-summary-note">
                           Services pricing will appear here before teleop starts.
                         </p>
