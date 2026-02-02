@@ -92,6 +92,8 @@ export interface SystemStats {
   totalUsers?: number;
   totalRobots?: number | null;
   totalRevenue?: number;
+  platformRevenue?: number;
+  platformMarkupPercent?: number;
   totalCredits?: number;
   activeSessions?: number;
 }

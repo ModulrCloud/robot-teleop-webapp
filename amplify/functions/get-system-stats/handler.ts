@@ -1,7 +1,7 @@
 import type { Schema } from "../../data/resource";
 import { CognitoIdentityProviderClient, ListUsersCommand, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, ScanCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 
 const cognito = new CognitoIdentityProviderClient({});
 const dynamoClient = new DynamoDBClient({});
@@ -13,6 +13,7 @@ const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME!;
 const USER_CREDITS_TABLE = process.env.USER_CREDITS_TABLE!;
 const CREDIT_TRANSACTIONS_TABLE = process.env.CREDIT_TRANSACTIONS_TABLE!;
 const PARTNER_PAYOUT_TABLE = process.env.PARTNER_PAYOUT_TABLE!;
+const PLATFORM_SETTINGS_TABLE = process.env.PLATFORM_SETTINGS_TABLE!;
 
 export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async (event) => {
   console.log("Get System Stats request:", JSON.stringify(event, null, 2));
@@ -132,48 +133,6 @@ export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async 
       activeRobots = 0;
     }
 
-    // Get total revenue (sum of all credit transactions where type is 'purchase')
-    let totalRevenue = 0;
-    try {
-      const transactionsScan = await docClient.send(
-        new ScanCommand({
-          TableName: CREDIT_TRANSACTIONS_TABLE,
-          FilterExpression: '#type = :purchase',
-          ExpressionAttributeNames: {
-            '#type': 'type',
-          },
-          ExpressionAttributeValues: {
-            ':purchase': 'purchase',
-          },
-        })
-      );
-      
-      totalRevenue = (transactionsScan.Items || []).reduce((sum, item) => {
-        return sum + (item.pricePaid || 0);
-      }, 0);
-    } catch (error) {
-      console.warn("Could not calculate revenue from transactions:", error);
-    }
-
-    // Add platform fees from PartnerPayout table (this is the platform's actual earnings)
-    try {
-      const payoutsScan = await docClient.send(
-        new ScanCommand({
-          TableName: PARTNER_PAYOUT_TABLE,
-        })
-      );
-      
-      const platformFees = (payoutsScan.Items || []).reduce((sum, item) => {
-        return sum + (item.platformFee || 0);
-      }, 0);
-      
-      // Convert credits to dollars and add to revenue
-      totalRevenue += platformFees / 100;
-      console.log(`✅ Added platform fees: $${(platformFees / 100).toFixed(2)}`);
-    } catch (error) {
-      console.warn("Could not calculate platform fees from payouts:", error);
-    }
-
     // Get active sessions count
     let activeSessions = 0;
     try {
@@ -211,11 +170,55 @@ export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async 
       console.warn("Could not calculate total credits:", error);
     }
 
+    // Total Revenue = dollar value of credits in the system (1 credit = $0.01)
+    const totalRevenue = totalCredits / 100;
+
+    // Platform Revenue = sum of platform fees from PartnerPayout (earned platform cut)
+    let platformRevenue = 0;
+    try {
+      const payoutsScan = await docClient.send(
+        new ScanCommand({
+          TableName: PARTNER_PAYOUT_TABLE,
+        })
+      );
+      const platformFeesCredits = (payoutsScan.Items || []).reduce((sum, item) => {
+        return sum + (item.platformFee || 0);
+      }, 0);
+      platformRevenue = platformFeesCredits / 100; // credits to dollars
+      console.log(`✅ Platform revenue: $${platformRevenue.toFixed(2)}`);
+    } catch (error) {
+      console.warn("Could not calculate platform revenue from payouts:", error);
+    }
+
+    // Platform Cut = current markup percentage from PlatformSettings
+    let platformMarkupPercent: number | null = null;
+    try {
+      const settingsResult = await docClient.send(
+        new QueryCommand({
+          TableName: PLATFORM_SETTINGS_TABLE,
+          IndexName: 'settingKeyIndex',
+          KeyConditionExpression: 'settingKey = :key',
+          ExpressionAttributeValues: { ':key': 'platformMarkupPercent' },
+          Limit: 1,
+        })
+      );
+      if (settingsResult.Items?.[0]?.settingValue) {
+        platformMarkupPercent = parseFloat(settingsResult.Items[0].settingValue) || 30;
+      } else {
+        platformMarkupPercent = 30; // default
+      }
+    } catch (error) {
+      console.warn("Could not get platform markup setting:", error);
+      platformMarkupPercent = 30;
+    }
+
     const stats = {
       totalUsers,
       totalRobots,
       activeRobots,
-      totalRevenue: Math.round(totalRevenue * 100) / 100, // Round to 2 decimal places
+      totalRevenue: Math.round(totalRevenue * 100) / 100,
+      platformRevenue: Math.round(platformRevenue * 100) / 100,
+      platformMarkupPercent: platformMarkupPercent ?? 30,
       activeSessions,
       totalCredits,
     };

@@ -10,6 +10,8 @@ import { manageRobotACL } from "../functions/manage-robot-acl/resource";
 import { listAccessibleRobots } from "../functions/list-accessible-robots/resource";
 import { getRobotStatus } from "../functions/get-robot-status/resource";
 import { createStripeCheckout } from "../functions/create-stripe-checkout/resource";
+import { createStripeConnectOnboardingLink } from "../functions/create-stripe-connect-onboarding-link/resource";
+import { stripeConnectOnboardingReturn } from "../functions/stripe-connect-onboarding-return/resource";
 import { addCredits } from "../functions/add-credits/resource";
 import { verifyStripePayment } from "../functions/verify-stripe-payment/resource";
 import { getUserCredits } from "../functions/get-user-credits/resource";
@@ -34,6 +36,7 @@ import { processRobotReservationRefunds } from "../functions/process-robot-reser
 import { listPartnerPayouts } from "../functions/list-partner-payouts/resource";
 import { processPayout } from "../functions/process-payout/resource";
 import { getSessionLambda } from "../functions/get-session/resource";
+import { listSessionsByRobot } from "../functions/list-sessions-by-robot/resource";
 import { triggerConnectionCleanup } from "../functions/trigger-connection-cleanup/resource";
 import { getActiveRobots } from "../functions/get-active-robots/resource";
 import { manageCreditTier } from "../functions/manage-credit-tier/resource";
@@ -119,6 +122,14 @@ const schema = a.schema({
     telegramUrl: a.string(),
     githubUrl: a.string(),
     discordUrl: a.string(),
+    // Payout preferences: '' | 'fiat' | 'mdr'
+    preferredPayoutType: a.string(),
+    // MDR wallet public key (used when preferredPayoutType === 'mdr'); publicKey above is legacy/generic
+    mdrPublicKey: a.string(),
+    // Stripe Connect (Express): connected account ID (acct_xxx) — required to pay partner via Stripe
+    stripeConnectAccountId: a.string(),
+    // True once Stripe onboarding is complete and payouts are enabled (optional, for UI state)
+    stripeConnectOnboardingComplete: a.boolean(),
   })
     .secondaryIndexes(index => [index("cognitoUsername").name("cognitoUsernameIndex")])
     .authorization((allow) => [
@@ -365,6 +376,7 @@ const schema = a.schema({
       index("userId").name("userIdIndex"),
       index("partnerId").name("partnerIdIndex"),
       index("robotId").name("robotIdIndex"),
+      index("robotId").sortKeys(["startedAt"]).name("robotIdStartedAtIndex"), // Connection history: newest-first by startedAt
       index("connectionId").name("connectionIdIndex") // GSI for fast lookup by connection ID (for cleanup on disconnect)
     ])
     .authorization((allow) => [
@@ -635,6 +647,22 @@ const schema = a.schema({
     .authorization(allow => [allow.authenticated()])
     .handler(a.handler.function(verifyStripePayment)),
 
+  createStripeConnectOnboardingLinkLambda: a
+    .mutation()
+    .arguments({
+      returnUrl: a.string().required(),
+      refreshUrl: a.string().required(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(createStripeConnectOnboardingLink)),
+
+  stripeConnectOnboardingReturnLambda: a
+    .query()
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(stripeConnectOnboardingReturn)),
+
   processSessionPaymentLambda: a
     .mutation()
     .arguments({
@@ -887,6 +915,17 @@ const schema = a.schema({
     .returns(SessionResult)
     .authorization(allow => [allow.authenticated()])
     .handler(a.handler.function(getSessionLambda)),
+
+  listSessionsByRobotLambda: a
+    .query()
+    .arguments({
+      robotId: a.string().required(),
+      limit: a.integer(),
+      nextToken: a.string(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(listSessionsByRobot)),
 
   triggerConnectionCleanupLambda: a
     .mutation()

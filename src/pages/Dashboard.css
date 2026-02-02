@@ -294,6 +294,82 @@
   margin-top: 0.25rem;
 }
 
+/* Partner Earnings: two cards side by side */
+.dashboard-partner-earnings-grid {
+  max-width: 800px;
+}
+
+.stat-card-payout-prefs .stat-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.stat-payout-type-note {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  margin-top: 0.15rem;
+}
+
+.stat-card-payout-prefs .stat-label {
+  margin-top: 0;
+}
+
+.stat-payout-stripe-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.stat-payout-stripe-badge {
+  font-size: 0.8rem;
+  color: rgba(255, 183, 0, 0.95);
+  font-weight: 500;
+}
+
+.stat-payout-stripe-id {
+  font-size: 0.75rem;
+  font-family: ui-monospace, monospace;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.dashboard-payout-preferences-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(255, 183, 0, 0.95);
+  background: rgba(255, 183, 0, 0.1);
+  border: 1px solid rgba(255, 183, 0, 0.3);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  align-self: flex-start;
+}
+
+.dashboard-payout-preferences-btn:hover {
+  background: rgba(255, 183, 0, 0.15);
+  border-color: rgba(255, 183, 0, 0.5);
+}
+
+.dashboard-stripe-setup-btn {
+  background: rgba(255, 183, 0, 0.2);
+  font-weight: 600;
+}
+
+.dashboard-stripe-error {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.85rem;
+  color: #f87171;
+  max-width: 280px;
+}
+
 /* Recent Sessions */
 .sessions-list {
   display: flex;

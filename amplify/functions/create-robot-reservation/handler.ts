@@ -1,6 +1,6 @@
 import type { Schema } from "../../data/resource";
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { randomUUID } from 'crypto';
 import { hasRecurringConflict } from '../utils/recurrence';
@@ -16,6 +16,7 @@ const ROBOT_TABLE = process.env.ROBOT_TABLE_NAME!;
 const USER_CREDITS_TABLE = process.env.USER_CREDITS_TABLE!;
 const PLATFORM_SETTINGS_TABLE = process.env.PLATFORM_SETTINGS_TABLE!;
 const PARTNER_PAYOUT_TABLE = process.env.PARTNER_PAYOUT_TABLE!;
+const PARTNER_TABLE_NAME = process.env.PARTNER_TABLE_NAME!;
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 
 const MINIMUM_RESERVATION_MINUTES = 15;
@@ -133,8 +134,30 @@ export const handler: Schema["createRobotReservationLambda"]["functionHandler"] 
     }
 
     const robotUuid = robot.id;
-    const partnerId = robot.partnerId;
+    const partnerTableId = robot.partnerId;
     const hourlyRateCredits = robot.hourlyRateCredits || 100;
+
+    if (!partnerTableId) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: `Robot has no partnerId: ${robotId}` }),
+      };
+    }
+
+    const partnerResult = await docClient.send(
+      new GetCommand({
+        TableName: PARTNER_TABLE_NAME,
+        Key: { id: partnerTableId },
+      })
+    );
+    const partner = partnerResult.Item;
+    const partnerCognitoUsername = partner?.cognitoUsername;
+    if (!partnerCognitoUsername) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: `Partner not found or has no cognitoUsername: ${partnerTableId}` }),
+      };
+    }
 
     // 5. Check robot availability (no conflicts with existing reservations or availability blocks)
     const availabilityCheck = await checkAvailability(robotId, start, end);
@@ -197,7 +220,7 @@ export const handler: Schema["createRobotReservationLambda"]["functionHandler"] 
           robotUuid,
           userId,
           userEmail: userEmail || null,
-          partnerId,
+          partnerId: partnerTableId,
           startTime: start.toISOString(),
           endTime: end.toISOString(),
           durationMinutes,
@@ -221,16 +244,29 @@ export const handler: Schema["createRobotReservationLambda"]["functionHandler"] 
     const depositPlatformFee = depositCredits - depositBaseCost;
     const depositPartnerEarnings = depositBaseCost;
 
-    // 9c. Create PartnerPayout record for the deposit
+    // 9c. Create PartnerPayout record for the deposit (use Cognito username so partner sees it on My Robots)
+    let partnerEmail: string | undefined;
+    try {
+      const partnerUser = await cognito.send(
+        new AdminGetUserCommand({
+          UserPoolId: USER_POOL_ID,
+          Username: partnerCognitoUsername,
+        })
+      );
+      partnerEmail = partnerUser.UserAttributes?.find(attr => attr.Name === 'email')?.Value;
+    } catch (e) {
+      console.warn('Could not fetch partner email from Cognito for payout:', e);
+    }
+
     const payoutId = randomUUID();
     await docClient.send(
       new PutCommand({
         TableName: PARTNER_PAYOUT_TABLE,
         Item: {
           id: payoutId,
-          owner: partnerId, // For owner-based authorization
-          partnerId,
-          partnerEmail: null, // TODO: Get partner email from Partner table if needed
+          owner: partnerCognitoUsername,
+          partnerId: partnerCognitoUsername,
+          partnerEmail: partnerEmail ?? undefined,
           reservationId, // Link to reservation
           robotId,
           robotName: robot.name || robotId,

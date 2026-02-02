@@ -41,6 +41,7 @@ export const PayoutManagement = () => {
     }
 
     setLoadingPayouts(true);
+    setError(null);
     try {
       const result = await client.queries.listPartnerPayoutsLambda({ 
         limit: 50,
@@ -49,19 +50,46 @@ export const PayoutManagement = () => {
       });
       
       let payoutsData: PayoutsResponse | null = null;
-      if (typeof result.data === 'string') {
+      const raw = result.data;
+      // Lambda returns { statusCode, body } where body is JSON string; Amplify may pass through as object or string
+      if (typeof raw === 'string') {
         try {
-          const firstParse = JSON.parse(result.data);
-          if (typeof firstParse === 'string') {
-            payoutsData = JSON.parse(firstParse);
+          const firstParse = JSON.parse(raw);
+          if (firstParse?.statusCode !== undefined && firstParse?.statusCode !== 200) {
+            const errBody = typeof firstParse.body === 'string' ? JSON.parse(firstParse.body || '{}') : firstParse.body;
+            setError(errBody?.error || `Request failed (${firstParse.statusCode})`);
+            setPayouts([]);
+            setPayoutsPaginationToken(null);
+            return;
+          }
+          if (firstParse?.statusCode === 200 && firstParse?.body != null) {
+            payoutsData = typeof firstParse.body === 'string' ? JSON.parse(firstParse.body) : firstParse.body;
           } else {
-            payoutsData = firstParse;
+            payoutsData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
           }
         } catch (e) {
           payoutsData = { success: false };
         }
-      } else {
-        payoutsData = result.data as typeof payoutsData;
+      } else if (raw && typeof raw === 'object') {
+        const statusCode = (raw as { statusCode?: number }).statusCode;
+        if (statusCode !== undefined && statusCode !== 200) {
+          const body = (raw as { body?: string | object }).body;
+          const errBody = typeof body === 'string' ? (() => { try { return JSON.parse(body); } catch { return {}; } })() : (body || {});
+          setError((errBody as { error?: string }).error || `Request failed (${statusCode})`);
+          setPayouts([]);
+          setPayoutsPaginationToken(null);
+          return;
+        }
+        if (statusCode === 200 && (raw as { body?: unknown }).body != null) {
+          const body = (raw as { body: string | object }).body;
+          try {
+            payoutsData = typeof body === 'string' ? JSON.parse(body) : body as PayoutsResponse;
+          } catch (e) {
+            payoutsData = { success: false };
+          }
+        } else {
+          payoutsData = raw as PayoutsResponse;
+        }
       }
 
       if (payoutsData?.success && payoutsData.payouts) {
@@ -82,6 +110,10 @@ export const PayoutManagement = () => {
       } else {
         setPayouts([]);
         setPayoutsPaginationToken(null);
+        // No threshold: list returns all matching payouts. Empty = no pending or API returned non-success.
+        if (payoutsData && !payoutsData.success) {
+          setError("Payout list request did not succeed. Check console for details.");
+        }
       }
     } catch (err) {
       logger.error("Failed to load payouts:", err);
@@ -96,8 +128,9 @@ export const PayoutManagement = () => {
     if (user?.email && hasAdminAccess(user.email)) {
       loadPayouts(null, payoutStatusFilter);
     }
+    // Re-run when user becomes available (auth can resolve after mount) or filter changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payoutStatusFilter]);
+  }, [payoutStatusFilter, user?.email]);
 
   const handlePayoutsNextPage = () => {
     if (payoutsPaginationToken) {

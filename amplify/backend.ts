@@ -14,6 +14,8 @@ import { manageRobotACL } from './functions/manage-robot-acl/resource';
 import { listAccessibleRobots } from './functions/list-accessible-robots/resource';
 import { getRobotStatus } from './functions/get-robot-status/resource';
 import { createStripeCheckout } from './functions/create-stripe-checkout/resource';
+import { createStripeConnectOnboardingLink } from './functions/create-stripe-connect-onboarding-link/resource';
+import { stripeConnectOnboardingReturn } from './functions/stripe-connect-onboarding-return/resource';
 import { addCredits } from './functions/add-credits/resource';
 import { verifyStripePayment } from './functions/verify-stripe-payment/resource';
 import { getUserCredits } from './functions/get-user-credits/resource';
@@ -25,6 +27,7 @@ import { listUsers } from './functions/list-users/resource';
 import { getSystemStats } from './functions/get-system-stats/resource';
 import { listAuditLogs } from './functions/list-audit-logs/resource';
 import { processSessionPayment } from './functions/process-session-payment/resource';
+import { settleSessionPayment } from './functions/settle-session-payment/resource';
 import { deductSessionCredits } from './functions/deduct-session-credits/resource';
 import { createOrUpdateRating } from './functions/create-or-update-rating/resource';
 import { listRobotRatings } from './functions/list-robot-ratings/resource';
@@ -38,6 +41,7 @@ import { processRobotReservationRefunds } from './functions/process-robot-reserv
 import { listPartnerPayouts } from './functions/list-partner-payouts/resource';
 import { processPayout } from './functions/process-payout/resource';
 import { getSessionLambda } from './functions/get-session/resource';
+import { listSessionsByRobot } from './functions/list-sessions-by-robot/resource';
 import { cleanupStaleConnections } from './functions/cleanup-stale-connections/resource';
 import { triggerConnectionCleanup } from './functions/trigger-connection-cleanup/resource';
 import { getActiveRobots } from './functions/get-active-robots/resource';
@@ -72,6 +76,8 @@ const backend = defineBackend({
   listAccessibleRobots,
   getRobotStatus,
   createStripeCheckout,
+  createStripeConnectOnboardingLink,
+  stripeConnectOnboardingReturn,
   addCredits,
   verifyStripePayment,
   getUserCredits,
@@ -83,6 +89,7 @@ const backend = defineBackend({
   getSystemStats,
   listAuditLogs,
   processSessionPayment,
+  settleSessionPayment,
   deductSessionCredits,
   createOrUpdateRating,
   listRobotRatings,
@@ -96,6 +103,7 @@ const backend = defineBackend({
   listPartnerPayouts,
   processPayout,
   getSessionLambda,
+  listSessionsByRobot,
   cleanupStaleConnections,
   triggerConnectionCleanup,
   getActiveRobots,
@@ -163,6 +171,7 @@ const createOrUpdateRatingFunction = backend.createOrUpdateRating.resources.lamb
 const listRobotRatingsFunction = backend.listRobotRatings.resources.lambda;
 const createRatingResponseFunction = backend.createRatingResponse.resources.lambda;
 const getSessionLambdaFunction = backend.getSessionLambda.resources.lambda;
+const listSessionsByRobotFunction = backend.listSessionsByRobot.resources.lambda;
 
 // ============================================
 // Signaling Function Resources
@@ -262,6 +271,7 @@ signalingCdkFunction.addEnvironment('REVOKED_TOKENS_TABLE', revokedTokensTable.t
 signalingCdkFunction.addEnvironment('USER_INVALIDATION_TABLE', userInvalidationTable.tableName);
 signalingCdkFunction.addEnvironment('ROBOT_OPERATOR_TABLE', robotOperatorTable.tableName);
 signalingCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+signalingCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
 signalingCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 // DEVELOPMENT ONLY: Set ALLOW_NO_TOKEN=true to allow connections without JWT tokens (for testing)
 // ⚠️ WARNING: Never set this in production! This bypasses all authentication.
@@ -279,7 +289,8 @@ robotPresenceTable.grantReadWriteData(signalingFunction);
 revokedTokensTable.grantReadData(signalingFunction); // Read-only for checking blacklist
 userInvalidationTable.grantReadData(signalingFunction); // Read-only for checking session invalidation
 robotOperatorTable.grantReadData(signalingFunction); // Read-only for checking delegations
-tables.Robot.grantReadData(signalingFunction); // Read-only for checking ACLs
+tables.Robot.grantReadData(signalingFunction); // Read-only for checking ACLs and session metadata
+tables.Partner.grantReadData(signalingFunction); // Read-only for partnerId (Cognito username) on session creation
 tables.Session.grantReadWriteData(signalingFunction); // Read/write for session management
 tables.UserCredits.grantReadData(signalingFunction); // Read-only for balance checks
 tables.PlatformSettings.grantReadData(signalingFunction); // Read-only for platform markup
@@ -464,6 +475,33 @@ addCreditsFunction.addToRolePolicy(new PolicyStatement({
 
 // Verify Stripe payment Lambda - no additional permissions needed (just uses Stripe API)
 
+// Stripe Connect onboarding: create account link (and Express account if needed)
+const createStripeConnectOnboardingLinkFunction = backend.createStripeConnectOnboardingLink.resources.lambda;
+const createStripeConnectOnboardingLinkCdkFunction = createStripeConnectOnboardingLinkFunction as CdkFunction;
+createStripeConnectOnboardingLinkCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+tables.Partner.grantReadWriteData(createStripeConnectOnboardingLinkFunction);
+// Explicit Query/GetItem/Scan on GSI (grantReadWriteData may not cover index in this setup)
+createStripeConnectOnboardingLinkFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:Scan'],
+  resources: [
+    tables.Partner.tableArn,
+    `${tables.Partner.tableArn}/index/cognitoUsernameIndex`,
+  ],
+}));
+
+// Stripe Connect onboarding: check status on return and update Partner
+const stripeConnectOnboardingReturnFunction = backend.stripeConnectOnboardingReturn.resources.lambda;
+const stripeConnectOnboardingReturnCdkFunction = stripeConnectOnboardingReturnFunction as CdkFunction;
+stripeConnectOnboardingReturnCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+tables.Partner.grantReadWriteData(stripeConnectOnboardingReturnFunction);
+stripeConnectOnboardingReturnFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query', 'dynamodb:GetItem', 'dynamodb:Scan'],
+  resources: [
+    tables.Partner.tableArn,
+    `${tables.Partner.tableArn}/index/cognitoUsernameIndex`,
+  ],
+}));
+
 // Get user credits Lambda environment variables and permissions
 const getUserCreditsCdkFunction = getUserCreditsFunction as CdkFunction;
 getUserCreditsCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
@@ -510,6 +548,33 @@ processSessionPaymentFunction.addToRolePolicy(new PolicyStatement({
     `${tables.Robot.tableArn}/index/robotIdIndex`
   ]
 }));
+
+// Settle session payment Lambda (invoked by signaling when teleop session ends)
+const settleSessionPaymentFunction = backend.settleSessionPayment.resources.lambda;
+const settleSessionPaymentCdkFunction = settleSessionPaymentFunction as CdkFunction;
+settleSessionPaymentCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
+settleSessionPaymentCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+settleSessionPaymentCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+settleSessionPaymentCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
+settleSessionPaymentCdkFunction.addEnvironment('PARTNER_PAYOUT_TABLE', tables.PartnerPayout.tableName);
+settleSessionPaymentCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+userPool.grant(settleSessionPaymentFunction, 'cognito-idp:AdminGetUser');
+tables.Session.grantReadWriteData(settleSessionPaymentFunction);
+tables.Robot.grantReadData(settleSessionPaymentFunction);
+tables.Partner.grantReadData(settleSessionPaymentFunction);
+tables.PlatformSettings.grantReadData(settleSessionPaymentFunction);
+tables.PartnerPayout.grantWriteData(settleSessionPaymentFunction);
+settleSessionPaymentFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query'],
+  resources: [
+    `${tables.Robot.tableArn}/index/robotIdIndex`,
+    `${tables.PlatformSettings.tableArn}/index/settingKeyIndex`,
+  ],
+}));
+
+// Grant signaling Lambda permission to invoke settle session payment
+settleSessionPaymentFunction.grantInvoke(signalingFunction);
+signalingCdkFunction.addEnvironment('SETTLE_SESSION_PAYMENT_FUNCTION_NAME', settleSessionPaymentFunction.functionName);
 
 // Deduct session credits Lambda environment variables and permissions
 const deductSessionCreditsCdkFunction = deductSessionCreditsFunction as CdkFunction;
@@ -830,12 +895,18 @@ getSystemStatsCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.ta
 getSystemStatsCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
 getSystemStatsCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
 getSystemStatsCdkFunction.addEnvironment('PARTNER_PAYOUT_TABLE', tables.PartnerPayout.tableName);
+getSystemStatsCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
 userPool.grant(getSystemStatsFunction, 'cognito-idp:ListUsers', 'cognito-idp:AdminGetUser');
 tables.Robot.grantReadData(getSystemStatsFunction);
 tables.Session.grantReadData(getSystemStatsFunction);
 tables.UserCredits.grantReadData(getSystemStatsFunction);
 tables.CreditTransaction.grantReadData(getSystemStatsFunction);
 tables.PartnerPayout.grantReadData(getSystemStatsFunction);
+tables.PlatformSettings.grantReadData(getSystemStatsFunction);
+getSystemStatsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query'],
+  resources: [`${tables.PlatformSettings.tableArn}/index/settingKeyIndex`],
+}));
 
 // List audit logs Lambda environment variables and permissions
 const listAuditLogsCdkFunction = listAuditLogsFunction as CdkFunction;
@@ -864,6 +935,25 @@ getSessionLambdaFunction.addToRolePolicy(new PolicyStatement({
     `${tables.Session.tableArn}/index/userIdIndex`
   ]
 }));
+
+// List sessions by robot Lambda (Connection History for partners)
+const listSessionsByRobotCdkFunction = listSessionsByRobotFunction as CdkFunction;
+listSessionsByRobotCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
+listSessionsByRobotCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+listSessionsByRobotCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+listSessionsByRobotCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.Session.grantReadData(listSessionsByRobotFunction);
+tables.Robot.grantReadData(listSessionsByRobotFunction);
+tables.Partner.grantReadData(listSessionsByRobotFunction);
+listSessionsByRobotFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query'],
+  resources: [
+    `${tables.Session.tableArn}/index/robotIdIndex`,
+    `${tables.Session.tableArn}/index/robotIdStartedAtIndex`,
+    `${tables.Robot.tableArn}/index/robotIdIndex`,
+  ],
+}));
+userPool.grant(listSessionsByRobotFunction, 'cognito-idp:AdminGetUser');
 
 // Process Payout Lambda configuration
 const processPayoutFunction = backend.processPayout.resources.lambda;

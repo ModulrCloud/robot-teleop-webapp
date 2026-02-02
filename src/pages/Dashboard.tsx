@@ -13,13 +13,16 @@ import {
   faExclamationTriangle,
   faChartLine,
   faGaugeHigh,
-  faArrowRight
+  faArrowRight,
+  faDollarSign,
+  faSlidersH
 } from '@fortawesome/free-solid-svg-icons';
 import { generateClient } from 'aws-amplify/api';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
 import "./Dashboard.css";
 import { UnderConstruction } from "../components/UnderConstruction";
+import { PayoutPreferencesModal, type PayoutType } from "../components/PayoutPreferencesModal";
 import { logger } from '../utils/logger';
 
 const client = generateClient<Schema>();
@@ -62,6 +65,19 @@ export const Dashboard = () => {
 
   const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
 
+  const [isPartner, setIsPartner] = useState(false);
+  const [pendingPayoutTotal, setPendingPayoutTotal] = useState<number | null>(null);
+  const [pendingPayoutCount, setPendingPayoutCount] = useState<number>(0);
+  const [loadingPayout, setLoadingPayout] = useState(false);
+  const [partnerId, setPartnerId] = useState<string | null>(null);
+  const [preferredPayoutType, setPreferredPayoutType] = useState<PayoutType | null>(null);
+  const [mdrPublicKey, setMdrPublicKey] = useState<string | null>(null);
+  const [stripeConnectAccountId, setStripeConnectAccountId] = useState<string | null>(null);
+  const [stripeConnectOnboardingComplete, setStripeConnectOnboardingComplete] = useState<boolean>(false);
+  const [stripeConnectLoading, setStripeConnectLoading] = useState(false);
+  const [stripeConnectError, setStripeConnectError] = useState<string | null>(null);
+  const [payoutModalOpen, setPayoutModalOpen] = useState(false);
+
   const [systemStatus] = useState<SystemStatus>({
     webrtc: true,
     signaling: true,
@@ -76,6 +92,211 @@ export const Dashboard = () => {
   useEffect(() => {
     loadSessions();
   }, []);
+
+  useEffect(() => {
+    loadPartnerPendingPayout();
+  }, [user?.username]);
+
+  // Handle Stripe Connect return/refresh redirects
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const stripeParam = params.get('stripe');
+    if (!stripeParam || !user?.username) return;
+
+    const run = async () => {
+      const origin = window.location.origin;
+      const basePath = window.location.pathname || '/dashboard';
+
+      if (stripeParam === 'return') {
+        try {
+          const result = await client.queries.stripeConnectOnboardingReturnLambda();
+          const raw = result.data;
+          let body: { success?: boolean; onboardingComplete?: boolean } = {};
+          if (typeof raw === 'string') {
+            try {
+              const parsed = JSON.parse(raw);
+              body = parsed?.statusCode === 200 && parsed?.body != null
+                ? (typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body)
+                : parsed;
+            } catch {
+              body = {};
+            }
+          } else if (raw && typeof raw === 'object') {
+            const r = raw as { statusCode?: number; body?: string | object };
+            body = r.statusCode === 200 && r.body != null
+              ? (typeof r.body === 'string' ? JSON.parse(r.body) : r.body) as typeof body
+              : (raw as typeof body);
+          }
+          if (body?.success) setStripeConnectOnboardingComplete(body.onboardingComplete ?? false);
+        } catch (e) {
+          logger.error('Dashboard: stripe return check failed', e);
+        }
+        window.history.replaceState({}, '', basePath);
+        loadPartnerPendingPayout();
+        return;
+      }
+
+      if (stripeParam === 'refresh') {
+        try {
+          const returnUrl = `${origin}${basePath}?stripe=return`;
+          const refreshUrl = `${origin}${basePath}?stripe=refresh`;
+          const result = await client.mutations.createStripeConnectOnboardingLinkLambda({
+            returnUrl,
+            refreshUrl,
+          });
+          const raw = result.data;
+          let url: string | null = null;
+          if (typeof raw === 'string') {
+            try {
+              const parsed = JSON.parse(raw);
+              const b = parsed?.statusCode === 200 && parsed?.body != null
+                ? (typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body)
+                : parsed;
+              url = b?.url ?? null;
+            } catch {
+              url = null;
+            }
+          } else if (raw && typeof raw === 'object') {
+            const r = raw as { statusCode?: number; body?: string | object; url?: string };
+            if (r.url) url = r.url;
+            else if (r.statusCode === 200 && r.body != null) {
+              const b = typeof r.body === 'string' ? JSON.parse(r.body) : r.body as { url?: string };
+              url = b?.url ?? null;
+            }
+          }
+          if (url) window.location.href = url;
+          else window.history.replaceState({}, '', basePath);
+        } catch (e) {
+          logger.error('Dashboard: stripe refresh link failed', e);
+          window.history.replaceState({}, '', basePath);
+        }
+      }
+    };
+    run();
+  }, [user?.username]);
+
+  const handleSetUpStripePayouts = async () => {
+    if (!user?.username) return;
+    setStripeConnectLoading(true);
+    setStripeConnectError(null);
+    try {
+      const origin = window.location.origin;
+      const basePath = window.location.pathname || '/dashboard';
+      const returnUrl = `${origin}${basePath}?stripe=return`;
+      const refreshUrl = `${origin}${basePath}?stripe=refresh`;
+      const result = await client.mutations.createStripeConnectOnboardingLinkLambda({
+        returnUrl,
+        refreshUrl,
+      });
+      if (result.errors && result.errors.length > 0) {
+        const msg = result.errors.map((e: { message?: string }) => e.message || String(e)).join(', ');
+        setStripeConnectError(msg || 'Failed to create Stripe link');
+        logger.error('Dashboard: Stripe Connect mutation errors', result.errors);
+        return;
+      }
+      const raw = result.data;
+      let url: string | null = null;
+      let errorMessage: string | null = null;
+      if (typeof raw === 'string') {
+        try {
+          let parsed: unknown = JSON.parse(raw);
+          // Handle double-encoded response from Lambda (string wrapped in string)
+          if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+          const b = parsed && typeof parsed === 'object' && parsed !== null
+            ? (parsed as { statusCode?: number; body?: string | object }).statusCode === 200 && (parsed as { body?: unknown }).body != null
+              ? (typeof (parsed as { body: unknown }).body === 'string' ? JSON.parse((parsed as { body: string }).body) : (parsed as { body: object }).body) as { url?: string; error?: string }
+              : (parsed as { url?: string; error?: string })
+            : null;
+          url = b?.url ?? null;
+          errorMessage = b?.error ?? null;
+        } catch {
+          url = null;
+        }
+      } else if (raw && typeof raw === 'object') {
+        const r = raw as { statusCode?: number; body?: string | object; url?: string; error?: string };
+        if (r.url) url = r.url;
+        else if (r.statusCode === 200 && r.body != null) {
+          const b = typeof r.body === 'string' ? JSON.parse(r.body) : r.body as { url?: string; error?: string };
+          url = b?.url ?? null;
+          errorMessage = b?.error ?? b?.message ?? null;
+        } else if (r.statusCode !== 200 && r.body != null) {
+          const b = typeof r.body === 'string' ? JSON.parse(r.body) : r.body as { error?: string; message?: string };
+          errorMessage = b?.error ?? b?.message ?? null;
+        }
+      }
+      if (url) {
+        window.location.href = url;
+        return;
+      }
+      setStripeConnectError(errorMessage || 'Could not get Stripe setup link. Check the console for details.');
+      logger.error('Dashboard: no redirect URL from Stripe Connect', { raw: result.data });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong';
+      setStripeConnectError(msg);
+      logger.error('Dashboard: create Stripe Connect link failed', err);
+    } finally {
+      setStripeConnectLoading(false);
+    }
+  };
+
+  const loadPartnerPendingPayout = async () => {
+    if (!user?.username) return;
+    setLoadingPayout(true);
+    try {
+      const partners = await client.models.Partner.list({
+        filter: { cognitoUsername: { eq: user.username } },
+      });
+      if (!partners.data?.length) {
+        setIsPartner(false);
+        setPendingPayoutTotal(null);
+        setPendingPayoutCount(0);
+        setPartnerId(null);
+        setPreferredPayoutType(null);
+        setMdrPublicKey(null);
+        setStripeConnectAccountId(null);
+        setStripeConnectOnboardingComplete(false);
+        return;
+      }
+      const partner = partners.data[0];
+      setIsPartner(true);
+      setPartnerId(partner.id);
+      setPreferredPayoutType((partner.preferredPayoutType as PayoutType) ?? null);
+      setMdrPublicKey(partner.mdrPublicKey ?? null);
+      setStripeConnectAccountId(partner.stripeConnectAccountId ?? null);
+      setStripeConnectOnboardingComplete(partner.stripeConnectOnboardingComplete ?? false);
+      const result = await client.queries.listPartnerPayoutsLambda({
+        partnerId: user.username,
+        status: 'pending',
+        limit: 1000,
+      });
+      const raw = result.data;
+      let payouts: { creditsEarnedDollars?: number }[] = [];
+      if (typeof raw === 'string') {
+        const firstParse = JSON.parse(raw);
+        const body = firstParse?.statusCode === 200 && firstParse?.body != null
+          ? (typeof firstParse.body === 'string' ? JSON.parse(firstParse.body) : firstParse.body)
+          : firstParse;
+        if (body?.success && body.payouts) payouts = body.payouts;
+      } else if (raw && typeof raw === 'object') {
+        const lambdaRes = raw as { statusCode?: number; body?: string | object };
+        if (lambdaRes.statusCode === 200 && lambdaRes.body != null) {
+          const body = typeof lambdaRes.body === 'string' ? JSON.parse(lambdaRes.body) : lambdaRes.body;
+          if (body && typeof body === 'object' && 'success' in body && body.success && 'payouts' in body && Array.isArray(body.payouts)) {
+            payouts = body.payouts;
+          }
+        }
+      }
+      const total = payouts.reduce((sum, p) => sum + (p.creditsEarnedDollars ?? 0), 0);
+      setPendingPayoutTotal(total);
+      setPendingPayoutCount(payouts.length);
+    } catch (err) {
+      logger.error('Dashboard: failed to load partner pending payout', err);
+      setPendingPayoutTotal(null);
+      setPendingPayoutCount(0);
+    } finally {
+      setLoadingPayout(false);
+    }
+  };
 
   const loadSessions = async () => {
     try {
@@ -192,6 +413,91 @@ export const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {isPartner && (
+        <div className="dashboard-section">
+          <h2 className="section-title">Partner Earnings</h2>
+          <div className="stats-grid dashboard-partner-earnings-grid">
+            <div className="stat-card">
+              <div className="stat-icon">
+                <FontAwesomeIcon icon={faDollarSign} />
+              </div>
+              <div className="stat-content">
+                <div className="stat-value">
+                  {loadingPayout ? '—' : pendingPayoutTotal != null ? `$${pendingPayoutTotal.toFixed(2)}` : '$0.00'}
+                </div>
+                <div className="stat-label">Total pending payout</div>
+                {pendingPayoutCount > 0 && (
+                  <div className="stat-meta" style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '0.25rem' }}>
+                    {pendingPayoutCount} payout{pendingPayoutCount !== 1 ? 's' : ''} pending
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="stat-card stat-card-payout-prefs">
+              <div className="stat-icon">
+                <FontAwesomeIcon icon={faSlidersH} />
+              </div>
+              <div className="stat-content">
+                <div className="stat-label">Payout preferences</div>
+                <div className="stat-payout-type-note">
+                  {preferredPayoutType === 'fiat' && 'Fiat (Stripe)'}
+                  {preferredPayoutType === 'mdr' && 'MDR (crypto)'}
+                  {!preferredPayoutType && 'Not set'}
+                </div>
+                {preferredPayoutType === 'fiat' && stripeConnectOnboardingComplete && (
+                  <div className="stat-payout-stripe-status">
+                    <span className="stat-payout-stripe-badge">Stripe connected</span>
+                    {stripeConnectAccountId && (
+                      <span className="stat-payout-stripe-id" title="Your Stripe Connect account ID">
+                        …{stripeConnectAccountId.slice(-6)}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {preferredPayoutType === 'fiat' && !stripeConnectOnboardingComplete && (
+                  <>
+                    <button
+                      type="button"
+                      className="dashboard-payout-preferences-btn dashboard-stripe-setup-btn"
+                      onClick={handleSetUpStripePayouts}
+                      disabled={stripeConnectLoading}
+                      aria-label="Set up Stripe payouts"
+                    >
+                      {stripeConnectLoading ? 'Redirecting…' : 'Set up Stripe payouts'}
+                    </button>
+                    {stripeConnectError && (
+                      <p className="dashboard-stripe-error" role="alert">
+                        {stripeConnectError}
+                      </p>
+                    )}
+                  </>
+                )}
+                <button
+                  type="button"
+                  className="dashboard-payout-preferences-btn"
+                  onClick={() => setPayoutModalOpen(true)}
+                  aria-label="Change payout preferences"
+                >
+                  Change
+                </button>
+              </div>
+            </div>
+          </div>
+          {partnerId && (
+            <PayoutPreferencesModal
+              isOpen={payoutModalOpen}
+              onClose={() => setPayoutModalOpen(false)}
+              partnerId={partnerId}
+              preferredPayoutType={preferredPayoutType}
+              mdrPublicKey={mdrPublicKey}
+              onSaved={() => {
+                loadPartnerPendingPayout();
+              }}
+            />
+          )}
+        </div>
+      )}
 
       <div className="dashboard-section">
         <h2 className="section-title">Quick Actions</h2>
