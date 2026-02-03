@@ -1,6 +1,6 @@
-import { randomUUID } from 'crypto';
 import { DynamoDBClient, ScanCommand } from '@aws-sdk/client-dynamodb';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
+import { buildAgentPingMessage } from '../shared/agent-protocol';
 
 const CONN_TABLE = process.env.CONN_TABLE!;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!;
@@ -13,21 +13,6 @@ interface KeepaliveStats {
   successfulPings: number;
   failedPings: number;
   errors: number;
-}
-
-const PROTOCOL_VERSION = '0.0';
-
-/**
- * Builds an agent.ping message per Modulr Agent Interface Specification.
- * @see interface-spec/modulr-agent-interface-spec-main/schemas/agent/v0/ping.json
- */
-function buildAgentPingMessage(): object {
-  return {
-    type: 'agent.ping',
-    version: PROTOCOL_VERSION,
-    id: randomUUID(),
-    timestamp: new Date().toISOString(),
-  };
 }
 
 /**
