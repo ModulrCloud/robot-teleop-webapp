@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { DynamoDBClient, ScanCommand } from '@aws-sdk/client-dynamodb';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 
@@ -14,20 +15,33 @@ interface KeepaliveStats {
   errors: number;
 }
 
+const PROTOCOL_VERSION = '0.0';
+
 /**
- * Sends a ping message to a WebSocket connection to keep it alive.
+ * Builds an agent.ping message per Modulr Agent Interface Specification.
+ * @see interface-spec/modulr-agent-interface-spec-main/schemas/agent/v0/ping.json
+ */
+function buildAgentPingMessage(): object {
+  return {
+    type: 'agent.ping',
+    version: PROTOCOL_VERSION,
+    id: randomUUID(),
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * Sends an agent.ping message to a WebSocket connection to keep it alive.
+ * Uses the Modulr Agent Interface Specification format (agent.ping).
  * Returns true if ping was successful, false otherwise.
  */
 async function sendKeepalivePing(connectionId: string): Promise<boolean> {
   try {
+    const message = buildAgentPingMessage();
     await mgmt.send(
       new PostToConnectionCommand({
         ConnectionId: connectionId,
-        Data: Buffer.from(JSON.stringify({ 
-          type: 'ping', 
-          timestamp: Date.now(),
-          keepalive: true 
-        }), 'utf-8'),
+        Data: Buffer.from(JSON.stringify(message), 'utf-8'),
       })
     );
     return true; // Ping successful
@@ -44,9 +58,10 @@ async function sendKeepalivePing(connectionId: string): Promise<boolean> {
 }
 
 /**
- * Keepalive Lambda that runs on schedule to send ping messages to all active WebSocket connections.
+ * Keepalive Lambda that runs on schedule to send agent.ping messages to all active WebSocket connections.
+ * Uses the Modulr Agent Interface Specification format for compatibility with the robot agent.
  * This prevents AWS API Gateway from closing connections due to 10-minute idle timeout.
- * 
+ *
  * Runs every 5 minutes to ensure connections stay alive before the 10-minute timeout.
  */
 export const handler = async (): Promise<{ statusCode: number; body: string }> => {
