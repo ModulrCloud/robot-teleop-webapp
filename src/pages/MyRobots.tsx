@@ -63,7 +63,6 @@ export default function MyRobots() {
   const [connectionHistoryLoading, setConnectionHistoryLoading] = useState(false);
   const [connectionHistoryNextToken, setConnectionHistoryNextToken] = useState<string | null>(null);
 
-  // Load connection history for the selected robot (partner-only). Pass nextToken to append (Show more).
   const loadConnectionHistory = async (robotId: string, nextToken?: string | null) => {
     if (!user?.username) return;
     const isLoadMore = !!nextToken;
@@ -99,15 +98,8 @@ export default function MyRobots() {
           sessionsData = (raw as { success?: boolean; sessions?: typeof connectionHistorySessions; nextToken?: string | null }) || null;
         }
       }
-      logger.log('[MyRobots] loadConnectionHistory:', {
-        robotId,
-        success: sessionsData?.success,
-        count: sessionsData?.sessions?.length ?? 0,
-        isLoadMore,
-      });
       if (sessionsData?.success && Array.isArray(sessionsData.sessions)) {
         if (isLoadMore) {
-          // DynamoDB pages are in GSI order, not startedAt — merge and re-sort so newest-first is preserved
           setConnectionHistorySessions((prev) => {
             const merged = [...prev, ...sessionsData!.sessions!];
             merged.sort((a, b) => {
@@ -133,7 +125,6 @@ export default function MyRobots() {
     }
   };
 
-  // Load user's robots
   useEffect(() => {
     const loadMyRobots = async () => {
       try {
@@ -208,29 +199,18 @@ export default function MyRobots() {
     }
   }, [user]);
 
-  // Load revenue for all robots
   const loadRobotRevenues = async (_robotsList: Robot[]) => {
     try {
-      if (!user?.username) {
-        logger.debug('[MyRobots] loadRobotRevenues: no user.username, skipping');
-        return;
-      }
+      if (!user?.username) return;
 
-      logger.log('[MyRobots] loadRobotRevenues: fetching payouts for partnerId (Cognito username)', user.username);
-
-      // Get partner ID (Partner table id - used only to confirm user is a partner)
       const partners = await client.models.Partner.list({
         filter: {
           cognitoUsername: { eq: user.username }
         }
       });
 
-      if (!partners.data || partners.data.length === 0) {
-        logger.debug('[MyRobots] loadRobotRevenues: no Partner record for this user, skipping');
-        return;
-      }
+      if (!partners.data || partners.data.length === 0) return;
 
-      // Load payouts for this partner (query by Cognito username)
       const payoutsResult = await client.queries.listPartnerPayoutsLambda({
         partnerId: user.username,
         limit: 1000, // Get all payouts
@@ -260,19 +240,8 @@ export default function MyRobots() {
         }
       }
 
-      logger.log('[MyRobots] loadRobotRevenues: payoutsData', {
-        success: payoutsData?.success,
-        payoutsCount: payoutsData?.payouts?.length ?? 0,
-        firstPayoutPartnerId: payoutsData?.payouts?.[0]?.partnerId,
-        firstPayoutRobotId: payoutsData?.payouts?.[0]?.robotId,
-      });
+      if (!payoutsData?.success || !payoutsData.payouts) return;
 
-      if (!payoutsData?.success || !payoutsData.payouts) {
-        logger.debug('[MyRobots] loadRobotRevenues: no success or no payouts array, skipping revenue map');
-        return;
-      }
-
-      // Calculate revenue per robot
       const revenueMap: Record<string, number> = {};
       payoutsData.payouts.forEach((payout: any) => {
         if (payout.robotId && payout.creditsEarnedDollars) {
@@ -280,14 +249,12 @@ export default function MyRobots() {
         }
       });
 
-      logger.log('[MyRobots] loadRobotRevenues: revenueMap', revenueMap);
       setRobotRevenues(revenueMap);
     } catch (err) {
       logger.error('Error loading robot revenues:', err);
     }
   };
 
-  // Load status for all robots
   const loadRobotStatuses = async (robotsList: Robot[]) => {
     try {
       const statusPromises = robotsList
@@ -324,7 +291,6 @@ export default function MyRobots() {
     }
   };
 
-  // Refresh statuses periodically
   useEffect(() => {
     if (robots.length === 0) return;
 
@@ -335,7 +301,6 @@ export default function MyRobots() {
     return () => clearInterval(interval);
   }, [robots]);
 
-  // Load connection history when a robot is selected (partner view); reset pagination
   useEffect(() => {
     if (selectedRobot?.robotId && user?.username) {
       loadConnectionHistory(selectedRobot.robotId);
@@ -485,9 +450,6 @@ export default function MyRobots() {
             </div>
           </div>
 
-          {/* Connection History: client identifiers are masked server-side (clientDisplay only).
-              TODO: Partner report/ban abusive client (reverse ACL) — allow partner to report or ban
-              a client from using their robots; map session userId to actionable identity for admins. */}
           <div className="robot-detail-card">
             <div className="robot-detail-title">
               <FontAwesomeIcon icon={faClock} />
