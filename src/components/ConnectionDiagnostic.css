@@ -1,0 +1,173 @@
+.connection-diagnostic {
+  max-width: 640px;
+}
+
+.connection-diagnostic h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 0.5rem 0;
+}
+
+.connection-diagnostic .section-description {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.95rem;
+  margin: 0 0 1.5rem 0;
+}
+
+.connection-diagnostic-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.connection-diagnostic-run,
+.connection-diagnostic-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Copy button: no .action-btn so Settings doesn't override; muted outline (Modulr yellow), lights up on hover */
+.connection-diagnostic-copy {
+  padding: 0.5rem 1.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 193, 7, 0.4);
+  background: transparent;
+  color: rgba(255, 193, 7, 0.85);
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.connection-diagnostic-copy:hover {
+  background: rgba(255, 193, 7, 0.15);
+  border-color: rgba(255, 193, 7, 0.6);
+  color: #ffc107;
+}
+
+.connection-diagnostic-copy:focus {
+  outline: none;
+  border-color: rgba(255, 193, 7, 0.6);
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.15);
+}
+
+.connection-diagnostic-run:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.connection-diagnostic-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+.connection-diagnostic-warning svg {
+  color: #ffc107;
+  flex-shrink: 0;
+}
+
+.connection-diagnostic-results {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.connection-diagnostic-row {
+  padding: 1rem 1.25rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+.connection-diagnostic-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.connection-diagnostic-label {
+  font-weight: 600;
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.connection-diagnostic-icon {
+  flex-shrink: 0;
+}
+
+.connection-diagnostic-icon.running {
+  color: #ffc107;
+}
+
+.connection-diagnostic-icon.ok {
+  color: #28a745;
+}
+
+.connection-diagnostic-icon.fail {
+  color: #dc3545;
+}
+
+.connection-diagnostic-icon.idle {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.9rem;
+}
+
+.connection-diagnostic-row-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.connection-diagnostic-message {
+  color: #dc3545;
+  width: 100%;
+}
+
+/* OK result with an informational message (e.g. STUN "No srflx") — use Modulr yellow, not red */
+.connection-diagnostic-row--message-info .connection-diagnostic-message {
+  color: #ffc107;
+}
+
+.connection-diagnostic-help {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.connection-diagnostic-suggestion {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background: rgba(23, 162, 184, 0.1);
+  border: 1px solid rgba(23, 162, 184, 0.3);
+  border-left: 4px solid #17a2b8;
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.9rem;
+}
+
+.connection-diagnostic-suggestion svg {
+  color: #17a2b8;
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+
+.connection-diagnostic-suggestion p {
+  margin: 0;
+}
