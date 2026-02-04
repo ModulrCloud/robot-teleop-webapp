@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStatus } from "../hooks/useAuthStatus";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -15,15 +15,16 @@ import {
   faGaugeHigh,
   faArrowRight,
   faDollarSign,
-  faSlidersH
+  faSlidersH,
+  faSync
 } from '@fortawesome/free-solid-svg-icons';
 import { generateClient } from 'aws-amplify/api';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
 import "./Dashboard.css";
-import { UnderConstruction } from "../components/UnderConstruction";
 import { PayoutPreferencesModal, type PayoutType } from "../components/PayoutPreferencesModal";
 import { logger } from '../utils/logger';
+import outputs from '../../amplify_outputs.json';
 
 const client = generateClient<Schema>();
 
@@ -78,11 +79,79 @@ export const Dashboard = () => {
   const [stripeConnectError, setStripeConnectError] = useState<string | null>(null);
   const [payoutModalOpen, setPayoutModalOpen] = useState(false);
 
-  const [systemStatus] = useState<SystemStatus>({
-    webrtc: true,
-    signaling: true,
-    database: true,
+  const [systemStatus, setSystemStatus] = useState<SystemStatus>({
+    webrtc: false,
+    signaling: false,
+    database: false,
   });
+  const [statusChecking, setStatusChecking] = useState(true);
+  const [lastStatusCheck, setLastStatusCheck] = useState<Date | null>(null);
+
+  const checkSystemStatus = useCallback(async () => {
+    setStatusChecking(true);
+    const status: SystemStatus = { webrtc: false, signaling: false, database: false };
+
+    // Check WebRTC browser support
+    try {
+      status.webrtc = !!(
+        window.RTCPeerConnection &&
+        navigator.mediaDevices &&
+        typeof navigator.mediaDevices.getUserMedia === 'function'
+      );
+    } catch {
+      status.webrtc = false;
+    }
+
+    // Check signaling server connectivity
+    const wsUrl = outputs?.custom?.signaling?.websocketUrl;
+    if (wsUrl) {
+      try {
+        const ws = new WebSocket(wsUrl);
+        status.signaling = await new Promise<boolean>((resolve) => {
+          let resolved = false;
+          const timeout = setTimeout(() => {
+            if (!resolved) {
+              resolved = true;
+              ws.close();
+              resolve(false);
+            }
+          }, 5000);
+          ws.onopen = () => {
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(timeout);
+              ws.close();
+              resolve(true);
+            }
+          };
+          ws.onclose = () => {
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(timeout);
+              resolve(true);
+            }
+          };
+          ws.onerror = () => {
+            // Wait for onclose which fires after onerror
+          };
+        });
+      } catch {
+        status.signaling = false;
+      }
+    }
+
+    // Check database/API connectivity
+    try {
+      const result = await client.models.PlatformSettings.list({ limit: 1 });
+      status.database = !result.errors || result.errors.length === 0;
+    } catch {
+      status.database = false;
+    }
+
+    setSystemStatus(status);
+    setLastStatusCheck(new Date());
+    setStatusChecking(false);
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -91,7 +160,13 @@ export const Dashboard = () => {
 
   useEffect(() => {
     loadSessions();
-  }, []);
+    checkSystemStatus();
+  }, [checkSystemStatus]);
+
+  useEffect(() => {
+    const interval = setInterval(checkSystemStatus, 60000);
+    return () => clearInterval(interval);
+  }, [checkSystemStatus]);
 
   useEffect(() => {
     loadPartnerPendingPayout();
@@ -380,15 +455,21 @@ export const Dashboard = () => {
           </p>
         </div>
         <div className="system-status-card">
-          <UnderConstruction 
-            mode="banner" 
-            message="System status monitoring coming soon"
-          />
-          <div className="status-indicator" style={{ opacity: 0.5 }}>
-            <div className={`status-dot ${allSystemsOperational ? 'online' : 'offline'}`}></div>
-            <span>Mock Data - Not Live</span>
+          <div className="status-header">
+            <div className="status-indicator">
+              <div className={`status-dot ${statusChecking ? 'checking' : allSystemsOperational ? 'online' : 'offline'}`}></div>
+              <span>{statusChecking ? 'Checking...' : allSystemsOperational ? 'All Systems Operational' : 'System Issues Detected'}</span>
+            </div>
+            <button 
+              className="status-refresh-btn"
+              onClick={checkSystemStatus}
+              disabled={statusChecking}
+              title="Refresh status"
+            >
+              <FontAwesomeIcon icon={faSync} spin={statusChecking} />
+            </button>
           </div>
-          <div className="status-details" style={{ opacity: 0.5 }}>
+          <div className={`status-details ${statusChecking ? 'checking' : ''}`}>
             <div className="status-item">
               <span>WebRTC</span>
               <FontAwesomeIcon 
@@ -411,6 +492,11 @@ export const Dashboard = () => {
               />
             </div>
           </div>
+          {lastStatusCheck && (
+            <div className="status-timestamp">
+              Last checked: {lastStatusCheck.toLocaleTimeString()}
+            </div>
+          )}
         </div>
       </div>
 
