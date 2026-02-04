@@ -133,20 +133,6 @@ html {
   letter-spacing: 0.5px;
 }
 
-.session-timer {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.6rem 1.2rem;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 24px;
-  color: #fff;
-  font-weight: 600;
-  font-size: 0.95rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-}
-
 .teleop-status-badge {
   padding: 0.6rem 1.2rem;
   border-radius: 24px;
@@ -425,11 +411,11 @@ html {
 }
 
 .live-indicator .live-text {
-  font-family: 'Quantico', 'Inter', sans-serif;
+  font-family: 'SF Mono', 'Monaco', monospace;
   color: #ffc107;
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 @keyframes livePulse {
@@ -1421,7 +1407,6 @@ html {
     align-items: stretch;
   }
 
-  .session-timer,
   .connection-info,
   .teleop-status-badge {
     justify-content: center;

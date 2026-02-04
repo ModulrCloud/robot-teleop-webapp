@@ -11,7 +11,6 @@ import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../amplify/data/resource';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faClock,
   faRotate,
   faVideo,
   faCircleExclamation,
@@ -618,11 +617,6 @@ export default function Teleop() {
           <span className="info-value">{robotId}</span>
         </div>
 
-        <div className="session-timer">
-          <FontAwesomeIcon icon={faClock} />
-          {formatTime(sessionTime)}
-        </div>
-
         <div className={`teleop-status-badge ${status.connected ? 'connected' : status.connecting ? 'connecting' : 'disconnected'}`}>
           {status.connecting && <><LoadingWheel /> Connecting...</>}
           {status.connected && <><span className="status-dot"></span> Connected</>}
@@ -701,7 +695,7 @@ export default function Teleop() {
                 <div className="viewport-stats-center">
                   <div className="live-indicator">
                     <span className="live-dot"></span>
-                    <span className="live-text">LIVE</span>
+                    <span className="live-text">{formatTime(sessionTime)}</span>
                   </div>
                 </div>
                 <div className="viewport-stats-group">
