@@ -11,10 +11,17 @@ const PARTNER_PAYOUT_TABLE = process.env.PARTNER_PAYOUT_TABLE!;
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 
 export const handler: Schema["listPartnerPayoutsLambda"]["functionHandler"] = async (event) => {
-  console.log("List Partner Payouts request:", JSON.stringify(event, null, 2));
-
   const { partnerId, robotId, status, limit = 50, nextToken } = event.arguments;
   const identity = event.identity;
+
+  console.log("[listPartnerPayouts] request", {
+    partnerId: event.arguments?.partnerId,
+    robotId: event.arguments?.robotId,
+    status: event.arguments?.status,
+    limit: event.arguments?.limit,
+    hasIdentity: !!identity,
+    requesterUsername: identity && "username" in identity ? identity.username : undefined,
+  });
 
   if (!identity || !("username" in identity)) {
     return {
@@ -53,12 +60,19 @@ export const handler: Schema["listPartnerPayoutsLambda"]["functionHandler"] = as
   if (!isAdmin && !isModulrEmployee) {
     // If not admin, they can only query their own payouts
     if (!partnerId || partnerId !== requesterId) {
+      console.log("[listPartnerPayouts] 403: partner must query own payouts", {
+        requesterId,
+        partnerIdFromArgs: partnerId,
+        match: partnerId === requesterId,
+      });
       return {
         statusCode: 403,
         body: JSON.stringify({ error: "Unauthorized: can only view own payouts" }),
       };
     }
   }
+
+  console.log("[listPartnerPayouts] auth ok", { requesterId, isAdmin, isModulrEmployee, queryPartnerId: partnerId });
 
   try {
     let payouts: any[] = [];
@@ -100,6 +114,12 @@ export const handler: Schema["listPartnerPayoutsLambda"]["functionHandler"] = as
       const result = await docClient.send(new QueryCommand(queryParams));
       payouts = result.Items || [];
       lastEvaluatedKey = result.LastEvaluatedKey;
+      console.log("[listPartnerPayouts] query by partnerId", {
+        partnerId,
+        itemsReturned: payouts.length,
+        firstPayoutPartnerId: payouts[0]?.partnerId,
+        firstPayoutRobotId: payouts[0]?.robotId,
+      });
     } else if (status) {
       // Query by status using index (admin view)
       const queryParams: any = {
@@ -155,12 +175,40 @@ export const handler: Schema["listPartnerPayoutsLambda"]["functionHandler"] = as
     }
 
     // Convert credits to dollars for display (1 credit = $0.01)
-    const payoutsWithDollars = payouts.map(payout => ({
+    let payoutsWithDollars = payouts.map(payout => ({
       ...payout,
       creditsEarnedDollars: (payout.creditsEarned || 0) / 100,
       platformFeeDollars: (payout.platformFee || 0) / 100,
       totalCreditsChargedDollars: (payout.totalCreditsCharged || 0) / 100,
     }));
+
+    // Enrich missing partnerEmail from Cognito (for older payouts or when write path didn't set it)
+    const partnerIdsNeedingEmail = [...new Set(
+      payoutsWithDollars
+        .filter((p: any) => p.partnerId && !p.partnerEmail)
+        .map((p: any) => p.partnerId)
+    )];
+    const partnerIdToEmail: Record<string, string> = {};
+    for (const pid of partnerIdsNeedingEmail) {
+      try {
+        const userRes = await cognito.send(
+          new AdminGetUserCommand({
+            UserPoolId: USER_POOL_ID,
+            Username: pid,
+          })
+        );
+        const email = userRes.UserAttributes?.find(attr => attr.Name === 'email')?.Value;
+        if (email) partnerIdToEmail[pid] = email;
+      } catch (e) {
+        console.warn('[listPartnerPayouts] Could not fetch email for partner:', pid, e);
+      }
+    }
+    if (Object.keys(partnerIdToEmail).length > 0) {
+      payoutsWithDollars = payoutsWithDollars.map((p: any) => ({
+        ...p,
+        partnerEmail: p.partnerEmail || partnerIdToEmail[p.partnerId] || p.partnerEmail,
+      }));
+    }
 
     // Generate nextToken
     let nextTokenOut: string | undefined = undefined;

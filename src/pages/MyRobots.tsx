@@ -49,8 +49,82 @@ export default function MyRobots() {
   const [selectedRobot, setSelectedRobot] = useState<Robot | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [connectionHistorySessions, setConnectionHistorySessions] = useState<Array<{
+    id?: string;
+    userId?: string;
+    clientDisplay?: string;
+    startedAt?: string;
+    endedAt?: string | null;
+    durationSeconds?: number | null;
+    status?: string | null;
+    creditsCharged?: number | null;
+    partnerEarnings?: number | null;
+  }>>([]);
+  const [connectionHistoryLoading, setConnectionHistoryLoading] = useState(false);
+  const [connectionHistoryNextToken, setConnectionHistoryNextToken] = useState<string | null>(null);
 
-  // Load user's robots
+  const loadConnectionHistory = async (robotId: string, nextToken?: string | null) => {
+    if (!user?.username) return;
+    const isLoadMore = !!nextToken;
+    if (!isLoadMore) setConnectionHistoryLoading(true);
+    try {
+      const result = await client.queries.listSessionsByRobotLambda({
+        robotId,
+        limit: 20,
+        nextToken: nextToken ?? undefined,
+      });
+      let sessionsData: { success?: boolean; sessions?: typeof connectionHistorySessions; nextToken?: string | null } | null = null;
+      const raw = result.data;
+      if (typeof raw === 'string') {
+        try {
+          const firstParse = JSON.parse(raw);
+          if (firstParse?.statusCode === 200 && firstParse?.body != null) {
+            sessionsData = typeof firstParse.body === 'string' ? JSON.parse(firstParse.body) : firstParse.body;
+          } else {
+            sessionsData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+          }
+        } catch (e) {
+          logger.warn('[MyRobots] loadConnectionHistory: parse error', e);
+        }
+      } else if (raw && typeof raw === 'object') {
+        const lambdaRes = raw as { statusCode?: number; body?: string | object; success?: boolean; sessions?: unknown[]; nextToken?: string | null };
+        if (lambdaRes.statusCode === 200 && lambdaRes.body != null) {
+          const body = typeof lambdaRes.body === 'string' ? JSON.parse(lambdaRes.body) : lambdaRes.body;
+          sessionsData = (typeof body === 'object' && body !== null && 'success' in body) ? (body as { success?: boolean; sessions?: typeof connectionHistorySessions; nextToken?: string | null }) : null;
+        } else if ('sessions' in lambdaRes && Array.isArray(lambdaRes.sessions)) {
+          // API returned body directly (e.g. { success, sessions, nextToken })
+          sessionsData = { success: !!lambdaRes.success, sessions: lambdaRes.sessions as typeof connectionHistorySessions, nextToken: lambdaRes.nextToken ?? null };
+        } else {
+          sessionsData = (raw as { success?: boolean; sessions?: typeof connectionHistorySessions; nextToken?: string | null }) || null;
+        }
+      }
+      if (sessionsData?.success && Array.isArray(sessionsData.sessions)) {
+        if (isLoadMore) {
+          setConnectionHistorySessions((prev) => {
+            const merged = [...prev, ...sessionsData!.sessions!];
+            merged.sort((a, b) => {
+              const tA = a.startedAt ? new Date(a.startedAt).getTime() : 0;
+              const tB = b.startedAt ? new Date(b.startedAt).getTime() : 0;
+              return tB - tA;
+            });
+            return merged;
+          });
+        } else {
+          setConnectionHistorySessions(sessionsData.sessions);
+        }
+        setConnectionHistoryNextToken(sessionsData.nextToken ?? null);
+      } else {
+        if (!isLoadMore) setConnectionHistorySessions([]);
+        setConnectionHistoryNextToken(null);
+      }
+    } catch (err) {
+      logger.error('[MyRobots] loadConnectionHistory failed:', err);
+      if (!isLoadMore) setConnectionHistorySessions([]);
+    } finally {
+      if (!isLoadMore) setConnectionHistoryLoading(false);
+    }
+  };
+
   useEffect(() => {
     const loadMyRobots = async () => {
       try {
@@ -125,12 +199,10 @@ export default function MyRobots() {
     }
   }, [user]);
 
-  // Load revenue for all robots
   const loadRobotRevenues = async (_robotsList: Robot[]) => {
     try {
       if (!user?.username) return;
 
-      // Get partner ID
       const partners = await client.models.Partner.list({
         filter: {
           cognitoUsername: { eq: user.username }
@@ -138,30 +210,38 @@ export default function MyRobots() {
       });
 
       if (!partners.data || partners.data.length === 0) return;
-      const partnerId = partners.data[0].id;
-      if (!partnerId) return;
 
-      // Load payouts for this partner
       const payoutsResult = await client.queries.listPartnerPayoutsLambda({
         partnerId: user.username,
         limit: 1000, // Get all payouts
       });
 
       let payoutsData: { success?: boolean; payouts?: any[] } | null = null;
-      if (typeof payoutsResult.data === 'string') {
+      const raw = payoutsResult.data;
+      if (typeof raw === 'string') {
         try {
-          const firstParse = JSON.parse(payoutsResult.data);
-          payoutsData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+          const firstParse = JSON.parse(raw);
+          if (firstParse?.statusCode === 200 && firstParse?.body != null) {
+            payoutsData = typeof firstParse.body === 'string' ? JSON.parse(firstParse.body) : firstParse.body;
+          } else {
+            payoutsData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+          }
         } catch (e) {
+          logger.warn('[MyRobots] loadRobotRevenues: parse error', e);
           payoutsData = { success: false };
         }
-      } else {
-        payoutsData = payoutsResult.data as typeof payoutsData;
+      } else if (raw && typeof raw === 'object') {
+        const lambdaRes = raw as { statusCode?: number; body?: string | object };
+        if (lambdaRes.statusCode === 200 && lambdaRes.body != null) {
+          const body = typeof lambdaRes.body === 'string' ? JSON.parse(lambdaRes.body) : lambdaRes.body;
+          payoutsData = (body && typeof body === 'object' && 'success' in body) ? body as { success: boolean; payouts?: unknown[] } : { success: false };
+        } else {
+          payoutsData = (raw as { success?: boolean; payouts?: unknown[] }) ?? { success: false };
+        }
       }
 
       if (!payoutsData?.success || !payoutsData.payouts) return;
 
-      // Calculate revenue per robot
       const revenueMap: Record<string, number> = {};
       payoutsData.payouts.forEach((payout: any) => {
         if (payout.robotId && payout.creditsEarnedDollars) {
@@ -175,7 +255,6 @@ export default function MyRobots() {
     }
   };
 
-  // Load status for all robots
   const loadRobotStatuses = async (robotsList: Robot[]) => {
     try {
       const statusPromises = robotsList
@@ -212,7 +291,6 @@ export default function MyRobots() {
     }
   };
 
-  // Refresh statuses periodically
   useEffect(() => {
     if (robots.length === 0) return;
 
@@ -222,6 +300,15 @@ export default function MyRobots() {
 
     return () => clearInterval(interval);
   }, [robots]);
+
+  useEffect(() => {
+    if (selectedRobot?.robotId && user?.username) {
+      loadConnectionHistory(selectedRobot.robotId);
+    } else {
+      setConnectionHistorySessions([]);
+      setConnectionHistoryNextToken(null);
+    }
+  }, [selectedRobot?.robotId, user?.username]);
 
   const handleRobotClick = (robot: Robot) => {
     setSelectedRobot(robot);
@@ -368,10 +455,66 @@ export default function MyRobots() {
               <FontAwesomeIcon icon={faClock} />
               <h2>Connection History</h2>
             </div>
-            <div className="connection-history-placeholder">
-              <p>Connection history will be displayed here once tracking is implemented.</p>
-              <p className="placeholder-note">This will show the last 10 connection/disconnection events with timestamps.</p>
-            </div>
+            {connectionHistoryLoading ? (
+              <div className="connection-history-placeholder">
+                <p>Loading connection history...</p>
+              </div>
+            ) : connectionHistorySessions.length === 0 ? (
+              <div className="connection-history-placeholder">
+                <p>No connection history yet for this robot.</p>
+                <p className="placeholder-note">Completed teleop sessions will appear here (client, when, duration, earnings).</p>
+              </div>
+            ) : (
+              <div className="connection-history-table-wrap">
+                <table className="connection-history-table">
+                  <thead>
+                    <tr>
+                      <th>Client</th>
+                      <th>When</th>
+                      <th>Duration</th>
+                      <th>Status</th>
+                      <th>Partner earnings</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {connectionHistorySessions.map((session) => (
+                      <tr key={session.id ?? session.startedAt ?? Math.random()}>
+                        <td>{session.clientDisplay ?? '—'}</td>
+                        <td>{session.startedAt ? new Date(session.startedAt).toLocaleString() : '—'}</td>
+                        <td>
+                          {session.durationSeconds != null
+                            ? `${Math.floor(session.durationSeconds / 60)}m ${session.durationSeconds % 60}s`
+                            : session.endedAt && session.startedAt
+                              ? (() => {
+                                  const d = (new Date(session.endedAt).getTime() - new Date(session.startedAt).getTime()) / 1000;
+                                  return `${Math.floor(d / 60)}m ${Math.floor(d % 60)}s`;
+                                })()
+                              : '—'}
+                        </td>
+                        <td>{session.status ?? '—'}</td>
+                        <td>
+                          {session.partnerEarnings != null
+                            ? `$${((session.partnerEarnings ?? 0) / 100).toFixed(2)}`
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {connectionHistoryNextToken && (
+                  <div className="connection-history-show-more">
+                    <button
+                      type="button"
+                      className="show-more-button"
+                      onClick={() => selectedRobot && loadConnectionHistory(selectedRobot.robotId, connectionHistoryNextToken)}
+                      disabled={connectionHistoryLoading}
+                    >
+                      Show more
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="robot-detail-card">

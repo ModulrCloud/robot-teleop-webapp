@@ -298,6 +298,57 @@
   font-style: italic;
 }
 
+.connection-history-table-wrap {
+  overflow-x: auto;
+  padding: 0 0.5rem;
+}
+
+.connection-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.connection-history-table th,
+.connection-history-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.connection-history-table th {
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 600;
+}
+
+.connection-history-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.connection-history-show-more {
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+}
+
+.connection-history-show-more .show-more-button {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.5rem;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+}
+
+.connection-history-show-more .show-more-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.connection-history-show-more .show-more-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .error-message {
   background-color: rgba(220, 38, 38, 0.1);
   border: 1px solid rgba(220, 38, 38, 0.3);

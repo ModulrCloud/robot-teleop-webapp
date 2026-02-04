@@ -6,6 +6,7 @@ import {
   faRobot,
   faDollarSign,
   faCoins,
+  faPercent,
   faHistory,
   faInfoCircle,
 } from "@fortawesome/free-solid-svg-icons";
@@ -72,6 +73,8 @@ export const SystemStats = ({ activeRobots, loadingActiveRobots }: SystemStatsPr
           totalUsers: statsData.stats.totalUsers ?? 0,
           totalRobots: statsData.stats.totalRobots ?? 0,
           totalRevenue: statsData.stats.totalRevenue ?? 0,
+          platformRevenue: statsData.stats.platformRevenue ?? 0,
+          platformMarkupPercent: statsData.stats.platformMarkupPercent ?? 30,
           totalCredits: statsData.stats.totalCredits ?? 0,
           activeSessions: statsData.stats.activeSessions ?? 0,
         };
@@ -137,6 +140,28 @@ export const SystemStats = ({ activeRobots, loadingActiveRobots }: SystemStatsPr
                   ${systemStats.totalRevenue?.toLocaleString() || '0.00'}
                 </div>
                 <div className="stat-label">Total Revenue</div>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-icon">
+                <FontAwesomeIcon icon={faCoins} />
+              </div>
+              <div className="stat-content">
+                <div className="stat-value">
+                  ${systemStats.platformRevenue?.toLocaleString() ?? '0.00'}
+                </div>
+                <div className="stat-label">Platform Balance</div>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-icon">
+                <FontAwesomeIcon icon={faPercent} />
+              </div>
+              <div className="stat-content">
+                <div className="stat-value">
+                  {systemStats.platformMarkupPercent != null ? `${systemStats.platformMarkupPercent}%` : '30%'}
+                </div>
+                <div className="stat-label">Platform Cut</div>
               </div>
             </div>
             <div className="stat-card">
