@@ -52,40 +52,57 @@ export const handler: Schema["getActiveRobotsLambda"]["functionHandler"] = async
   try {
     console.log('[ACTIVE_ROBOTS] Fetching active robots count');
 
-    // Count robots in RobotPresenceTable (these are online robots)
+    // Fetch robot presence entries (for admin debugging) and count
     const presenceResult = await db.send(
       new ScanCommand({
         TableName: ROBOT_PRESENCE_TABLE,
-        Select: 'COUNT', // Only count, don't return items
+        ProjectionExpression: 'robotId, connectionId, #status, updatedAt',
+        ExpressionAttributeNames: { '#status': 'status' },
       })
     );
 
-    const activeRobotsCount = presenceResult.Count || 0;
+    const rawItems = presenceResult.Items || [];
+    console.log('[ACTIVE_ROBOTS_DEBUG] Raw presence Items count:', rawItems.length);
+    if (rawItems.length > 0) {
+      console.log('[ACTIVE_ROBOTS_DEBUG] First raw item keys:', Object.keys(rawItems[0]));
+      console.log('[ACTIVE_ROBOTS_DEBUG] First raw item sample:', JSON.stringify({
+        robotId: rawItems[0].robotId,
+        connectionId: rawItems[0].connectionId,
+        status: rawItems[0].status,
+        updatedAt: rawItems[0].updatedAt,
+      }));
+    }
 
-    // Also count total connections (for reference)
-    const connResult = await db.send(
-      new ScanCommand({
-        TableName: CONN_TABLE,
-        Select: 'COUNT',
-      })
-    );
+    const presenceItems = rawItems.map((item) => ({
+      robotId: item.robotId?.S ?? '',
+      connectionId: item.connectionId?.S ?? '',
+      status: item.status?.S ?? '',
+      updatedAt: item.updatedAt?.N ? parseInt(item.updatedAt.N, 10) : null,
+    }));
+    const activeRobotsCount = presenceItems.length;
+    console.log('[ACTIVE_ROBOTS_DEBUG] presenceItems count:', presenceItems.length, 'sample:', JSON.stringify(presenceItems.slice(0, 2)));
 
-    const totalConnections = connResult.Count || 0;
-
-    // Count robot connections (kind !== 'monitor')
-    let robotConnections = 0;
-    let clientConnections = 0;
-    let monitorConnections = 0;
-
+    // Fetch CONN_TABLE entries (for admin debugging) and count
     const connScanResult = await db.send(
       new ScanCommand({
         TableName: CONN_TABLE,
-        ProjectionExpression: 'kind',
+        ProjectionExpression: 'connectionId, #kind, ts',
+        ExpressionAttributeNames: { '#kind': 'kind' },
       })
     );
 
-    for (const item of connScanResult.Items || []) {
-      const kind = item.kind?.S;
+    const connItems = (connScanResult.Items || []).map((item) => ({
+      connectionId: item.connectionId?.S ?? '',
+      kind: item.kind?.S ?? '',
+      ts: item.ts?.N ? parseInt(item.ts.N, 10) : null,
+    }));
+    const totalConnections = connItems.length;
+
+    let robotConnections = 0;
+    let clientConnections = 0;
+    let monitorConnections = 0;
+    for (const item of connItems) {
+      const kind = item.kind;
       if (kind === 'monitor') {
         monitorConnections++;
       } else if (kind === 'client') {
@@ -95,13 +112,18 @@ export const handler: Schema["getActiveRobotsLambda"]["functionHandler"] = async
       }
     }
 
-    return JSON.stringify({
+    const response = {
+      success: true,
       activeRobots: activeRobotsCount,
       totalConnections,
       robotConnections,
       clientConnections,
       monitorConnections,
-    });
+      robotPresenceEntries: presenceItems,
+      connTableEntries: connItems,
+    };
+    console.log('[ACTIVE_ROBOTS_DEBUG] Returning response keys:', Object.keys(response), 'robotPresenceEntries:', response.robotPresenceEntries.length, 'connTableEntries:', response.connTableEntries.length);
+    return JSON.stringify(response);
   } catch (error) {
     console.error('[ACTIVE_ROBOTS] Failed to fetch active robots:', error);
     throw new Error(`Failed to fetch active robots: ${error instanceof Error ? error.message : String(error)}`);

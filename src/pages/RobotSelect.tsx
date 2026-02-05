@@ -38,6 +38,23 @@ interface RobotData extends CardGridItemProps {
   uuid?: string; // The actual Robot.id (UUID) for deletion
   model?: string; // Robot model type
   robotType?: string; // Robot type for default image selection
+  rawImageUrl?: string; // S3 key or URL for image resolution
+}
+
+// Raw robot from listAccessibleRobotsLambda response
+interface ListAccessibleRobotItem {
+  id?: string | null;
+  robotId?: string | null;
+  name?: string;
+  description?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  robotType?: string;
+  model?: string;
+  imageUrl?: string;
+  hourlyRateCredits?: number | null;
+  allowedUsers?: string[];
 }
 
 export default function RobotSelect() {
@@ -108,7 +125,7 @@ export default function RobotSelect() {
         setError(null);
 
         // Check if the new ACL-filtered query is available (schema needs to be regenerated)
-        let response: any;
+        let response: { data: { robots: ListAccessibleRobotItem[]; nextToken?: string }; errors?: unknown[] };
         if (client.queries.listAccessibleRobotsLambda) {
           logger.log('🔍 Using listAccessibleRobotsLambda query');
           try {
@@ -126,7 +143,7 @@ export default function RobotSelect() {
             });
 
             // The response.data is a JSON string that needs to be parsed
-            let responseData: any = { robots: [], nextToken: '' };
+            let responseData: { robots: ListAccessibleRobotItem[]; nextToken?: string } = { robots: [], nextToken: '' };
             try {
               if (typeof queryResponse.data === 'string') {
                 logger.log('📝 Parsing JSON string response...');
@@ -143,7 +160,7 @@ export default function RobotSelect() {
                 responseData = parsed;
               } else if (queryResponse.data) {
                 logger.log('📝 Using response.data directly (not a string)');
-                responseData = queryResponse.data as any;
+                responseData = queryResponse.data as { robots: ListAccessibleRobotItem[]; nextToken?: string };
               } else {
                 logger.warn('⚠️ queryResponse.data is null or undefined');
               }
@@ -187,7 +204,7 @@ export default function RobotSelect() {
             const oldResponse = await client.models.Robot.list();
             response = {
               data: {
-                robots: oldResponse.data || [],
+                robots: (oldResponse.data || []) as unknown as ListAccessibleRobotItem[],
                 nextToken: '',
               },
               errors: oldResponse.errors,
@@ -200,7 +217,7 @@ export default function RobotSelect() {
           // Transform to match new response format
           response = {
             data: {
-              robots: oldResponse.data || [],
+                robots: (oldResponse.data || []) as unknown as ListAccessibleRobotItem[],
               nextToken: '',
             },
             errors: oldResponse.errors,
@@ -219,7 +236,7 @@ export default function RobotSelect() {
           hasErrors: !!response.errors,
           errorsLength: response.errors?.length || 0,
           // If data is still a string, try to parse it here
-          dataStringPreview: typeof response.data === 'string' ? response.data.substring(0, 200) : 'N/A',
+          dataStringPreview: typeof response.data === 'string' ? (response.data as string).substring(0, 200) : 'N/A',
         });
 
         // If response.data is still a string, parse it now
@@ -240,7 +257,7 @@ export default function RobotSelect() {
         // Log each robot's actual fields
         if (response.data?.robots && response.data.robots.length > 0) {
           logger.log(`🤖 Found ${response.data.robots.length} accessible robot(s):`);
-          response.data.robots.forEach((robot: any, index: number) => {
+          response.data.robots.forEach((robot: ListAccessibleRobotItem, index: number) => {
             if (robot === null || robot === undefined) {
               logger.log(`  Robot ${index + 1}: ❌ NULL`);
               return;
@@ -264,13 +281,9 @@ export default function RobotSelect() {
         if (response.errors && response.errors.length > 0) {
           logger.warn('⚠️ Some robots have errors (will be filtered out):', response.errors.length);
           // Log detailed error information for debugging
-          response.errors.forEach((err: any, index: number) => {
-            logger.error(`Error ${index + 1}:`, {
-              message: err.message,
-              errorType: err.errorType,
-              errorInfo: err.errorInfo,
-              path: err.path,
-            });
+          response.errors?.forEach((err: unknown, index: number) => {
+            const e = err as { message?: string; errorType?: string; errorInfo?: unknown; path?: string[] };
+            logger.error(`Error ${index + 1}:`, { message: e.message, errorType: e.errorType, errorInfo: e.errorInfo, path: e.path });
           });
         }
 
@@ -345,9 +358,9 @@ export default function RobotSelect() {
           logger.log(`✅ Found ${robotsArray.length} robots to process`);
 
           robotItems = robotsArray
-            .filter((robot: any) => robot !== null && robot !== undefined) // Filter out null robots
-            .filter((robot: any) => robot.robotId != null || robot.id != null) // Ensure we have a valid ID
-            .map((robot: any) => {
+            .filter((robot: ListAccessibleRobotItem | null | undefined): robot is ListAccessibleRobotItem => robot != null)
+            .filter((robot) => robot.robotId != null || robot.id != null) // Ensure we have a valid ID
+            .map((robot) => {
               // Build location string
               const locationParts = [robot.city, robot.state, robot.country].filter(Boolean);
               const location = locationParts.length > 0 ? locationParts.join(', ') : undefined;
@@ -375,7 +388,7 @@ export default function RobotSelect() {
                 const emailMatch = userEmail && normalizedAllowedUsers.includes(userEmail);
                 const usernameMatch = userUsername && normalizedAllowedUsers.includes(userUsername);
 
-                canAccess = emailMatch || usernameMatch;
+                canAccess = !!(emailMatch || usernameMatch);
 
                 if (canAccess) {
                   accessReason = emailMatch ? `Email match: ${userEmail}` : `Username match: ${userUsername}`;
@@ -414,9 +427,9 @@ export default function RobotSelect() {
                 const totalRateCredits = baseRateCredits * (1 + platformMarkup / 100);
 
                 // Convert to user's currency for display
-                const formattedRate = formatCreditsAsCurrencySync(
+                const formattedRate =                 formatCreditsAsCurrencySync(
                   totalRateCredits,
-                  userCurrency as any,
+                  userCurrency,
                   exchangeRates || undefined
                 );
 
@@ -430,7 +443,7 @@ export default function RobotSelect() {
                 title: robot.name || 'Unnamed Robot',
                 description: description,
                 location: location,
-                imageUrl: getRobotImage(robot.robotType || robot.model, robot.imageUrl),
+                imageUrl: getRobotImage(robot.robotType || robot.model || 'robot', robot.imageUrl),
                 rawImageUrl: robot.imageUrl,
                 robotType: robot.robotType || robot.model,
                 disabled: !canAccess,
@@ -504,13 +517,13 @@ export default function RobotSelect() {
   }, [platformMarkup, userCurrency, exchangeRates]);
 
   const [resolvedImages, setResolvedImages] = useState<Record<string, string>>({});
-  const [rawRobotData, setRawRobotData] = useState<any[]>([]);
+  const [rawRobotData, setRawRobotData] = useState<RobotData[]>([]);
 
   useEffect(() => {
     const resolveImages = async () => {
       const images: Record<string, string> = {};
       for (const robot of rawRobotData) {
-        const key = (robot as any).rawImageUrl;
+        const key = robot.rawImageUrl;
         // Only resolve S3 keys (not URLs or local paths)
         if (key && !key.startsWith('http') && !key.startsWith('/')) {
           try {
@@ -558,12 +571,12 @@ export default function RobotSelect() {
       });
 
       // The response.data is a JSON string that needs to be parsed
-      let responseData = { robots: [], nextToken: '' };
+      let responseData: { robots: ListAccessibleRobotItem[]; nextToken?: string } = { robots: [], nextToken: '' };
       try {
         if (typeof queryResponse.data === 'string') {
-          responseData = JSON.parse(queryResponse.data);
+          responseData = JSON.parse(queryResponse.data) as { robots: ListAccessibleRobotItem[]; nextToken?: string };
         } else if (queryResponse.data) {
-          responseData = queryResponse.data as any;
+          responseData = queryResponse.data as { robots: ListAccessibleRobotItem[]; nextToken?: string };
         }
       } catch (e) {
         logger.error('Failed to parse response data:', e);
@@ -571,9 +584,9 @@ export default function RobotSelect() {
       const robotsArray = Array.isArray(responseData.robots) ? responseData.robots : [];
       if (robotsArray.length > 0) {
         const newRobotItems = robotsArray
-          .filter((robot: any) => robot !== null && robot !== undefined)
-          .filter((robot: any) => robot.robotId != null || robot.id != null)
-          .map((robot: any) => {
+          .filter((robot: ListAccessibleRobotItem | null | undefined): robot is ListAccessibleRobotItem => robot != null)
+          .filter((robot) => robot.robotId != null || robot.id != null)
+          .map((robot) => {
             const locationParts = [robot.city, robot.state, robot.country].filter(Boolean);
             const location = locationParts.length > 0 ? locationParts.join(', ') : undefined;
             let description = robot.description || '';
@@ -586,7 +599,7 @@ export default function RobotSelect() {
               uuid: robot.id || undefined,
               title: robot.name || 'Unnamed Robot',
               description: description,
-              imageUrl: resolvedImages[robot.id] || getRobotImage(robot.robotType || robot.model),
+              imageUrl: resolvedImages[robot.id ?? ''] || getRobotImage(robot.robotType || robot.model || 'robot'),
               robotType: robot.robotType || robot.model,
             };
           });
@@ -620,7 +633,7 @@ export default function RobotSelect() {
     return robots.filter(robot => {
       const title = robot.title?.toLowerCase() || '';
       const description = robot.description?.toLowerCase() || '';
-      const location = (robot as any).location?.toLowerCase() || '';
+      const location = robot.location?.toLowerCase() || '';
       return title.includes(normalized) || description.includes(normalized) || location.includes(normalized);
     });
   }, [robots, searchTerm]);

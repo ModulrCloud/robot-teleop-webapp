@@ -15,11 +15,28 @@ import { RobotSchedulingModal } from '../components/RobotSchedulingModal';
 import { UserReservations } from '../components/UserReservations';
 import { InputBindingsModal } from '../components/InputBindingsModal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar, faCalendarAlt, faKeyboard, faCog, faTools, faLock } from '@fortawesome/free-solid-svg-icons';
 import { isFeatureEnabled } from '../utils/featureFlags';
 import "./RobotDetail.css";
 
 const client = generateClient<Schema>();
+
+/** Robot data from Amplify - matches schema fields we use */
+interface RobotDetailData {
+  id?: string;
+  robotId?: string;
+  name?: string;
+  description?: string;
+  hourlyRateCredits?: number;
+  city?: string;
+  state?: string;
+  country?: string;
+  imageUrl?: string;
+  robotType?: string;
+  model?: string;
+  averageRating?: number;
+}
 
 const getRobotImage = (model: string, imageUrl?: string): string => {
   if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('/'))) {
@@ -45,9 +62,9 @@ export default function RobotDetail() {
   const { user } = useAuthStatus();
   const { credits, refreshCredits } = useUserCredits();
 
-  const [robot, setRobot] = useState<any>(null);
+  const [robot, setRobot] = useState<RobotDetailData | null>(null);
   const [robotImage, setRobotImage] = useState<string>('');
-  const [partner, setPartner] = useState<any>(null);
+  const [partner, setPartner] = useState<Record<string, unknown> | null>(null);
   const [robotStatus, setRobotStatus] = useState<{ isOnline: boolean; status?: string } | null>(null);
   const [isInUse, setIsInUse] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -136,7 +153,7 @@ export default function RobotDetail() {
         }
 
         const robotData = robots[0];
-        setRobot(robotData);
+        setRobot(robotData as RobotDetailData);
 
         // Load robot image
         if (robotData.imageUrl) {
@@ -304,12 +321,12 @@ export default function RobotDetail() {
     if (credits < totalCreditsForMinute) {
       const formattedCost = formatCreditsAsCurrencySync(
         totalCreditsForMinute,
-        userCurrency as any,
+        userCurrency,
         exchangeRates || undefined
       );
       const formattedBalance = formatCreditsAsCurrencySync(
         credits,
-        userCurrency as any,
+        userCurrency,
         exchangeRates || undefined
       );
       setInsufficientFundsError(
@@ -323,7 +340,7 @@ export default function RobotDetail() {
     navigate(`/teleop?robotId=${robot.robotId || robot.id}`);
   };
 
-  const getStatusDisplay = (): { text: string; color: string; icon: any } => {
+  const getStatusDisplay = (): { text: string; color: string; icon: IconDefinition } => {
     if (isInUse) {
       return { text: 'In Use', color: '#ff9800', icon: faCircle };
     }
@@ -362,7 +379,7 @@ export default function RobotDetail() {
   const totalRateCredits = baseRateCredits * (1 + platformMarkup / 100);
   const hourlyRateFormatted = formatCreditsAsCurrencySync(
     totalRateCredits,
-    userCurrency as any,
+    userCurrency,
     exchangeRates || undefined
   );
 
@@ -444,7 +461,7 @@ export default function RobotDetail() {
                 {partner && (
                   <div className="robot-meta-item">
                     <FontAwesomeIcon icon={faUser} className="meta-icon" />
-                    <span className="robot-meta-value">Partner: {partner.name || 'Unknown'}</span>
+                    <span className="robot-meta-value">Partner: {String(partner?.name ?? 'Unknown')}</span>
                   </div>
                 )}
               </div>
@@ -505,7 +522,7 @@ export default function RobotDetail() {
                       <span>
                         {formatCreditsAsCurrencySync(
                           ((robot.hourlyRateCredits || 0) + servicesSubtotalCredits) * (1 + platformMarkup / 100),
-                          userCurrency as any,
+                          userCurrency,
                           exchangeRates || undefined
                         )}
                       </span>
@@ -524,7 +541,7 @@ export default function RobotDetail() {
                           <span>
                             {formatCreditsAsCurrencySync(
                               (robot.hourlyRateCredits || 0) * (1 + platformMarkup / 100),
-                              userCurrency as any,
+                              userCurrency,
                               exchangeRates || undefined
                             )}
                           </span>
@@ -534,7 +551,7 @@ export default function RobotDetail() {
                           <span>
                             {formatCreditsAsCurrencySync(
                               servicesSubtotalCredits * (1 + platformMarkup / 100),
-                              userCurrency as any,
+                              userCurrency,
                               exchangeRates || undefined
                             )}
                           </span>
@@ -593,7 +610,7 @@ export default function RobotDetail() {
                       filter: { robotId: { eq: robotId } },
                     }).then(({ data: robots }) => {
                       if (robots && robots.length > 0) {
-                        setRobot(robots[0]);
+                        setRobot(robots[0] as RobotDetailData);
                       }
                     });
                   }

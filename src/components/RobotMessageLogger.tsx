@@ -21,7 +21,7 @@ interface LogEntry {
   timestamp: number;
   direction: 'incoming' | 'outgoing' | 'system';
   type: string;
-  message: any;
+  message: Record<string, unknown>;
   raw: string;
   isValid: boolean;
   error?: string;
@@ -55,9 +55,9 @@ export function RobotMessageLogger({ robotId, wsUrl }: RobotMessageLoggerProps) 
   }, [logs, autoScroll, isPaused]);
 
   // Validate and parse message
-  const parseMessage = useCallback((raw: string): { message: any; isValid: boolean; error?: string } => {
+  const parseMessage = useCallback((raw: string): { message: Record<string, unknown>; isValid: boolean; error?: string } => {
     try {
-      const parsed = JSON.parse(raw);
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
       return { message: parsed, isValid: true };
     } catch (error) {
       return {
@@ -69,7 +69,7 @@ export function RobotMessageLogger({ robotId, wsUrl }: RobotMessageLoggerProps) 
   }, []);
 
   // Check if message is related to this robot
-  const isRobotMessage = useCallback((msg: any): boolean => {
+  const isRobotMessage = useCallback((msg: Record<string, unknown> | null | undefined): boolean => {
     if (!msg || typeof msg !== 'object') return false;
     
     // If message has _monitor flag, it's a monitoring copy - always include it
@@ -86,26 +86,26 @@ export function RobotMessageLogger({ robotId, wsUrl }: RobotMessageLoggerProps) 
   }, [robotId]);
 
   // Add log entry
-  const addLog = useCallback((direction: 'incoming' | 'outgoing' | 'system', raw: string, message?: any) => {
+  const addLog = useCallback((direction: 'incoming' | 'outgoing' | 'system', raw: string, message?: Record<string, unknown>) => {
     if (isPaused) return;
 
-    const { message: parsedMessage, isValid, error } = message 
-      ? { message, isValid: true } 
+    const { message: parsedMessage, isValid, error } = message != null
+      ? { message: message as Record<string, unknown>, isValid: true }
       : parseMessage(raw);
 
     const logEntry: LogEntry = {
       id: `log-${++logIdCounter.current}`,
       timestamp: Date.now(),
       direction,
-      type: parsedMessage?.type || 'unknown',
-      message: parsedMessage,
+      type: (typeof parsedMessage?.type === 'string' ? parsedMessage.type : 'unknown'),
+      message: (parsedMessage && typeof parsedMessage === 'object' ? parsedMessage as Record<string, unknown> : {}),
       raw,
       isValid,
       error,
     };
 
     // Only add if it's related to this robot or it's a system message
-    if (direction === 'system' || isRobotMessage(parsedMessage)) {
+    if (direction === 'system' || isRobotMessage(parsedMessage as Record<string, unknown> | null | undefined)) {
       setLogs(prev => [...prev, logEntry]);
     }
   }, [isPaused, parseMessage, isRobotMessage]);
@@ -499,9 +499,9 @@ export function RobotMessageLogger({ robotId, wsUrl }: RobotMessageLoggerProps) 
                   {log.type}
                 </span>
                 <span className="log-direction">
-                  {log.message?._direction ? log.message._direction : log.direction}
+                  {String(log.message?._direction ?? log.direction)}
                 </span>
-                {log.message?._monitor && (
+                {Boolean(log.message?._monitor) && (
                   <span className="log-monitor-badge" title="This is a monitoring copy of a forwarded message">
                     📡 Monitor
                   </span>

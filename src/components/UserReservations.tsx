@@ -138,8 +138,8 @@ export function UserReservations({
                 <span className={`status status-${reservation.status}`}>{reservation.status}</span>
               </div>
               <div className="reservation-cost">
-                <span>Deposit: {formatCreditsAsCurrencySync(reservation.depositCredits, userCurrency as any, exchangeRates)}</span>
-                <span>Total: {formatCreditsAsCurrencySync(reservation.totalCostCredits, userCurrency as any, exchangeRates)}</span>
+                <span>Deposit: {formatCreditsAsCurrencySync(reservation.depositCredits, userCurrency, exchangeRates)}</span>
+                <span>Total: {formatCreditsAsCurrencySync(reservation.totalCostCredits, userCurrency, exchangeRates)}</span>
               </div>
             </div>
           </div>

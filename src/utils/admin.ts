@@ -1,6 +1,6 @@
 /**
- * Admin utilities for Modulr employees
- * Only users with @modulr.cloud email addresses can access admin features
+ * Admin utilities for admin access control
+ * Access is granted to: (1) @modulr.cloud email, or (2) ADMINS/ADMIN Cognito group
  */
 
 /**
@@ -22,10 +22,10 @@ export function isModulrEmployee(email: string | null | undefined): boolean {
 
 /**
  * Checks if a user has admin access
- * Currently, this is based on email domain (@modulr.cloud)
- * In the future, this could also check Cognito groups
+ * Access granted if: (1) email ends with @modulr.cloud, OR (2) user is in ADMINS/ADMIN Cognito group
+ * Callers should pass both email and groups for correct behavior (e.g. official Admins with non-@modulr email)
  * @param email - User's email address
- * @param groups - Optional Cognito groups array
+ * @param groups - Optional Cognito groups array (e.g. user.group ? [user.group] : undefined)
  * @returns true if user has admin access
  */
 export function hasAdminAccess(

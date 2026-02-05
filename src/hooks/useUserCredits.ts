@@ -55,7 +55,7 @@ export function useUserCredits(): UserCreditsData {
         const result = await client.queries.getUserCreditsLambda();
         
         // Parse the JSON response
-        let queryData: { success?: boolean; userCredits?: any };
+        let queryData: { success?: boolean; userCredits?: { credits?: number } | null };
         if (typeof result.data === 'string') {
           try {
             const firstParse = JSON.parse(result.data);
