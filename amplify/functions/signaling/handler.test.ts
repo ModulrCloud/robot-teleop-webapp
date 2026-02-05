@@ -96,6 +96,7 @@ import {
   extractNewProtocolVersion,
   isSupportedProtocolVersion,
   normalizeNewProtocol,
+  formatOutboundForConnection,
 } from './handler';
 import {
   PutItemCommand,
@@ -364,6 +365,66 @@ describe('normalizeNewProtocol (Stage 2)', () => {
     });
   });
 
+  describe('formatOutboundForConnection (Stage 3)', () => {
+    it('returns legacy format as-is for legacy protocol', () => {
+      const msg = { type: 'offer', to: 'R-1', from: 'C-1', sdp: 'v=0...' };
+      const out = formatOutboundForConnection(msg, 'legacy');
+      expect(out).toEqual(msg);
+      expect(out).not.toHaveProperty('payload');
+    });
+    it('returns legacy format for null/undefined protocol', () => {
+      const msg = { type: 'offer', to: 'R-1', from: 'C-1', sdp: 'v=0...' };
+      expect(formatOutboundForConnection(msg, null)).toEqual(msg);
+      expect(formatOutboundForConnection(msg, undefined)).toEqual(msg);
+    });
+    it('wraps offer in envelope for modulr-v0', () => {
+      const msg = { type: 'offer', to: 'R-1', from: 'C-1', sdp: 'v=0...' };
+      const out = formatOutboundForConnection(msg, 'modulr-v0', '0.0');
+      expect(out.type).toBe('signalling.offer');
+      expect(out.version).toBe('0.0');
+      expect(out.id).toBeDefined();
+      expect(out.timestamp).toBeDefined();
+      expect(out.payload).toEqual({ sdp: 'v=0...', sdpType: 'offer', connectionId: 'C-1' });
+    });
+    it('wraps answer in envelope for modulr-v0', () => {
+      const msg = { type: 'answer', to: 'C-1', from: 'R-1', sdp: 'v=0...' };
+      const out = formatOutboundForConnection(msg, 'modulr-v0', '0.0');
+      expect(out.type).toBe('signalling.answer');
+      expect(out.payload).toEqual({ sdp: 'v=0...', sdpType: 'answer', connectionId: 'C-1' });
+    });
+    it('wraps candidate in envelope for modulr-v0', () => {
+      const msg = { type: 'candidate', to: 'R-1', from: 'C-1', candidate: 'candidate:...', clientConnectionId: 'C-1' };
+      const out = formatOutboundForConnection(msg, 'modulr-v0', '0.0');
+      expect(out.type).toBe('signalling.ice_candidate');
+      expect(out.payload).toMatchObject({ candidate: 'candidate:...', connectionId: 'C-1' });
+    });
+    it('wraps error in signalling.error envelope for modulr-v0', () => {
+      const msg = { type: 'error', error: 'access_denied', message: 'Denied', robotId: 'r-1' };
+      const out = formatOutboundForConnection(msg, 'modulr-v0', '0.0');
+      expect(out.type).toBe('signalling.error');
+      expect(out.payload).toEqual({ code: 'access_denied', message: 'Denied', robotId: 'r-1' });
+    });
+    it('returns platform messages as-is for modulr-v0 (welcome, session-locked)', () => {
+      const welcome = { type: 'welcome', connectionId: 'C-1' };
+      expect(formatOutboundForConnection(welcome, 'modulr-v0', '0.0')).toEqual(welcome);
+      const locked = { type: 'session-locked', robotId: 'r-1', lockedBy: 'user@x.com' };
+      expect(formatOutboundForConnection(locked, 'modulr-v0', '0.0')).toEqual(locked);
+    });
+  });
+
+  describe('agent.ping and agent.pong pass-through', () => {
+    it('normalizeNewProtocol passes through agent.ping', () => {
+      const out = normalizeNewProtocol({ type: 'agent.ping', version: '0.0', id: 'x', timestamp: '2024-01-01T00:00:00Z' });
+      expect(out).not.toBeNull();
+      expect(out!.type).toBe('agent.ping');
+    });
+    it('normalizeNewProtocol passes through agent.pong', () => {
+      const out = normalizeNewProtocol({ type: 'agent.pong', version: '0.0' });
+      expect(out).not.toBeNull();
+      expect(out!.type).toBe('agent.pong');
+    });
+  });
+
   describe('unknown new-protocol type', () => {
     it('returns null for unrecognized type', () => {
       expect(normalizeNewProtocol({ type: 'signalling.unknown', version: '0.0' })).toBeNull();
@@ -418,6 +479,110 @@ describe('Stage 2: new-protocol integration', () => {
     const forwarded = JSON.parse(Buffer.from(apigwSend.mock.calls[0][0].input.Data).toString('utf-8'));
     expect(forwarded.type).toBe('offer');
     expect(forwarded.to).toBe('robot-1');
+  });
+
+  it('forwarded offer to new-protocol robot uses envelope format (Stage 3)', async () => {
+    // Connection lookup for auth (C-1)
+    ddbSend.mockResolvedValueOnce({
+      Item: {
+        userId: { S: 'user-1' },
+        username: { S: 'user-1' },
+        groups: { S: 'USERS' },
+      },
+    });
+    ddbSend.mockResolvedValueOnce({}); // UpdateItem protocol (C-1)
+    ddbSend.mockResolvedValueOnce({
+      Item: { connectionId: { S: 'R-1' }, ownerUserId: { S: 'owner-1' } },
+    });
+    ddbSend.mockResolvedValueOnce({
+      Item: { username: { S: 'user-1' }, email: { S: 'user-1@example.com' } },
+    });
+    // getConnectionProtocol(R-1) - robot uses new protocol
+    ddbSend.mockResolvedValueOnce({
+      Item: { protocol: { S: 'modulr-v0' }, version: { S: '0.0' } },
+    });
+    apigwSend.mockResolvedValueOnce({});
+
+    const token = mkToken({ sub: 'user-1' });
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-1'),
+      queryStringParameters: { token },
+      body: JSON.stringify({
+        type: 'signalling.offer',
+        version: '0.0',
+        id: 'offer-1',
+        timestamp: new Date().toISOString(),
+        payload: {
+          robotId: 'robot-1',
+          connectionId: 'C-1',
+          sdp: 'v=0...',
+          sdpType: 'offer',
+        },
+      }),
+    }));
+
+    expect(resp.statusCode).toBe(200);
+    expect(apigwSend).toHaveBeenCalled();
+    const forwarded = JSON.parse(Buffer.from(apigwSend.mock.calls[0][0].input.Data).toString('utf-8'));
+    expect(forwarded.type).toBe('signalling.offer');
+    expect(forwarded.version).toBe('0.0');
+    expect(forwarded.id).toBeDefined();
+    expect(forwarded.timestamp).toBeDefined();
+    expect(forwarded.payload).toEqual({
+      sdp: 'v=0...',
+      sdpType: 'offer',
+      connectionId: 'C-1',
+    });
+  });
+
+  it('agent.ping receives agent.pong response (keepalive flow)', async () => {
+    ddbSend.mockResolvedValueOnce({
+      Item: { userId: { S: 'user-1' }, username: { S: 'u' }, groups: { S: 'USERS' } },
+    });
+    ddbSend.mockResolvedValueOnce({}); // UpdateItem protocol
+    ddbSend.mockResolvedValueOnce({}); // UpdateItem lastPongAt (agent.pong handler does not run - agent.ping triggers pong)
+    apigwSend.mockResolvedValueOnce({});
+
+    const token = mkToken({ sub: 'user-1' });
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-1'),
+      queryStringParameters: { token },
+      body: JSON.stringify({
+        type: 'agent.ping',
+        version: '0.0',
+        id: 'ping-123',
+        timestamp: new Date().toISOString(),
+      }),
+    }));
+
+    expect(resp.statusCode).toBe(200);
+    expect(apigwSend).toHaveBeenCalled();
+    const sent = JSON.parse(Buffer.from(apigwSend.mock.calls[0][0].input.Data).toString('utf-8'));
+    expect(sent.type).toBe('agent.pong');
+    expect(sent.id).toBe('ping-123-pong');
+  });
+
+  it('agent.pong updates lastPongAt and returns 200', async () => {
+    ddbSend.mockResolvedValueOnce({
+      Item: { userId: { S: 'user-1' }, username: { S: 'u' }, groups: { S: 'USERS' } },
+    });
+    ddbSend.mockResolvedValueOnce({}); // UpdateItem protocol
+    ddbSend.mockResolvedValueOnce({}); // UpdateItem lastPongAt
+
+    const token = mkToken({ sub: 'user-1' });
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-1'),
+      queryStringParameters: { token },
+      body: JSON.stringify({
+        type: 'agent.pong',
+        version: '0.0',
+        correlationId: 'ping-123',
+      }),
+    }));
+
+    expect(resp.statusCode).toBe(200);
+    const body = JSON.parse(resp.body);
+    expect(body.type).toBe('agent.pong-acknowledged');
   });
 
   it('unknown new-protocol type returns 400 with signalling.error', async () => {

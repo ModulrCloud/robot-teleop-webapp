@@ -10,7 +10,7 @@ import {
     ScanCommand,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand as DocQueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
@@ -163,6 +163,115 @@ async function updateConnectionProtocol(
   } catch (err) {
     console.warn('[PROTOCOL_UPDATE_ERROR]', { connectionId, protocol, version, error: err instanceof Error ? err.message : String(err) });
   }
+}
+
+/** Fetches stored protocol and version for a connection. Returns null if not found or no protocol set. */
+async function getConnectionProtocol(
+  connectionId: string,
+): Promise<{ protocol: ConnectionProtocol; version?: string } | null> {
+  try {
+    const res = await db.send(
+      new GetItemCommand({
+        TableName: CONN_TABLE,
+        Key: { connectionId: { S: connectionId } },
+        ProjectionExpression: '#protocol, #version',
+        ExpressionAttributeNames: { '#protocol': 'protocol', '#version': 'version' },
+      }),
+    );
+    const protocol = res.Item?.protocol?.S as ConnectionProtocol | undefined;
+    if (!protocol) return null;
+    return {
+      protocol,
+      version: res.Item?.version?.S,
+    };
+  } catch (err) {
+    console.warn('[GET_PROTOCOL_ERROR]', { connectionId, error: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
+
+/** Internal outbound message shape (what handlers build). */
+type InternalOutboundMessage =
+  | { type: 'offer' | 'answer' | 'candidate'; to: string; from: string; sdp?: string; candidate?: string; [k: string]: unknown }
+  | { type: 'error'; error: string; message: string; robotId?: string; currentCredits?: number; requiredCredits?: number }
+  | { type: 'session-locked'; robotId: string; lockedBy: string }
+  | { type: 'session-created'; sessionId: string }
+  | { type: 'welcome'; connectionId: string }
+  | { type: 'monitor-confirmed'; robotId: string; message: string }
+  | { type: 'admin-takeover'; robotId: string; by: string }
+  | Record<string, unknown>;
+
+/**
+ * Formats an internal outbound message for the recipient's protocol.
+ * Legacy: returns message as-is. New (modulr-v0): wraps in envelope (type, version, id, timestamp, payload).
+ */
+export function formatOutboundForConnection(
+  msg: InternalOutboundMessage,
+  connectionProtocol: ConnectionProtocol | null | undefined,
+  connectionVersion?: string,
+): Record<string, unknown> {
+  if (connectionProtocol !== 'modulr-v0') {
+    return msg as Record<string, unknown>;
+  }
+  const version = connectionVersion ?? '0.0';
+  const envelopeType = msg.type as string;
+  const envelope: Record<string, unknown> = {
+    type: envelopeType,
+    version,
+    id: randomUUID(),
+    timestamp: new Date().toISOString(),
+    payload: {},
+  };
+
+  // Map internal types to new-protocol envelope types and payload shape
+  if (envelopeType === 'offer') {
+    envelope.type = 'signalling.offer';
+    envelope.payload = {
+      sdp: (msg as { sdp?: string }).sdp,
+      sdpType: 'offer',
+      connectionId: (msg as { from?: string }).from,
+    };
+  } else if (envelopeType === 'answer') {
+    envelope.type = 'signalling.answer';
+    envelope.payload = {
+      sdp: (msg as { sdp?: string }).sdp,
+      sdpType: 'answer',
+      connectionId: (msg as { to?: string }).to,
+    };
+  } else if (envelopeType === 'candidate') {
+    envelope.type = 'signalling.ice_candidate';
+    const m = msg as { candidate?: string; to?: string; from?: string; sdpMid?: string; sdpMLineIndex?: number; clientConnectionId?: string };
+    // Client conn id: when client->robot it's "from"; when robot->client it's "to"
+    const clientConnId = m.clientConnectionId ?? (m.from && !m.from.startsWith('robot') ? m.from : m.to) ?? m.from;
+    envelope.payload = {
+      candidate: m.candidate,
+      connectionId: clientConnId,
+    };
+    if (m.sdpMid !== undefined) (envelope.payload as Record<string, unknown>).sdpMid = m.sdpMid;
+    if (m.sdpMLineIndex !== undefined) (envelope.payload as Record<string, unknown>).sdpMLineIndex = m.sdpMLineIndex;
+  } else if (envelopeType === 'error') {
+    envelope.type = 'signalling.error';
+    const m = msg as { error?: string; message?: string; robotId?: string; currentCredits?: number; requiredCredits?: number };
+    (envelope.payload as Record<string, unknown>).code = m.error ?? 'UNKNOWN';
+    (envelope.payload as Record<string, unknown>).message = m.message ?? '';
+    if (m.robotId) (envelope.payload as Record<string, unknown>).robotId = m.robotId;
+    if (m.currentCredits !== undefined) (envelope.payload as Record<string, unknown>).currentCredits = m.currentCredits;
+    if (m.requiredCredits !== undefined) (envelope.payload as Record<string, unknown>).requiredCredits = m.requiredCredits;
+  } else {
+    // Platform messages (welcome, session-locked, session-created, monitor-confirmed, admin-takeover)
+    // Keep in legacy top-level format per plan; new-protocol clients receive same shape
+    return msg as Record<string, unknown>;
+  }
+  return envelope;
+}
+
+/**
+ * Sends a message to a connection, formatting for that connection's protocol.
+ */
+async function postFormatted(connectionId: string, internalMsg: InternalOutboundMessage): Promise<void> {
+  const proto = await getConnectionProtocol(connectionId);
+  const formatted = formatOutboundForConnection(internalMsg, proto?.protocol, proto?.version);
+  await postTo(connectionId, formatted);
 }
 
 // ---------------------------------
@@ -473,7 +582,8 @@ function extractClientConnectionId(
 
 /**
  * Maps new protocol (Modulr Interface Spec) messages to internal InboundMessage format.
- * Used for signalling.register, signalling.offer, signalling.answer, signalling.ice_candidate.
+ * Used for signalling.register, signalling.offer, signalling.answer, signalling.ice_candidate,
+ * and agent.ping/agent.pong (pass-through for keepalive/liveness).
  * Returns null for unknown new-protocol types.
  *
  * Field mappings per plan:
@@ -545,6 +655,11 @@ export function normalizeNewProtocol(raw: RawMessage): InboundMessage | null {
         },
       };
     }
+
+    case 'agent.ping':
+    case 'agent.pong':
+      // Pass-through: no field mapping needed; used for keepalive/liveness (websocket-keepalive Lambda)
+      return { type: typeStr as MessageType };
 
     default:
       return null;
@@ -1393,7 +1508,7 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
             
             // Send connection ID back to client (dev mode)
             try {
-                await postTo(connectionId, {
+                await postFormatted(connectionId, {
                     type: 'welcome',
                     connectionId: connectionId,
                 });
@@ -1611,7 +1726,7 @@ async function handleMonitor(
     // Send error message to client through WebSocket (not just HTTP 403)
     // This ensures the user sees a clear error message
     try {
-      await postTo(connectionId, {
+      await postFormatted(connectionId, {
         type: 'error',
         error: 'access_denied',
         message: 'You are not authorized to monitor this robot. The robot owner may have restricted access to specific users. Please contact the robot owner if you believe this is an error.',
@@ -1660,7 +1775,7 @@ async function handleMonitor(
       });
 
     // Send confirmation to monitor
-    await postTo(connectionId, {
+    await postFormatted(connectionId, {
       type: 'monitor-confirmed',
       robotId: robotId,
       message: `Now monitoring messages for robot ${robotId}`,
@@ -1788,14 +1903,11 @@ async function handleTakeover(
     return errorResponse(403, 'forbidden');
   }
 
-  await mgmt.send(new PostToConnectionCommand({
-    ConnectionId: robotConn,
-    Data: Buffer.from(JSON.stringify({
-      type: 'admin-takeover',
-      robotId,
-      by: caller,
-    }), 'utf-8'),
-  }));
+  await postFormatted(robotConn, {
+    type: 'admin-takeover',
+    robotId,
+    by: caller,
+  });
 
   return { statusCode: 200, body: 'ok' };
 }
@@ -1933,7 +2045,7 @@ async function handleSignal(
       // Send error message to client through WebSocket (not just HTTP 403)
       // This ensures the user sees a clear error message
       try {
-        await postTo(sourceConnId, {
+        await postFormatted(sourceConnId, {
           type: 'error',
           error: 'access_denied',
           message: 'You are not authorized to access this robot. The robot owner may have restricted access to specific users. Please contact the robot owner if you believe this is an error.',
@@ -1963,7 +2075,7 @@ async function handleSignal(
         });
         
         try {
-          await postTo(sourceConnId, {
+          await postFormatted(sourceConnId, {
             type: 'session-locked',
             robotId,
             lockedBy: sessionLock.userEmail || 'Another user',
@@ -2086,6 +2198,11 @@ async function handleSignal(
     }
   });
 
+  // For new-protocol envelope: clientConnectionId is the client's WebSocket connection ID
+  if (outboundType === 'candidate') {
+    outbound.clientConnectionId = target === 'client' ? targetConn : sourceConnId;
+  }
+
   // Log packet forwarding for verification
   console.log('[PACKET_FORWARD]', {
     timestamp: new Date().toISOString(),
@@ -2111,10 +2228,7 @@ async function handleSignal(
   // Only attempt to send if we have a valid target connection (not a placeholder)
   if (targetConn && targetConn !== 'PLACEHOLDER_NO_CLIENT') {
     try {
-      await mgmt.send(new PostToConnectionCommand({
-        ConnectionId: targetConn,
-        Data: Buffer.from(JSON.stringify(outbound), 'utf-8'),
-      }));
+      await postFormatted(targetConn, outbound as InternalOutboundMessage);
       console.log('[PACKET_FORWARD_SUCCESS]', {
         targetConnectionId: targetConn,
         messageType: type,
@@ -2129,7 +2243,7 @@ async function handleSignal(
           const balanceCheck = await checkUserBalance(sessionUserId, robotId);
           if (!balanceCheck.sufficient) {
             try {
-              await postTo(sourceConnId, {
+              await postFormatted(sourceConnId, {
                 type: 'error',
                 error: 'insufficient_funds',
                 message: balanceCheck.error || 'Insufficient credits to start session',
@@ -2151,13 +2265,10 @@ async function handleSignal(
         } else {
           // Send session ID to client when session is created
           try {
-            await mgmt.send(new PostToConnectionCommand({
-              ConnectionId: sourceConnId,
-              Data: Buffer.from(JSON.stringify({
-                type: 'session-created',
-                sessionId: sessionId,
-              }), 'utf-8'),
-            }));
+            await postFormatted(sourceConnId, {
+              type: 'session-created',
+              sessionId: sessionId,
+            });
             console.log('[SESSION] Sent session ID to client:', { sessionId, connectionId: sourceConnId });
           } catch (e) {
             console.warn('[SESSION] Failed to send session ID to client:', e);
@@ -2377,7 +2488,7 @@ export async function handler(
   if (raw?.type === 'ready') {
     console.log('[READY_MESSAGE]', { connectionId });
     try {
-      await postTo(connectionId, {
+      await postFormatted(connectionId, {
         type: 'welcome',
         connectionId: connectionId,
       });
