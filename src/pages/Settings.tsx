@@ -14,7 +14,9 @@ import {
   faKey,
   faCheck,
   faInfoCircle,
+  faNetworkWired,
 } from "@fortawesome/free-solid-svg-icons";
+import { ConnectionDiagnostic } from "../components/ConnectionDiagnostic";
 import { logger } from "../utils/logger";
 import "./Settings.css";
 
@@ -25,6 +27,7 @@ type SettingSection =
   | "notifications"
   | "privacy"
   | "appearance"
+  | "connection"
   | "admin";
 
 export const Settings = () => {
@@ -177,6 +180,11 @@ export const Settings = () => {
       id: "appearance" as SettingSection,
       label: "Appearance",
       icon: faPalette,
+    },
+    {
+      id: "connection" as SettingSection,
+      label: "Connection",
+      icon: faNetworkWired,
     },
     ...(isAdmin
       ? [{ id: "admin" as SettingSection, label: "Admin Controls", icon: faKey }]
@@ -363,6 +371,12 @@ export const Settings = () => {
                   </span>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeSection === "connection" && (
+            <div className="settings-section">
+              <ConnectionDiagnostic />
             </div>
           )}
 
