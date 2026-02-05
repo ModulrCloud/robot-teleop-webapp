@@ -18,8 +18,6 @@ import { logger } from "../utils/logger";
 import "./Admin.css";
 
 
-// Lazy load components - only loads when needed
-// This creates separate code chunks that load on-demand
 const SystemStats = lazy(() => import("./admin/components/SystemStats").then(module => ({ default: module.SystemStats })));
 const AuditLogs = lazy(() => import("./admin/components/AuditLogs").then(module => ({ default: module.AuditLogs })));
 const ConnectionCleanup = lazy(() => import("./admin/components/ConnectionCleanup").then(module => ({ default: module.ConnectionCleanup })));
@@ -33,27 +31,13 @@ export const Admin = () => {
   const { user, loading: authLoading } = useAuthStatus();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // System stats - moved to SystemStats component (lazy loaded)
-  
-  // Audit logs - moved to AuditLogs component (lazy loaded)
-  
-  // Payouts - moved to PayoutManagement component (lazy loaded)
-  
-  // Users - moved to UserManagement component (lazy loaded)
-  
-  // Platform Settings - moved to PlatformSettings component (lazy loaded)
 
-  // Check if user has admin access (domain-based: @modulr.cloud)
   useEffect(() => {
     if (!authLoading && user) {
       const isAdmin = hasAdminAccess(user.email, user.group ? [user.group] : undefined);
       
       if (!isAdmin) {
-        // User doesn't have admin access - redirect to home
-        logger.log("⚠️ Unauthorized admin access attempt:", {
-          email: user.email,
-          username: user.username,
-        });
+      logger.log("Unauthorized admin access attempt:", user.email);
         setError("Access denied. Admin page is only available to Modulr employees.");
         setTimeout(() => {
           navigate("/");
@@ -62,27 +46,11 @@ export const Admin = () => {
         return;
       }
       
-      // User has admin access - load all data
       setLoading(false);
-      
-      // All sections now load their own data when components mount (lazy loaded)
     } else if (!authLoading && !user) {
-      // Not logged in - redirect to sign in
       navigate("/signin");
     }
   }, [authLoading, user, navigate]);
-
-  // loadSystemStats moved to SystemStats component (lazy loaded)
-
-  // loadActiveRobots and handleTriggerCleanup moved to ConnectionCleanup component (lazy loaded)
-
-  // loadAuditLogs, handleAuditLogsNextPage, handleAuditLogsPrevPage moved to AuditLogs component (lazy loaded)
-
-  // loadPayouts, handlePayoutsNextPage, handlePayoutsPrevPage, handleProcessPayout, handleProcessMultiplePayouts, handleExportPayouts moved to PayoutManagement component (lazy loaded)
-
-  // loadUsers, handleViewUser, handleAdjustCredits, handleNextPage, handlePrevPage, handleClassificationChange, loadUserDetailData, handleCreditAdjustmentChange, debugClientAndPartnerModels moved to UserManagement component (lazy loaded)
-
-  // Platform Settings functions moved to PlatformSettings component (lazy loaded)
 
   if (authLoading || loading) {
     return (
@@ -133,7 +101,6 @@ export const Admin = () => {
 
 
       <div className="admin-content">
-        {/* System Statistics Section - Lazy Loaded */}
         <Suspense fallback={
           <div className="admin-section">
             <div className="section-header">
@@ -150,7 +117,6 @@ export const Admin = () => {
           <SystemStats />
         </Suspense>
 
-        {/* Audit Log Section - Lazy Loaded */}
         <Suspense fallback={
           <div className="admin-section">
             <div className="section-header">
@@ -167,7 +133,6 @@ export const Admin = () => {
           <AuditLogs />
         </Suspense>
 
-        {/* Connection Cleanup Section */}
         <Suspense fallback={
           <div className="admin-section">
             <div className="section-header">
@@ -182,7 +147,6 @@ export const Admin = () => {
           <ConnectionCleanup />
         </Suspense>
 
-        {/* Payout Management Section - Lazy Loaded */}
         <Suspense fallback={
           <div className="admin-section">
             <div className="section-header">
@@ -199,7 +163,6 @@ export const Admin = () => {
           <PayoutManagement />
         </Suspense>
 
-        {/* Platform Settings Section */}
         <Suspense fallback={
           <div className="admin-section">
             <div className="section-header">
@@ -214,7 +177,6 @@ export const Admin = () => {
           <PlatformSettings />
         </Suspense>
 
-        {/* Users Management Section - Lazy Loaded */}
         <Suspense fallback={
           <div className="admin-section">
             <div className="section-header">

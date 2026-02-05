@@ -7,9 +7,10 @@ import {
     QueryCommand,
     UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand as DocQueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand as DocQueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { createHash } from 'crypto';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
 
 const CONN_TABLE = process.env.CONN_TABLE!;
@@ -18,6 +19,7 @@ const REVOKED_TOKENS_TABLE = process.env.REVOKED_TOKENS_TABLE!;
 const USER_INVALIDATION_TABLE = process.env.USER_INVALIDATION_TABLE!;
 const ROBOT_OPERATOR_TABLE = process.env.ROBOT_OPERATOR_TABLE!;
 const ROBOT_TABLE_NAME = process.env.ROBOT_TABLE_NAME!;
+const PARTNER_TABLE_NAME = process.env.PARTNER_TABLE_NAME;
 const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME; // For session lock enforcement
 const USER_CREDITS_TABLE = process.env.USER_CREDITS_TABLE;
 const PLATFORM_SETTINGS_TABLE = process.env.PLATFORM_SETTINGS_TABLE;
@@ -31,6 +33,8 @@ const DEFAULT_PLATFORM_MARKUP_PERCENT = 30;
 const db = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(db); // For UserCredits and PlatformSettings queries
 const mgmt = new ApiGatewayManagementApiClient({ endpoint: WS_MGMT_ENDPOINT});
+const lambdaClient = new LambdaClient({});
+const SETTLE_SESSION_PAYMENT_FUNCTION_NAME = process.env.SETTLE_SESSION_PAYMENT_FUNCTION_NAME;
 
 // Cognito JWKS URL - public keys for verifying JWT signatures
 const JWKS_URL = `https://cognito-idp.${AWS_REGION}.amazonaws.com/${USER_POOL_ID}/.well-known/jwks.json`;
@@ -916,29 +920,66 @@ async function createSession(
   const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
   const now = new Date().toISOString();
 
+  // Resolve robot name and partner Cognito username for Session record
+  let robotName = robotId;
+  let partnerIdCognito: string | undefined;
+  if (ROBOT_TABLE_NAME) {
+    try {
+      const robotQuery = await db.send(new QueryCommand({
+        TableName: ROBOT_TABLE_NAME,
+        IndexName: 'robotIdIndex',
+        KeyConditionExpression: 'robotId = :robotId',
+        ExpressionAttributeValues: { ':robotId': { S: robotId } },
+        Limit: 1,
+      }));
+      const robotItem = robotQuery.Items?.[0];
+      if (robotItem) {
+        robotName = robotItem.name?.S ?? robotId;
+        const partnerTableId = robotItem.partnerId?.S;
+        if (partnerTableId && PARTNER_TABLE_NAME) {
+          const partnerResult = await docClient.send(new GetCommand({
+            TableName: PARTNER_TABLE_NAME,
+            Key: { id: partnerTableId },
+          }));
+          const cognitoUsername = partnerResult.Item?.cognitoUsername;
+          if (cognitoUsername) {
+            partnerIdCognito = cognitoUsername;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[SESSION] Failed to resolve robot/partner for session metadata:', err);
+    }
+  }
+
   try {
     // End any other active sessions for this user (allows only one session at a time)
     await endUserSessions(userId);
 
+    const sessionItem: Record<string, { S: string }> = {
+      id: { S: sessionId },
+      owner: { S: userId },
+      userId: { S: userId },
+      userEmail: { S: userEmail || '' },
+      robotId: { S: robotId },
+      robotName: { S: robotName },
+      connectionId: { S: connectionId },
+      startedAt: { S: now },
+      status: { S: 'active' },
+      createdAt: { S: now },
+      updatedAt: { S: now },
+      __typename: { S: 'Session' },
+    };
+    if (partnerIdCognito) {
+      sessionItem.partnerId = { S: partnerIdCognito };
+    }
+
     await db.send(new PutItemCommand({
       TableName: SESSION_TABLE_NAME,
-      Item: {
-        id: { S: sessionId },
-        owner: { S: userId },
-        userId: { S: userId },
-        userEmail: { S: userEmail || '' },
-        robotId: { S: robotId },
-        robotName: { S: robotId },
-        connectionId: { S: connectionId },
-        startedAt: { S: now },
-        status: { S: 'active' },
-        createdAt: { S: now },
-        updatedAt: { S: now },
-        __typename: { S: 'Session' },
-      },
+      Item: sessionItem,
     }));
 
-    console.log('[SESSION] Created new session:', { sessionId, userId, robotId, connectionId });
+    console.log('[SESSION] Created new session:', { sessionId, userId, robotId, robotName, partnerId: partnerIdCognito ?? '(none)', connectionId });
     return sessionId;
   } catch (err) {
     console.error('[SESSION] Failed to create session:', {
@@ -1022,6 +1063,18 @@ async function endUserSessions(userId: string): Promise<void> {
       const sessionId = item.id?.S;
       if (sessionId) {
         await endSession(sessionId);
+        if (SETTLE_SESSION_PAYMENT_FUNCTION_NAME) {
+          try {
+            await lambdaClient.send(new InvokeCommand({
+              FunctionName: SETTLE_SESSION_PAYMENT_FUNCTION_NAME,
+              InvocationType: 'Event',
+              Payload: JSON.stringify({ sessionId }),
+            }));
+            console.log('[SESSION] Invoked settle session payment for:', sessionId);
+          } catch (invokeErr) {
+            console.error('[SESSION] Failed to invoke settle session payment:', { sessionId, error: invokeErr instanceof Error ? invokeErr.message : String(invokeErr) });
+          }
+        }
       }
     }
   } catch (err) {
@@ -1056,6 +1109,18 @@ async function endConnectionSessions(connectionId: string): Promise<void> {
       if (sessionId) {
         console.log('[SESSION] Ending session on disconnect:', { sessionId, connectionId });
         await endSession(sessionId);
+        if (SETTLE_SESSION_PAYMENT_FUNCTION_NAME) {
+          try {
+            await lambdaClient.send(new InvokeCommand({
+              FunctionName: SETTLE_SESSION_PAYMENT_FUNCTION_NAME,
+              InvocationType: 'Event',
+              Payload: JSON.stringify({ sessionId }),
+            }));
+            console.log('[SESSION] Invoked settle session payment for:', sessionId);
+          } catch (invokeErr) {
+            console.error('[SESSION] Failed to invoke settle session payment:', { sessionId, error: invokeErr instanceof Error ? invokeErr.message : String(invokeErr) });
+          }
+        }
       }
     }
   } catch (err) {

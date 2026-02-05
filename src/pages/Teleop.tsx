@@ -11,7 +11,6 @@ import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../amplify/data/resource';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
-  faClock,
   faRotate,
   faVideo,
   faCircleExclamation,
@@ -27,8 +26,7 @@ import {
   faMapMarkerAlt,
   faCog,
   faGaugeHigh,
-  faBolt,
-  faSliders
+  faBolt
 } from '@fortawesome/free-solid-svg-icons';
 import { InputBindingsModal } from '../components/InputBindingsModal';
 import { useCustomCommandBindings } from '../hooks/useCustomCommandBindings';
@@ -619,11 +617,6 @@ export default function Teleop() {
           <span className="info-value">{robotId}</span>
         </div>
 
-        <div className="session-timer">
-          <FontAwesomeIcon icon={faClock} />
-          {formatTime(sessionTime)}
-        </div>
-
         <div className={`teleop-status-badge ${status.connected ? 'connected' : status.connecting ? 'connecting' : 'disconnected'}`}>
           {status.connecting && <><LoadingWheel /> Connecting...</>}
           {status.connected && <><span className="status-dot"></span> Connected</>}
@@ -702,7 +695,7 @@ export default function Teleop() {
                 <div className="viewport-stats-center">
                   <div className="live-indicator">
                     <span className="live-dot"></span>
-                    <span className="live-text">LIVE</span>
+                    <span className="live-text">{formatTime(sessionTime)}</span>
                   </div>
                 </div>
                 <div className="viewport-stats-group">
@@ -749,105 +742,118 @@ export default function Teleop() {
 
         <div className="teleop-controls-panel">
           <div className="controls-header">
-            <h3>Movement Control</h3>
+            <div className="controls-header-left">
+              <div className={`status-indicator ${isJoystickActive ? 'active' : ''}`}>
+                <span className={`status-dot ${isJoystickActive ? 'active' : 'idle'}`} />
+              </div>
+              <h3>Movement Control</h3>
+              <span className={`status-badge ${isJoystickActive ? 'active' : 'idle'}`}>
+                {isJoystickActive ? 'Moving' : 'Ready'}
+              </span>
+            </div>
+          </div>
 
+          <div className="controls-mode-row">
             <div className="control-mode-selector">
               <button
                 className={`mode-btn ${controlMode === 'joystick' ? 'active' : ''}`}
                 onClick={() => setControlMode('joystick')}
+                title="Virtual Joystick"
               >
                 <FontAwesomeIcon icon={faArrowsUpDownLeftRight} />
-                Joystick
+                <span>Joystick</span>
               </button>
               <button
                 className={`mode-btn ${controlMode === 'keyboard' ? 'active' : ''}`}
                 onClick={() => setControlMode('keyboard')}
+                title="Keyboard (WASD)"
               >
                 <FontAwesomeIcon icon={faKeyboard} />
-                Keyboard
+                <span>Keyboard</span>
               </button>
               <button
                 className={`mode-btn ${controlMode === 'gamepad' ? 'active' : ''}`}
                 onClick={() => {
                   setControlMode('gamepad');
-                  // User interaction activates gamepad API - check immediately
                   const gamepads = navigator.getGamepads();
                   const hasGamepad = Array.from(gamepads).some(g => g !== null);
                   setGamepadDetected(hasGamepad);
                 }}
+                title="Gamepad"
               >
                 <FontAwesomeIcon icon={faGamepad} />
-                Gamepad
+                <span>Gamepad</span>
               </button>
               <button
                 className={`mode-btn ${controlMode === 'location' ? 'active' : ''}`}
                 onClick={() => setControlMode('location')}
+                title="Location"
               >
                 <FontAwesomeIcon icon={faMapMarkerAlt} />
-                Location
+                <span>Location</span>
+              </button>
+            </div>
+            <div className="mode-settings-row">
+              <button
+                className="settings-btn"
+                onClick={() => {
+                  if (isFeatureEnabled('CUSTOM_ROS_COMMANDS')) {
+                    setShowInputBindingsModal(true);
+                  } else {
+                    showToast('Custom bindings coming soon', 'info');
+                  }
+                }}
+                title="Settings"
+              >
+                <FontAwesomeIcon icon={faCog} />
+                <span>Input Bindings</span>
               </button>
             </div>
           </div>
 
-          <div className="control-status">
-            <div className="status-row">
-              <span className="status-label">Mode:</span>
-              <span className="status-value">
-                {controlMode === 'joystick' ? 'Virtual Joystick' :
-                  controlMode === 'keyboard' ? 'Keyboard (WASD)' :
-                    controlMode === 'location' ? 'Location' :
-                      'Gamepad'}
-              </span>
+          <div className="control-info-panel">
+            <div className="speed-gauges">
+              <div className="speed-gauge">
+                <div className="gauge-header">
+                  <span className="gauge-label">FWD</span>
+                  <span className={`gauge-value ${currentSpeed.forward !== 0 ? 'active' : ''}`}>
+                    {((currentSpeed.forward / 0.5) * 100).toFixed(0)}%
+                  </span>
+                </div>
+                <div className="gauge-track">
+                  <div className="gauge-center" />
+                  <div
+                    className={`gauge-fill ${currentSpeed.forward > 0 ? 'forward' : currentSpeed.forward < 0 ? 'backward' : ''}`}
+                    style={{
+                      left: currentSpeed.forward < 0 ? `${50 + (currentSpeed.forward / 0.5) * 50}%` : '50%',
+                      width: `${Math.abs(currentSpeed.forward / 0.5) * 50}%`,
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="speed-gauge">
+                <div className="gauge-header">
+                  <span className="gauge-label">TURN</span>
+                  <span className={`gauge-value ${currentSpeed.turn !== 0 ? 'active' : ''}`}>
+                    {((-currentSpeed.turn / 1.0) * 100).toFixed(0)}%
+                  </span>
+                </div>
+                <div className="gauge-track">
+                  <div className="gauge-center" />
+                  <div
+                    className={`gauge-fill ${currentSpeed.turn < 0 ? 'left' : currentSpeed.turn > 0 ? 'right' : ''}`}
+                    style={{
+                      left: -currentSpeed.turn < 0 ? `${50 + (-currentSpeed.turn / 1.0) * 50}%` : '50%',
+                      width: `${Math.abs(currentSpeed.turn / 1.0) * 50}%`,
+                    }}
+                  />
+                </div>
+              </div>
             </div>
-            <div className="status-row">
-              <span className="status-label">Status:</span>
-              <span className={`status-value ${isJoystickActive ? 'active-status' : ''}`}>
-                {isJoystickActive ? 'Moving' : 'Idle'}
-              </span>
-            </div>
-          </div>
 
-          <div className="speed-indicators">
-            <div className="speed-meter">
-              <div className="speed-label">Forward</div>
-              <div className="speed-bar-container">
-                <div className="speed-bar-center-line" />
-                <div
-                  className="speed-bar forward"
-                  style={{
-                    left: currentSpeed.forward < 0 ? `${50 + (currentSpeed.forward / 0.5) * 50}%` : '50%',
-                    width: `${Math.abs(currentSpeed.forward / 0.5) * 50}%`,
-                    backgroundColor: currentSpeed.forward > 0 ? '#28a745' : currentSpeed.forward < 0 ? '#dc3545' : '#666'
-                  }}
-                />
-              </div>
-              <div className="speed-value">{((currentSpeed.forward / 0.5) * 100).toFixed(0)}%</div>
-            </div>
-            <div className="speed-meter">
-              <div className="speed-label">Turn</div>
-              <div className="speed-bar-container">
-                <div className="speed-bar-center-line" />
-                <div
-                  className="speed-bar turn"
-                  style={{
-                    left: -currentSpeed.turn < 0 ? `${50 + (-currentSpeed.turn / 1.0) * 50}%` : '50%',
-                    width: `${Math.abs(currentSpeed.turn / 1.0) * 50}%`,
-                    backgroundColor: currentSpeed.turn < 0 ? '#ffc107' : currentSpeed.turn > 0 ? '#17a2b8' : '#666'
-                  }}
-                />
-              </div>
-              <div className="speed-value">{((-currentSpeed.turn / 1.0) * 100).toFixed(0)}%</div>
-            </div>
-          </div>
-
-          {(controlMode === 'joystick' || controlMode === 'gamepad') && (
-            <div className="sensitivity-slider-container">
-              <div className="sensitivity-header">
-                <FontAwesomeIcon icon={faSliders} />
-                <span>Steering Sensitivity</span>
-              </div>
-              <div className="sensitivity-control">
-                <span className="sensitivity-label">Forgiving</span>
+            {(controlMode === 'joystick' || controlMode === 'gamepad') && (
+              <div className="sensitivity-row">
+                <span className="sensitivity-label">Sensitivity</span>
                 <input
                   type="range"
                   min="0"
@@ -856,164 +862,157 @@ export default function Teleop() {
                   onChange={(e) => handleSensitivityChange(parseInt(e.target.value, 10))}
                   className="sensitivity-slider"
                 />
-                <span className="sensitivity-label">Precise</span>
+                <span className="sensitivity-value">{steeringSensitivity}%</span>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
-          {controlMode === 'joystick' ? (
-            <div className="joystick-wrapper">
-              <svg className="joystick-zone-overlay" viewBox="0 0 220 220" width="220" height="220">
-                {(() => {
-                  const forwardZoneHalf = ((100 - steeringSensitivity) / 100) * 35;
-                  const transitionWidth = 25;
-                  const cx = 110, cy = 110, r = 95;
-                  const angleToPoint = (angle: number, radius: number) => {
-                    const rad = (angle - 90) * Math.PI / 180;
-                    return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
-                  };
-                  if (forwardZoneHalf < 1) return null;
-                  const fwdLeft = angleToPoint(-forwardZoneHalf, r);
-                  const fwdRight = angleToPoint(forwardZoneHalf, r);
-                  const transLeft = angleToPoint(-(forwardZoneHalf + transitionWidth), r);
-                  const transRight = angleToPoint(forwardZoneHalf + transitionWidth, r);
-                  const bwdLeft = angleToPoint(180 - forwardZoneHalf, r);
-                  const bwdRight = angleToPoint(180 + forwardZoneHalf, r);
-                  return (
-                    <>
-                      <path d={`M ${cx} ${cy} L ${fwdLeft.x} ${fwdLeft.y} A ${r} ${r} 0 0 1 ${fwdRight.x} ${fwdRight.y} Z`} fill="rgba(76, 175, 80, 0.1)" />
-                      <path d={`M ${cx} ${cy} L ${bwdRight.x} ${bwdRight.y} A ${r} ${r} 0 0 1 ${bwdLeft.x} ${bwdLeft.y} Z`} fill="rgba(76, 175, 80, 0.1)" />
-                      <line x1={cx} y1={cy} x2={fwdLeft.x} y2={fwdLeft.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
-                      <line x1={cx} y1={cy} x2={fwdRight.x} y2={fwdRight.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
-                      <line x1={cx} y1={cy} x2={transLeft.x} y2={transLeft.y} stroke="rgba(255, 183, 0, 0.3)" strokeWidth="1" strokeDasharray="2 4" />
-                      <line x1={cx} y1={cy} x2={transRight.x} y2={transRight.y} stroke="rgba(255, 183, 0, 0.3)" strokeWidth="1" strokeDasharray="2 4" />
-                      <line x1={cx} y1={cy} x2={bwdLeft.x} y2={bwdLeft.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
-                      <line x1={cx} y1={cy} x2={bwdRight.x} y2={bwdRight.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
-                    </>
-                  );
-                })()}
-              </svg>
-              <Joystick
-                onChange={handleJoystickChange}
-                onEnd={handleJoystickEnd}
-                size={220}
-                knobSize={90}
-              />
-            </div>
-          ) : controlMode === 'keyboard' ? (
-            <div className="keyboard-controls-hint">
-              <div className="keyboard-hint-content">
-                <h3>Keyboard Controls</h3>
-                <div className="keyboard-layout">
-                  <div className="key-row">
-                    <div className={`key-hint ${pressedKeys.includes('KeyW') ? 'pressed' : ''}`}>
-                      <kbd>W</kbd>
-                      <span>Forward</span>
+          <div className="control-content-area">
+            {controlMode === 'joystick' ? (
+              <div className="joystick-wrapper">
+                <svg className="joystick-zone-overlay" viewBox="0 0 220 220" width="220" height="220">
+                  {(() => {
+                    const forwardZoneHalf = ((100 - steeringSensitivity) / 100) * 35;
+                    const transitionWidth = 25;
+                    const cx = 110, cy = 110, r = 95;
+                    const angleToPoint = (angle: number, radius: number) => {
+                      const rad = (angle - 90) * Math.PI / 180;
+                      return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
+                    };
+                    if (forwardZoneHalf < 1) return null;
+                    const fwdLeft = angleToPoint(-forwardZoneHalf, r);
+                    const fwdRight = angleToPoint(forwardZoneHalf, r);
+                    const transLeft = angleToPoint(-(forwardZoneHalf + transitionWidth), r);
+                    const transRight = angleToPoint(forwardZoneHalf + transitionWidth, r);
+                    const bwdLeft = angleToPoint(180 - forwardZoneHalf, r);
+                    const bwdRight = angleToPoint(180 + forwardZoneHalf, r);
+                    return (
+                      <>
+                        <path d={`M ${cx} ${cy} L ${fwdLeft.x} ${fwdLeft.y} A ${r} ${r} 0 0 1 ${fwdRight.x} ${fwdRight.y} Z`} fill="rgba(76, 175, 80, 0.1)" />
+                        <path d={`M ${cx} ${cy} L ${bwdRight.x} ${bwdRight.y} A ${r} ${r} 0 0 1 ${bwdLeft.x} ${bwdLeft.y} Z`} fill="rgba(76, 175, 80, 0.1)" />
+                        <line x1={cx} y1={cy} x2={fwdLeft.x} y2={fwdLeft.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                        <line x1={cx} y1={cy} x2={fwdRight.x} y2={fwdRight.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                        <line x1={cx} y1={cy} x2={transLeft.x} y2={transLeft.y} stroke="rgba(255, 183, 0, 0.3)" strokeWidth="1" strokeDasharray="2 4" />
+                        <line x1={cx} y1={cy} x2={transRight.x} y2={transRight.y} stroke="rgba(255, 183, 0, 0.3)" strokeWidth="1" strokeDasharray="2 4" />
+                        <line x1={cx} y1={cy} x2={bwdLeft.x} y2={bwdLeft.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                        <line x1={cx} y1={cy} x2={bwdRight.x} y2={bwdRight.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                      </>
+                    );
+                  })()}
+                </svg>
+                <Joystick
+                  onChange={handleJoystickChange}
+                  onEnd={handleJoystickEnd}
+                  size={200}
+                  knobSize={80}
+                />
+              </div>
+            ) : controlMode === 'keyboard' ? (
+              <div className="keyboard-controls-hint">
+                <div className="keyboard-hint-content">
+                  <h3>Keyboard Controls</h3>
+                  <div className="keyboard-layout">
+                    <div className="key-row">
+                      <div className={`key-hint ${pressedKeys.includes('KeyW') ? 'pressed' : ''}`}>
+                        <kbd>W</kbd>
+                        <span>Forward</span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="key-row">
-                    <div className={`key-hint ${pressedKeys.includes('KeyA') ? 'pressed' : ''}`}>
-                      <kbd>A</kbd>
-                      <span>Turn Left</span>
+                    <div className="key-row">
+                      <div className={`key-hint ${pressedKeys.includes('KeyA') ? 'pressed' : ''}`}>
+                        <kbd>A</kbd>
+                        <span>Turn Left</span>
+                      </div>
+                      <div className={`key-hint ${pressedKeys.includes('KeyS') ? 'pressed' : ''}`}>
+                        <kbd>S</kbd>
+                        <span>Backward</span>
+                      </div>
+                      <div className={`key-hint ${pressedKeys.includes('KeyD') ? 'pressed' : ''}`}>
+                        <kbd>D</kbd>
+                        <span>Turn Right</span>
+                      </div>
                     </div>
-                    <div className={`key-hint ${pressedKeys.includes('KeyS') ? 'pressed' : ''}`}>
-                      <kbd>S</kbd>
-                      <span>Backward</span>
-                    </div>
-                    <div className={`key-hint ${pressedKeys.includes('KeyD') ? 'pressed' : ''}`}>
-                      <kbd>D</kbd>
-                      <span>Turn Right</span>
-                    </div>
-                  </div>
-                  <div className="key-row">
-                    <div className={`key-hint ${pressedKeys.includes('Escape') ? 'pressed' : ''}`}>
-                      <kbd>ESC</kbd>
-                      <span>End Session</span>
+                    <div className="key-row">
+                      <div className={`key-hint ${pressedKeys.includes('Escape') ? 'pressed' : ''}`}>
+                        <kbd>ESC</kbd>
+                        <span>End Session</span>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ) : controlMode === 'location' ? (
-            <div className="location-controls-hint">
-              <div className="location-hint-content">
-                <FontAwesomeIcon icon={faMapMarkerAlt} className="location-icon" size="4x" />
-                <h3>Location Control</h3>
-                <p className="coming-soon-message">Coming Soon</p>
-                <p className="location-description">
-                  Navigate your robot to specific locations using map-based controls.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="gamepad-wrapper">
-              {gamepadDetected ? (
-                <div className="joystick-display-wrapper">
-                  <svg className="joystick-zone-overlay" viewBox="0 0 220 220" width="220" height="220">
-                    {(() => {
-                      const forwardZoneHalf = ((100 - steeringSensitivity) / 100) * 35;
-                      const transitionWidth = 25;
-                      const cx = 110, cy = 110, r = 95;
-                      const angleToPoint = (angle: number, radius: number) => {
-                        const rad = (angle - 90) * Math.PI / 180;
-                        return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
-                      };
-                      if (forwardZoneHalf < 1) return null;
-                      const fwdLeft = angleToPoint(-forwardZoneHalf, r);
-                      const fwdRight = angleToPoint(forwardZoneHalf, r);
-                      const transLeft = angleToPoint(-(forwardZoneHalf + transitionWidth), r);
-                      const transRight = angleToPoint(forwardZoneHalf + transitionWidth, r);
-                      const bwdLeft = angleToPoint(180 - forwardZoneHalf, r);
-                      const bwdRight = angleToPoint(180 + forwardZoneHalf, r);
-                      return (
-                        <>
-                          <path d={`M ${cx} ${cy} L ${fwdLeft.x} ${fwdLeft.y} A ${r} ${r} 0 0 1 ${fwdRight.x} ${fwdRight.y} Z`} fill="rgba(76, 175, 80, 0.1)" />
-                          <path d={`M ${cx} ${cy} L ${bwdRight.x} ${bwdRight.y} A ${r} ${r} 0 0 1 ${bwdLeft.x} ${bwdLeft.y} Z`} fill="rgba(76, 175, 80, 0.1)" />
-                          <line x1={cx} y1={cy} x2={fwdLeft.x} y2={fwdLeft.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
-                          <line x1={cx} y1={cy} x2={fwdRight.x} y2={fwdRight.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
-                          <line x1={cx} y1={cy} x2={transLeft.x} y2={transLeft.y} stroke="rgba(255, 183, 0, 0.3)" strokeWidth="1" strokeDasharray="2 4" />
-                          <line x1={cx} y1={cy} x2={transRight.x} y2={transRight.y} stroke="rgba(255, 183, 0, 0.3)" strokeWidth="1" strokeDasharray="2 4" />
-                          <line x1={cx} y1={cy} x2={bwdLeft.x} y2={bwdLeft.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
-                          <line x1={cx} y1={cy} x2={bwdRight.x} y2={bwdRight.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
-                        </>
-                      );
-                    })()}
-                  </svg>
-                  <div className="joystick-display" style={{ width: 220, height: 220 }}>
-                    <div className="joystick-ring" />
-                    <div
-                      className="joystick-knob"
-                      style={{
-                        width: 90,
-                        height: 90,
-                        transform: `translate(calc(-50% + ${-currentSpeed.turn / 0.5 * 65}px), calc(-50% + ${currentSpeed.forward / 0.5 * -65}px))`,
-                      }}
-                    />
-                  </div>
+            ) : controlMode === 'location' ? (
+              <div className="location-controls-hint">
+                <div className="location-hint-content">
+                  <FontAwesomeIcon icon={faMapMarkerAlt} className="location-icon" size="3x" />
+                  <h3>Location Control</h3>
+                  <p className="coming-soon-message">Coming Soon</p>
                 </div>
-              ) : (
-                <div className="gamepad-visual">
-                  <FontAwesomeIcon icon={faGamepad} className="gamepad-icon" size="6x" />
-                  <div className="gamepad-status not-detected-status">
-                    <div className="gamepad-hint">
-                      {controlMode === 'gamepad'
-                        ? 'Press a button on your controller to start'
-                        : 'Switch to Gamepad mode to use your controller'}
+              </div>
+            ) : (
+              <div className="gamepad-wrapper">
+                {gamepadDetected ? (
+                  <div className="joystick-display-wrapper">
+                    <svg className="joystick-zone-overlay" viewBox="0 0 200 200" width="200" height="200">
+                      {(() => {
+                        const forwardZoneHalf = ((100 - steeringSensitivity) / 100) * 35;
+                        const transitionWidth = 25;
+                        const cx = 100, cy = 100, r = 85;
+                        const angleToPoint = (angle: number, radius: number) => {
+                          const rad = (angle - 90) * Math.PI / 180;
+                          return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
+                        };
+                        if (forwardZoneHalf < 1) return null;
+                        const fwdLeft = angleToPoint(-forwardZoneHalf, r);
+                        const fwdRight = angleToPoint(forwardZoneHalf, r);
+                        const transLeft = angleToPoint(-(forwardZoneHalf + transitionWidth), r);
+                        const transRight = angleToPoint(forwardZoneHalf + transitionWidth, r);
+                        const bwdLeft = angleToPoint(180 - forwardZoneHalf, r);
+                        const bwdRight = angleToPoint(180 + forwardZoneHalf, r);
+                        return (
+                          <>
+                            <path d={`M ${cx} ${cy} L ${fwdLeft.x} ${fwdLeft.y} A ${r} ${r} 0 0 1 ${fwdRight.x} ${fwdRight.y} Z`} fill="rgba(76, 175, 80, 0.1)" />
+                            <path d={`M ${cx} ${cy} L ${bwdRight.x} ${bwdRight.y} A ${r} ${r} 0 0 1 ${bwdLeft.x} ${bwdLeft.y} Z`} fill="rgba(76, 175, 80, 0.1)" />
+                            <line x1={cx} y1={cy} x2={fwdLeft.x} y2={fwdLeft.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                            <line x1={cx} y1={cy} x2={fwdRight.x} y2={fwdRight.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                            <line x1={cx} y1={cy} x2={transLeft.x} y2={transLeft.y} stroke="rgba(255, 183, 0, 0.3)" strokeWidth="1" strokeDasharray="2 4" />
+                            <line x1={cx} y1={cy} x2={transRight.x} y2={transRight.y} stroke="rgba(255, 183, 0, 0.3)" strokeWidth="1" strokeDasharray="2 4" />
+                            <line x1={cx} y1={cy} x2={bwdLeft.x} y2={bwdLeft.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                            <line x1={cx} y1={cy} x2={bwdRight.x} y2={bwdRight.y} stroke="rgba(76, 175, 80, 0.6)" strokeWidth="1.5" strokeDasharray="4 3" />
+                          </>
+                        );
+                      })()}
+                    </svg>
+                    <div className="joystick-display" style={{ width: 200, height: 200 }}>
+                      <div className="joystick-ring" />
+                      <div
+                        className="joystick-knob"
+                        style={{
+                          width: 80,
+                          height: 80,
+                          transform: `translate(calc(-50% + ${-currentSpeed.turn / 0.5 * 60}px), calc(-50% + ${currentSpeed.forward / 0.5 * -60}px))`,
+                        }}
+                      />
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-          )}
+                ) : (
+                  <div className="gamepad-visual">
+                    <FontAwesomeIcon icon={faGamepad} className="gamepad-icon" size="4x" />
+                    <div className="gamepad-hint">Press a button to start</div>
+                  </div>
+                )}
+              </div>
+            )}
 
-          <div className="control-hints">
-            <div className="hint-item">
-              <span className="hint-icon">↑↓</span>
-              <span>Forward/Backward</span>
-            </div>
-            <div className="hint-item">
-              <span className="hint-icon">←→</span>
-              <span>Turn Left/Right</span>
+            <div className="control-hints">
+              <div className="hint-item">
+                <span className="hint-icon">↑↓</span>
+                <span>Forward/Backward</span>
+              </div>
+              <div className="hint-item">
+                <span className="hint-icon">←→</span>
+                <span>Turn Left/Right</span>
+              </div>
             </div>
           </div>
 
@@ -1027,30 +1026,6 @@ export default function Teleop() {
           </button>
         </div>
 
-        {/* Settings Card */}
-        <div className="teleop-settings-card">
-          <div className="settings-header">
-            <FontAwesomeIcon icon={faCog} />
-            <h3>Settings</h3>
-          </div>
-          <div className="settings-content">
-            {isFeatureEnabled('CUSTOM_ROS_COMMANDS') ? (
-              <button
-                type="button"
-                className="settings-button"
-                onClick={() => setShowInputBindingsModal(true)}
-              >
-                <FontAwesomeIcon icon={faKeyboard} />
-                <span>Input Bindings</span>
-              </button>
-            ) : (
-              <div className="settings-coming-soon">
-                <FontAwesomeIcon icon={faLock} />
-                <span>Custom bindings coming soon</span>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
       <PurchaseCreditsModal

@@ -25,7 +25,6 @@ const client = generateClient<Schema>();
 export const PayoutManagement = () => {
   const { user } = useAuthStatus();
   
-  // Payouts state
   const [payouts, setPayouts] = useState<Payout[]>([]);
   const [loadingPayouts, setLoadingPayouts] = useState(false);
   const [payoutsPaginationToken, setPayoutsPaginationToken] = useState<string | null>(null);
@@ -41,6 +40,7 @@ export const PayoutManagement = () => {
     }
 
     setLoadingPayouts(true);
+    setError(null);
     try {
       const result = await client.queries.listPartnerPayoutsLambda({ 
         limit: 50,
@@ -49,23 +49,48 @@ export const PayoutManagement = () => {
       });
       
       let payoutsData: PayoutsResponse | null = null;
-      if (typeof result.data === 'string') {
+      const raw = result.data;
+      if (typeof raw === 'string') {
         try {
-          const firstParse = JSON.parse(result.data);
-          if (typeof firstParse === 'string') {
-            payoutsData = JSON.parse(firstParse);
+          const firstParse = JSON.parse(raw);
+          if (firstParse?.statusCode !== undefined && firstParse?.statusCode !== 200) {
+            const errBody = typeof firstParse.body === 'string' ? JSON.parse(firstParse.body || '{}') : firstParse.body;
+            setError(errBody?.error || `Request failed (${firstParse.statusCode})`);
+            setPayouts([]);
+            setPayoutsPaginationToken(null);
+            return;
+          }
+          if (firstParse?.statusCode === 200 && firstParse?.body != null) {
+            payoutsData = typeof firstParse.body === 'string' ? JSON.parse(firstParse.body) : firstParse.body;
           } else {
-            payoutsData = firstParse;
+            payoutsData = typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
           }
         } catch (e) {
           payoutsData = { success: false };
         }
-      } else {
-        payoutsData = result.data as typeof payoutsData;
+      } else if (raw && typeof raw === 'object') {
+        const statusCode = (raw as { statusCode?: number }).statusCode;
+        if (statusCode !== undefined && statusCode !== 200) {
+          const body = (raw as { body?: string | object }).body;
+          const errBody = typeof body === 'string' ? (() => { try { return JSON.parse(body); } catch { return {}; } })() : (body || {});
+          setError((errBody as { error?: string }).error || `Request failed (${statusCode})`);
+          setPayouts([]);
+          setPayoutsPaginationToken(null);
+          return;
+        }
+        if (statusCode === 200 && (raw as { body?: unknown }).body != null) {
+          const body = (raw as { body: string | object }).body;
+          try {
+            payoutsData = typeof body === 'string' ? JSON.parse(body) : body as PayoutsResponse;
+          } catch (e) {
+            payoutsData = { success: false };
+          }
+        } else {
+          payoutsData = raw as PayoutsResponse;
+        }
       }
 
       if (payoutsData?.success && payoutsData.payouts) {
-        // Sort payouts: by earnings (highest first) or by date (newest first)
         const sortedPayouts = [...payoutsData.payouts].sort((a, b) => {
           if (sortBy === 'earnings') {
             // Sort by creditsEarnedDollars (highest first)
@@ -82,6 +107,9 @@ export const PayoutManagement = () => {
       } else {
         setPayouts([]);
         setPayoutsPaginationToken(null);
+        if (payoutsData && !payoutsData.success) {
+          setError("Payout list request did not succeed. Check console for details.");
+        }
       }
     } catch (err) {
       logger.error("Failed to load payouts:", err);
@@ -96,8 +124,8 @@ export const PayoutManagement = () => {
     if (user?.email && hasAdminAccess(user.email)) {
       loadPayouts(null, payoutStatusFilter);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payoutStatusFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payoutStatusFilter, user?.email]);
 
   const handlePayoutsNextPage = () => {
     if (payoutsPaginationToken) {
@@ -121,15 +149,10 @@ export const PayoutManagement = () => {
     setSuccess(null);
 
     try {
-      logger.log("🔄 Processing payout:", payoutId);
-      
       const result = await client.mutations.processPayoutLambda({
         payoutIds: [payoutId],
       });
 
-      logger.log("📦 Raw result from processPayoutLambda:", result);
-
-      // Parse the JSON response
       let resultData: LambdaResponse<{ success?: boolean; totalDollars?: number; processedCount?: number; error?: string }> | null = null;
       if (typeof result.data === 'string') {
         try {
@@ -140,7 +163,7 @@ export const PayoutManagement = () => {
             resultData = firstParse;
           }
         } catch (e) {
-          logger.error("Failed to parse result.data as JSON:", e, "Raw data:", result.data);
+          logger.error("Failed to parse result.data as JSON:", e);
           setError(`Failed to parse response: ${result.data}`);
           return;
         }
@@ -148,10 +171,9 @@ export const PayoutManagement = () => {
         resultData = result.data as any;
       }
 
-      // Check for errors in the result
       if (result.errors && result.errors.length > 0) {
         const errorMessages = result.errors.map((e) => (e as unknown as GraphQLError).message || JSON.stringify(e)).join(', ');
-        logger.error("❌ GraphQL errors:", result.errors);
+        logger.error("GraphQL errors:", result.errors);
         setError(`GraphQL Error: ${errorMessages}`);
         return;
       }
@@ -160,7 +182,6 @@ export const PayoutManagement = () => {
         const body = typeof resultData.body === 'string' ? JSON.parse(resultData.body) : resultData.body;
         if (body.success) {
           setSuccess(`Successfully processed payout: $${body.totalDollars?.toFixed(2) || '0.00'}`);
-          // Reload payouts to reflect the updated status
           await loadPayouts(null, payoutStatusFilter);
         } else {
           setError(body.error || "Failed to process payout");
@@ -170,7 +191,7 @@ export const PayoutManagement = () => {
         setError(body?.error || "Failed to process payout");
       }
     } catch (err) {
-      logger.error("❌ Error processing payout:", err);
+      logger.error("Error processing payout:", err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(`Failed to process payout: ${errorMessage}`);
     } finally {
@@ -193,7 +214,6 @@ export const PayoutManagement = () => {
       return;
     }
 
-    // Add all IDs to processing set
     setProcessingPayouts(prev => {
       const newSet = new Set(prev);
       payoutIds.forEach(id => newSet.add(id));
@@ -203,15 +223,10 @@ export const PayoutManagement = () => {
     setSuccess(null);
 
     try {
-      logger.log("🔄 Processing multiple payouts:", payoutIds);
-      
       const result = await client.mutations.processPayoutLambda({
         payoutIds,
       });
 
-      logger.log("📦 Raw result from processPayoutLambda:", result);
-
-      // Parse the JSON response
       let resultData: LambdaResponse<{ success?: boolean; totalDollars?: number; processedCount?: number; error?: string }> | null = null;
       if (typeof result.data === 'string') {
         try {
@@ -222,7 +237,7 @@ export const PayoutManagement = () => {
             resultData = firstParse;
           }
         } catch (e) {
-          logger.error("Failed to parse result.data as JSON:", e, "Raw data:", result.data);
+          logger.error("Failed to parse result.data as JSON:", e);
           setError(`Failed to parse response: ${result.data}`);
           return;
         }
@@ -230,10 +245,9 @@ export const PayoutManagement = () => {
         resultData = result.data as any;
       }
 
-      // Check for errors in the result
       if (result.errors && result.errors.length > 0) {
         const errorMessages = result.errors.map((e) => (e as unknown as GraphQLError).message || JSON.stringify(e)).join(', ');
-        logger.error("❌ GraphQL errors:", result.errors);
+        logger.error("GraphQL errors:", result.errors);
         setError(`GraphQL Error: ${errorMessages}`);
         return;
       }
@@ -242,7 +256,6 @@ export const PayoutManagement = () => {
         const body = typeof resultData.body === 'string' ? JSON.parse(resultData.body) : resultData.body;
         if (body.success) {
           setSuccess(`Successfully processed ${body.processedCount || 0} payout(s): $${body.totalDollars?.toFixed(2) || '0.00'}`);
-          // Reload payouts to reflect the updated status
           await loadPayouts(null, payoutStatusFilter);
         } else {
           setError(body.error || "Failed to process payouts");
@@ -252,11 +265,10 @@ export const PayoutManagement = () => {
         setError(body?.error || "Failed to process payouts");
       }
     } catch (err) {
-      logger.error("❌ Error processing payouts:", err);
+      logger.error("Error processing payouts:", err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(`Failed to process payouts: ${errorMessage}`);
     } finally {
-      // Remove all IDs from processing set
       setProcessingPayouts(prev => {
         const newSet = new Set(prev);
         payoutIds.forEach(id => newSet.delete(id));
@@ -272,7 +284,6 @@ export const PayoutManagement = () => {
     }
 
     try {
-      // Create CSV header
       const headers = [
         'Date',
         'Partner Email',
@@ -291,7 +302,6 @@ export const PayoutManagement = () => {
         'Duration (minutes)',
       ];
 
-      // Create CSV rows
       const rows = payouts.map(payout => [
         payout.createdAt ? new Date(payout.createdAt).toISOString() : '',
         payout.partnerEmail || '',
@@ -310,7 +320,6 @@ export const PayoutManagement = () => {
         payout.durationMinutes || '',
       ]);
 
-      // Escape CSV values (handle commas, quotes, newlines)
       const escapeCsvValue = (value: unknown): string => {
         if (value === null || value === undefined) return '';
         const str = String(value);
@@ -320,13 +329,11 @@ export const PayoutManagement = () => {
         return str;
       };
 
-      // Combine headers and rows
       const csvContent = [
         headers.map(escapeCsvValue).join(','),
         ...rows.map(row => row.map(escapeCsvValue).join(','))
       ].join('\n');
 
-      // Create blob and download
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
