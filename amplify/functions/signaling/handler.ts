@@ -472,6 +472,106 @@ function extractClientConnectionId(
 }
 
 /**
+ * Maps new protocol (Modulr Interface Spec) messages to internal InboundMessage format.
+ * Used for signalling.register, signalling.offer, signalling.answer, signalling.ice_candidate.
+ * Returns null for unknown new-protocol types.
+ *
+ * Field mappings per plan:
+ * - signalling.register: payload.agentId → robotId
+ * - signalling.offer: payload.robotId/agentId → robotId, payload.connectionId → clientConnectionId (when applicable), payload.sdp
+ * - signalling.answer: payload.connectionId → clientConnectionId, payload.sdp
+ * - signalling.ice_candidate: payload.connectionId → clientConnectionId, payload.candidate
+ */
+export function normalizeNewProtocol(raw: RawMessage): InboundMessage | null {
+  if (!raw || typeof raw !== 'object' || typeof raw.type !== 'string' || !raw.type.includes('.')) {
+    return null;
+  }
+
+  const p = (raw.payload && typeof raw.payload === 'object') ? raw.payload as Record<string, unknown> : {};
+  const typeStr = String(raw.type).toLowerCase();
+
+  switch (typeStr) {
+    case 'signalling.register': {
+      const agentId = typeof p.agentId === 'string' ? p.agentId.trim() : undefined;
+      return {
+        type: 'register',
+        robotId: agentId,
+        target: undefined,
+        clientConnectionId: undefined,
+        payload: { capabilities: p.capabilities, metadata: p.metadata },
+      };
+    }
+
+    case 'signalling.offer': {
+      const robotId = extractNewProtocolRobotId(raw, p);
+      const connectionId = typeof p.connectionId === 'string' ? p.connectionId.trim() : undefined;
+      const sdp = p.sdp;
+      return {
+        type: 'offer',
+        robotId,
+        target: 'robot',
+        clientConnectionId: connectionId,
+        payload: { sdp, sdpType: p.sdpType ?? 'offer', iceRestart: p.iceRestart },
+      };
+    }
+
+    case 'signalling.answer': {
+      const robotId = extractNewProtocolRobotId(raw, p);
+      const connectionId = typeof p.connectionId === 'string' ? p.connectionId.trim() : undefined;
+      const sdp = p.sdp;
+      return {
+        type: 'answer',
+        robotId,
+        target: 'client',
+        clientConnectionId: connectionId,
+        payload: { sdp, sdpType: p.sdpType ?? 'answer' },
+      };
+    }
+
+    case 'signalling.ice_candidate': {
+      const robotId = extractNewProtocolRobotId(raw, p);
+      const connectionId = typeof p.connectionId === 'string' ? p.connectionId.trim() : undefined;
+      const candidate = p.candidate;
+      return {
+        type: 'ice-candidate',
+        robotId,
+        target: undefined, // handleSignal infers from isFromRobot
+        clientConnectionId: connectionId,
+        payload: {
+          candidate,
+          sdpMid: p.sdpMid,
+          sdpMLineIndex: p.sdpMLineIndex,
+          usernameFragment: p.usernameFragment,
+        },
+      };
+    }
+
+    default:
+      return null;
+  }
+}
+
+/**
+ * Extracts robotId from new-protocol payload or top-level fields.
+ * Used for offer, answer, ice_candidate routing.
+ */
+function extractNewProtocolRobotId(raw: RawMessage, payload: Record<string, unknown>): string | undefined {
+  if (typeof payload.robotId === 'string' && payload.robotId.trim().length > 0) {
+    return payload.robotId.trim();
+  }
+  if (typeof payload.agentId === 'string' && payload.agentId.trim().length > 0) {
+    return payload.agentId.trim();
+  }
+  if (typeof raw.robotId === 'string' && raw.robotId.trim().length > 0) {
+    return raw.robotId.trim();
+  }
+  if (typeof raw.agentId === 'string' && raw.agentId.trim().length > 0) {
+    return raw.agentId.trim();
+  }
+  return undefined;
+}
+
+/**
  * Normalizes a raw message into the internal InboundMessage format.
  * 
  * This function handles multiple message formats and normalizes them into a consistent
@@ -1760,19 +1860,27 @@ async function handleSignal(
   }
   
   // If we detected it's from a robot but don't have clientConnectionId, try to get it from the original message
-  // This handles the case where normalizeMessage didn't extract it (e.g., if 'to' field wasn't recognized)
+  // This handles legacy 'to' field and new-protocol payload.connectionId
   if (isFromRobot && !msg.clientConnectionId) {
-    // Try to parse the original body to get the 'to' field
     try {
-      const rawBody = JSON.parse(event.body ?? '{}');
+      const rawBody = JSON.parse(event.body ?? '{}') as Record<string, unknown>;
       if (typeof rawBody.to === 'string' && rawBody.to.trim().length > 0 && rawBody.to !== robotId) {
-        // The 'to' field should be the client connection ID
         msg.clientConnectionId = rawBody.to.trim();
         console.log('[EXTRACTED_CLIENT_CONNECTION_ID]', {
           robotId,
           clientConnectionId: msg.clientConnectionId,
           fromOriginalTo: rawBody.to,
         });
+      } else {
+        const p = rawBody.payload as Record<string, unknown> | undefined;
+        if (p && typeof p.connectionId === 'string' && p.connectionId.trim().length > 0) {
+          msg.clientConnectionId = p.connectionId.trim();
+          console.log('[EXTRACTED_CLIENT_CONNECTION_ID]', {
+            robotId,
+            clientConnectionId: msg.clientConnectionId,
+            fromPayloadConnectionId: true,
+          });
+        }
       }
     } catch (e) {
       console.warn('Failed to extract clientConnectionId from original message:', e);
@@ -2235,8 +2343,25 @@ export async function handler(
   }
 
   // Normalize to our canonical shape
-  const msg = normalizeMessage(raw);
+  const msg: InboundMessage = messageIsNewProtocol
+    ? (normalizeNewProtocol(raw) ?? {})
+    : normalizeMessage(raw);
   const type = (msg.type || '').toString().trim().toLowerCase();
+
+  // Unknown new-protocol type: normalizeNewProtocol returned null
+  if (messageIsNewProtocol && !msg.type) {
+    const rawType = String(raw.type ?? '(unknown)');
+    console.warn('[UNKNOWN_NEW_PROTOCOL_TYPE]', {
+      connectionId,
+      type: rawType,
+      version: messageVersion,
+    });
+    return errorResponse(400, 'Unknown message type', {
+      type: 'signalling.error',
+      code: 'UNSUPPORTED_MESSAGE_TYPE',
+      message: `Unsupported new-protocol message type: ${rawType}`,
+    });
+  }
 
   // Log incoming message
   console.log('[MESSAGE_RECEIVED]', {

@@ -4,6 +4,26 @@
 
 // amplify/functions/signaling/handler.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type {
+  APIGatewayProxyEvent,
+  APIGatewayEventRequestContext,
+} from 'aws-lambda';
+
+/** Builds a minimal requestContext for WebSocket tests. Uses assertion to satisfy strict AWS types. */
+function makeRequestContext(
+  routeKey: string,
+  connectionId: string
+): APIGatewayEventRequestContext {
+  return { routeKey, connectionId } as APIGatewayEventRequestContext;
+}
+
+/** Minimal event shape for handler tests. Accepts partial object; cast via unknown to satisfy APIGatewayProxyEvent. */
+function asHandlerEvent(event: Record<string, unknown>): APIGatewayProxyEvent {
+  return event as unknown as APIGatewayProxyEvent;
+}
+
+/** AWS SDK command shape for mock table name inspection. */
+type CommandWithInput = { input?: { TableName?: string }; TableName?: string };
 
 // ---------- Hoisted fns so mocks can reference them safely ----------
 const { ddbSend, apigwSend } = vi.hoisted(() => {
@@ -24,7 +44,7 @@ process.env.AWS_REGION = 'us-east-1';
 
 // ---------- Mock AWS SDK v3 clients ----------
 vi.mock('@aws-sdk/client-dynamodb', async () => {
-  const actual = await vi.importActual<any>('@aws-sdk/client-dynamodb');
+  const actual = await vi.importActual<Record<string, unknown>>('@aws-sdk/client-dynamodb');
   class MockDynamoDBClient {
     send = ddbSend;
   }
@@ -33,7 +53,7 @@ vi.mock('@aws-sdk/client-dynamodb', async () => {
 
 // Mock DynamoDBDocumentClient
 vi.mock('@aws-sdk/lib-dynamodb', async () => {
-  const actual = await vi.importActual<any>('@aws-sdk/lib-dynamodb');
+  const actual = await vi.importActual<Record<string, unknown>>('@aws-sdk/lib-dynamodb');
   return {
     ...actual,
     DynamoDBDocumentClient: {
@@ -45,9 +65,9 @@ vi.mock('@aws-sdk/lib-dynamodb', async () => {
 });
 
 vi.mock('@aws-sdk/client-apigatewaymanagementapi', async () => {
-  const actual = await vi.importActual<any>('@aws-sdk/client-apigatewaymanagementapi');
+  const actual = await vi.importActual<Record<string, unknown>>('@aws-sdk/client-apigatewaymanagementapi');
   class MockApiGwMgmtClient {
-    constructor(_: any) {}
+    constructor(_config?: unknown) {}
     send = apigwSend;
   }
   return { ...actual, ApiGatewayManagementApiClient: MockApiGwMgmtClient };
@@ -61,11 +81,11 @@ const { jwtVerifyMock } = vi.hoisted(() => {
 });
 
 vi.mock('jose', async () => {
-  const actual = await vi.importActual<any>('jose');
+  const actual = await vi.importActual<Record<string, unknown>>('jose');
   return {
     ...actual,
     jwtVerify: jwtVerifyMock,
-    createRemoteJWKSet: vi.fn(() => ({} as any)), // Mock JWKS
+    createRemoteJWKSet: vi.fn(() => ({} as unknown)), // Mock JWKS
   };
 });
 
@@ -75,6 +95,7 @@ import {
   isNewProtocol,
   extractNewProtocolVersion,
   isSupportedProtocolVersion,
+  normalizeNewProtocol,
 } from './handler';
 import {
   PutItemCommand,
@@ -122,13 +143,11 @@ beforeEach(() => {
   
   // Default mock: handle blacklist checks automatically (always allow, not revoked)
   // Tests can use mockResolvedValueOnce to override specific calls
-  ddbSend.mockImplementation(async (command: any) => {
+  ddbSend.mockImplementation(async (command: unknown) => {
     // Check if this is a blacklist check by inspecting the command
     if (command instanceof GetItemCommand) {
-      // Try to get table name from command - it might be in different places
-      const tableName = (command as any).input?.TableName 
-        || (command as any).TableName
-        || (command.input && command.input.TableName);
+      const cmd = command as CommandWithInput;
+      const tableName = cmd.input?.TableName ?? cmd.TableName;
       
       if (tableName === 'LocalRevokedTokens' || tableName === process.env.REVOKED_TOKENS_TABLE) {
         // This is a blacklist check - return empty (not revoked)
@@ -213,20 +232,22 @@ describe('protocol detection (Stage 1)', () => {
   });
 
   describe('protocol persistence and mismatch', () => {
-    it('handles new-protocol message without crashing (returns 400 unknown type until Stage 2)', async () => {
-      // Connection lookup returns connection with userId
+    it('handles new-protocol signalling.register (Stage 2: maps to handleRegister)', async () => {
+      // Connection lookup returns connection with userId (robot owner)
       ddbSend.mockResolvedValueOnce({
         Item: {
-          userId: { S: 'user-1' },
-          username: { S: 'user-1' },
-          groups: { S: 'USERS' },
+          userId: { S: 'owner-1' },
+          username: { S: 'owner-1' },
+          groups: { S: 'PARTNERS' },
         },
       });
       // UpdateItem for protocol persistence (will persist modulr-v0)
       ddbSend.mockResolvedValueOnce({});
-      const token = mkToken({ sub: 'user-1' });
-      const resp = await handler({
-        requestContext: { routeKey: '$default', connectionId: 'C-1' } as any,
+      // PutItemCommand for robot presence (handleRegister)
+      ddbSend.mockResolvedValueOnce({});
+      const token = mkToken({ sub: 'owner-1' });
+      const resp = await handler(asHandlerEvent({
+        requestContext: makeRequestContext('$default', 'R-1'),
         queryStringParameters: { token },
         body: JSON.stringify({
           type: 'signalling.register',
@@ -235,11 +256,195 @@ describe('protocol detection (Stage 1)', () => {
           timestamp: new Date().toISOString(),
           payload: { agentId: 'robot-123' },
         }),
-      } as any);
-      // Stage 1: new protocol messages hit "unknown message type" until Stage 2 adds normalizeNewProtocol
-      expect(resp.statusCode).toBe(400);
-      expect(resp.body).toContain('Unknown message type');
+      }));
+      expect(resp.statusCode).toBe(200);
+      const putCall = ddbSend.mock.calls.find((c: unknown[]) => c[0] instanceof PutItemCommand);
+      expect(putCall).toBeDefined();
+      expect(putCall![0].input?.Item?.robotId?.S).toBe('robot-123');
     });
+  });
+});
+
+// ===================================================================
+// Stage 2: Inbound mapping (normalizeNewProtocol)
+// ===================================================================
+
+describe('normalizeNewProtocol (Stage 2)', () => {
+  describe('signalling.register', () => {
+    it('maps payload.agentId to robotId and type to register', () => {
+      const out = normalizeNewProtocol({
+        type: 'signalling.register',
+        version: '0.0',
+        payload: { agentId: 'robot-001', capabilities: { videoCodecs: ['H264'] } },
+      });
+      expect(out).not.toBeNull();
+      expect(out!.type).toBe('register');
+      expect(out!.robotId).toBe('robot-001');
+      expect(out!.payload?.capabilities).toEqual({ videoCodecs: ['H264'] });
+    });
+    it('returns msg with undefined robotId when agentId missing (handler will validate)', () => {
+      const out = normalizeNewProtocol({
+        type: 'signalling.register',
+        version: '0.0',
+        payload: {},
+      });
+      expect(out).not.toBeNull();
+      expect(out!.type).toBe('register');
+      expect(out!.robotId).toBeUndefined();
+    });
+  });
+
+  describe('signalling.offer', () => {
+    it('maps payload fields to internal format', () => {
+      const out = normalizeNewProtocol({
+        type: 'signalling.offer',
+        version: '0.0',
+        payload: {
+          robotId: 'robot-x',
+          connectionId: 'C-client',
+          sdp: 'v=0...',
+          sdpType: 'offer',
+        },
+      });
+      expect(out).not.toBeNull();
+      expect(out!.type).toBe('offer');
+      expect(out!.robotId).toBe('robot-x');
+      expect(out!.clientConnectionId).toBe('C-client');
+      expect(out!.payload?.sdp).toBe('v=0...');
+      expect(out!.target).toBe('robot');
+    });
+    it('extracts robotId from payload.agentId as fallback', () => {
+      const out = normalizeNewProtocol({
+        type: 'signalling.offer',
+        version: '0.0',
+        payload: { agentId: 'robot-y', sdp: 'v=0...', sdpType: 'offer' },
+      });
+      expect(out!.robotId).toBe('robot-y');
+    });
+  });
+
+  describe('signalling.answer', () => {
+    it('maps payload.connectionId and sdp', () => {
+      const out = normalizeNewProtocol({
+        type: 'signalling.answer',
+        version: '0.0',
+        payload: {
+          robotId: 'robot-z',
+          connectionId: 'C-target',
+          sdp: 'v=0...',
+          sdpType: 'answer',
+        },
+      });
+      expect(out).not.toBeNull();
+      expect(out!.type).toBe('answer');
+      expect(out!.robotId).toBe('robot-z');
+      expect(out!.clientConnectionId).toBe('C-target');
+      expect(out!.target).toBe('client');
+    });
+  });
+
+  describe('signalling.ice_candidate', () => {
+    it('maps payload.candidate and connectionId', () => {
+      const out = normalizeNewProtocol({
+        type: 'signalling.ice_candidate',
+        version: '0.0',
+        payload: {
+          robotId: 'robot-w',
+          connectionId: 'C-client',
+          candidate: 'candidate:0 1 UDP 2122252543 192.0.2.3 54400 typ host',
+          sdpMid: '0',
+          sdpMLineIndex: 0,
+        },
+      });
+      expect(out).not.toBeNull();
+      expect(out!.type).toBe('ice-candidate');
+      expect(out!.robotId).toBe('robot-w');
+      expect(out!.clientConnectionId).toBe('C-client');
+      expect(out!.payload?.candidate).toContain('192.0.2.3');
+    });
+  });
+
+  describe('unknown new-protocol type', () => {
+    it('returns null for unrecognized type', () => {
+      expect(normalizeNewProtocol({ type: 'signalling.unknown', version: '0.0' })).toBeNull();
+      expect(normalizeNewProtocol({ type: 'agent.movement', version: '0.0' })).toBeNull();
+    });
+    it('returns null when type has no dot (not new protocol)', () => {
+      expect(normalizeNewProtocol({ type: 'register' })).toBeNull();
+    });
+  });
+});
+
+describe('Stage 2: new-protocol integration', () => {
+  it('signalling.offer with robotId routes to handleSignal and forwards to robot', async () => {
+    // Connection lookup for auth
+    ddbSend.mockResolvedValueOnce({
+      Item: {
+        userId: { S: 'user-1' },
+        username: { S: 'user-1' },
+        groups: { S: 'USERS' },
+      },
+    });
+    ddbSend.mockResolvedValueOnce({}); // UpdateItem protocol
+    ddbSend.mockResolvedValueOnce({
+      Item: { connectionId: { S: 'R-1' }, ownerUserId: { S: 'owner-1' } },
+    });
+    ddbSend.mockResolvedValueOnce({
+      Item: { username: { S: 'user-1' }, email: { S: 'user-1@example.com' } },
+    });
+    apigwSend.mockResolvedValueOnce({});
+
+    const token = mkToken({ sub: 'user-1' });
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-1'),
+      queryStringParameters: { token },
+      body: JSON.stringify({
+        type: 'signalling.offer',
+        version: '0.0',
+        id: 'offer-1',
+        timestamp: new Date().toISOString(),
+        payload: {
+          robotId: 'robot-1',
+          connectionId: 'C-1',
+          sdp: 'v=0...',
+          sdpType: 'offer',
+        },
+      }),
+    }));
+
+    expect(resp.statusCode).toBe(200);
+    expect(apigwSend).toHaveBeenCalled();
+    expect(apigwSend.mock.calls[0][0]).toBeInstanceOf(PostToConnectionCommand);
+    const forwarded = JSON.parse(Buffer.from(apigwSend.mock.calls[0][0].input.Data).toString('utf-8'));
+    expect(forwarded.type).toBe('offer');
+    expect(forwarded.to).toBe('robot-1');
+  });
+
+  it('unknown new-protocol type returns 400 with signalling.error', async () => {
+    ddbSend.mockResolvedValueOnce({
+      Item: {
+        userId: { S: 'user-1' },
+        username: { S: 'user-1' },
+        groups: { S: 'USERS' },
+      },
+    });
+    ddbSend.mockResolvedValueOnce({});
+
+    const token = mkToken({ sub: 'user-1' });
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-1'),
+      queryStringParameters: { token },
+      body: JSON.stringify({
+        type: 'signalling.unknown',
+        version: '0.0',
+        payload: {},
+      }),
+    }));
+
+    expect(resp.statusCode).toBe(400);
+    const body = JSON.parse(resp.body);
+    expect(body.error).toBe('Unknown message type');
+    expect(body.code).toBe('UNSUPPORTED_MESSAGE_TYPE');
   });
 });
 
@@ -254,10 +459,10 @@ describe('$connect', () => {
     ddbSend.mockResolvedValueOnce({}); // PutItemCommand
     const token = mkToken({ sub: 'u1', 'cognito:groups': ['ADMINS'] });
 
-    const resp = await handler({
-      requestContext: { routeKey: '$connect', connectionId: 'C-1' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$connect', 'C-1'),
       queryStringParameters: { token },
-    } as any);
+    }));
 
     expect(resp.statusCode).toBe(200);
     // Blacklist check + user invalidation check (default mock) + PutItemCommand
@@ -274,11 +479,11 @@ describe('register', () => {
     ddbSend.mockResolvedValueOnce({}); // PutItemCommand
 
     const token = mkToken({ sub: 'owner-1' });
-    const resp = await handler({
-      requestContext: { routeKey: '$default', connectionId: 'R-1' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'R-1'),
       queryStringParameters: { token },
       body: JSON.stringify({ type: 'register', robotId: 'robot-1' }),
-    } as any);
+    }));
 
     expect(resp.statusCode).toBe(200);
     // Connection lookup + PutItemCommand (blacklist/invalidation handled by default mock)
@@ -312,15 +517,15 @@ describe('offer forwarding', () => {
     apigwSend.mockResolvedValueOnce({});
 
     const token = mkToken({ sub: 'owner-1' });
-    const resp = await handler({
-      requestContext: { routeKey: '$default', connectionId: 'C-1' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-1'),
       queryStringParameters: { token },
       body: JSON.stringify({
         type: 'offer',
         robotId: 'robot-1',
         payload: { type: 'offer', sdp: 'v=0...' },
       }),
-    } as any);
+    }));
 
     expect(resp.statusCode).toBe(200);
     expect(apigwSend).toHaveBeenCalled();
@@ -330,9 +535,9 @@ describe('offer forwarding', () => {
 
 describe('$disconnect', () => {
   it('deletes connection row', async () => {
-    const resp = await handler({
-      requestContext: { routeKey: '$disconnect', connectionId: 'C-1' } as any,
-    } as any);
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$disconnect', 'C-1'),
+    }));
     expect(resp.statusCode).toBe(200);
     const deleteCall = ddbSend.mock.calls.find((c) => c[0] instanceof DeleteItemCommand);
     expect(deleteCall).toBeDefined();
@@ -345,10 +550,10 @@ describe('$disconnect', () => {
 
 describe('auth & validation errors', () => {
   it('unauthorized when missing token on $connect', async () => {
-    const resp = await handler({
-      requestContext: { routeKey: '$connect', connectionId: 'C-2' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$connect', 'C-2'),
       queryStringParameters: {}, // no token
-    } as any);
+    }));
 
     expect(resp.statusCode).toBe(401);
     expect(ddbSend).not.toHaveBeenCalled();
@@ -356,21 +561,21 @@ describe('auth & validation errors', () => {
 
   it('400 when register missing robotId', async () => {
     const token = mkToken({ sub: 'owner-2' });
-    const resp = await handler({
-      requestContext: { routeKey: '$default', connectionId: 'R-2' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'R-2'),
       queryStringParameters: { token },
       body: JSON.stringify({ type: 'register' }), // no robotId
-    } as any);
+    }));
     expect(resp.statusCode).toBe(400);
   });
 
   it('400 on invalid JSON body', async () => {
     const token = mkToken({ sub: 'u2' });
-    const resp = await handler({
-      requestContext: { routeKey: '$default', connectionId: 'C-3' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-3'),
       queryStringParameters: { token },
       body: '{not-json',
-    } as any);
+    }));
     expect(resp.statusCode).toBe(400);
   });
 
@@ -380,8 +585,8 @@ describe('auth & validation errors', () => {
     ddbSend.mockResolvedValueOnce({ Item: { connectionId: { S: 'R-X' } } });
 
     const token = mkToken({ sub: 'owner-X' });
-    const resp = await handler({
-      requestContext: { routeKey: '$default', connectionId: 'C-X' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-X'),
       queryStringParameters: { token },
       body: JSON.stringify({
         type: 'offer',
@@ -389,7 +594,7 @@ describe('auth & validation errors', () => {
         target: 'weird', // invalid
         payload: { x: 1 },
       }),
-    } as any);
+    }));
     expect(resp.statusCode).toBe(400);
   });
 
@@ -408,8 +613,8 @@ describe('auth & validation errors', () => {
     });
 
     const token = mkToken({ sub: 'owner-Y' });
-    const resp = await handler({
-      requestContext: { routeKey: '$default', connectionId: 'R-Y' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'R-Y'),
       queryStringParameters: { token },
       body: JSON.stringify({
         type: 'answer',
@@ -418,7 +623,7 @@ describe('auth & validation errors', () => {
         // clientConnectionId omitted
         payload: { type: 'answer', sdp: '...' },
       }),
-    } as any);
+    }));
     // Note: The handler currently doesn't return 400 for this case - it uses a placeholder
     // The handler should validate this and return 400, but for now it returns 200
     // TODO: Add validation to handler to return 400 when target=client but clientConnectionId is missing
@@ -433,8 +638,8 @@ describe('robot offline & ICE', () => {
     ddbSend.mockResolvedValueOnce({ Item: undefined });
 
     const token = mkToken({ sub: 'owner-3' });
-    const resp = await handler({
-      requestContext: { routeKey: '$default', connectionId: 'C-4' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-4'),
       queryStringParameters: { token },
       body: JSON.stringify({
         type: 'offer',
@@ -442,7 +647,7 @@ describe('robot offline & ICE', () => {
         target: 'robot',
         payload: { type: 'offer', sdp: '...' },
       }),
-    } as any);
+    }));
 
     expect(resp.statusCode).toBe(404);
     expect(apigwSend).not.toHaveBeenCalled();
@@ -469,8 +674,8 @@ describe('robot offline & ICE', () => {
     apigwSend.mockResolvedValueOnce({});
 
     const token = mkToken({ sub: 'owner-4' });
-    const resp = await handler({
-      requestContext: { routeKey: '$default', connectionId: 'C-ice' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-ice'),
       queryStringParameters: { token },
       body: JSON.stringify({
         type: 'ice-candidate',
@@ -478,7 +683,7 @@ describe('robot offline & ICE', () => {
         target: 'robot',
         payload: { candidate: 'candidate:0 1 UDP 2122252543 192.0.2.3 54400 typ host' },
       }),
-    } as any);
+    }));
 
     expect(resp.statusCode).toBe(200);
     expect(apigwSend).toHaveBeenCalled();
@@ -510,11 +715,11 @@ describe('takeover', () => {
     ddbSend.mockResolvedValueOnce({ Items: [{ allowedUsers: { SS: ['owner-A@example.com'] } }] });
 
     const token = mkToken({ sub: 'user-B' }); // not owner, not admin
-    const resp = await handler({
-      requestContext: { routeKey: '$default', connectionId: 'C-t1' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-t1'),
       queryStringParameters: { token },
       body: JSON.stringify({ type: 'takeover', robotId: 'robot-A' }),
-    } as any);
+    }));
 
     expect(resp.statusCode).toBe(403);
     expect(apigwSend).not.toHaveBeenCalled();
@@ -543,11 +748,11 @@ describe('takeover', () => {
     apigwSend.mockResolvedValueOnce({});
 
     const token = mkToken({ sub: 'admin-1', 'cognito:groups': ['ADMINS'] });
-    const resp = await handler({
-      requestContext: { routeKey: '$default', connectionId: 'C-t2' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-t2'),
       queryStringParameters: { token },
       body: JSON.stringify({ type: 'takeover', robotId: 'robot-A' }),
-    } as any);
+    }));
 
     expect(resp.statusCode).toBe(200);
     expect(apigwSend).toHaveBeenCalled();
@@ -560,11 +765,11 @@ describe('additional edge cases', () => {
     // Connection lookup for auth (returns empty, no JWT fallback since no token)
     ddbSend.mockResolvedValueOnce({ Item: undefined });
 
-    const resp = await handler({
-      requestContext: { routeKey: '$default', connectionId: 'C-unauth' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-unauth'),
       // no queryStringParameters (no token)
       body: JSON.stringify({ type: 'offer', robotId: 'robot-x' }),
-    } as any);
+    }));
 
     expect(resp.statusCode).toBe(401);
     expect(resp.body).toContain('Unauthorized');
@@ -578,14 +783,14 @@ describe('additional edge cases', () => {
 
     const token = mkToken({ sub: 'owner-xyz' });
 
-    const resp = await handler({
-      requestContext: { routeKey: '$default', connectionId: 'C-takeover' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-takeover'),
       queryStringParameters: { token },
       body: JSON.stringify({
         type: 'takeover',
         robotId: 'robot-offline',
       }),
-    } as any);
+    }));
 
     expect(resp.statusCode).toBe(404);
     expect(resp.body).toContain('robot offline');
@@ -600,8 +805,8 @@ describe('additional edge cases', () => {
 
     apigwSend.mockResolvedValueOnce({}); // PostToConnection success
 
-    const resp = await handler({
-      requestContext: { routeKey: '$default', connectionId: 'C-sender' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-sender'),
       queryStringParameters: { token },
       body: JSON.stringify({
         type: 'offer',
@@ -610,7 +815,7 @@ describe('additional edge cases', () => {
         clientConnectionId: 'C-target',
         payload: { type: 'offer', sdp: 'v=0...' },
       }),
-    } as any);
+    }));
 
     expect(resp.statusCode).toBe(200);
     expect(apigwSend).toHaveBeenCalledTimes(1);
@@ -655,8 +860,8 @@ describe('additional edge cases', () => {
     const err = Object.assign(new Error('gone'), { name: 'GoneException' });
     apigwSend.mockRejectedValueOnce(err);
 
-    const resp = await handler({
-      requestContext: { routeKey: '$default', connectionId: 'C-1' } as any,
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-1'),
       queryStringParameters: { token },
       body: JSON.stringify({
         type: 'offer',
@@ -664,7 +869,7 @@ describe('additional edge cases', () => {
         target: 'robot',
         payload: { type: 'offer', sdp: 'v=0...' },
       }),
-    } as any);
+    }));
 
     // We swallow the error, log it, and still return 200
     expect(resp.statusCode).toBe(200);
@@ -701,8 +906,8 @@ describe("Mike's Communication Schema Format", () => {
       apigwSend.mockResolvedValueOnce({});
 
       const token = mkToken({ sub: 'user-1' });
-      const resp = await handler({
-        requestContext: { routeKey: '$default', connectionId: 'C-1' } as any,
+      const resp = await handler(asHandlerEvent({
+        requestContext: makeRequestContext('$default', 'C-1'),
         queryStringParameters: { token },
         body: JSON.stringify({
           type: 'offer',
@@ -710,7 +915,7 @@ describe("Mike's Communication Schema Format", () => {
           from: 'C-1',
           sdp: 'v=0\r\no=- 123456 123456 IN IP4...',
         }),
-      } as any);
+      }));
 
       expect(resp.statusCode).toBe(200);
       expect(apigwSend).toHaveBeenCalled();
@@ -748,8 +953,8 @@ describe("Mike's Communication Schema Format", () => {
       apigwSend.mockResolvedValueOnce({});
 
       const token = mkToken({ sub: 'user-1' });
-      const resp = await handler({
-        requestContext: { routeKey: '$default', connectionId: 'C-1' } as any,
+      const resp = await handler(asHandlerEvent({
+        requestContext: makeRequestContext('$default', 'C-1'),
         queryStringParameters: { token },
         body: JSON.stringify({
           type: 'candidate',
@@ -761,7 +966,7 @@ describe("Mike's Communication Schema Format", () => {
             sdpMid: '0',
           },
         }),
-      } as any);
+      }));
 
       expect(resp.statusCode).toBe(200);
       
@@ -792,8 +997,8 @@ describe("Mike's Communication Schema Format", () => {
       apigwSend.mockResolvedValueOnce({});
 
       const token = mkToken({ sub: 'owner-1' });
-      const resp = await handler({
-        requestContext: { routeKey: '$default', connectionId: 'R-robot' } as any,
+      const resp = await handler(asHandlerEvent({
+        requestContext: makeRequestContext('$default', 'R-robot'),
         queryStringParameters: { token },
         body: JSON.stringify({
           type: 'answer',
@@ -801,7 +1006,7 @@ describe("Mike's Communication Schema Format", () => {
           to: 'C-client',
           sdp: 'v=0\r\no=- 789012 789012 IN IP4...',
         }),
-      } as any);
+      }));
 
       expect(resp.statusCode).toBe(200);
       
@@ -840,8 +1045,8 @@ describe("Mike's Communication Schema Format", () => {
       apigwSend.mockResolvedValueOnce({});
 
       const token = mkToken({ sub: 'user-1' });
-      await handler({
-        requestContext: { routeKey: '$default', connectionId: 'C-1' } as any,
+      await handler(asHandlerEvent({
+        requestContext: makeRequestContext('$default', 'C-1'),
         queryStringParameters: { token },
         body: JSON.stringify({
           type: 'offer',
@@ -850,7 +1055,7 @@ describe("Mike's Communication Schema Format", () => {
             sdp: 'v=0\r\no=- test',
           },
         }),
-      } as any);
+      }));
 
       // Verify outbound format matches Mike's schema
       const forwardedCall = apigwSend.mock.calls[0][0];
@@ -890,8 +1095,8 @@ describe("Mike's Communication Schema Format", () => {
       apigwSend.mockResolvedValueOnce({});
 
       const token = mkToken({ sub: 'user-1' });
-      await handler({
-        requestContext: { routeKey: '$default', connectionId: 'C-1' } as any,
+      await handler(asHandlerEvent({
+        requestContext: makeRequestContext('$default', 'C-1'),
         queryStringParameters: { token },
         body: JSON.stringify({
           type: 'ice-candidate', // Internal type
@@ -900,7 +1105,7 @@ describe("Mike's Communication Schema Format", () => {
             candidate: { candidate: 'test-candidate' },
           },
         }),
-      } as any);
+      }));
 
       // Verify type was converted to 'candidate' for Rust agent
       const forwardedCall = apigwSend.mock.calls[0][0];
@@ -934,8 +1139,8 @@ describe("Mike's Communication Schema Format", () => {
       apigwSend.mockResolvedValueOnce({});
 
       const token = mkToken({ sub: 'user-1' });
-      await handler({
-        requestContext: { routeKey: '$default', connectionId: 'C-1' } as any,
+      await handler(asHandlerEvent({
+        requestContext: makeRequestContext('$default', 'C-1'),
         queryStringParameters: { token },
         body: JSON.stringify({
           type: 'offer',
@@ -946,7 +1151,7 @@ describe("Mike's Communication Schema Format", () => {
             candidate: { candidate: 'legacy-candidate' },
           },
         }),
-      } as any);
+      }));
 
       // Verify legacy format was converted to Mike's format
       const forwardedCall = apigwSend.mock.calls[0][0];
@@ -981,8 +1186,8 @@ describe("Mike's Communication Schema Format", () => {
       apigwSend.mockResolvedValueOnce({});
 
       const token = mkToken({ sub: 'user-1' });
-      await handler({
-        requestContext: { routeKey: '$default', connectionId: 'C-1' } as any,
+      await handler(asHandlerEvent({
+        requestContext: makeRequestContext('$default', 'C-1'),
         queryStringParameters: { token },
         body: JSON.stringify({
           type: 'offer',
@@ -992,7 +1197,7 @@ describe("Mike's Communication Schema Format", () => {
             sdp: 'v=0\r\no=- explicit',
           },
         }),
-      } as any);
+      }));
 
       // Verify explicit format was converted to Mike's format
       const forwardedCall = apigwSend.mock.calls[0][0];
@@ -1019,14 +1224,14 @@ describe("Mike's Communication Schema Format", () => {
       ddbSend.mockResolvedValueOnce({});
 
       const token = mkToken({ sub: 'owner-1' });
-      const resp = await handler({
-        requestContext: { routeKey: '$default', connectionId: 'R-1' } as any,
+      const resp = await handler(asHandlerEvent({
+        requestContext: makeRequestContext('$default', 'R-1'),
         queryStringParameters: { token },
         body: JSON.stringify({
           type: 'register',
           from: 'robot-123', // Legacy format: from = robotId
         }),
-      } as any);
+      }));
 
       expect(resp.statusCode).toBe(200);
       // Verify robotId was extracted from 'from' field
