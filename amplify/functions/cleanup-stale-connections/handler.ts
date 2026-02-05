@@ -440,6 +440,8 @@ export const handler = async (): Promise<{ statusCode: number; body: string }> =
           }
           // If got pong, conn is alive - don't add to retryCandidates or toCleanup
         }
+        // If fulfilled && value=true, connection is alive - skip cleanup
+        // If rejected, we assume alive (avoid false positives)
       }
       for (const conn of retryCandidates) {
         toCleanup.push(conn);
