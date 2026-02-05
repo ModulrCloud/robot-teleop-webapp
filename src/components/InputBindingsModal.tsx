@@ -284,8 +284,8 @@ export function InputBindingsModal({
                   handleSaveEdit(editingCommandId);
                 }
                 if (onSaveClientBindings && commands.length > 0) {
-                  const keyboard: Record<KeyboardBinding, string> = {} as any;
-                  const gamepad: Record<GamepadBinding, string> = {} as any;
+                  const keyboard: Record<KeyboardBinding, string> = {} as Record<KeyboardBinding, string>;
+                  const gamepad: Record<GamepadBinding, string> = {} as Record<GamepadBinding, string>;
                   
                   commands.forEach(cmd => {
                     const binding = tempBindings[cmd.id];

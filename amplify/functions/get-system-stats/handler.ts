@@ -1,5 +1,5 @@
 import type { Schema } from "../../data/resource";
-import { CognitoIdentityProviderClient, ListUsersCommand, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, ListUsersCommand, type ListUsersCommandOutput, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, ScanCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 
@@ -9,6 +9,7 @@ const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 const ROBOT_TABLE_NAME = process.env.ROBOT_TABLE_NAME!;
+const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
 const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME!;
 const USER_CREDITS_TABLE = process.env.USER_CREDITS_TABLE!;
 const CREDIT_TRANSACTIONS_TABLE = process.env.CREDIT_TRANSACTIONS_TABLE!;
@@ -86,7 +87,7 @@ export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async 
       let hasMore = true;
       
       do {
-        const usersList: { Users?: any[]; PaginationToken?: string } = await cognito.send(new ListUsersCommand({
+        const usersList: ListUsersCommandOutput = await cognito.send(new ListUsersCommand({
           UserPoolId: USER_POOL_ID,
           Limit: 60, // Maximum allowed by Cognito
           PaginationToken: paginationToken,
@@ -110,7 +111,6 @@ export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async 
 
     // Get total robots count
     let totalRobots = 0;
-    let activeRobots = 0;
     try {
       console.log("Scanning Robot table:", ROBOT_TABLE_NAME);
       const robotsScan = await docClient.send(
@@ -121,16 +121,23 @@ export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async 
       );
       totalRobots = robotsScan.Count || 0;
       console.log("Total robots found:", totalRobots);
-      
-      // Count active robots (would need robot status check - simplified for now)
-      // For now, we'll just use total robots
-      activeRobots = totalRobots;
     } catch (error) {
       console.error("Error getting robot count:", error);
-      console.error("Robot table name:", ROBOT_TABLE_NAME);
-      // Set to 0 instead of leaving undefined
       totalRobots = 0;
-      activeRobots = 0;
+    }
+
+    // Get robots online (count from ROBOT_PRESENCE_TABLE)
+    let robotsOnline = 0;
+    try {
+      const presenceScan = await docClient.send(
+        new ScanCommand({
+          TableName: ROBOT_PRESENCE_TABLE,
+          Select: 'COUNT',
+        })
+      );
+      robotsOnline = presenceScan.Count || 0;
+    } catch (error) {
+      console.warn("Could not get robots online count:", error);
     }
 
     // Get active sessions count
@@ -215,7 +222,7 @@ export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async 
     const stats = {
       totalUsers,
       totalRobots,
-      activeRobots,
+      robotsOnline,
       totalRevenue: Math.round(totalRevenue * 100) / 100,
       platformRevenue: Math.round(platformRevenue * 100) / 100,
       platformMarkupPercent: platformMarkupPercent ?? 30,

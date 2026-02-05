@@ -55,7 +55,7 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
         {...item}
         onClick={(clicked) => onCardClick(clicked)}
       />
-      {onEdit && (item as any).uuid && (
+      {onEdit && 'uuid' in item && item.uuid && (
         <button
           className="card-edit-button"
           onClick={(e) => onEdit(item, e)}
@@ -99,7 +99,7 @@ export function CardGrid({ items, columns = 3, multiple, selected, setSelected, 
           {editingItemId === item.id ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faPen} />}
         </button>
       )}
-      {onDelete && (item as any).uuid && (
+      {onDelete && 'uuid' in item && item.uuid && (
         <button
           className="card-delete-button"
           onClick={(e) => onDelete(item, e)}

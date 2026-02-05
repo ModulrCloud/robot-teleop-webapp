@@ -27,7 +27,7 @@ export const AuditLogs = () => {
   const [auditLogsPaginationToken, setAuditLogsPaginationToken] = useState<string | null>(null);
 
   const loadAuditLogs = useCallback(async (token?: string | null) => {
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       return;
     }
 

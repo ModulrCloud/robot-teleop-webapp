@@ -216,7 +216,7 @@ export default function MyRobots() {
         limit: 1000, // Get all payouts
       });
 
-      let payoutsData: { success?: boolean; payouts?: any[] } | null = null;
+      let payoutsData: { success?: boolean; payouts?: Array<{ robotId?: string; creditsEarnedDollars?: number }> } | null = null;
       const raw = payoutsResult.data;
       if (typeof raw === 'string') {
         try {
@@ -234,16 +234,16 @@ export default function MyRobots() {
         const lambdaRes = raw as { statusCode?: number; body?: string | object };
         if (lambdaRes.statusCode === 200 && lambdaRes.body != null) {
           const body = typeof lambdaRes.body === 'string' ? JSON.parse(lambdaRes.body) : lambdaRes.body;
-          payoutsData = (body && typeof body === 'object' && 'success' in body) ? body as { success: boolean; payouts?: unknown[] } : { success: false };
+          payoutsData = (body && typeof body === 'object' && 'success' in body) ? body as { success: boolean; payouts?: Array<{ robotId?: string; creditsEarnedDollars?: number }> } : { success: false };
         } else {
-          payoutsData = (raw as { success?: boolean; payouts?: unknown[] }) ?? { success: false };
+          payoutsData = (raw as { success?: boolean; payouts?: Array<{ robotId?: string; creditsEarnedDollars?: number }> }) ?? { success: false };
         }
       }
 
       if (!payoutsData?.success || !payoutsData.payouts) return;
 
       const revenueMap: Record<string, number> = {};
-      payoutsData.payouts.forEach((payout: any) => {
+      payoutsData.payouts.forEach((payout: { robotId?: string; creditsEarnedDollars?: number }) => {
         if (payout.robotId && payout.creditsEarnedDollars) {
           revenueMap[payout.robotId] = (revenueMap[payout.robotId] || 0) + payout.creditsEarnedDollars;
         }

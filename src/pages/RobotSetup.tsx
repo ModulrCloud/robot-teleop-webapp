@@ -292,7 +292,7 @@ export default function RobotSetup() {
                         <button
                           type="button"
                           onClick={async () => {
-                            const startCommand = 'cargo run -- -vvvv start --allow-skip-cert-check';
+                            const startCommand = 'cargo run -- -vvv start --allow-skip-cert-check';
                             try {
                               await navigator.clipboard.writeText(startCommand);
                               setCopiedStartCommand(true);
@@ -318,7 +318,7 @@ export default function RobotSetup() {
                         </button>
                       </div>
                       <div className="codeblock-body">
-                        <pre className="codeblock-pre">cargo run -- -vvvv start --allow-skip-cert-check</pre>
+                        <pre className="codeblock-pre">cargo run -- -vvv start --allow-skip-cert-check</pre>
                       </div>
                     </div>
                     <p className="step-note" style={{ marginTop: '0.75rem' }}>

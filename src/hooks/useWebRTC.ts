@@ -35,15 +35,16 @@ export interface WebRTCOptions {
 
 class WebRTCRosBridge {
   private channel: RTCDataChannel;
-  private callbacks: Record<string, (msg: any) => void> = {};
+  private callbacks: Record<string, (msg?: Record<string, unknown>) => void> = {};
 
   constructor(dc: RTCDataChannel) {
     this.channel = dc;
     dc.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      if (msg.id && this.callbacks[msg.id]) {
-        this.callbacks[msg.id](msg);
-        delete this.callbacks[msg.id];
+      const msg = JSON.parse(event.data) as Record<string, unknown>;
+      const msgId = typeof msg.id === 'string' ? msg.id : undefined;
+      if (msgId && this.callbacks[msgId]) {
+        this.callbacks[msgId](msg);
+        delete this.callbacks[msgId];
       } else if (msg.op === 'publish') {
         // Handle other ROS messages if needed
         logger.log('Topic ' + msg.topic + ': ' + JSON.stringify(msg.msg));
@@ -51,9 +52,10 @@ class WebRTCRosBridge {
     };
   }
 
-  send(msg: any): Promise<void> {
+  send(msg: Record<string, unknown>): Promise<void> {
     return new Promise((resolve) => {
-      if (msg.id) this.callbacks[msg.id] = resolve;
+      const id = msg.id as string | undefined;
+      if (id) this.callbacks[id] = () => resolve();
       this.channel.send(JSON.stringify(msg));
       if (!msg.id) resolve();
     });

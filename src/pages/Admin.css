@@ -161,6 +161,11 @@
   margin: 0;
 }
 
+.stat-value-with-tooltip {
+  cursor: help;
+  overflow-wrap: break-word;
+}
+
 .stat-label {
   font-size: 0.9rem;
   color: rgba(255, 255, 255, 0.6);
