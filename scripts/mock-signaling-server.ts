@@ -16,6 +16,13 @@ import { parse } from 'url';
 
 const PORT = parseInt(process.argv[2] || '8765', 10);
 
+/**
+ * Protocol mode: when true, use legacy message format (type: "register", "offer", etc.).
+ * When false, use new Modulr Interface Spec protocol (type: "signalling.register", etc.).
+ * Set to false and implement new protocol support in the branch below.
+ */
+const LEGACY = true;
+
 // In-memory storage (simulating DynamoDB tables)
 const connections = new Map<string, { userId: string; kind: string; groups: string[] }>();
 const robotPresence = new Map<string, { connectionId: string; ownerUserId: string; status: string }>();
@@ -92,6 +99,17 @@ wss.on('connection', (ws, req) => {
 function handleMessage(connectionId: string, msg: any, ws: WebSocket) {
   const conn = connections.get(connectionId);
   if (!conn) return;
+
+  const isNewProtocol = typeof msg.type === 'string' && msg.type.includes('.');
+  if (!LEGACY && isNewProtocol) {
+    // TODO: Add support for new communication protocol (signalling.*, agent.*)
+    console.log(`[${connectionId}] ⚠️  New protocol not yet implemented: ${msg.type}`);
+    return;
+  }
+  if (!LEGACY && !isNewProtocol) {
+    console.log(`[${connectionId}] ⚠️  Legacy messages not accepted in new protocol mode`);
+    return;
+  }
 
   console.log(`[${connectionId}] 📨 Received: ${msg.type}`, JSON.stringify(msg, null, 2));
 

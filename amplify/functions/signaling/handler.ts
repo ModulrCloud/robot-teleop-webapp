@@ -4,6 +4,7 @@ import {
     PutItemCommand,
     DeleteItemCommand,
     GetItemCommand,
+    GetItemCommandOutput,
     QueryCommand,
     UpdateItemCommand,
     ScanCommand,
@@ -95,6 +96,74 @@ type InboundMessage = Partial<{
 
 // Raw wire shape (browser or robot could send anything so we normalize here)
 type RawMessage = Record<string, unknown>;
+
+// ---------------------------------
+// Protocol detection (dual-protocol: legacy vs Modulr Interface Spec)
+// ---------------------------------
+
+/** Supported protocol versions for the new (domain.message) format. */
+const SUPPORTED_PROTOCOL_VERSIONS = ['0.0', '0.1'] as const;
+
+/** Connection protocol: legacy (type: "register") or new (type: "signalling.register"). */
+export type ConnectionProtocol = 'legacy' | 'modulr-v0';
+
+/**
+ * Returns true if the message uses the new protocol (type contains a dot, e.g. signalling.register).
+ */
+export function isNewProtocol(raw: RawMessage): boolean {
+  if (typeof raw.type !== 'string') return false;
+  return raw.type.includes('.');
+}
+
+/**
+ * Extracts the version field from a new-protocol message envelope.
+ */
+export function extractNewProtocolVersion(raw: RawMessage): string | undefined {
+  if (typeof raw.version !== 'string') return undefined;
+  return raw.version.trim();
+}
+
+/**
+ * Returns true if the given version is in our supported list.
+ */
+export function isSupportedProtocolVersion(version: string | undefined): boolean {
+  if (!version) return false;
+  return SUPPORTED_PROTOCOL_VERSIONS.includes(version as (typeof SUPPORTED_PROTOCOL_VERSIONS)[number]);
+}
+
+/**
+ * Updates the connection record with protocol and version (for persistence).
+ */
+async function updateConnectionProtocol(
+  connectionId: string,
+  protocol: ConnectionProtocol,
+  version?: string,
+): Promise<void> {
+  try {
+    const updateExpr = version
+      ? 'SET #protocol = :protocol, #version = :version'
+      : 'SET #protocol = :protocol';
+    const exprValues: Record<string, import('@aws-sdk/client-dynamodb').AttributeValue> = {
+      ':protocol': { S: protocol },
+    };
+    if (version) {
+      exprValues[':version'] = { S: version };
+    }
+    await db.send(
+      new UpdateItemCommand({
+        TableName: CONN_TABLE,
+        Key: { connectionId: { S: connectionId } },
+        UpdateExpression: updateExpr,
+        ExpressionAttributeNames: version
+          ? { '#protocol': 'protocol', '#version': 'version' }
+          : { '#protocol': 'protocol' },
+        ExpressionAttributeValues: exprValues,
+      }),
+    );
+  } catch (err) {
+    console.warn('[PROTOCOL_UPDATE_ERROR]', { connectionId, protocol, version, error: err instanceof Error ? err.message : String(err) });
+  }
+}
 
 // ---------------------------------
 // Helpers
@@ -490,9 +559,9 @@ async function postTo(connectionId: string, message: unknown): Promise<void> {
                 Data: Buffer.from(JSON.stringify(message), 'utf-8'),
             }),
         );
-    } catch (err: any) {
+    } catch (err: unknown) {
         // Ignore when the socket is already closed
-        if (err?.name !== 'GoneException') {
+        if ((err as { name?: string })?.name !== 'GoneException') {
             console.warn('post_to_connection error', err)
         }
     }
@@ -638,7 +707,7 @@ async function canAccessRobot(
         const userIdentifiers = [
             userEmailOrUsername?.toLowerCase(),
             claims.email?.toLowerCase(),
-            (claims as any)['cognito:username']?.toLowerCase(),
+            claims['cognito:username']?.toLowerCase(),
             claims.sub, // Last resort - unlikely to match but included for completeness
         ].filter(Boolean) as string[];
 
@@ -1360,8 +1429,9 @@ async function handleRegister(
         ExpressionAttributeValues: { ':me': { S: caller } },
       }),
     );
-  } catch (e: any) {
-    const code = e?.name || e?.Code || e?.code;
+  } catch (e: unknown) {
+    const err = e as { name?: string; Code?: string; code?: string };
+    const code = err?.name || err?.Code || err?.code;
     if (code === 'ConditionalCheckFailedException' && !admin) {
       return errorResponse(409, 'Robot is already registered by another owner');
     }
@@ -1384,8 +1454,8 @@ async function handleRegister(
       console.error('[REGISTER_ERROR]', {
         connectionId,
         robotId,
-        error: String(e),
-        errorCode: e?.name || e?.Code || e?.code,
+        error: e instanceof Error ? e.message : String(e),
+        errorCode: err?.name || err?.Code || err?.code,
       });
       return errorResponse(500, 'DynamoDB error');
     }
@@ -1541,16 +1611,20 @@ async function getMonitoringConnections(robotId: string): Promise<string[]> {
   }
 }
 
+/** Minimal shape for logging message type. */
+type MessageWithType = { type?: string };
+
 // Helper function to send message copies to monitoring connections
 async function notifyMonitors(robotId: string, message: unknown): Promise<void> {
-  console.log('[NOTIFY_MONITORS_START]', { robotId, messageType: (message as any)?.type });
+  const msgType = (message as MessageWithType)?.type;
+  console.log('[NOTIFY_MONITORS_START]', { robotId, messageType: msgType });
   const monitorConnections = await getMonitoringConnections(robotId);
   
   if (monitorConnections.length === 0) {
     console.log('[NOTIFY_MONITORS_SKIP]', { 
       robotId, 
       reason: 'No monitoring connections found',
-      messageType: (message as any)?.type 
+      messageType: msgType 
     });
     return; // No monitors, skip
   }
@@ -1559,9 +1633,9 @@ async function notifyMonitors(robotId: string, message: unknown): Promise<void> 
   const notifyPromises = monitorConnections.map(async (connId) => {
     try {
       await postTo(connId, message);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Ignore GoneException (connection already closed)
-      if (err?.name !== 'GoneException') {
+      if ((err as { name?: string })?.name !== 'GoneException') {
         console.warn('[MONITOR_NOTIFY_ERROR]', {
           connectionId: connId,
           robotId,
@@ -2038,13 +2112,18 @@ export async function handler(
   });
   
   let claims: Claims | null = null;
+  let connItem: GetItemCommandOutput | undefined;
   const token = event.queryStringParameters?.token ?? null; // Define token here for logging
   
   try {
-    const connItem = await db.send(new GetItemCommand({
+    connItem = await db.send(new GetItemCommand({
       TableName: CONN_TABLE,
       Key: { connectionId: { S: connectionId } },
-      ProjectionExpression: 'userId, username, email, groups',
+      ProjectionExpression: 'userId, username, email, groups, #protocol, #version',
+      ExpressionAttributeNames: {
+        '#protocol': 'protocol',
+        '#version': 'version',
+      },
     }));
     
     if (connItem.Item) {
@@ -2121,6 +2200,38 @@ export async function handler(
     raw = JSON.parse(event.body ?? '{}');
   } catch {
     return errorResponse(400, 'Invalid JSON');
+  }
+
+  // Protocol detection and persistence (Stage 1: dual-protocol support)
+  const connProtocol = connItem?.Item?.protocol?.S as ConnectionProtocol | undefined;
+  const connVersion = connItem?.Item?.version?.S;
+  const messageIsNewProtocol = isNewProtocol(raw);
+  const messageVersion = extractNewProtocolVersion(raw);
+
+  // First message: detect and persist protocol
+  if (!connProtocol) {
+    if (messageIsNewProtocol) {
+      const supported = isSupportedProtocolVersion(messageVersion);
+      if (!supported) {
+        console.warn('[PROTOCOL_VERSION_UNSUPPORTED]', {
+          connectionId,
+          type: raw.type,
+          version: messageVersion ?? '(none)',
+          supported: SUPPORTED_PROTOCOL_VERSIONS,
+        });
+      }
+      await updateConnectionProtocol(connectionId, 'modulr-v0', messageVersion);
+    } else {
+      await updateConnectionProtocol(connectionId, 'legacy');
+    }
+  } else if (connProtocol === 'legacy' && messageIsNewProtocol) {
+    // Protocol mismatch: connection claimed legacy but sent new-format message
+    console.warn('[PROTOCOL_MISMATCH]', {
+      connectionId,
+      storedProtocol: connProtocol,
+      messageType: raw.type,
+      message: 'Connection claims legacy but sent new-protocol message; treating as new',
+    });
   }
 
   // Normalize to our canonical shape
