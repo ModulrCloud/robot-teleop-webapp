@@ -1,3 +1,4 @@
+import type { AttributeValue } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBClient,
   ScanCommand,
@@ -13,6 +14,8 @@ const CONN_TABLE = process.env.CONN_TABLE!;
 const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
 const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!;
+// Set PONG_CHECK_ENABLED=true to require agent.pong for robot liveness (agent must support it)
+const PONG_CHECK_ENABLED = process.env.PONG_CHECK_ENABLED === 'true';
 
 const db = new DynamoDBClient({});
 const mgmt = new ApiGatewayManagementApiClient({ endpoint: WS_MGMT_ENDPOINT });
@@ -23,7 +26,9 @@ const STALE_CONNECTION_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 // Batching: stay within Lambda 15 min limit; target 10 min run
 const MAX_RUN_SECONDS = 600; // 10 minutes
 const WAIT_PER_BATCH_SEC = 10;
-const MAX_BATCHES = Math.floor(MAX_RUN_SECONDS / WAIT_PER_BATCH_SEC); // 60 batches
+const PONG_RETRY_COUNT = 1; // Retry ping once before marking dead
+// With retry: 2 pings + 2 waits per batch = 2 * WAIT_PER_BATCH_SEC extra, so ~30 batches max
+const MAX_BATCHES = Math.floor(MAX_RUN_SECONDS / (WAIT_PER_BATCH_SEC * (1 + PONG_RETRY_COUNT)));
 const MIN_BATCH_SIZE = 25;
 
 interface CleanupStats {
@@ -41,11 +46,104 @@ interface StaleConnection {
 }
 
 /**
+ * Builds a Set of connectionIds that are robots (in ROBOT_PRESENCE_TABLE).
+ * Used to determine which connections require pong for liveness.
+ */
+async function getRobotConnectionIds(): Promise<Set<string>> {
+  const robotConnIds = new Set<string>();
+  let lastEvaluatedKey: Record<string, AttributeValue> | undefined;
+
+  do {
+    const result = await db.send(
+      new ScanCommand({
+        TableName: ROBOT_PRESENCE_TABLE,
+        ProjectionExpression: 'connectionId',
+        ExclusiveStartKey: lastEvaluatedKey,
+        Limit: 100,
+      })
+    );
+
+    for (const item of result.Items || []) {
+      const connId = item.connectionId?.S;
+      if (connId) robotConnIds.add(connId);
+    }
+    lastEvaluatedKey = result.LastEvaluatedKey;
+  } while (lastEvaluatedKey);
+
+  return robotConnIds;
+}
+
+/**
+ * Fetches lastPongAt from CONN_TABLE for a connection.
+ */
+async function getLastPongAt(connectionId: string): Promise<number | null> {
+  try {
+    const result = await db.send(
+      new GetItemCommand({
+        TableName: CONN_TABLE,
+        Key: { connectionId: { S: connectionId } },
+        ProjectionExpression: 'lastPongAt',
+      })
+    );
+    const val = result.Item?.lastPongAt?.N;
+    return val != null ? parseInt(val, 10) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Cleans up orphaned ROBOT_PRESENCE_TABLE entries - presence records whose connectionId
+ * no longer exists in CONN_TABLE. These occur when $disconnect removed the connection
+ * but presence wasn't cleaned (e.g. network drop before fix, or $disconnect race).
+ */
+async function cleanupOrphanedRobotPresence(stats: CleanupStats): Promise<void> {
+  let lastEvaluatedKey: Record<string, AttributeValue> | undefined;
+
+  do {
+    const result = await db.send(
+      new ScanCommand({
+        TableName: ROBOT_PRESENCE_TABLE,
+        ProjectionExpression: 'robotId, connectionId',
+        ExclusiveStartKey: lastEvaluatedKey,
+        Limit: 50,
+      })
+    );
+
+    for (const item of result.Items || []) {
+      const robotId = item.robotId?.S;
+      const connectionId = item.connectionId?.S;
+      if (!robotId || !connectionId) continue;
+
+      const connExists = await db.send(
+        new GetItemCommand({
+          TableName: CONN_TABLE,
+          Key: { connectionId: { S: connectionId } },
+          ProjectionExpression: 'connectionId',
+        })
+      );
+
+      if (!connExists.Item) {
+        await db.send(
+          new DeleteItemCommand({
+            TableName: ROBOT_PRESENCE_TABLE,
+            Key: { robotId: { S: robotId } },
+          })
+        );
+        stats.cleanedRobotPresence++;
+        console.log(`[CLEANUP] Deleted orphaned robot presence: robot ${robotId} (connection ${connectionId} not in CONN_TABLE)`);
+      }
+    }
+    lastEvaluatedKey = result.LastEvaluatedKey;
+  } while (lastEvaluatedKey);
+}
+
+/**
  * Collects all stale connection records (ts older than 1 hour).
  */
 async function collectStaleConnections(thresholdTimestamp: number): Promise<StaleConnection[]> {
   const stale: StaleConnection[] = [];
-  let lastEvaluatedKey: Record<string, any> | undefined;
+  let lastEvaluatedKey: Record<string, AttributeValue> | undefined;
 
   do {
     const scanResult = await db.send(
@@ -91,11 +189,12 @@ async function sendAgentPing(connectionId: string): Promise<boolean> {
       })
     );
     return true;
-  } catch (error: any) {
-    if (error?.name === 'GoneException' || error?.Code === 'GoneException') {
+  } catch (error: unknown) {
+    const err = error as { name?: string; Code?: string; message?: string };
+    if (err?.name === 'GoneException' || err?.Code === 'GoneException') {
       return false;
     }
-    console.warn(`[CLEANUP] Error pinging connection ${connectionId}:`, error?.name || error?.message);
+    console.warn(`[CLEANUP] Error pinging connection ${connectionId}:`, err?.name || err?.message);
     return true; // Assume alive to avoid false positives
   }
 }
@@ -238,16 +337,23 @@ export const handler = async (): Promise<{ statusCode: number; body: string }> =
   };
 
   try {
+    // First: clean orphaned ROBOT_PRESENCE entries (connectionId no longer in CONN_TABLE)
+    await cleanupOrphanedRobotPresence(stats);
+
     const thresholdTimestamp = Date.now() - STALE_CONNECTION_THRESHOLD_MS;
     const staleConnections = await collectStaleConnections(thresholdTimestamp);
     stats.staleConnections = staleConnections.length;
 
     if (staleConnections.length === 0) {
       const duration = Date.now() - startTime;
-      console.log('[CLEANUP] No stale connections found', { duration: `${duration}ms` });
+      const orphanCount = stats.cleanedRobotPresence;
+      const msg = orphanCount > 0
+        ? `No stale connections in CONN_TABLE; cleaned ${orphanCount} orphaned robot presence entries.`
+        : 'No stale connections';
+      console.log('[CLEANUP]', msg, { duration: `${duration}ms`, ...stats });
       return {
         statusCode: 200,
-        body: JSON.stringify({ message: 'No stale connections', stats, duration: `${duration}ms` }),
+        body: JSON.stringify({ message: msg, stats, duration: `${duration}ms` }),
       };
     }
 
@@ -264,28 +370,80 @@ export const handler = async (): Promise<{ statusCode: number; body: string }> =
       batchCount: batches.length,
     });
 
+    // Build set of robot connectionIds - only robots require pong when enabled
+    const robotConnectionIds = PONG_CHECK_ENABLED ? await getRobotConnectionIds() : new Set<string>();
+    console.log('[CLEANUP] Pong check enabled:', PONG_CHECK_ENABLED, 'robot connections:', robotConnectionIds.size);
+
     for (let b = 0; b < batches.length; b++) {
       const batch = batches[b];
       const toCleanup: StaleConnection[] = [];
+      let pingSentAt = Date.now();
 
       // Send agent.ping to each connection in batch
       const results = await Promise.allSettled(
         batch.map((conn) => sendAgentPing(conn.connectionId))
       );
 
+      const successfulPings: StaleConnection[] = [];
       for (let i = 0; i < batch.length; i++) {
         const conn = batch[i];
         const result = results[i];
         if (result.status === 'fulfilled' && !result.value) {
-          // PostToConnection failed (GoneException) - connection is dead
           toCleanup.push(conn);
+        } else if (result.status === 'fulfilled' && result.value) {
+          successfulPings.push(conn);
         }
-        // If fulfilled && value=true, connection is alive - skip cleanup
-        // If rejected, we assume alive (avoid false positives)
       }
 
-      // Wait for pong window (future: check lastPongAt here)
+      // Wait for pong window
       await new Promise((r) => setTimeout(r, WAIT_PER_BATCH_SEC * 1000));
+
+      // For robot connections (when pong check enabled): require pong. Otherwise: PostToConnection success = alive.
+      const robotPings = PONG_CHECK_ENABLED
+        ? successfulPings.filter((c) => robotConnectionIds.has(c.connectionId))
+        : [];
+      const noPongRobots: StaleConnection[] = [];
+
+      if (PONG_CHECK_ENABLED) {
+        for (const conn of robotPings) {
+          const lastPongAt = await getLastPongAt(conn.connectionId);
+          if (lastPongAt == null || lastPongAt < pingSentAt) {
+            noPongRobots.push(conn);
+          }
+        }
+      }
+
+      // Retry: ping no-pong robots again (up to PONG_RETRY_COUNT times) - only when pong check enabled
+      let retryCandidates = PONG_CHECK_ENABLED ? [...noPongRobots] : [];
+      for (let retry = 0; retry < PONG_RETRY_COUNT && retryCandidates.length > 0; retry++) {
+        pingSentAt = Date.now();
+        const retryResults = await Promise.allSettled(
+          retryCandidates.map((c) => sendAgentPing(c.connectionId))
+        );
+        const stillPingable: StaleConnection[] = [];
+        for (let i = 0; i < retryCandidates.length; i++) {
+          const r = retryResults[i];
+          const pingSucceeded = r.status === 'fulfilled' ? r.value : false;
+          if (pingSucceeded) {
+            stillPingable.push(retryCandidates[i]);
+          } else {
+            toCleanup.push(retryCandidates[i]);
+          }
+        }
+        if (stillPingable.length === 0) break;
+        await new Promise((r) => setTimeout(r, WAIT_PER_BATCH_SEC * 1000));
+        retryCandidates = [];
+        for (const conn of stillPingable) {
+          const lastPongAt = await getLastPongAt(conn.connectionId);
+          if (lastPongAt == null || lastPongAt < pingSentAt) {
+            retryCandidates.push(conn);
+          }
+          // If got pong, conn is alive - don't add to retryCandidates or toCleanup
+        }
+      }
+      for (const conn of retryCandidates) {
+        toCleanup.push(conn);
+      }
 
       // Clean up dead connections
       for (const conn of toCleanup) {

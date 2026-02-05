@@ -6,6 +6,7 @@ import {
     GetItemCommand,
     QueryCommand,
     UpdateItemCommand,
+    ScanCommand,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand as DocQueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { createHash } from 'crypto';
@@ -44,7 +45,7 @@ const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
 // Types
 // ---------------------------------
 
-type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong';
+type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong' | 'agent.ping' | 'agent.pong';
 type Target = 'robot' | 'client';
 
 // ---------------------------------
@@ -92,8 +93,8 @@ type InboundMessage = Partial<{
     payload: Record<string, unknown>;
 }>;
 
-// Raw wire shape (browser or robot could send anythign so we normalize here)
-type RawMessage = any;
+// Raw wire shape (browser or robot could send anything so we normalize here)
+type RawMessage = Record<string, unknown>;
 
 // ---------------------------------
 // Helpers
@@ -1085,6 +1086,40 @@ async function endUserSessions(userId: string): Promise<void> {
   }
 }
 
+/**
+ * Removes robot presence when a robot's WebSocket disconnects.
+ * This ensures the robot shows as "offline" immediately when it disconnects.
+ */
+async function cleanupRobotPresenceOnDisconnect(connectionId: string): Promise<void> {
+  try {
+    const result = await db.send(
+      new ScanCommand({
+        TableName: ROBOT_PRESENCE_TABLE,
+        FilterExpression: 'connectionId = :connId',
+        ExpressionAttributeValues: { ':connId': { S: connectionId } },
+      })
+    );
+
+    for (const item of result.Items || []) {
+      const robotId = item.robotId?.S;
+      if (robotId) {
+        await db.send(
+          new DeleteItemCommand({
+            TableName: ROBOT_PRESENCE_TABLE,
+            Key: { robotId: { S: robotId } },
+          })
+        );
+        console.log('[DISCONNECT] Removed robot presence:', { robotId, connectionId });
+      }
+    }
+  } catch (err) {
+    console.warn('[DISCONNECT] Failed to cleanup robot presence:', {
+      connectionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 async function endConnectionSessions(connectionId: string): Promise<void> {
   if (!SESSION_TABLE_NAME) return;
 
@@ -1244,9 +1279,12 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
 
 async function onDisconnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
     const connectionId = event.requestContext.connectionId!;
-    
+
+    // Remove robot presence if this connection was a robot (ensures "offline" status)
+    await cleanupRobotPresenceOnDisconnect(connectionId);
+
     await endConnectionSessions(connectionId);
-    
+
     try {
         await db.send(
             new DeleteItemCommand({
@@ -2133,34 +2171,72 @@ export async function handler(
     return handleSignal(claims, event, msg);
   }
 
-  // Handle pong responses to keepalive pings
-  if (type === 'pong') {
-    // Access timestamp from raw message body if present
+  // Handle agent.pong (Modulr interface spec) - record lastPongAt for liveness checks
+  if (type === 'agent.pong') {
     const rawBody = event.body ? JSON.parse(event.body) : {};
-    console.log('[PONG_RECEIVED]', {
-      connectionId: event.requestContext.connectionId,
-      robotId: msg.robotId,
-      userId: claims?.sub,
-      timestamp: rawBody.timestamp || 'not provided',
-    });
-    // Pong messages don't need special handling - just acknowledge receipt
-    // The connection stays alive from receiving/sending the message
+    const now = Date.now();
+    try {
+      await db.send(
+        new UpdateItemCommand({
+          TableName: CONN_TABLE,
+          Key: { connectionId: { S: connectionId } },
+          UpdateExpression: 'SET lastPongAt = :ts',
+          ExpressionAttributeValues: { ':ts': { N: String(now) } },
+        })
+      );
+      console.log('[AGENT_PONG_RECEIVED]', {
+        connectionId,
+        correlationId: rawBody.correlationId,
+        lastPongAt: now,
+      });
+    } catch (err) {
+      console.warn('[AGENT_PONG_UPDATE_ERROR]', {
+        connectionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return successResponse({ type: 'agent.pong-acknowledged' });
+  }
+
+  // Handle legacy pong - also record lastPongAt for backward compatibility
+  if (type === 'pong') {
+    const rawBody = event.body ? JSON.parse(event.body) : {};
+    const now = Date.now();
+    try {
+      await db.send(
+        new UpdateItemCommand({
+          TableName: CONN_TABLE,
+          Key: { connectionId: { S: connectionId } },
+          UpdateExpression: 'SET lastPongAt = :ts',
+          ExpressionAttributeValues: { ':ts': { N: String(now) } },
+        })
+      );
+      console.log('[PONG_RECEIVED]', {
+        connectionId,
+        timestamp: rawBody.timestamp || 'not provided',
+        lastPongAt: now,
+      });
+    } catch (err) {
+      console.warn('[PONG_UPDATE_ERROR]', { connectionId, error: err instanceof Error ? err.message : String(err) });
+    }
     return successResponse({ type: 'pong-acknowledged' });
   }
 
-  // Handle ping messages (though these are typically sent via Management API, not through signaling)
-  if (type === 'ping') {
-    console.log('[PING_RECEIVED]', {
-      connectionId: event.requestContext.connectionId,
-      robotId: msg.robotId,
-      userId: claims?.sub,
-    });
-    // If a client/robot sends a ping, respond with pong
+  // Handle ping / agent.ping - respond with agent.pong (Modulr interface spec)
+  if (type === 'ping' || type === 'agent.ping') {
+    const rawBody = event.body ? JSON.parse(event.body) : {};
+    const pingId = rawBody.id ?? rawBody.timestamp ?? String(Date.now());
     try {
       await postTo(connectionId, {
-        type: 'pong',
-        timestamp: Date.now(),
-        keepalive: true,
+        type: 'agent.pong',
+        version: '0.0',
+        id: `${pingId}-pong`,
+        correlationId: pingId,
+        timestamp: new Date().toISOString(),
+      });
+      console.log('[PING_RESPONDED]', {
+        connectionId,
+        pingId,
       });
     } catch (err) {
       console.warn('[PING_RESPONSE_ERROR]', {
