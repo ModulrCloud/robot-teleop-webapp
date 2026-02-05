@@ -404,11 +404,26 @@ describe('normalizeNewProtocol (Stage 2)', () => {
       expect(out.type).toBe('signalling.error');
       expect(out.payload).toEqual({ code: 'access_denied', message: 'Denied', robotId: 'r-1' });
     });
+    it('wraps signalling.capabilities in envelope for modulr-v0', () => {
+      const msg = { type: 'signalling.capabilities', supportedVersions: ['0.0', '0.1'] as const };
+      const out = formatOutboundForConnection(msg, 'modulr-v0', '0.0');
+      expect(out.type).toBe('signalling.capabilities');
+      expect(out.version).toBe('0.0');
+      expect(out.payload).toEqual({ supportedVersions: ['0.0', '0.1'] });
+    });
     it('returns platform messages as-is for modulr-v0 (welcome, session-locked)', () => {
       const welcome = { type: 'welcome', connectionId: 'C-1' };
       expect(formatOutboundForConnection(welcome, 'modulr-v0', '0.0')).toEqual(welcome);
       const locked = { type: 'session-locked', robotId: 'r-1', lockedBy: 'user@x.com' };
       expect(formatOutboundForConnection(locked, 'modulr-v0', '0.0')).toEqual(locked);
+    });
+  });
+
+  describe('signalling.capabilities', () => {
+    it('normalizeNewProtocol passes through signalling.capabilities', () => {
+      const out = normalizeNewProtocol({ type: 'signalling.capabilities', version: '0.0' });
+      expect(out).not.toBeNull();
+      expect(out!.type).toBe('signalling.capabilities');
     });
   });
 
@@ -533,6 +548,34 @@ describe('Stage 2: new-protocol integration', () => {
       sdpType: 'offer',
       connectionId: 'C-1',
     });
+  });
+
+  it('signalling.capabilities receives supportedVersions response', async () => {
+    ddbSend.mockResolvedValueOnce({
+      Item: { userId: { S: 'user-1' }, username: { S: 'u' }, groups: { S: 'USERS' } },
+    });
+    ddbSend.mockResolvedValueOnce({}); // UpdateItem protocol
+    ddbSend.mockResolvedValueOnce({ Item: { protocol: { S: 'modulr-v0' }, version: { S: '0.0' } } }); // getConnectionProtocol
+    apigwSend.mockResolvedValueOnce({});
+
+    const token = mkToken({ sub: 'user-1' });
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-1'),
+      queryStringParameters: { token },
+      body: JSON.stringify({
+        type: 'signalling.capabilities',
+        version: '0.0',
+        id: 'cap-1',
+        timestamp: new Date().toISOString(),
+        payload: {},
+      }),
+    }));
+
+    expect(resp.statusCode).toBe(200);
+    expect(apigwSend).toHaveBeenCalled();
+    const sent = JSON.parse(Buffer.from(apigwSend.mock.calls[0][0].input.Data).toString('utf-8'));
+    expect(sent.type).toBe('signalling.capabilities');
+    expect(sent.payload).toEqual({ supportedVersions: ['0.0', '0.1'] });
   });
 
   it('agent.ping receives agent.pong response (keepalive flow)', async () => {
