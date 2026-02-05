@@ -231,6 +231,7 @@ async function verifyCognitoJWT(token: string | null | undefined): Promise<Claim
 /**
  * Extracts and normalizes the message type from a raw message.
  * Maps legacy 'candidate' to 'ice-candidate' for backward compatibility.
+ * Includes ping/pong and agent.ping/agent.pong for keepalive and liveness.
  */
 function extractMessageType(raw: RawMessage): MessageType | undefined {
   if (typeof raw.type !== 'string') return undefined;
@@ -244,7 +245,11 @@ function extractMessageType(raw: RawMessage): MessageType | undefined {
     t === 'register' ||
     t === 'takeover' ||
     t === 'ice-candidate' ||
-    t === 'monitor'
+    t === 'monitor' ||
+    t === 'ping' ||
+    t === 'pong' ||
+    t === 'agent.ping' ||
+    t === 'agent.pong'
   ) {
     return t as MessageType;
   }
@@ -1089,29 +1094,38 @@ async function endUserSessions(userId: string): Promise<void> {
 /**
  * Removes robot presence when a robot's WebSocket disconnects.
  * This ensures the robot shows as "offline" immediately when it disconnects.
+ * Paginates the scan so all matching rows are removed even with a large table.
  */
 async function cleanupRobotPresenceOnDisconnect(connectionId: string): Promise<void> {
   try {
-    const result = await db.send(
-      new ScanCommand({
-        TableName: ROBOT_PRESENCE_TABLE,
-        FilterExpression: 'connectionId = :connId',
-        ExpressionAttributeValues: { ':connId': { S: connectionId } },
-      })
-    );
+    let lastEvaluatedKey: Record<string, import('@aws-sdk/client-dynamodb').AttributeValue> | undefined;
 
-    for (const item of result.Items || []) {
-      const robotId = item.robotId?.S;
-      if (robotId) {
-        await db.send(
-          new DeleteItemCommand({
-            TableName: ROBOT_PRESENCE_TABLE,
-            Key: { robotId: { S: robotId } },
-          })
-        );
-        console.log('[DISCONNECT] Removed robot presence:', { robotId, connectionId });
+    do {
+      const result = await db.send(
+        new ScanCommand({
+          TableName: ROBOT_PRESENCE_TABLE,
+          FilterExpression: 'connectionId = :connId',
+          ExpressionAttributeValues: { ':connId': { S: connectionId } },
+          ExclusiveStartKey: lastEvaluatedKey,
+          Limit: 100,
+        })
+      );
+
+      for (const item of result.Items || []) {
+        const robotId = item.robotId?.S;
+        if (robotId) {
+          await db.send(
+            new DeleteItemCommand({
+              TableName: ROBOT_PRESENCE_TABLE,
+              Key: { robotId: { S: robotId } },
+            })
+          );
+          console.log('[DISCONNECT] Removed robot presence:', { robotId, connectionId });
+        }
       }
-    }
+
+      lastEvaluatedKey = result.LastEvaluatedKey;
+    } while (lastEvaluatedKey);
   } catch (err) {
     console.warn('[DISCONNECT] Failed to cleanup robot presence:', {
       connectionId,
