@@ -891,6 +891,7 @@ listUsersFunction.addToRolePolicy(new PolicyStatement({
 const getSystemStatsCdkFunction = getSystemStatsFunction as CdkFunction;
 getSystemStatsCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 getSystemStatsCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+getSystemStatsCdkFunction.addEnvironment('ROBOT_PRESENCE_TABLE', robotPresenceTable.tableName);
 getSystemStatsCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
 getSystemStatsCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
 getSystemStatsCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
@@ -898,6 +899,7 @@ getSystemStatsCdkFunction.addEnvironment('PARTNER_PAYOUT_TABLE', tables.PartnerP
 getSystemStatsCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
 userPool.grant(getSystemStatsFunction, 'cognito-idp:ListUsers', 'cognito-idp:AdminGetUser');
 tables.Robot.grantReadData(getSystemStatsFunction);
+robotPresenceTable.grantReadData(getSystemStatsFunction);
 tables.Session.grantReadData(getSystemStatsFunction);
 tables.UserCredits.grantReadData(getSystemStatsFunction);
 tables.CreditTransaction.grantReadData(getSystemStatsFunction);
@@ -1001,7 +1003,7 @@ cleanupStaleConnectionsFunction.addToRolePolicy(new PolicyStatement({
 
 // Create EventBridge rule to trigger cleanup every hour
 const cleanupRule = new Rule(backend.stack, 'CleanupStaleConnectionsRule', {
-  schedule: Schedule.rate(Duration.hours(1)), // Run every hour
+  schedule: Schedule.cron({ minute: '0', hour: '*', day: '*', month: '*', year: '*' }), // Every hour on the hour (UTC)
   description: 'Trigger cleanup of stale WebSocket connections',
 });
 
@@ -1017,11 +1019,13 @@ const websocketKeepaliveCdkFunction = websocketKeepaliveFunction as CdkFunction;
 
 // Set environment variables
 websocketKeepaliveCdkFunction.addEnvironment('CONN_TABLE', connTable.tableName);
+websocketKeepaliveCdkFunction.addEnvironment('ROBOT_PRESENCE_TABLE', robotPresenceTable.tableName);
 // Construct WebSocket Management API endpoint (same as signaling function)
 websocketKeepaliveCdkFunction.addEnvironment('WS_MGMT_ENDPOINT', wsMgmtEndpoint);
 
 // Grant permissions
 connTable.grantReadData(websocketKeepaliveFunction);
+robotPresenceTable.grantReadData(websocketKeepaliveFunction);
 
 // Grant permission to send messages via WebSocket Management API
 websocketKeepaliveFunction.addToRolePolicy(new PolicyStatement({
