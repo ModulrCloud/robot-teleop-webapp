@@ -70,12 +70,18 @@ vi.mock('jose', async () => {
 });
 
 // ---------- Import after mocks are set up ----------
-import { handler } from './handler';
+import {
+  handler,
+  isNewProtocol,
+  extractNewProtocolVersion,
+  isSupportedProtocolVersion,
+} from './handler';
 import {
   PutItemCommand,
   GetItemCommand,
   DeleteItemCommand,
   QueryCommand,
+  UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
 import { PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 
@@ -148,8 +154,92 @@ beforeEach(() => {
       return Promise.resolve({ Items: [] });
     }
     
+    // For UpdateItemCommand (protocol persistence in Stage 1), return empty
+    // This prevents UpdateItem from consuming mockResolvedValueOnce meant for GetItem
+    if (command instanceof UpdateItemCommand) {
+      return Promise.resolve({});
+    }
+    
     // For all other commands, return empty
     return Promise.resolve({});
+  });
+});
+
+// ===================================================================
+// Stage 1: Protocol detection (dual-protocol support)
+// ===================================================================
+
+describe('protocol detection (Stage 1)', () => {
+  describe('isNewProtocol', () => {
+    it('returns true for new protocol (type contains dot)', () => {
+      expect(isNewProtocol({ type: 'signalling.register' })).toBe(true);
+      expect(isNewProtocol({ type: 'signalling.offer' })).toBe(true);
+      expect(isNewProtocol({ type: 'agent.ping' })).toBe(true);
+    });
+    it('returns false for legacy protocol (type without dot)', () => {
+      expect(isNewProtocol({ type: 'register' })).toBe(false);
+      expect(isNewProtocol({ type: 'offer' })).toBe(false);
+      expect(isNewProtocol({ type: 'candidate' })).toBe(false);
+    });
+    it('returns false when type is missing or not a string', () => {
+      expect(isNewProtocol({})).toBe(false);
+      expect(isNewProtocol({ type: 123 })).toBe(false);
+    });
+  });
+
+  describe('extractNewProtocolVersion', () => {
+    it('extracts version from new protocol message', () => {
+      expect(extractNewProtocolVersion({ version: '0.0' })).toBe('0.0');
+      expect(extractNewProtocolVersion({ version: '0.1' })).toBe('0.1');
+    });
+    it('returns undefined when version is missing or not a string', () => {
+      expect(extractNewProtocolVersion({})).toBeUndefined();
+      expect(extractNewProtocolVersion({ version: 0 })).toBeUndefined();
+    });
+  });
+
+  describe('isSupportedProtocolVersion', () => {
+    it('returns true for supported versions', () => {
+      expect(isSupportedProtocolVersion('0.0')).toBe(true);
+      expect(isSupportedProtocolVersion('0.1')).toBe(true);
+    });
+    it('returns false for unsupported versions', () => {
+      expect(isSupportedProtocolVersion('1.0')).toBe(false);
+      expect(isSupportedProtocolVersion('0.2')).toBe(false);
+    });
+    it('returns false for undefined or empty', () => {
+      expect(isSupportedProtocolVersion(undefined)).toBe(false);
+    });
+  });
+
+  describe('protocol persistence and mismatch', () => {
+    it('handles new-protocol message without crashing (returns 400 unknown type until Stage 2)', async () => {
+      // Connection lookup returns connection with userId
+      ddbSend.mockResolvedValueOnce({
+        Item: {
+          userId: { S: 'user-1' },
+          username: { S: 'user-1' },
+          groups: { S: 'USERS' },
+        },
+      });
+      // UpdateItem for protocol persistence (will persist modulr-v0)
+      ddbSend.mockResolvedValueOnce({});
+      const token = mkToken({ sub: 'user-1' });
+      const resp = await handler({
+        requestContext: { routeKey: '$default', connectionId: 'C-1' } as any,
+        queryStringParameters: { token },
+        body: JSON.stringify({
+          type: 'signalling.register',
+          version: '0.0',
+          id: 'msg-1',
+          timestamp: new Date().toISOString(),
+          payload: { agentId: 'robot-123' },
+        }),
+      } as any);
+      // Stage 1: new protocol messages hit "unknown message type" until Stage 2 adds normalizeNewProtocol
+      expect(resp.statusCode).toBe(400);
+      expect(resp.body).toContain('Unknown message type');
+    });
   });
 });
 
@@ -208,6 +298,8 @@ describe('offer forwarding', () => {
         groups: { S: 'PARTNERS' },
       },
     });
+    // UpdateItem for protocol persistence
+    ddbSend.mockResolvedValueOnce({});
     // Single robot presence lookup (cached and reused for is-from-robot, ACL owner check, and target connectionId)
     ddbSend.mockResolvedValueOnce({
       Item: { connectionId: { S: 'R-1' }, ownerUserId: { S: 'owner-1' } },
@@ -238,12 +330,12 @@ describe('offer forwarding', () => {
 
 describe('$disconnect', () => {
   it('deletes connection row', async () => {
-    ddbSend.mockResolvedValueOnce({}); // DeleteItemCommand
     const resp = await handler({
       requestContext: { routeKey: '$disconnect', connectionId: 'C-1' } as any,
     } as any);
     expect(resp.statusCode).toBe(200);
-    expect(ddbSend.mock.calls[0][0]).toBeInstanceOf(DeleteItemCommand);
+    const deleteCall = ddbSend.mock.calls.find((c) => c[0] instanceof DeleteItemCommand);
+    expect(deleteCall).toBeDefined();
   });
 });
 
@@ -365,6 +457,8 @@ describe('robot offline & ICE', () => {
         groups: { S: 'PARTNERS' },
       },
     });
+    // UpdateItem for protocol persistence (default mock handles it; this placeholder keeps mock order correct)
+    ddbSend.mockResolvedValueOnce({});
     // Single robot presence lookup (cached for is-from-robot, ACL owner, and target connectionId)
     ddbSend.mockResolvedValueOnce({ Item: { connectionId: { S: 'R-ice' }, ownerUserId: { S: 'owner-4' } } });
     // Connection lookup for user email/username (in handleSignal when target is 'robot')
@@ -402,6 +496,8 @@ describe('takeover', () => {
         groups: { S: 'USERS' },
       },
     });
+    // UpdateItem for protocol persistence
+    ddbSend.mockResolvedValueOnce({});
     // Single robot presence lookup (cached; takeover uses it for owner check and ACL path)
     ddbSend.mockResolvedValueOnce({
       Item: { ownerUserId: { S: 'owner-A' }, connectionId: { S: 'R-TA' } },
@@ -433,6 +529,8 @@ describe('takeover', () => {
         groups: { S: 'ADMINS' },
       },
     });
+    // UpdateItem for protocol persistence
+    ddbSend.mockResolvedValueOnce({});
     // Single robot presence lookup (cached; admin path uses it for owner check)
     ddbSend.mockResolvedValueOnce({
       Item: { ownerUserId: { S: 'owner-X' }, connectionId: { S: 'R-TADM' } },
@@ -494,9 +592,10 @@ describe('additional edge cases', () => {
     expect(apigwSend).not.toHaveBeenCalled();
   });
   it('forwards offer to specific client when target=client', async () => {
-    // Connection lookup for auth (returns empty, falls back to JWT - handled by default mock)
-    // Robot presence lookup (to detect if message is from robot)
-    ddbSend.mockResolvedValueOnce({ Item: { connectionId: { S: 'R-robot' } } });
+    // Connection lookup (empty -> JWT fallback), REVOKED check ({} = not revoked), robot presence
+    ddbSend.mockResolvedValueOnce({}); // GetItem CONN_TABLE - no connection
+    ddbSend.mockResolvedValueOnce({}); // GetItem REVOKED - not revoked (JWT fallback path)
+    ddbSend.mockResolvedValueOnce({ Item: { connectionId: { S: 'R-robot' } } }); // GetItem ROBOT_PRESENCE
     const token = mkToken({ sub: 'user-1' });
 
     apigwSend.mockResolvedValueOnce({}); // PostToConnection success
@@ -541,6 +640,8 @@ describe('additional edge cases', () => {
         groups: { S: 'PARTNERS' },
       },
     });
+    // UpdateItem for protocol persistence (default mock handles it; this placeholder keeps mock order correct)
+    ddbSend.mockResolvedValueOnce({});
     // Single robot presence lookup (cached for is-from-robot, ACL owner, and target connectionId)
     ddbSend.mockResolvedValueOnce({
       Item: { connectionId: { S: 'R-1' }, ownerUserId: { S: 'owner-1' } },
@@ -586,6 +687,8 @@ describe("Mike's Communication Schema Format", () => {
           groups: { S: 'USERS' },
         },
       });
+      // UpdateItem for protocol persistence
+      ddbSend.mockResolvedValueOnce({});
       // Single robot presence lookup (cached for is-from-robot, ACL owner, and target connectionId)
       ddbSend.mockResolvedValueOnce({
         Item: { connectionId: { S: 'R-1' }, ownerUserId: { S: 'other-owner' } },
@@ -631,6 +734,8 @@ describe("Mike's Communication Schema Format", () => {
           groups: { S: 'USERS' },
         },
       });
+      // UpdateItem for protocol persistence
+      ddbSend.mockResolvedValueOnce({});
       // Single robot presence lookup (cached for is-from-robot, ACL owner, and target connectionId)
       ddbSend.mockResolvedValueOnce({
         Item: { connectionId: { S: 'R-1' }, ownerUserId: { S: 'other-owner' } },
@@ -677,6 +782,8 @@ describe("Mike's Communication Schema Format", () => {
           groups: { S: 'PARTNERS' },
         },
       });
+      // UpdateItem for protocol persistence
+      ddbSend.mockResolvedValueOnce({});
       // Robot presence lookup (to verify message is from robot)
       ddbSend.mockResolvedValueOnce({
         Item: { connectionId: { S: 'R-robot' } },
@@ -719,6 +826,8 @@ describe("Mike's Communication Schema Format", () => {
           groups: { S: 'USERS' },
         },
       });
+      // UpdateItem for protocol persistence
+      ddbSend.mockResolvedValueOnce({});
       // Single robot presence lookup (cached for is-from-robot, ACL owner, and target connectionId)
       ddbSend.mockResolvedValueOnce({
         Item: { connectionId: { S: 'R-1' }, ownerUserId: { S: 'other-owner' } },
@@ -767,6 +876,8 @@ describe("Mike's Communication Schema Format", () => {
           groups: { S: 'USERS' },
         },
       });
+      // UpdateItem for protocol persistence
+      ddbSend.mockResolvedValueOnce({});
       // Single robot presence lookup (cached for is-from-robot, ACL owner, and target connectionId)
       ddbSend.mockResolvedValueOnce({
         Item: { connectionId: { S: 'R-1' }, ownerUserId: { S: 'other-owner' } },
@@ -809,6 +920,8 @@ describe("Mike's Communication Schema Format", () => {
           groups: { S: 'USERS' },
         },
       });
+      // UpdateItem for protocol persistence
+      ddbSend.mockResolvedValueOnce({});
       // Single robot presence lookup (cached for is-from-robot, ACL owner, and target connectionId)
       ddbSend.mockResolvedValueOnce({
         Item: { connectionId: { S: 'R-1' }, ownerUserId: { S: 'other-owner' } },
@@ -854,6 +967,8 @@ describe("Mike's Communication Schema Format", () => {
           groups: { S: 'USERS' },
         },
       });
+      // UpdateItem for protocol persistence
+      ddbSend.mockResolvedValueOnce({});
       // Single robot presence lookup (cached for is-from-robot, ACL owner, and target connectionId)
       ddbSend.mockResolvedValueOnce({
         Item: { connectionId: { S: 'R-1' }, ownerUserId: { S: 'other-owner' } },
