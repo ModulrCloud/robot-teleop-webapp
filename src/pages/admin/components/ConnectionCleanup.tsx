@@ -204,6 +204,11 @@ export const ConnectionCleanup = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '0.5rem' }}>
               <div>
                 <h4 style={{ marginBottom: '0.5rem', fontSize: '0.95rem' }}>Connections Table (CONN_TABLE)</h4>
+                {(activeRobots.totalConnections ?? 0) > 10 && (
+                  <p style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)', marginBottom: '0.25rem' }}>
+                    Showing first 10 of {activeRobots.totalConnections}
+                  </p>
+                )}
                 <div style={{ overflowX: 'auto', maxHeight: '200px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px' }}>
                   <table className="admin-table">
                     <thead>
@@ -235,6 +240,11 @@ export const ConnectionCleanup = () => {
               </div>
               <div>
                 <h4 style={{ marginBottom: '0.5rem', fontSize: '0.95rem' }}>Robot Presence Table (ROBOT_PRESENCE_TABLE)</h4>
+                {(activeRobots.activeRobots ?? 0) > 20 && (
+                  <p style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)', marginBottom: '0.25rem' }}>
+                    Showing first 20 of {activeRobots.activeRobots}
+                  </p>
+                )}
                 <div style={{ overflowX: 'auto', maxHeight: '200px', overflowY: 'auto', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px' }}>
                   <table className="admin-table">
                     <thead>

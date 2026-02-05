@@ -6,6 +6,10 @@ const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
 const CONN_TABLE = process.env.CONN_TABLE!;
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 
+// Cap returned entries for admin diagnostics to keep payload size bounded
+const ROBOT_PRESENCE_DISPLAY_CAP = 20;
+const CONN_TABLE_DISPLAY_CAP = 10;
+
 const db = new DynamoDBClient({});
 const cognito = new CognitoIdentityProviderClient({});
 
@@ -119,8 +123,8 @@ export const handler: Schema["getActiveRobotsLambda"]["functionHandler"] = async
       robotConnections,
       clientConnections,
       monitorConnections,
-      robotPresenceEntries: presenceItems,
-      connTableEntries: connItems,
+      robotPresenceEntries: presenceItems.slice(0, ROBOT_PRESENCE_DISPLAY_CAP),
+      connTableEntries: connItems.slice(0, CONN_TABLE_DISPLAY_CAP),
     };
     console.log('[ACTIVE_ROBOTS_DEBUG] Returning response keys:', Object.keys(response), 'robotPresenceEntries:', response.robotPresenceEntries.length, 'connTableEntries:', response.connTableEntries.length);
     return JSON.stringify(response);
