@@ -363,6 +363,77 @@ describe('normalizeNewProtocol (Stage 2)', () => {
       expect(out!.clientConnectionId).toBe('C-client');
       expect(out!.payload?.candidate).toContain('192.0.2.3');
     });
+    ddbSend.mockResolvedValueOnce({}); // UpdateItem protocol
+    ddbSend.mockResolvedValueOnce({}); // UpdateItem lastPongAt (agent.pong handler does not run - agent.ping triggers pong)
+    apigwSend.mockResolvedValueOnce({});
+
+    const token = mkToken({ sub: 'user-1' });
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-1'),
+      queryStringParameters: { token },
+      body: JSON.stringify({
+        type: 'agent.ping',
+        version: '0.0',
+        id: 'ping-123',
+        timestamp: new Date().toISOString(),
+      }),
+    }));
+
+    expect(resp.statusCode).toBe(200);
+    expect(apigwSend).toHaveBeenCalled();
+    const sent = JSON.parse(Buffer.from(apigwSend.mock.calls[0][0].input.Data).toString('utf-8'));
+    expect(sent.type).toBe('agent.pong');
+    expect(sent.id).toBe('ping-123-pong');
+  });
+
+  it('agent.pong updates lastPongAt and returns 200', async () => {
+    ddbSend.mockResolvedValueOnce({
+      Item: { userId: { S: 'user-1' }, username: { S: 'u' }, groups: { S: 'USERS' } },
+    });
+    ddbSend.mockResolvedValueOnce({}); // UpdateItem protocol
+    ddbSend.mockResolvedValueOnce({}); // UpdateItem lastPongAt
+
+    const token = mkToken({ sub: 'user-1' });
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-1'),
+      queryStringParameters: { token },
+      body: JSON.stringify({
+        type: 'agent.pong',
+        version: '0.0',
+        correlationId: 'ping-123',
+      }),
+    }));
+
+    expect(resp.statusCode).toBe(200);
+    const body = JSON.parse(resp.body);
+    expect(body.type).toBe('agent.pong-acknowledged');
+  });
+
+  it('unknown new-protocol type returns 400 with signalling.error', async () => {
+    ddbSend.mockResolvedValueOnce({
+      Item: {
+        userId: { S: 'user-1' },
+        username: { S: 'user-1' },
+        groups: { S: 'USERS' },
+      },
+    });
+    ddbSend.mockResolvedValueOnce({});
+
+    const token = mkToken({ sub: 'user-1' });
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-1'),
+      queryStringParameters: { token },
+      body: JSON.stringify({
+        type: 'signalling.unknown',
+        version: '0.0',
+        payload: {},
+      }),
+    }));
+
+    expect(resp.statusCode).toBe(400);
+    const body = JSON.parse(resp.body);
+    expect(body.error).toBe('Unknown message type');
+    expect(body.code).toBe('UNSUPPORTED_MESSAGE_TYPE');
   });
 
   describe('formatOutboundForConnection (Stage 3)', () => {
