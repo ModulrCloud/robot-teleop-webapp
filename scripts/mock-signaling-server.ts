@@ -41,9 +41,6 @@ wss.on('connection', (ws, req) => {
   const url = parse(req.url || '', true);
   const token = url.query.token as string;
   const connectionId = `conn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  
-  // Store WebSocket in map for lookup
-  (ws as any).connectionId = connectionId;
   wsMap.set(connectionId, ws);
   
   // Simple token validation (in real server, this would verify JWT)
@@ -338,7 +335,8 @@ function handleTakeover(connectionId: string, msg: NormalizedMsg & { robotId?: s
 server.listen(PORT, () => {
   console.log(`✅ Mock Signaling Server running on ws://localhost:${PORT}`);
   console.log(`\n📝 Usage:`);
-  console.log(`   Test script: npm run test:websocket <token> robot1`);
+  console.log(`   Legacy test:  npm run test:websocket ws://localhost:${PORT} <token> robot1`);
+  console.log(`   New-protocol: MOCK_LEGACY=false npm run test:mock-server (port ${PORT}); npm run test:websocket:new-protocol ws://localhost:${PORT}`);
   console.log(`   Or set: export VITE_WS_URL=ws://localhost:${PORT}`);
   console.log(`\n🛑 Press Ctrl+C to stop\n`);
 });
