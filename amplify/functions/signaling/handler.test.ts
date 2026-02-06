@@ -363,6 +363,9 @@ describe('normalizeNewProtocol (Stage 2)', () => {
       expect(out!.clientConnectionId).toBe('C-client');
       expect(out!.payload?.candidate).toContain('192.0.2.3');
     });
+  });
+
+  it('agent.ping responds with agent.pong', async () => {
     ddbSend.mockResolvedValueOnce({}); // UpdateItem protocol
     ddbSend.mockResolvedValueOnce({}); // UpdateItem lastPongAt (agent.pong handler does not run - agent.ping triggers pong)
     apigwSend.mockResolvedValueOnce({});
