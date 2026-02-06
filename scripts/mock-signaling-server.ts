@@ -253,12 +253,26 @@ function handleRegister(connectionId: string, msg: NormalizedMsg, conn: { userId
 }
 
 function handleSignal(connectionId: string, msg: NormalizedMsg, _ws: WebSocket) {
-  const robotId = msg.robotId;
-  const target = (msg.target || 'robot').toLowerCase();
   const type = msg.type;
+  if (!type) {
+    console.log(`[${connectionId}] ❌ Signal failed: type required`);
+    return;
+  }
 
-  if (!robotId || !type) {
-    console.log(`[${connectionId}] ❌ Signal failed: robotId and type required`);
+  const isFromRobot = Array.from(robotPresence.values()).some(p => p.connectionId === connectionId);
+  const inferredRobotId = isFromRobot
+    ? Array.from(robotPresence.entries()).find(([, p]) => p.connectionId === connectionId)?.[0]
+    : undefined;
+  const robotId = msg.robotId || inferredRobotId;
+
+  const target = (msg.target || (isFromRobot && msg.clientConnectionId ? 'client' : 'robot')).toLowerCase();
+
+  if (target === 'robot' && !robotId) {
+    console.log(`[${connectionId}] ❌ Signal failed: robotId required for target=robot`);
+    return;
+  }
+  if (target === 'client' && !msg.clientConnectionId) {
+    console.log(`[${connectionId}] ❌ Signal failed: clientConnectionId required for target=client`);
     return;
   }
 

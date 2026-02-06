@@ -94,11 +94,25 @@ async function main() {
     })));
     await sleep(800);
 
-    // 5. Test signalling.capabilities
+    // 5. Client sends ICE candidate to robot
+    clientWs.send(JSON.stringify(envelope('signalling.ice_candidate', {
+      robotId: ROBOT_ID,
+      candidate: 'mock-candidate-from-client',
+    })));
+    await sleep(500);
+
+    // 6. Robot sends ICE candidate to client (connectionId only - no explicit target; server infers from source)
+    robotWs.send(JSON.stringify(envelope('signalling.ice_candidate', {
+      connectionId: clientConnId,
+      candidate: 'mock-candidate-from-robot',
+    })));
+    await sleep(500);
+
+    // 7. Test signalling.capabilities
     clientWs.send(JSON.stringify(envelope('signalling.capabilities', {})));
     await sleep(400);
 
-    // 6. Test agent.ping
+    // 8. Test agent.ping
     clientWs.send(JSON.stringify({ type: 'agent.ping', version: '0.0', id: 'ping-1', timestamp: new Date().toISOString() }));
     await sleep(400);
 
@@ -107,14 +121,18 @@ async function main() {
     const gotPong = clientMsgs.some(m => m.type === 'agent.pong');
     const gotAnswer = clientMsgs.some(m => m.type === 'signalling.answer' || m.type === 'answer');
     const gotOffer = robotMsgs.some(m => m.type === 'signalling.offer' || m.type === 'offer');
+    const gotRobotIce = robotMsgs.some(m => m.type === 'signalling.ice_candidate' || m.type === 'ice-candidate');
+    const gotClientIce = clientMsgs.some(m => m.type === 'signalling.ice_candidate' || m.type === 'ice-candidate');
 
     console.log('\n📊 Results');
     console.log('==========');
     console.log(`  Robot received offer: ${gotOffer ? '✅' : '❌'}`);
     console.log(`  Client received answer: ${gotAnswer ? '✅' : '❌'}`);
+    console.log(`  Robot received ICE from client: ${gotRobotIce ? '✅' : '❌'}`);
+    console.log(`  Client received ICE from robot: ${gotClientIce ? '✅' : '❌'}`);
     console.log(`  signalling.capabilities response: ${gotCapabilities ? '✅' : '❌'}`);
     console.log(`  agent.ping → agent.pong: ${gotPong ? '✅' : '❌'}`);
-    const ok = gotOffer && gotAnswer && gotCapabilities && gotPong;
+    const ok = gotOffer && gotAnswer && gotRobotIce && gotClientIce && gotCapabilities && gotPong;
     console.log(`\n${ok ? '✅ New-protocol test passed' : '⚠️  Some checks failed'}\n`);
 
     robotWs.close();
