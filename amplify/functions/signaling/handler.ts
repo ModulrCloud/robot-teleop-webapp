@@ -46,7 +46,7 @@ const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
 // Types
 // ---------------------------------
 
-type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong' | 'agent.ping' | 'agent.pong';
+type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong' | 'agent.ping' | 'agent.pong' | 'signalling.capabilities';
 type Target = 'robot' | 'client';
 
 // ---------------------------------
@@ -199,6 +199,7 @@ type InternalOutboundMessage =
   | { type: 'welcome'; connectionId: string }
   | { type: 'monitor-confirmed'; robotId: string; message: string }
   | { type: 'admin-takeover'; robotId: string; by: string }
+  | { type: 'signalling.capabilities'; supportedVersions: readonly string[] }
   | Record<string, unknown>;
 
 /**
@@ -249,6 +250,10 @@ export function formatOutboundForConnection(
     };
     if (m.sdpMid !== undefined) (envelope.payload as Record<string, unknown>).sdpMid = m.sdpMid;
     if (m.sdpMLineIndex !== undefined) (envelope.payload as Record<string, unknown>).sdpMLineIndex = m.sdpMLineIndex;
+  } else if (envelopeType === 'signalling.capabilities') {
+    envelope.type = 'signalling.capabilities';
+    const m = msg as { supportedVersions?: readonly string[] };
+    envelope.payload = { supportedVersions: m.supportedVersions ?? [] };
   } else if (envelopeType === 'error') {
     envelope.type = 'signalling.error';
     const m = msg as { error?: string; message?: string; robotId?: string; currentCredits?: number; requiredCredits?: number };
@@ -427,7 +432,8 @@ function extractMessageType(raw: RawMessage): MessageType | undefined {
     t === 'ping' ||
     t === 'pong' ||
     t === 'agent.ping' ||
-    t === 'agent.pong'
+    t === 'agent.pong' ||
+    t === 'signalling.capabilities'
   ) {
     return t as MessageType;
   }
@@ -660,6 +666,10 @@ export function normalizeNewProtocol(raw: RawMessage): InboundMessage | null {
     case 'agent.pong':
       // Pass-through: no field mapping needed; used for keepalive/liveness (websocket-keepalive Lambda)
       return { type: typeStr as MessageType };
+
+    case 'signalling.capabilities':
+      // Request for supported versions; handler responds with signalling.capabilities payload
+      return { type: 'signalling.capabilities' };
 
     default:
       return null;
@@ -2581,6 +2591,20 @@ export async function handler(
       console.warn('[PONG_UPDATE_ERROR]', { connectionId, error: err instanceof Error ? err.message : String(err) });
     }
     return successResponse({ type: 'pong-acknowledged' });
+  }
+
+  // Handle signalling.capabilities (Modulr interface spec) - return supported versions
+  if (type === 'signalling.capabilities') {
+    try {
+      await postFormatted(connectionId, {
+        type: 'signalling.capabilities',
+        supportedVersions: SUPPORTED_PROTOCOL_VERSIONS,
+      });
+      return successResponse({ type: 'signalling.capabilities-sent' });
+    } catch (e) {
+      console.warn('[CAPABILITIES_RESPONSE_ERROR]', { connectionId, error: e instanceof Error ? e.message : String(e) });
+      return errorResponse(500, 'Failed to send capabilities');
+    }
   }
 
   // Handle ping / agent.ping - respond with agent.pong (Modulr interface spec)
