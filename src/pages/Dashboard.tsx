@@ -500,91 +500,6 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {isPartner && (
-        <div className="dashboard-section">
-          <h2 className="section-title">Partner Earnings</h2>
-          <div className="stats-grid dashboard-partner-earnings-grid">
-            <div className="stat-card">
-              <div className="stat-icon">
-                <FontAwesomeIcon icon={faDollarSign} />
-              </div>
-              <div className="stat-content">
-                <div className="stat-value">
-                  {loadingPayout ? '—' : pendingPayoutTotal != null ? `$${pendingPayoutTotal.toFixed(2)}` : '$0.00'}
-                </div>
-                <div className="stat-label">Total pending payout</div>
-                {pendingPayoutCount > 0 && (
-                  <div className="stat-meta" style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '0.25rem' }}>
-                    {pendingPayoutCount} payout{pendingPayoutCount !== 1 ? 's' : ''} pending
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="stat-card stat-card-payout-prefs">
-              <div className="stat-icon">
-                <FontAwesomeIcon icon={faSlidersH} />
-              </div>
-              <div className="stat-content">
-                <div className="stat-label">Payout preferences</div>
-                <div className="stat-payout-type-note">
-                  {preferredPayoutType === 'fiat' && 'Fiat (Stripe)'}
-                  {preferredPayoutType === 'mdr' && 'MDR (crypto)'}
-                  {!preferredPayoutType && 'Not set'}
-                </div>
-                {preferredPayoutType === 'fiat' && stripeConnectOnboardingComplete && (
-                  <div className="stat-payout-stripe-status">
-                    <span className="stat-payout-stripe-badge">Stripe connected</span>
-                    {stripeConnectAccountId && (
-                      <span className="stat-payout-stripe-id" title="Your Stripe Connect account ID">
-                        …{stripeConnectAccountId.slice(-6)}
-                      </span>
-                    )}
-                  </div>
-                )}
-                {preferredPayoutType === 'fiat' && !stripeConnectOnboardingComplete && (
-                  <>
-                    <button
-                      type="button"
-                      className="dashboard-payout-preferences-btn dashboard-stripe-setup-btn"
-                      onClick={handleSetUpStripePayouts}
-                      disabled={stripeConnectLoading}
-                      aria-label="Set up Stripe payouts"
-                    >
-                      {stripeConnectLoading ? 'Redirecting…' : 'Set up Stripe payouts'}
-                    </button>
-                    {stripeConnectError && (
-                      <p className="dashboard-stripe-error" role="alert">
-                        {stripeConnectError}
-                      </p>
-                    )}
-                  </>
-                )}
-                <button
-                  type="button"
-                  className="dashboard-payout-preferences-btn"
-                  onClick={() => setPayoutModalOpen(true)}
-                  aria-label="Change payout preferences"
-                >
-                  Change
-                </button>
-              </div>
-            </div>
-          </div>
-          {partnerId && (
-            <PayoutPreferencesModal
-              isOpen={payoutModalOpen}
-              onClose={() => setPayoutModalOpen(false)}
-              partnerId={partnerId}
-              preferredPayoutType={preferredPayoutType}
-              mdrPublicKey={mdrPublicKey}
-              onSaved={() => {
-                loadPartnerPendingPayout();
-              }}
-            />
-          )}
-        </div>
-      )}
-
       <div className="dashboard-section">
         <h2 className="section-title">Quick Actions</h2>
         <div className="quick-actions-grid">
@@ -727,6 +642,91 @@ export const Dashboard = () => {
           </div>
         )}
       </div>
+
+      {isPartner && (
+        <div className="dashboard-section">
+          <h2 className="section-title">Partner Earnings</h2>
+          <div className="stats-grid dashboard-partner-earnings-grid">
+            <div className="stat-card">
+              <div className="stat-icon">
+                <FontAwesomeIcon icon={faDollarSign} />
+              </div>
+              <div className="stat-content">
+                <div className="stat-value">
+                  {loadingPayout ? '—' : pendingPayoutTotal != null ? `$${pendingPayoutTotal.toFixed(2)}` : '$0.00'}
+                </div>
+                <div className="stat-label">Total pending payout</div>
+                {pendingPayoutCount > 0 && (
+                  <div className="stat-meta" style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '0.25rem' }}>
+                    {pendingPayoutCount} payout{pendingPayoutCount !== 1 ? 's' : ''} pending
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="stat-card stat-card-payout-prefs">
+              <div className="stat-icon">
+                <FontAwesomeIcon icon={faSlidersH} />
+              </div>
+              <div className="stat-content">
+                <div className="stat-label">Payout preferences</div>
+                <div className="stat-payout-type-note">
+                  {preferredPayoutType === 'fiat' && 'Fiat (Stripe)'}
+                  {preferredPayoutType === 'mdr' && 'MDR (crypto)'}
+                  {!preferredPayoutType && 'Not set'}
+                </div>
+                {preferredPayoutType === 'fiat' && stripeConnectOnboardingComplete && (
+                  <div className="stat-payout-stripe-status">
+                    <span className="stat-payout-stripe-badge">Stripe connected</span>
+                    {stripeConnectAccountId && (
+                      <span className="stat-payout-stripe-id" title="Your Stripe Connect account ID">
+                        …{stripeConnectAccountId.slice(-6)}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {preferredPayoutType === 'fiat' && !stripeConnectOnboardingComplete && (
+                  <>
+                    <button
+                      type="button"
+                      className="dashboard-payout-preferences-btn dashboard-stripe-setup-btn"
+                      onClick={handleSetUpStripePayouts}
+                      disabled={stripeConnectLoading}
+                      aria-label="Set up Stripe payouts"
+                    >
+                      {stripeConnectLoading ? 'Redirecting…' : 'Set up Stripe payouts'}
+                    </button>
+                    {stripeConnectError && (
+                      <p className="dashboard-stripe-error" role="alert">
+                        {stripeConnectError}
+                      </p>
+                    )}
+                  </>
+                )}
+                <button
+                  type="button"
+                  className="dashboard-payout-preferences-btn"
+                  onClick={() => setPayoutModalOpen(true)}
+                  aria-label="Change payout preferences"
+                >
+                  Change
+                </button>
+              </div>
+            </div>
+          </div>
+          {partnerId && (
+            <PayoutPreferencesModal
+              isOpen={payoutModalOpen}
+              onClose={() => setPayoutModalOpen(false)}
+              partnerId={partnerId}
+              preferredPayoutType={preferredPayoutType}
+              mdrPublicKey={mdrPublicKey}
+              onSaved={() => {
+                loadPartnerPendingPayout();
+              }}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 };
