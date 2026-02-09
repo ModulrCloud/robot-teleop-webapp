@@ -19,12 +19,14 @@ const PORT = parseInt(process.argv[2] || '8765', 10);
 /**
  * Protocol mode: when true, use legacy message format (type: "register", "offer", etc.).
  * When false, use new Modulr Interface Spec protocol (type: "signalling.register", etc.).
- * Set to false and implement new protocol support in the branch below.
  */
-const LEGACY = true;
+const LEGACY = process.env.MOCK_LEGACY !== 'false'; // default true; set MOCK_LEGACY=false for new protocol
+
+const SUPPORTED_VERSIONS = ['0.0', '0.1'];
 
 // In-memory storage (simulating DynamoDB tables)
 const connections = new Map<string, { userId: string; kind: string; groups: string[] }>();
+const connectionProtocol = new Map<string, 'legacy' | 'modulr-v0'>();
 const robotPresence = new Map<string, { connectionId: string; ownerUserId: string; status: string }>();
 const wsMap = new Map<string, WebSocket>(); // Map connectionId -> WebSocket
 
@@ -32,15 +34,13 @@ const server = createServer();
 const wss = new WebSocketServer({ server, path: '/' });
 
 console.log(`🚀 Mock Signaling Server starting on ws://localhost:${PORT}`);
+console.log(`   Protocol mode: ${LEGACY ? 'LEGACY' : 'NEW (Modulr Interface Spec)'}`);
 console.log('=====================================\n');
 
 wss.on('connection', (ws, req) => {
   const url = parse(req.url || '', true);
   const token = url.query.token as string;
   const connectionId = `conn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  
-  // Store WebSocket in map for lookup
-  (ws as any).connectionId = connectionId;
   wsMap.set(connectionId, ws);
   
   // Simple token validation (in real server, this would verify JWT)
@@ -80,6 +80,7 @@ wss.on('connection', (ws, req) => {
     
     // Clean up
     connections.delete(connectionId);
+    connectionProtocol.delete(connectionId);
     wsMap.delete(connectionId);
     
     // Remove from robot presence if it was a robot
@@ -96,45 +97,142 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-function handleMessage(connectionId: string, msg: any, ws: WebSocket) {
+type NormalizedMsg = { type: string; robotId?: string; target?: 'robot' | 'client'; clientConnectionId?: string; payload?: Record<string, unknown> };
+
+function normalizeNewProtocol(msg: Record<string, unknown>): NormalizedMsg | null {
+  if (!msg || typeof msg.type !== 'string' || !msg.type.includes('.')) return null;
+  const p = (msg.payload && typeof msg.payload === 'object') ? msg.payload as Record<string, unknown> : {};
+  const t = String(msg.type).toLowerCase();
+  switch (t) {
+    case 'signalling.register': {
+      const agentId = typeof p.agentId === 'string' ? p.agentId.trim() : undefined;
+      return { type: 'register', robotId: agentId, payload: p };
+    }
+    case 'signalling.offer': {
+      const robotId = [p.robotId, p.agentId, msg.robotId].find((x): x is string => typeof x === 'string' && x.trim().length > 0)?.trim();
+      const connectionId = typeof p.connectionId === 'string' ? p.connectionId.trim() : undefined;
+      return { type: 'offer', robotId, target: 'robot', clientConnectionId: connectionId, payload: { sdp: p.sdp, sdpType: p.sdpType ?? 'offer' } };
+    }
+    case 'signalling.answer': {
+      const robotId = [p.robotId, p.agentId].find((x): x is string => typeof x === 'string' && x.trim().length > 0)?.trim();
+      const connectionId = typeof p.connectionId === 'string' ? p.connectionId.trim() : undefined;
+      return { type: 'answer', robotId, target: 'client', clientConnectionId: connectionId, payload: { sdp: p.sdp, sdpType: p.sdpType ?? 'answer' } };
+    }
+    case 'signalling.ice_candidate': {
+      const robotId = [p.robotId, p.agentId].find((x): x is string => typeof x === 'string' && x.trim().length > 0)?.trim();
+      const connectionId = typeof p.connectionId === 'string' ? p.connectionId.trim() : undefined;
+      return { type: 'ice-candidate', robotId, clientConnectionId: connectionId, payload: { candidate: p.candidate, sdpMid: p.sdpMid, sdpMLineIndex: p.sdpMLineIndex } };
+    }
+    case 'agent.ping':
+    case 'agent.pong':
+      return { type: t };
+    case 'signalling.capabilities':
+      return { type: 'signalling.capabilities' };
+    default:
+      return null;
+  }
+}
+
+function formatOutbound(msg: NormalizedMsg & { to?: string; from?: string; sdp?: string; candidate?: string }, destProtocol: 'legacy' | 'modulr-v0' | undefined, version = '0.0'): Record<string, unknown> {
+  if (destProtocol !== 'modulr-v0') {
+    return msg as Record<string, unknown>;
+  }
+  const envelope: Record<string, unknown> = { type: msg.type, version, id: `mock-${Date.now()}`, timestamp: new Date().toISOString(), payload: {} };
+  if (msg.type === 'offer') {
+    envelope.type = 'signalling.offer';
+    (envelope.payload as Record<string, unknown>).sdp = (msg.payload as Record<string, unknown>)?.sdp;
+    (envelope.payload as Record<string, unknown>).sdpType = 'offer';
+    (envelope.payload as Record<string, unknown>).connectionId = msg.from;
+  } else if (msg.type === 'answer') {
+    envelope.type = 'signalling.answer';
+    (envelope.payload as Record<string, unknown>).sdp = (msg.payload as Record<string, unknown>)?.sdp;
+    (envelope.payload as Record<string, unknown>).sdpType = 'answer';
+    (envelope.payload as Record<string, unknown>).connectionId = msg.to;
+  } else if (msg.type === 'candidate' || msg.type === 'ice-candidate') {
+    envelope.type = 'signalling.ice_candidate';
+    (envelope.payload as Record<string, unknown>).candidate = (msg.payload as Record<string, unknown>)?.candidate ?? msg.candidate;
+    (envelope.payload as Record<string, unknown>).connectionId = msg.clientConnectionId ?? msg.to ?? msg.from;
+  }
+  return envelope;
+}
+
+function sendTo(connId: string, data: Record<string, unknown>): void {
+  const ws = wsMap.get(connId);
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
+}
+
+function handleMessage(connectionId: string, msg: Record<string, unknown>, ws: WebSocket) {
   const conn = connections.get(connectionId);
   if (!conn) return;
 
   const isNewProtocol = typeof msg.type === 'string' && msg.type.includes('.');
-  if (!LEGACY && isNewProtocol) {
-    // TODO: Add support for new communication protocol (signalling.*, agent.*)
-    console.log(`[${connectionId}] ⚠️  New protocol not yet implemented: ${msg.type}`);
-    return;
-  }
   if (!LEGACY && !isNewProtocol) {
     console.log(`[${connectionId}] ⚠️  Legacy messages not accepted in new protocol mode`);
     return;
   }
 
-  console.log(`[${connectionId}] 📨 Received: ${msg.type}`, JSON.stringify(msg, null, 2));
+  // Detect and persist protocol on first message
+  if (!connectionProtocol.has(connectionId)) {
+    connectionProtocol.set(connectionId, isNewProtocol ? 'modulr-v0' : 'legacy');
+  }
 
-  switch (msg.type) {
+  let normalized: NormalizedMsg | Record<string, unknown> = msg;
+  if (isNewProtocol) {
+    const n = normalizeNewProtocol(msg);
+    if (!n) {
+      console.log(`[${connectionId}] ⚠️  Unknown new-protocol type: ${msg.type}`);
+      return;
+    }
+    normalized = n;
+  }
+
+  const type = (normalized as NormalizedMsg).type;
+  console.log(`[${connectionId}] 📨 Received: ${type}`, JSON.stringify(normalized, null, 2));
+
+  if (type === 'signalling.capabilities') {
+    const destProto = connectionProtocol.get(connectionId);
+    const response = destProto === 'modulr-v0'
+      ? { type: 'signalling.capabilities', version: '0.0', id: `cap-${Date.now()}`, timestamp: new Date().toISOString(), payload: { supportedVersions: SUPPORTED_VERSIONS } }
+      : { type: 'signalling.capabilities', supportedVersions: SUPPORTED_VERSIONS };
+    sendTo(connectionId, response);
+    return;
+  }
+
+  if (type === 'agent.ping') {
+    const pingId = (msg.id ?? msg.timestamp ?? Date.now()) as string;
+    const response = connectionProtocol.get(connectionId) === 'modulr-v0'
+      ? { type: 'agent.pong', version: '0.0', id: `${pingId}-pong`, timestamp: new Date().toISOString(), correlationId: pingId }
+      : { type: 'agent.pong', id: `${pingId}-pong`, correlationId: pingId };
+    sendTo(connectionId, response);
+    return;
+  }
+
+  if (type === 'agent.pong') {
+    return; // ack only, no response needed
+  }
+
+  switch (type) {
     case 'register':
-      handleRegister(connectionId, msg, conn);
+      handleRegister(connectionId, normalized as NormalizedMsg, conn);
       break;
-    
+
     case 'offer':
     case 'answer':
     case 'ice-candidate':
     case 'candidate':
-      handleSignal(connectionId, msg, ws);
+      handleSignal(connectionId, normalized as NormalizedMsg, ws);
       break;
-    
+
     case 'takeover':
-      handleTakeover(connectionId, msg, ws);
+      handleTakeover(connectionId, normalized as NormalizedMsg, ws);
       break;
-    
+
     default:
-      console.log(`[${connectionId}] ⚠️  Unknown message type: ${msg.type}`);
+      console.log(`[${connectionId}] ⚠️  Unknown message type: ${type}`);
   }
 }
 
-function handleRegister(connectionId: string, msg: any, conn: any) {
+function handleRegister(connectionId: string, msg: NormalizedMsg, conn: { userId: string; kind: string; groups: string[] }) {
   const robotId = msg.robotId;
   if (!robotId) {
     console.log(`[${connectionId}] ❌ Register failed: robotId required`);
@@ -154,68 +252,77 @@ function handleRegister(connectionId: string, msg: any, conn: any) {
   console.log(`[${connectionId}] ✅ Robot ${robotId} registered`);
 }
 
-function handleSignal(connectionId: string, msg: any, ws: WebSocket) {
-  const robotId = msg.robotId;
-  const target = (msg.target || 'robot').toLowerCase();
+function handleSignal(connectionId: string, msg: NormalizedMsg, _ws: WebSocket) {
   const type = msg.type;
-
-  if (!robotId || !type) {
-    console.log(`[${connectionId}] ❌ Signal failed: robotId and type required`);
+  if (!type) {
+    console.log(`[${connectionId}] ❌ Signal failed: type required`);
     return;
   }
 
-  let targetConn: WebSocket | undefined;
+  const isFromRobot = Array.from(robotPresence.values()).some(p => p.connectionId === connectionId);
+  const inferredRobotId = isFromRobot
+    ? Array.from(robotPresence.entries()).find(([, p]) => p.connectionId === connectionId)?.[0]
+    : undefined;
+  const robotId = msg.robotId || inferredRobotId;
+
+  const target = (msg.target || (isFromRobot && msg.clientConnectionId ? 'client' : 'robot')).toLowerCase();
+
+  if (target === 'robot' && !robotId) {
+    console.log(`[${connectionId}] ❌ Signal failed: robotId required for target=robot`);
+    return;
+  }
+  if (target === 'client' && !msg.clientConnectionId) {
+    console.log(`[${connectionId}] ❌ Signal failed: clientConnectionId required for target=client`);
+    return;
+  }
+
+  let targetConnId: string | undefined;
 
   if (target === 'robot') {
-    // Look up robot's connection
     const presence = robotPresence.get(robotId);
     if (!presence) {
       console.log(`[${connectionId}] ❌ Robot ${robotId} not found/offline`);
       return;
     }
-
-    // Find the robot's WebSocket connection
-    targetConn = wsMap.get(presence.connectionId);
-    if (!targetConn) {
-      console.log(`[${connectionId}] ❌ Robot connection ${presence.connectionId} not found`);
-      return;
-    }
+    targetConnId = presence.connectionId;
   } else if (target === 'client') {
-    // Client specified by clientConnectionId
     const clientConnId = msg.clientConnectionId;
     if (!clientConnId) {
       console.log(`[${connectionId}] ❌ clientConnectionId required for target=client`);
       return;
     }
-
-    targetConn = wsMap.get(clientConnId);
-    if (!targetConn) {
-      console.log(`[${connectionId}] ❌ Client connection ${clientConnId} not found`);
-      return;
-    }
+    targetConnId = clientConnId;
   }
 
-  if (targetConn) {
-    // Forward message
-    const outbound = {
-      type,
-      robotId,
-      from: connections.get(connectionId)?.userId || connectionId,
-      payload: msg.payload || {},
-    };
+  if (!targetConnId) return;
 
-    console.log(`[${connectionId}] 📤 Forwarding ${type} to ${target} (${targetConn.readyState === WebSocket.OPEN ? 'open' : 'closed'})`);
-    
-    if (targetConn.readyState === WebSocket.OPEN) {
-      targetConn.send(JSON.stringify(outbound));
-      console.log(`[${connectionId}] ✅ Message forwarded successfully`);
-    } else {
-      console.log(`[${connectionId}] ❌ Target connection not open`);
-    }
+  const targetConn = wsMap.get(targetConnId);
+  if (!targetConn || targetConn.readyState !== WebSocket.OPEN) {
+    console.log(`[${connectionId}] ❌ Target connection ${targetConnId} not found or not open`);
+    return;
   }
+
+  const destProtocol = connectionProtocol.get(targetConnId);
+  const fromConnId = connectionId;
+  const clientConnId = msg.clientConnectionId ?? (target === 'client' ? targetConnId : fromConnId);
+
+  const baseMsg: NormalizedMsg & { from?: string; to?: string; candidate?: string } = {
+    type,
+    robotId,
+    from: fromConnId,
+    to: targetConnId,
+    clientConnectionId: clientConnId,
+    payload: msg.payload || {},
+  };
+
+  const outbound = formatOutbound(baseMsg, destProtocol);
+
+  console.log(`[${connectionId}] 📤 Forwarding ${type} to ${target} (${targetConnId})`);
+  targetConn.send(JSON.stringify(outbound));
+  console.log(`[${connectionId}] ✅ Message forwarded successfully`);
 }
 
-function handleTakeover(connectionId: string, msg: any, ws: WebSocket) {
+function handleTakeover(connectionId: string, msg: NormalizedMsg & { robotId?: string }, _ws: WebSocket) {
   const robotId = msg.robotId;
   if (!robotId) {
     console.log(`[${connectionId}] ❌ Takeover failed: robotId required`);
@@ -242,7 +349,8 @@ function handleTakeover(connectionId: string, msg: any, ws: WebSocket) {
 server.listen(PORT, () => {
   console.log(`✅ Mock Signaling Server running on ws://localhost:${PORT}`);
   console.log(`\n📝 Usage:`);
-  console.log(`   Test script: npm run test:websocket <token> robot1`);
+  console.log(`   Legacy test:  npm run test:websocket ws://localhost:${PORT} <token> robot1`);
+  console.log(`   New-protocol: MOCK_LEGACY=false npm run test:mock-server (port ${PORT}); npm run test:websocket:new-protocol ws://localhost:${PORT}`);
   console.log(`   Or set: export VITE_WS_URL=ws://localhost:${PORT}`);
   console.log(`\n🛑 Press Ctrl+C to stop\n`);
 });

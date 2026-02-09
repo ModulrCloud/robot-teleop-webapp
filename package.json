@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:websocket": "tsx scripts/test-websocket-local.ts",
+    "test:websocket:new-protocol": "tsx scripts/test-websocket-new-protocol.ts",
     "test:ws-config": "tsx scripts/get-websocket-config.ts",
     "test:get-token": "tsx scripts/get-token.ts",
     "test:mock-server": "tsx scripts/mock-signaling-server.ts",
