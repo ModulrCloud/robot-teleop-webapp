@@ -321,6 +321,7 @@ const schema = a.schema({
     country: a.string(),
     latitude: a.float(),
     longitude: a.float(),
+    publicKey: a.string(), // Optional: Ed25519 public key (base64 or hex) for PKI auth; 32-byte key
     ratings: a.hasMany('RobotRating', 'robotUuid'), // Relationship to ratings
     reservations: a.hasMany('RobotReservation', 'robotUuid'), // Relationship to reservations
     availability: a.hasMany('RobotAvailability', 'robotUuid'), // Relationship to availability blocks
@@ -557,6 +558,7 @@ const schema = a.schema({
       country: a.string(),
       latitude: a.float(),
       longitude: a.float(),
+      publicKey: a.string(), // Optional: Ed25519 public key (base64 or hex) for PKI auth
     })
     .returns(a.string())
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (owner/admin check)

@@ -22,8 +22,10 @@ import {
   faCircle,
   faCloudUploadAlt,
   faTimes,
-  faLock
+  faLock,
+  faQrcode
 } from '@fortawesome/free-solid-svg-icons';
+import { useToast } from '../hooks/useToast';
 
 // Robot types with their default images
 const ROBOT_TYPES = [
@@ -41,6 +43,29 @@ const getDefaultRobotImage = (robotType: string): string => {
   return type?.image || "/default/humanoid.png";
 };
 
+/** Validates Ed25519 public key format (32 bytes). Accepts base64, base64url, or hex. Returns error message or null if valid. */
+function validateEd25519PublicKeyFormat(input: string): string | null {
+  const trimmed = input.trim();
+  if (trimmed.length === 0) return null;
+  try {
+    let decoded: Uint8Array;
+    if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length === 64) {
+      decoded = Uint8Array.from(trimmed.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
+    } else {
+      const base64 = trimmed.replace(/-/g, '+').replace(/_/g, '/');
+      const binary = atob(base64);
+      decoded = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) decoded[i] = binary.charCodeAt(i);
+    }
+    if (decoded.length !== 32) {
+      return `Invalid Ed25519 public key: expected 32 bytes after decode, got ${decoded.length}. Use base64 or hex (64 characters).`;
+    }
+    return null;
+  } catch {
+    return 'Invalid Ed25519 public key: use base64, base64url, or hex (64 hex characters for 32-byte key).';
+  }
+}
+
 type RobotListing = {
   robotName: string;
   description: string;
@@ -53,6 +78,7 @@ type RobotListing = {
   country: string;
   latitude: string;
   longitude: string;
+  publicKey: string; // Optional Ed25519 public key (base64 or hex) for PKI auth
 };
 
 const client = generateClient<Schema>();
@@ -60,6 +86,7 @@ const client = generateClient<Schema>();
 export const EditRobot = () => {
   usePageTitle();
   const navigate = useNavigate();
+  const { toast, showToast } = useToast();
   const [searchParams] = useSearchParams();
   const robotId = searchParams.get('robotId');
   const isViewMode = searchParams.get('mode') === 'view';
@@ -86,6 +113,7 @@ export const EditRobot = () => {
     country: "",
     latitude: "",
     longitude: "",
+    publicKey: "",
   });
   const [isVerified, setIsVerified] = useState(false);
 
@@ -107,6 +135,11 @@ export const EditRobot = () => {
   exchangeRatesRef.current = exchangeRates;
   currencyCodeRef.current = currencyCode;
   const [hourlyRateCurrency, setHourlyRateCurrency] = useState<number>(1.00);
+
+  // Scroll to top when the page mounts (avoids ending up scrolled down from restoration or layout)
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   // Fetch exchange rates on mount
   useEffect(() => {
@@ -221,6 +254,7 @@ export const EditRobot = () => {
 
         const loadedHourlyRateCredits = robotData.hourlyRateCredits ?? 100;
 
+        const extendedRobotData = robotData as typeof robotData & { publicKey?: string | null };
         setRobotListing({
           robotName: name,
           description: robotData.description || "",
@@ -233,6 +267,7 @@ export const EditRobot = () => {
           country: robotData.country || "",
           latitude: robotData.latitude?.toString() || "",
           longitude: robotData.longitude?.toString() || "",
+          publicKey: extendedRobotData.publicKey ?? "",
         });
 
         // Immediately update currency display if exchange rates are available
@@ -444,6 +479,16 @@ export const EditRobot = () => {
       ? validRobotType
       : ROBOT_TYPES[0].value;
 
+    const publicKeyTrimmed = robotListing.publicKey.trim();
+    if (publicKeyTrimmed !== '') {
+      const publicKeyError = validateEd25519PublicKeyFormat(publicKeyTrimmed);
+      if (publicKeyError) {
+        setError(publicKeyError);
+        setIsLoading(false);
+        return;
+      }
+    }
+
     const robotData = {
       robotName: robotListing.robotName,
       description: robotListing.description,
@@ -458,6 +503,7 @@ export const EditRobot = () => {
       country: robotListing.country || undefined,
       latitude: robotListing.latitude ? (isNaN(parseFloat(robotListing.latitude)) ? undefined : parseFloat(robotListing.latitude)) : undefined,
       longitude: robotListing.longitude ? (isNaN(parseFloat(robotListing.longitude)) ? undefined : parseFloat(robotListing.longitude)) : undefined,
+      publicKey: publicKeyTrimmed === '' ? null : publicKeyTrimmed,
     };
 
     try {
@@ -982,6 +1028,43 @@ export const EditRobot = () => {
                 </p>
               </div>
 
+              <div className="form-section pki-section">
+                <h3>PKI authentication <span className="optional">(optional)</span></h3>
+                <p className="form-help-text">
+                  For robots that support PKI, paste the robot&apos;s public key here.
+                  Key must be base64, base64url, or hex (64 hex characters).
+                </p>
+                <div className="form-group">
+                  <label htmlFor="robot-publicKey">Robot public key</label>
+                  <div className="pki-public-key-row">
+                  <textarea
+                    id="robot-publicKey"
+                    name="publicKey"
+                    value={robotListing.publicKey}
+                    onChange={handleInputChange}
+                    placeholder="Paste base64 or hex public key (32 bytes)"
+                    rows={3}
+                    disabled={isLoading || isViewMode}
+                    style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
+                  />
+                  {robotListing.publicKey.trim() !== '' && validateEd25519PublicKeyFormat(robotListing.publicKey) && (
+                    <p className="form-help-text" style={{ color: 'var(--error-color, #dc2626)', marginTop: '0.25rem' }}>
+                      {validateEd25519PublicKeyFormat(robotListing.publicKey)}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    className="pki-qr-tease"
+                    title="Coming soon"
+                    onClick={() => showToast('Coming soon', 'info')}
+                    aria-label="Scan QR code (coming soon)"
+                  >
+                    <FontAwesomeIcon icon={faQrcode} />
+                  </button>
+                  </div>
+                </div>
+              </div>
+
               {robotIdForStatus && (
                 <div className="form-section">
                   <RobotAvailabilityManager
@@ -1048,7 +1131,12 @@ export const EditRobot = () => {
                   <button
                     type="submit"
                     className="submit-btn"
-                    disabled={isLoading || isDeleting || !robotListing.robotName.trim()}
+                    disabled={
+                      isLoading ||
+                      isDeleting ||
+                      !robotListing.robotName.trim() ||
+                      (robotListing.publicKey.trim() !== '' && validateEd25519PublicKeyFormat(robotListing.publicKey) !== null)
+                    }
                   >
                     {isLoading ? (
                       <>
@@ -1088,6 +1176,14 @@ export const EditRobot = () => {
           </>
         )}
       </div>
+
+      {/* Toast Notification */}
+      {toast.visible && (
+        <div className={`toast-notification ${toast.type}`}>
+          <FontAwesomeIcon icon={toast.type === 'error' ? faExclamationCircle : toast.type === 'success' ? faCheckCircle : faInfoCircle} />
+          <span>{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 };

@@ -116,13 +116,18 @@ export function RobotSchedulingCalendar({
     loadWeekData();
   }, [loadWeekData, refreshTrigger]);
 
+  // Scroll the calendar's internal container to 6AM (slot index 24) without moving the page
   useEffect(() => {
     if (!isLoading && calendarGridRef.current) {
-      const timeSlotElements = calendarGridRef.current.querySelectorAll('.time-slot');
+      const container = calendarGridRef.current;
+      const timeSlotElements = container.querySelectorAll('.time-slot');
       if (timeSlotElements.length > 24) {
-        setTimeout(() => {
-          timeSlotElements[24].scrollIntoView({ behavior: 'auto', block: 'start' });
-        }, 100);
+        const slotEl = timeSlotElements[24] as HTMLElement;
+        const run = () => {
+          const slotTop = slotEl.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
+          container.scrollTop = Math.max(0, slotTop - 8);
+        };
+        setTimeout(run, 100);
       }
     }
   }, [isLoading, currentWeek]);
