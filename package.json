@@ -37,6 +37,7 @@
     "@transitive-sdk/utils-web": "^0.14.4",
     "aws-amplify": "^6.15.7",
     "jose": "^5.9.6",
+    "jsqr": "^1.4.0",
     "react": "^19.1.1",
     "react-bootstrap": "^2.10.10",
     "react-dom": "^19.1.1",

@@ -26,6 +26,7 @@ import {
   faQrcode
 } from '@fortawesome/free-solid-svg-icons';
 import { useToast } from '../hooks/useToast';
+import { QRScannerModal } from '../components/QRScannerModal';
 
 // Robot types with their default images
 const ROBOT_TYPES = [
@@ -49,10 +50,14 @@ function validateEd25519PublicKeyFormat(input: string): string | null {
   if (trimmed.length === 0) return null;
   try {
     let decoded: Uint8Array;
-    if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length === 64) {
-      decoded = Uint8Array.from(trimmed.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
+    const hexOnly = trimmed.replace(/[^0-9a-fA-F]/g, '');
+    if (hexOnly.length === 64) {
+      decoded = Uint8Array.from(hexOnly.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
     } else {
-      const base64 = trimmed.replace(/-/g, '+').replace(/_/g, '/');
+      const base64 = trimmed.replace(/-/g, '+').replace(/_/g, '/').replace(/\s/g, '');
+      if (!/^[A-Za-z0-9+/]+(?:={0,2})$/.test(base64)) {
+        return 'Invalid Ed25519 public key: use base64, base64url, or hex (64 hex characters for 32-byte key).';
+      }
       const binary = atob(base64);
       decoded = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) decoded[i] = binary.charCodeAt(i);
@@ -135,6 +140,7 @@ export const EditRobot = () => {
   exchangeRatesRef.current = exchangeRates;
   currencyCodeRef.current = currencyCode;
   const [hourlyRateCurrency, setHourlyRateCurrency] = useState<number>(1.00);
+  const [showQrScanner, setShowQrScanner] = useState(false);
 
   // Scroll to top when the page mounts (avoids ending up scrolled down from restoration or layout)
   useEffect(() => {
@@ -529,6 +535,54 @@ export const EditRobot = () => {
       setSuccess(false);
     }
 
+    setIsLoading(false);
+  };
+
+  const handleRemovePublicKey = async () => {
+    if (!robotId || isViewMode) return;
+    if (robotListing.publicKey.trim() === '') return;
+    setIsLoading(true);
+    setError(null);
+    const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
+      ? robotListing.allowedUserEmails
+        .split(/[,\n]/)
+        .map((email: string) => email.trim())
+        .filter((email: string) => email.length > 0 && email.includes('@'))
+      : [];
+    const validRobotType = robotListing.robotType && robotListing.robotType.trim() !== ''
+      ? robotListing.robotType.trim().toLowerCase()
+      : ROBOT_TYPES[0].value;
+    const robotTypeToSend = ROBOT_TYPES.some(t => t.value === validRobotType)
+      ? validRobotType
+      : ROBOT_TYPES[0].value;
+    const robotData = {
+      robotName: robotListing.robotName,
+      description: robotListing.description,
+      model: robotTypeToSend,
+      robotType: robotTypeToSend,
+      hourlyRateCredits: robotListing.hourlyRateCredits,
+      enableAccessControl: robotListing.enableAccessControl,
+      additionalAllowedUsers: emailList,
+      ...(isVerified && existingImageKey ? { imageUrl: existingImageKey } : {}),
+      city: robotListing.city || undefined,
+      state: robotListing.state || undefined,
+      country: robotListing.country || undefined,
+      latitude: robotListing.latitude ? (isNaN(parseFloat(robotListing.latitude)) ? undefined : parseFloat(robotListing.latitude)) : undefined,
+      longitude: robotListing.longitude ? (isNaN(parseFloat(robotListing.longitude)) ? undefined : parseFloat(robotListing.longitude)) : undefined,
+      publicKey: null,
+    };
+    try {
+      const robot = await client.mutations.updateRobotLambda({ robotId, ...robotData });
+      if (robot.errors) {
+        setError(robot.errors[0]?.message || 'Failed to remove key');
+      } else {
+        setRobotListing(prev => ({ ...prev, publicKey: '' }));
+        showToast('Public key removed. Robot will use JWT until a key is set again.', 'success');
+      }
+    } catch (error) {
+      logger.error('Error removing public key:', error);
+      setError(error instanceof Error ? error.message : 'Failed to remove key');
+    }
     setIsLoading(false);
   };
 
@@ -944,7 +998,7 @@ export const EditRobot = () => {
                     />
                     <p className="form-help-text">
                       Enter email addresses of users who should have access to this robot.
-                      You (the owner), chris@modulr.cloud, and mike@modulr.cloud are automatically included.
+                      You (the owner) and modulr employees are automatically included.
                     </p>
                   </div>
                 )}
@@ -1037,30 +1091,45 @@ export const EditRobot = () => {
                 <div className="form-group">
                   <label htmlFor="robot-publicKey">Robot public key</label>
                   <div className="pki-public-key-row">
-                  <textarea
-                    id="robot-publicKey"
-                    name="publicKey"
-                    value={robotListing.publicKey}
-                    onChange={handleInputChange}
-                    placeholder="Paste base64 or hex public key (32 bytes)"
-                    rows={3}
-                    disabled={isLoading || isViewMode}
-                    style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
-                  />
-                  {robotListing.publicKey.trim() !== '' && validateEd25519PublicKeyFormat(robotListing.publicKey) && (
-                    <p className="form-help-text" style={{ color: 'var(--error-color, #dc2626)', marginTop: '0.25rem' }}>
-                      {validateEd25519PublicKeyFormat(robotListing.publicKey)}
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    className="pki-qr-tease"
-                    title="Coming soon"
-                    onClick={() => showToast('Coming soon', 'info')}
-                    aria-label="Scan QR code (coming soon)"
-                  >
-                    <FontAwesomeIcon icon={faQrcode} />
-                  </button>
+                    <input
+                      type="text"
+                      id="robot-publicKey"
+                      name="publicKey"
+                      value={robotListing.publicKey}
+                      onChange={handleInputChange}
+                      placeholder="Paste base64 or hex public key (32 bytes)"
+                      disabled={isLoading || isViewMode}
+                      className={`pki-public-key-input${robotListing.publicKey.trim() ? ' pki-public-key-filled' : ''}`}
+                      autoComplete="off"
+                    />
+                    {robotListing.publicKey.trim() !== '' && validateEd25519PublicKeyFormat(robotListing.publicKey) && (
+                      <p className="form-help-text" style={{ color: 'var(--error-color, #dc2626)', marginTop: '0.25rem' }}>
+                        {validateEd25519PublicKeyFormat(robotListing.publicKey)}
+                      </p>
+                    )}
+                    <div className="pki-actions">
+                      <button
+                        type="button"
+                        className="pki-qr-tease"
+                        title="Scan QR code"
+                        onClick={() => setShowQrScanner(true)}
+                        disabled={isLoading || isViewMode}
+                        aria-label="Scan QR code"
+                      >
+                        <FontAwesomeIcon icon={faQrcode} />
+                      </button>
+                      {robotListing.publicKey.trim() !== '' && !isViewMode && (
+                        <button
+                          type="button"
+                          className="pki-remove-key"
+                          onClick={handleRemovePublicKey}
+                          disabled={isLoading}
+                          aria-label="Remove public key"
+                        >
+                          Remove key
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1176,6 +1245,26 @@ export const EditRobot = () => {
           </>
         )}
       </div>
+
+      <QRScannerModal
+        isOpen={showQrScanner}
+        onClose={() => setShowQrScanner(false)}
+        onScan={(data) => {
+          const trimmed = data.trim();
+          setShowQrScanner(false);
+          if (!trimmed) {
+            showToast('No text found in QR code.', 'warning');
+            return;
+          }
+          setRobotListing((prev) => ({ ...prev, publicKey: trimmed }));
+          const formatError = validateEd25519PublicKeyFormat(trimmed);
+          if (formatError) {
+            showToast('Scanned; check format — ' + formatError.split('.')[0] + '.', 'warning');
+          } else {
+            showToast('Public key scanned.', 'success');
+          }
+        }}
+      />
 
       {/* Toast Notification */}
       {toast.visible && (
