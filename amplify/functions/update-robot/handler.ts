@@ -13,8 +13,11 @@ export function decodeAndValidateEd25519PublicKey(input: string): Buffer {
   if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length === 64) {
     decoded = Buffer.from(trimmed, 'hex');
   } else {
+    const base64 = trimmed.replace(/-/g, '+').replace(/_/g, '/');
+    if (!/^[A-Za-z0-9+/]+(?:={0,2})$/.test(base64)) {
+      throw new Error("Public key must be base64, base64url, or hex (64 hex chars for 32-byte Ed25519 key)");
+    }
     try {
-      const base64 = trimmed.replace(/-/g, '+').replace(/_/g, '/');
       decoded = Buffer.from(base64, 'base64');
     } catch {
       throw new Error("Public key must be base64, base64url, or hex (64 hex chars for 32-byte Ed25519 key)");

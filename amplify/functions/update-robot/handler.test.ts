@@ -75,6 +75,12 @@ describe('decodeAndValidateEd25519PublicKey', () => {
   it('throws on invalid base64', () => {
     expect(() => decodeAndValidateEd25519PublicKey('not-valid-base64!!!')).toThrow();
   });
+
+  it('rejects base64 with invalid characters even if Node would decode to 32 bytes', () => {
+    const valid32ByteB64 = Buffer.alloc(32, 0).toString('base64');
+    expect(() => decodeAndValidateEd25519PublicKey(valid32ByteB64 + '!')).toThrow();
+    expect(() => decodeAndValidateEd25519PublicKey(valid32ByteB64 + '@')).toThrow();
+  });
 });
 
 describe('handler', () => {
