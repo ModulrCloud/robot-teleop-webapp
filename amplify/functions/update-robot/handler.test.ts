@@ -54,6 +54,23 @@ describe('decodeAndValidateEd25519PublicKey', () => {
     expect(buf.length).toBe(32);
   });
 
+  it('accepts real-world 64-char Ed25519 hex key', () => {
+    // Ed25519 public key is exactly 64 hex chars (32 bytes). Source often has 65 (extra newline/char).
+    const hex65FromFile = 'd75a980182b10ab7d54bfed3c964073a0ee172f3dafe6238af95b81041052f2b8';
+    const hex64 = hex65FromFile.slice(0, 64);
+    expect(hex64).toHaveLength(64);
+    const buf = decodeAndValidateEd25519PublicKey(hex64);
+    expect(buf).toBeInstanceOf(Buffer);
+    expect(buf.length).toBe(32);
+  });
+
+  it('rejects 65 hex characters (off-by-one)', () => {
+    const hex64 = 'd75a980182b10ab7d54bfed3c964073a0ee172f3dafe6238af95b81041052f2b8'.slice(0, 64);
+    const hex65 = hex64 + '0';
+    expect(hex65).toHaveLength(65);
+    expect(() => decodeAndValidateEd25519PublicKey(hex65)).toThrow(/expected 32 bytes|Invalid Ed25519|base64/);
+  });
+
   it('accepts 32-byte key as base64', () => {
     const b64 = Buffer.alloc(32, 1).toString('base64');
     const buf = decodeAndValidateEd25519PublicKey(b64);
@@ -155,5 +172,26 @@ describe('handler', () => {
     expect(ddbSend).toHaveBeenCalledTimes(2);
     const lastCall = ddbSend.mock.calls[1][0];
     expect(lastCall).toBeInstanceOf(QueryCommand);
+  });
+
+  it('rejects publicKey with spaces (client must send normalized value from normalizePublicKeyForSubmit)', async () => {
+    const hex64WithSpace = 'a'.repeat(32) + ' ' + 'a'.repeat(32);
+    ddbSend
+      .mockResolvedValueOnce({
+        Item: {
+          id: { S: ROBOT_ID },
+          partnerId: { S: PARTNER_ID },
+          name: { S: 'Robot' },
+          robotId: { S: 'robot-xxxxxxxx' },
+        },
+      })
+      .mockResolvedValueOnce({
+        Items: [{ id: { S: PARTNER_ID }, cognitoUsername: { S: 'partner-user' } }],
+      });
+
+    await expect(handler(makeEvent({ publicKey: hex64WithSpace }), noOpContext, noOpCallback)).rejects.toThrow(/Invalid Ed25519|base64/);
+
+    expect(ddbSend).toHaveBeenCalledTimes(2);
+    expect(ddbSend.mock.calls[1][0]).toBeInstanceOf(QueryCommand);
   });
 });
