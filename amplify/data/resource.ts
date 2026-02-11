@@ -508,6 +508,105 @@ const schema = a.schema({
       // This is handled via a Lambda function since we need to check robot ownership
     ]),
 
+  // Command HQ: Organisation Models
+
+  // Top-level entity: groups users, robots, and permissions under one umbrella.
+  Organisation: a.model({
+    id: a.id(),
+    name: a.string().required(),
+    slug: a.string().required(),
+    description: a.string(),
+    logoUrl: a.string(),
+    ownerId: a.string().required(),
+    status: a.string().default('active'),  // 'active' | 'suspended' | 'denied'
+    creationCostCredits: a.float(),
+    maxMembers: a.integer().default(10),
+    members: a.hasMany('OrgMember', 'orgId'),
+    roles: a.hasMany('OrgRole', 'orgId'),
+    invites: a.hasMany('OrgInvite', 'orgId'),
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime(),
+  })
+    .secondaryIndexes(index => [
+      index("ownerId").name("ownerIdIndex"),
+      index("slug").name("slugIndex"),
+    ])
+    .authorization(allow => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  // Roles within an org. 4 system roles created automatically: Owner, Admin, Operator, Viewer.
+  OrgRole: a.model({
+    id: a.id(),
+    orgId: a.id().required(),
+    org: a.belongsTo('Organisation', 'orgId'),
+    name: a.string().required(),
+    description: a.string(),
+    permissions: a.json().required(),      // ['robots:view', 'members:manage', ...]
+    isSystem: a.boolean().default(false),
+    priority: a.integer(),                 // 0=Owner, 1=Admin, 2=Operator, 3=Viewer
+    members: a.hasMany('OrgMember', 'roleId'),
+    createdAt: a.datetime().required(),
+  })
+    .secondaryIndexes(index => [
+      index("orgId").name("orgIdIndex"),
+    ])
+    .authorization(allow => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  // Links a Cognito user to an org with a specific role.
+  OrgMember: a.model({
+    id: a.id(),
+    orgId: a.id().required(),
+    org: a.belongsTo('Organisation', 'orgId'),
+    userId: a.string().required(),
+    userEmail: a.string(),
+    roleId: a.id().required(),
+    role: a.belongsTo('OrgRole', 'roleId'),
+    status: a.string().default('active'),  // 'active' | 'suspended'
+    joinedAt: a.datetime().required(),
+  })
+    .secondaryIndexes(index => [
+      index("orgId").name("orgIdIndex"),
+      index("userId").name("userIdIndex"),
+    ])
+    .authorization(allow => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  // Pending invitation. Separate from OrgMember so invites don't pollute the member list.
+  OrgInvite: a.model({
+    id: a.id(),
+    orgId: a.id().required(),
+    org: a.belongsTo('Organisation', 'orgId'),
+    email: a.string().required(),
+    roleId: a.id().required(),
+    invitedBy: a.string().required(),
+    status: a.string().default('pending'), // 'pending' | 'accepted' | 'declined' | 'expired'
+    inviteCode: a.string().required(),
+    expiresAt: a.datetime().required(),
+    createdAt: a.datetime().required(),
+  })
+    .secondaryIndexes(index => [
+      index("orgId").name("orgIdIndex"),
+      index("email").name("emailIndex"),
+      index("inviteCode").name("inviteCodeIndex"),
+    ])
+    .authorization(allow => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  // Lambda Mutations/Queries
+
   setUserGroupLambda: a
     .mutation()
     .arguments({
