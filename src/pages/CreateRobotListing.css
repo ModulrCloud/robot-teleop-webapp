@@ -133,6 +133,45 @@
   font-size: 0.85rem;
 }
 
+/* PKI section: separate from Location so it doesn’t read as one block */
+.pki-section {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.pki-public-key-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pki-qr-tease {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.pki-qr-tease:hover {
+  color: rgba(255, 193, 7, 0.9);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 193, 7, 0.3);
+}
+
+.pki-qr-tease svg {
+  font-size: 1.1rem;
+}
+
 .form-group input[type="text"],
 .form-group input[type="number"],
 .form-group textarea {
@@ -819,4 +858,79 @@
   border-radius: 4px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+/* Toast Notification – matches Teleop / default Modulr yellow */
+.toast-notification {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  background-color: rgba(16, 19, 26, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 183, 0, 0.3);
+  border-left: 4px solid #ffb700;
+  color: #fff;
+  padding: 1rem 1.5rem;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  z-index: 10000;
+  animation: toastSlideIn 0.3s ease-out;
+  min-width: 300px;
+  max-width: 500px;
+}
+
+.toast-notification.success {
+  border-left-color: #4caf50;
+  border-color: rgba(76, 175, 80, 0.5);
+}
+
+.toast-notification.warning {
+  border-left-color: #ff9800;
+  border-color: rgba(255, 152, 0, 0.5);
+}
+
+.toast-notification.error {
+  border-left-color: #f44336;
+  border-color: rgba(244, 67, 54, 0.5);
+}
+
+.toast-notification svg {
+  color: #ffb700;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.toast-notification.success svg {
+  color: #4caf50;
+}
+
+.toast-notification.warning svg {
+  color: #ff9800;
+}
+
+.toast-notification.error svg {
+  color: #f44336;
+}
+
+@keyframes toastSlideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .toast-notification {
+    bottom: 1rem;
+    right: 1rem;
+    left: 1rem;
+    min-width: auto;
+  }
 }

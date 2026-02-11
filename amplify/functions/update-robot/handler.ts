@@ -3,8 +3,34 @@ import { Schema } from '../../data/resource';
 
 const ddbClient = new DynamoDBClient({});
 
+/** Ed25519 public key is 32 bytes. Accept base64, base64url, or hex. Returns decoded 32-byte buffer or throws. */
+export function decodeAndValidateEd25519PublicKey(input: string): Buffer {
+  const trimmed = input.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Public key cannot be empty");
+  }
+  let decoded: Buffer;
+  if (/^[0-9a-fA-F]+$/.test(trimmed) && trimmed.length === 64) {
+    decoded = Buffer.from(trimmed, 'hex');
+  } else {
+    const base64 = trimmed.replace(/-/g, '+').replace(/_/g, '/');
+    if (!/^[A-Za-z0-9+/]+(?:={0,2})$/.test(base64)) {
+      throw new Error("Public key must be base64, base64url, or hex (64 hex chars for 32-byte Ed25519 key)");
+    }
+    try {
+      decoded = Buffer.from(base64, 'base64');
+    } catch {
+      throw new Error("Public key must be base64, base64url, or hex (64 hex chars for 32-byte Ed25519 key)");
+    }
+  }
+  if (decoded.length !== 32) {
+    throw new Error(`Invalid Ed25519 public key: expected 32 bytes after decode, got ${decoded.length}`);
+  }
+  return decoded;
+}
+
 export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (event) => {
-  const { robotId, robotName, description, model, robotType, hourlyRateCredits, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude } = event.arguments;
+  const { robotId, robotName, description, model, robotType, hourlyRateCredits, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude, publicKey } = event.arguments;
 
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
@@ -160,6 +186,19 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     expressionAttributeNames['#longitude'] = 'longitude';
   }
 
+  // Optional Ed25519 public key for PKI auth: validate format (32 bytes) before save; allow REMOVE if null/empty
+  if (publicKey !== undefined) {
+    if (publicKey !== null && typeof publicKey === 'string' && publicKey.trim() !== '') {
+      decodeAndValidateEd25519PublicKey(publicKey);
+      updateExpressions.push('#publicKey = :publicKey');
+      expressionAttributeNames['#publicKey'] = 'publicKey';
+      expressionAttributeValues[':publicKey'] = { S: publicKey.trim() };
+    } else {
+      updateExpressions.push('REMOVE #publicKey');
+      expressionAttributeNames['#publicKey'] = 'publicKey';
+    }
+  }
+
   updateExpressions.push('#updatedAt = :updatedAt');
   expressionAttributeNames['#updatedAt'] = 'updatedAt';
   expressionAttributeValues[':updatedAt'] = { S: now };
@@ -229,6 +268,7 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     model: model !== undefined ? model : robotResult.Item.model?.S,
     robotType: robotType !== undefined ? robotType : robotResult.Item.robotType?.S,
     imageUrl: imageUrl !== undefined ? imageUrl : robotResult.Item.imageUrl?.S,
+    publicKey: publicKey !== undefined ? (publicKey && typeof publicKey === 'string' && publicKey.trim() !== '' ? publicKey.trim() : undefined) : robotResult.Item.publicKey?.S,
     partnerId: robotPartnerId,
     updatedAt: now,
   };

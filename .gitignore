@@ -41,3 +41,6 @@ docs/
 
 # Interface specification files
 interface-spec/
+
+# Unitree robot helpers (do not commit)
+Unitree/
