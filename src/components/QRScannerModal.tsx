@@ -79,7 +79,7 @@ export function QRScannerModal({ isOpen, onClose, onScan }: QRScannerModalProps)
     const video = videoRef.current;
     const canvas = canvasRef.current;
     // willReadFrequently: true avoids console warning and improves getImageData performance in the loop
-    const context = canvas.getContext('2d', { willReadFrequently: true });
+    const context = canvas.getContext('2d', { willReadFrequently: true })!;
     if (!context) return;
 
     function tick() {
