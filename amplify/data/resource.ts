@@ -40,6 +40,8 @@ import { listSessionsByRobot } from "../functions/list-sessions-by-robot/resourc
 import { triggerConnectionCleanup } from "../functions/trigger-connection-cleanup/resource";
 import { getActiveRobots } from "../functions/get-active-robots/resource";
 import { manageCreditTier } from "../functions/manage-credit-tier/resource";
+import { manageOrganisation } from "../functions/manage-organisation/resource";
+import { manageOrgMember } from "../functions/manage-org-member/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -510,7 +512,6 @@ const schema = a.schema({
 
   // Command HQ: Organisation Models
 
-  // Top-level entity: groups users, robots, and permissions under one umbrella.
   Organisation: a.model({
     id: a.id(),
     name: a.string().required(),
@@ -518,7 +519,7 @@ const schema = a.schema({
     description: a.string(),
     logoUrl: a.string(),
     ownerId: a.string().required(),
-    status: a.string().default('active'),  // 'active' | 'suspended' | 'denied'
+    status: a.string().default('active'),
     creationCostCredits: a.float(),
     maxMembers: a.integer().default(10),
     members: a.hasMany('OrgMember', 'orgId'),
@@ -537,16 +538,15 @@ const schema = a.schema({
       allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
     ]),
 
-  // Roles within an org. 4 system roles created automatically: Owner, Admin, Operator, Viewer.
   OrgRole: a.model({
     id: a.id(),
     orgId: a.id().required(),
     org: a.belongsTo('Organisation', 'orgId'),
     name: a.string().required(),
     description: a.string(),
-    permissions: a.json().required(),      // ['robots:view', 'members:manage', ...]
+    permissions: a.json().required(),
     isSystem: a.boolean().default(false),
-    priority: a.integer(),                 // 0=Owner, 1=Admin, 2=Operator, 3=Viewer
+    priority: a.integer(),
     members: a.hasMany('OrgMember', 'roleId'),
     createdAt: a.datetime().required(),
   })
@@ -559,7 +559,6 @@ const schema = a.schema({
       allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
     ]),
 
-  // Links a Cognito user to an org with a specific role.
   OrgMember: a.model({
     id: a.id(),
     orgId: a.id().required(),
@@ -568,7 +567,7 @@ const schema = a.schema({
     userEmail: a.string(),
     roleId: a.id().required(),
     role: a.belongsTo('OrgRole', 'roleId'),
-    status: a.string().default('active'),  // 'active' | 'suspended'
+    status: a.string().default('active'),
     joinedAt: a.datetime().required(),
   })
     .secondaryIndexes(index => [
@@ -581,7 +580,6 @@ const schema = a.schema({
       allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
     ]),
 
-  // Pending invitation. Separate from OrgMember so invites don't pollute the member list.
   OrgInvite: a.model({
     id: a.id(),
     orgId: a.id().required(),
@@ -589,7 +587,7 @@ const schema = a.schema({
     email: a.string().required(),
     roleId: a.id().required(),
     invitedBy: a.string().required(),
-    status: a.string().default('pending'), // 'pending' | 'accepted' | 'declined' | 'expired'
+    status: a.string().default('pending'),
     inviteCode: a.string().required(),
     expiresAt: a.datetime().required(),
     createdAt: a.datetime().required(),
@@ -605,7 +603,33 @@ const schema = a.schema({
       allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
     ]),
 
-  // Lambda Mutations/Queries
+  manageOrganisationLambda: a
+    .mutation()
+    .arguments({
+      action: a.string().required(),
+      name: a.string(),
+      slug: a.string(),
+      description: a.string(),
+      orgId: a.string(),
+      logoUrl: a.string(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(manageOrganisation)),
+
+  manageOrgMemberLambda: a
+    .mutation()
+    .arguments({
+      action: a.string().required(),
+      orgId: a.string(),
+      email: a.string(),
+      roleId: a.string(),
+      targetUserId: a.string(),
+      inviteCode: a.string(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(manageOrgMember)),
 
   setUserGroupLambda: a
     .mutation()
