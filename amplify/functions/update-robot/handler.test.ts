@@ -173,4 +173,25 @@ describe('handler', () => {
     const lastCall = ddbSend.mock.calls[1][0];
     expect(lastCall).toBeInstanceOf(QueryCommand);
   });
+
+  it('rejects publicKey with spaces (client must send normalized value from normalizePublicKeyForSubmit)', async () => {
+    const hex64WithSpace = 'a'.repeat(32) + ' ' + 'a'.repeat(32);
+    ddbSend
+      .mockResolvedValueOnce({
+        Item: {
+          id: { S: ROBOT_ID },
+          partnerId: { S: PARTNER_ID },
+          name: { S: 'Robot' },
+          robotId: { S: 'robot-xxxxxxxx' },
+        },
+      })
+      .mockResolvedValueOnce({
+        Items: [{ id: { S: PARTNER_ID }, cognitoUsername: { S: 'partner-user' } }],
+      });
+
+    await expect(handler(makeEvent({ publicKey: hex64WithSpace }), noOpContext, noOpCallback)).rejects.toThrow(/Invalid Ed25519|base64/);
+
+    expect(ddbSend).toHaveBeenCalledTimes(2);
+    expect(ddbSend.mock.calls[1][0]).toBeInstanceOf(QueryCommand);
+  });
 });

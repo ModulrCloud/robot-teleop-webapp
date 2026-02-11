@@ -71,6 +71,17 @@ function validateEd25519PublicKeyFormat(input: string): string | null {
   }
 }
 
+/** Returns the normalized public key string to send to the server (same format the validator accepts). Aligns submit payload with UI validation so server accepts what we validated. */
+function normalizePublicKeyForSubmit(input: string): string | null {
+  const trimmed = input.trim();
+  if (trimmed.length === 0) return null;
+  const hexOnly = trimmed.replace(/[^0-9a-fA-F]/g, '');
+  if (hexOnly.length === 64) return hexOnly;
+  const base64 = trimmed.replace(/-/g, '+').replace(/_/g, '/').replace(/\s/g, '');
+  if (!/^[A-Za-z0-9+/]+(?:={0,2})$/.test(base64)) return null;
+  return base64;
+}
+
 type RobotListing = {
   robotName: string;
   description: string;
@@ -509,7 +520,7 @@ export const EditRobot = () => {
       country: robotListing.country || undefined,
       latitude: robotListing.latitude ? (isNaN(parseFloat(robotListing.latitude)) ? undefined : parseFloat(robotListing.latitude)) : undefined,
       longitude: robotListing.longitude ? (isNaN(parseFloat(robotListing.longitude)) ? undefined : parseFloat(robotListing.longitude)) : undefined,
-      publicKey: publicKeyTrimmed === '' ? null : publicKeyTrimmed,
+      publicKey: publicKeyTrimmed === '' ? null : (normalizePublicKeyForSubmit(publicKeyTrimmed) ?? publicKeyTrimmed),
     };
 
     try {
