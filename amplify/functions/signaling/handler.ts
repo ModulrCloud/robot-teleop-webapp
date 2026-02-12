@@ -84,6 +84,8 @@ type Claims = {
     aud?: string;
     email?: string;
     'cognito:username'?: string;
+    /** Set when connection is PKI-pending (no JWT); only register (and ping/pong) are allowed. */
+    pkiPending?: boolean;
 };
 
 type InboundMessage = Partial<{
@@ -793,7 +795,7 @@ async function postTo(connectionId: string, message: unknown): Promise<void> {
 }
 
 /** DynamoDB Item shape for robot presence (subset we use when reusing a single read). */
-type RobotPresenceItem = { connectionId?: { S?: string }; ownerUserId?: { S?: string } } | undefined;
+type RobotPresenceItem = { connectionId?: { S?: string }; ownerUserId?: { S?: string }; status?: { S?: string } } | undefined;
 
 // If caller is the robot owner, a delegated operator, or in an admin group return True
 // Optional presenceItem: when provided (from a prior GetItem in the same request), avoids an extra DB read.
@@ -816,8 +818,8 @@ async function isOwnerOrAdmin(
     }
     const isAdmin = (claims.groups ?? []).some((g) => g === 'ADMINS' || g === 'admin');
     
-    // Check if user is owner
-    if (!!owner && owner === claims.sub) {
+    // Check if user is owner (ownerUserId may be Cognito sub or, for pending presence, cognitoUsername)
+    if (!!owner && (owner === claims.sub || owner === (claims as Claims & { 'cognito:username'?: string })['cognito:username'])) {
         return true;
     }
     
@@ -1385,6 +1387,41 @@ async function endUserSessions(userId: string): Promise<void> {
   }
 }
 
+/** Robot item shape (subset) when querying by robotId. */
+type RobotItemShape = { robotId?: { S?: string }; publicKey?: { S?: string }; partnerId?: { S?: string }; name?: { S?: string } } | undefined;
+
+/** Load Robot by robotId (GSI robotIdIndex). Returns undefined if not found. */
+async function getRobotByRobotId(robotId: string): Promise<RobotItemShape> {
+  if (!ROBOT_TABLE_NAME) return undefined;
+  const result = await db.send(
+    new QueryCommand({
+      TableName: ROBOT_TABLE_NAME,
+      IndexName: 'robotIdIndex',
+      KeyConditionExpression: 'robotId = :robotId',
+      ExpressionAttributeValues: { ':robotId': { S: robotId } },
+      Limit: 1,
+    }),
+  );
+  return result.Items?.[0] as RobotItemShape | undefined;
+}
+
+/** Resolve partner's owner identifier (Cognito sub or cognitoUsername) for presence. */
+async function getPartnerOwnerIdentifier(partnerId: string): Promise<string | undefined> {
+  if (!PARTNER_TABLE_NAME) return undefined;
+  try {
+    const res = await docClient.send(
+      new GetCommand({
+        TableName: PARTNER_TABLE_NAME,
+        Key: { id: partnerId },
+      }),
+    );
+    const item = res.Item as { owner?: string; cognitoUsername?: string } | undefined;
+    return item?.owner ?? item?.cognitoUsername;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Removes robot presence when a robot's WebSocket disconnects.
  * This ensures the robot shows as "offline" immediately when it disconnects.
@@ -1493,43 +1530,62 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
     // Clients / robots will pass ?token=<JWT> in the URL
     const token = event.queryStringParameters?.token ?? null;
 
-    // DEVELOPMENT/TESTING MODE: Allow connections without token if ALLOW_NO_TOKEN is set
-    // ⚠️ WARNING: Only enable this for local development/testing. NEVER in production!
+    // No token: either dev mock user (ALLOW_NO_TOKEN) or PKI-pending connection for PKI auth path
     const allowNoToken = process.env.ALLOW_NO_TOKEN === 'true';
-    
-    if (allowNoToken && !token) {
-        console.warn('⚠️ DEVELOPMENT MODE: Allowing connection without token (ALLOW_NO_TOKEN=true)');
+    if (!token) {
+        if (allowNoToken) {
+            // DEVELOPMENT/TESTING MODE: mock user when ALLOW_NO_TOKEN is set
+            // ⚠️ WARNING: Only enable this for local development/testing. NEVER in production!
+            console.warn('⚠️ DEVELOPMENT MODE: Allowing connection without token (ALLOW_NO_TOKEN=true)');
+            try {
+                await db.send(
+                    new PutItemCommand({
+                        TableName: CONN_TABLE,
+                        Item: {
+                            connectionId: { S: connectionId },
+                            userId: { S: 'dev-test-user' },
+                            username: { S: 'dev-test-user' },
+                            groups: { S: 'PARTNERS' },
+                            kind: { S: 'client' },
+                            ts: { N: String(Date.now()) },
+                        },
+                    }),
+                );
+                console.log('[CONNECTION_SUCCESS]', { connectionId, mode: 'dev-no-token' });
+                try {
+                    await postFormatted(connectionId, { type: 'welcome', connectionId });
+                } catch (e) {
+                    console.warn('Failed to send welcome message:', e);
+                }
+            } catch (e) {
+                console.warn('Connect put_item error', e);
+                console.error('[CONNECTION_ERROR]', { connectionId, error: String(e) });
+            }
+            return { statusCode: 200, body: '' };
+        }
+        // PKI path: allow connection without JWT; robot will complete auth via register (Phase 3: challenge)
         try {
-            // Create a mock user for testing
             await db.send(
                 new PutItemCommand({
                     TableName: CONN_TABLE,
                     Item: {
-                        connectionId: { S: connectionId},
-                        userId: { S: 'dev-test-user' },
-                        username: { S: 'dev-test-user' },
-                        groups: { S: 'PARTNERS' }, // Give dev user PARTNERS group for testing
-                        kind: { S: 'client' },
+                        connectionId: { S: connectionId },
+                        kind: { S: 'client_pki_pending' },
                         ts: { N: String(Date.now()) },
                     },
                 }),
             );
-            console.log('[CONNECTION_SUCCESS]', { connectionId, mode: 'dev-no-token' });
-            
-            // Send connection ID back to client (dev mode)
+            console.log('[CONNECTION_SUCCESS]', { connectionId, kind: 'client_pki_pending' });
             try {
-                await postFormatted(connectionId, {
-                    type: 'welcome',
-                    connectionId: connectionId,
-                });
+                await postFormatted(connectionId, { type: 'welcome', connectionId });
             } catch (e) {
                 console.warn('Failed to send welcome message:', e);
             }
+            return { statusCode: 200, body: '' };
         } catch (e) {
-            console.warn('Connect put_item error', e);
-            console.error('[CONNECTION_ERROR]', { connectionId, error: String(e) });
+            console.warn('Connect put_item error (PKI-pending)', e);
+            return errorResponse(500, 'Connection failed');
         }
-        return {statusCode: 200, body: '' };
     }
 
     // Verify JWT token signature and expiration
@@ -1612,13 +1668,13 @@ async function onDisconnect(event: APIGatewayProxyEvent): Promise<APIGatewayProx
 // ---------------------------------
 
 async function handleRegister(
-  claims: { sub?: string; groups?: string[] },
+  claims: Claims,
   event: APIGatewayProxyEvent,
   msg: InboundMessage,
 ): Promise<APIGatewayProxyResult> {
-  const robotId = msg.robotId;
+  const robotId = msg.robotId?.trim();
   const connectionId = event.requestContext.connectionId!;
-  
+
   if (!robotId) {
     console.error('[REGISTER_ERROR]', {
       connectionId,
@@ -1628,9 +1684,73 @@ async function handleRegister(
     return errorResponse(400, 'robotId required');
   }
 
-  const caller = claims.sub!;
+  // PKI-pending path: connection has no JWT; robot must have publicKey on file, we write presence as "pending"
+  if (claims.pkiPending) {
+    const robotItem = await getRobotByRobotId(robotId);
+    if (!robotItem) {
+      console.warn('[REGISTER_PKI_PENDING] Robot not found', { connectionId, robotId });
+      return errorResponse(400, 'Robot not found');
+    }
+    const hasPublicKey = !!robotItem.publicKey?.S?.trim();
+    if (!hasPublicKey) {
+      console.warn('[REGISTER_PKI_PENDING] Robot has no publicKey, JWT required', { connectionId, robotId });
+      return errorResponse(400, 'This robot requires JWT authentication');
+    }
+    const partnerId = robotItem.partnerId?.S;
+    const ownerId = partnerId ? await getPartnerOwnerIdentifier(partnerId) : undefined;
+    if (!ownerId) {
+      console.warn('[REGISTER_PKI_PENDING] Could not resolve robot owner', { connectionId, robotId });
+      return errorResponse(500, 'Could not resolve robot owner');
+    }
+    try {
+      await db.send(
+        new PutItemCommand({
+          TableName: ROBOT_PRESENCE_TABLE,
+          Item: {
+            robotId: { S: robotId },
+            ownerUserId: { S: ownerId },
+            connectionId: { S: connectionId },
+            status: { S: 'pending' },
+            updatedAt: { N: String(Date.now()) },
+          },
+          // Only allow first-time claim or same-connection re-register (idempotent). Do NOT allow
+          // ownerUserId = :owner: that would let an unauthenticated connection overwrite an existing
+          // presence row (e.g. live robot) because :owner is derived from robot metadata, not from PKI proof.
+          ConditionExpression: 'attribute_not_exists(robotId) OR connectionId = :conn',
+          ExpressionAttributeValues: {
+            ':conn': { S: connectionId },
+          },
+        }),
+      );
+    } catch (e: unknown) {
+      const err = e as { name?: string; Code?: string; code?: string };
+      if (err?.name === 'ConditionalCheckFailedException' || err?.code === 'ConditionalCheckFailedException') {
+        return errorResponse(409, 'Robot is already registered');
+      }
+      console.warn('Presence put_item error (pending)', e);
+      return errorResponse(500, 'DynamoDB error');
+    }
+    console.log('[REGISTER_PENDING]', { connectionId, robotId, ownerId });
+    const monitorMessage = {
+      type: 'register',
+      robotId,
+      from: 'pki-pending',
+      _monitor: true,
+      _source: connectionId,
+      _direction: 'robot-to-server',
+      timestamp: new Date().toISOString(),
+    };
+    await notifyMonitors(robotId, monitorMessage);
+    return { statusCode: 200, body: '' };
+  }
+
+  // JWT path: require caller (claims.sub)
+  const caller = claims.sub;
+  if (!caller) {
+    return errorResponse(401, 'Unauthorized');
+  }
   const admin = isAdmin(claims.groups);
-  
+
   console.log('[REGISTER_PROCESSING]', {
     connectionId,
     robotId,
@@ -1645,11 +1765,10 @@ async function handleRegister(
         Item: {
           robotId: { S: robotId },
           ownerUserId: { S: caller },
-          connectionId: { S: event.requestContext.connectionId! },
+          connectionId: { S: connectionId },
           status: { S: 'online' },
           updatedAt: { N: String(Date.now()) },
         },
-        // Allow first-time claim OR re-claim by the same owner
         ConditionExpression: 'attribute_not_exists(ownerUserId) OR ownerUserId = :me',
         ExpressionAttributeValues: { ':me': { S: caller } },
       }),
@@ -1661,14 +1780,13 @@ async function handleRegister(
       return errorResponse(409, 'Robot is already registered by another owner');
     }
     if (code === 'ConditionalCheckFailedException' && admin) {
-      // Admin may force-claim
       await db.send(
         new PutItemCommand({
           TableName: ROBOT_PRESENCE_TABLE,
           Item: {
             robotId: { S: robotId },
             ownerUserId: { S: caller },
-            connectionId: { S: event.requestContext.connectionId! },
+            connectionId: { S: connectionId },
             status: { S: 'online' },
             updatedAt: { N: String(Date.now()) },
           },
@@ -1685,26 +1803,24 @@ async function handleRegister(
       return errorResponse(500, 'DynamoDB error');
     }
   }
-  
+
   console.log('[REGISTER_SUCCESS]', {
     connectionId,
     robotId,
     userId: caller,
   });
 
-  // Notify monitoring connections about the registration
-  // Add _monitor flag and metadata to help logger identify and display the message
   const monitorMessage = {
     type: 'register',
     robotId: robotId,
     from: caller,
-    _monitor: true, // Flag to indicate this is a monitor copy
+    _monitor: true,
     _source: connectionId,
-    _direction: 'robot-to-server', // Robot is registering with the server
+    _direction: 'robot-to-server',
     timestamp: new Date().toISOString(),
   };
   await notifyMonitors(robotId, monitorMessage);
-  
+
   return { statusCode: 200, body: '' };
 }
 
@@ -1966,7 +2082,8 @@ async function handleSignal(
     const robotPresence = await db.send(new GetItemCommand({
       TableName: ROBOT_PRESENCE_TABLE,
       Key: { robotId: { S: robotId } },
-      ProjectionExpression: 'connectionId, ownerUserId',
+      ProjectionExpression: 'connectionId, ownerUserId, #status',
+      ExpressionAttributeNames: { '#status': 'status' },
     }));
     robotPresenceItem = robotPresence.Item as RobotPresenceItem;
     if (robotPresenceItem?.connectionId?.S === sourceConnId) {
@@ -2137,9 +2254,11 @@ async function handleSignal(
     }
   } else {
     // Reuse presence we already fetched (same row as is-from-robot check).
+    // Only route to robot when status is 'online' (or missing for legacy rows). Pending = PKI not verified; do not send client traffic there.
+    const presenceStatus = robotPresenceItem?.status?.S;
     const robotConn = robotPresenceItem?.connectionId?.S;
-    if (!robotConn) {
-      return errorResponse(404, 'target offline');
+    if (!robotConn || presenceStatus === 'pending') {
+      return errorResponse(404, 'Robot is offline or not ready');
     }
     targetConn = robotConn;
   }
@@ -2348,15 +2467,17 @@ export async function handler(
     connItem = await db.send(new GetItemCommand({
       TableName: CONN_TABLE,
       Key: { connectionId: { S: connectionId } },
-      ProjectionExpression: 'userId, username, email, groups, #protocol, #version',
+      ProjectionExpression: 'userId, username, email, groups, #protocol, #version, #kind',
       ExpressionAttributeNames: {
         '#protocol': 'protocol',
         '#version': 'version',
+        '#kind': 'kind',
       },
     }));
     
     if (connItem.Item) {
       const userId = connItem.Item.userId?.S;
+      const kind = connItem.Item.kind?.S;
       const username = connItem.Item.username?.S;
       const email = connItem.Item.email?.S;
       const groupsStr = connItem.Item.groups?.S || '';
@@ -2375,6 +2496,9 @@ export async function handler(
           username,
           groups,
         });
+      } else if (kind === 'client_pki_pending') {
+        claims = { pkiPending: true };
+        console.log('[AUTH_PKI_PENDING]', { connectionId });
       } else {
         console.warn('[AUTH_LOOKUP_MISSING_USERID]', {
           connectionId,
@@ -2396,12 +2520,10 @@ export async function handler(
   }
   
   // If we couldn't get claims from connection table, try token from query params (fallback)
-  // This handles edge cases where connection might not be in table yet
-  if (!claims?.sub) {
-    
+  // PKI-pending connections already have claims.pkiPending and must not be asked for JWT
+  if (!claims?.sub && !claims?.pkiPending) {
     // DEVELOPMENT/TESTING MODE: Allow messages without token if ALLOW_NO_TOKEN is set
     const allowNoToken = process.env.ALLOW_NO_TOKEN === 'true';
-    
     if (allowNoToken && !token) {
       console.warn('⚠️ DEVELOPMENT MODE: Allowing message without token (ALLOW_NO_TOKEN=true)');
       claims = {
@@ -2493,6 +2615,12 @@ export async function handler(
     hasToken: !!token,
     userId: claims?.sub,
   });
+
+  // PKI-pending connections may only send ready, register, or agent.pong until auth completes
+  if (claims?.pkiPending && type !== 'ready' && type !== 'register' && type !== 'agent.pong') {
+    console.warn('[PKI_PENDING_RESTRICTION]', { connectionId, type });
+    return errorResponse(401, 'Complete PKI authentication first');
+  }
 
   // Handle 'ready' message - send back connection ID
   if (raw?.type === 'ready') {

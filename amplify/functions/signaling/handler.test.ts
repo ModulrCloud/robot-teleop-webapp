@@ -36,6 +36,8 @@ const { ddbSend, apigwSend } = vi.hoisted(() => {
 // ---------- Mock env before importing the module ----------
 process.env.CONN_TABLE = 'LocalConnections';
 process.env.ROBOT_PRESENCE_TABLE = 'LocalPresence';
+process.env.ROBOT_TABLE_NAME = 'LocalRobots';
+process.env.PARTNER_TABLE_NAME = 'LocalPartners';
 process.env.REVOKED_TOKENS_TABLE = 'LocalRevokedTokens';
 process.env.USER_INVALIDATION_TABLE = 'LocalUserInvalidation';
 process.env.WS_MGMT_ENDPOINT = 'https://example.com/_aws/ws';
@@ -831,14 +833,35 @@ describe('$disconnect', () => {
 // ===================================================================
 
 describe('auth & validation errors', () => {
-  it('unauthorized when missing token on $connect', async () => {
+  it('allows $connect without token (PKI-pending) and stores connection with kind client_pki_pending', async () => {
     const resp = await handler(asHandlerEvent({
       requestContext: makeRequestContext('$connect', 'C-2'),
       queryStringParameters: {}, // no token
     }));
 
-    expect(resp.statusCode).toBe(401);
-    expect(ddbSend).not.toHaveBeenCalled();
+    expect(resp.statusCode).toBe(200);
+    const putCall = ddbSend.mock.calls.find((c) => c[0] instanceof PutItemCommand && (c[0] as { input?: { Item?: { kind?: { S?: string } } } }).input?.Item?.kind?.S === 'client_pki_pending');
+    expect(putCall).toBeDefined();
+  });
+
+  it('PKI-pending connection register when Robot not in table returns 400', async () => {
+    // Connection lookup: PKI-pending (no userId)
+    ddbSend.mockResolvedValueOnce({
+      Item: {
+        connectionId: { S: 'C-pki' },
+        kind: { S: 'client_pki_pending' },
+      },
+    });
+    // QueryCommand Robot by robotId -> empty (robot not in table)
+    ddbSend.mockResolvedValueOnce({ Items: [] });
+
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-pki'),
+      queryStringParameters: {},
+      body: JSON.stringify({ type: 'register', robotId: 'robot-pki' }),
+    }));
+
+    expect(resp.statusCode).toBe(400);
   });
 
   it('400 when register missing robotId', async () => {

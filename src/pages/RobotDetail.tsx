@@ -347,6 +347,9 @@ export default function RobotDetail() {
     if (robotStatus?.isOnline) {
       return { text: 'Online', color: '#4caf50', icon: faCircle };
     }
+    if (robotStatus?.status === 'pending') {
+      return { text: 'Pending', color: '#ff9800', icon: faCircle };
+    }
     return { text: 'Offline', color: '#f44336', icon: faCircle };
   };
 

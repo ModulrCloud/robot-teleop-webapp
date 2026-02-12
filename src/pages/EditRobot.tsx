@@ -113,7 +113,7 @@ export const EditRobot = () => {
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [robotName, setRobotName] = useState<string>('');
-  const [robotStatus, setRobotStatus] = useState<{ isOnline: boolean; lastSeen?: number } | null>(null);
+  const [robotStatus, setRobotStatus] = useState<{ isOnline: boolean; lastSeen?: number; status?: string } | null>(null);
   const [isLoadingStatus, setIsLoadingStatus] = useState(false);
   const [robotIdForStatus, setRobotIdForStatus] = useState<string>(''); // robotId field (robot-XXXXXXXX)
 
@@ -341,6 +341,7 @@ export const EditRobot = () => {
           setRobotStatus({
             isOnline: status.data.isOnline || false,
             lastSeen: status.data.lastSeen || undefined,
+            status: status.data.status || undefined,
           });
         } else {
           setRobotStatus({ isOnline: false });
@@ -677,18 +678,18 @@ export const EditRobot = () => {
                 alignItems: 'center',
                 gap: '0.5rem',
                 fontSize: '0.9rem',
-                color: robotStatus?.isOnline ? '#ffb700' : '#666',
+                color: robotStatus?.isOnline ? '#ffb700' : robotStatus?.status === 'pending' ? '#ff9800' : '#666',
                 fontWeight: 500
               }}>
                 <FontAwesomeIcon
                   icon={faCircle}
                   style={{
                     fontSize: '0.6rem',
-                    color: robotStatus?.isOnline ? '#ffb700' : '#666'
+                    color: robotStatus?.isOnline ? '#ffb700' : robotStatus?.status === 'pending' ? '#ff9800' : '#666'
                   }}
                 />
                 <span>
-                  {isLoadingStatus ? 'Checking...' : (robotStatus?.isOnline ? 'Online' : 'Offline')}
+                  {isLoadingStatus ? 'Checking...' : robotStatus?.status === 'pending' ? 'Pending' : (robotStatus?.isOnline ? 'Online' : 'Offline')}
                 </span>
               </div>
             )}
