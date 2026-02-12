@@ -11,7 +11,7 @@ import {
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand as DocQueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { createHash, randomUUID } from 'crypto';
-import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
+import { ApiGatewayManagementApiClient, PostToConnectionCommand, DeleteConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
 
@@ -28,6 +28,9 @@ const PLATFORM_SETTINGS_TABLE = process.env.PLATFORM_SETTINGS_TABLE;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!; // HTTPS management API
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
+
+// PKI-pending connections that never complete auth are closed after this (ms). Env override: PKI_PENDING_TIMEOUT_MS.
+const PKI_PENDING_TIMEOUT_MS = Number(process.env.PKI_PENDING_TIMEOUT_MS) || 120_000; // 2 minutes
 
 // Default platform markup (30%) if not set
 const DEFAULT_PLATFORM_MARKUP_PERCENT = 30;
@@ -2469,7 +2472,7 @@ export async function handler(
     connItem = await db.send(new GetItemCommand({
       TableName: CONN_TABLE,
       Key: { connectionId: { S: connectionId } },
-      ProjectionExpression: 'userId, username, email, groups, #protocol, #version, #kind',
+      ProjectionExpression: 'userId, username, email, groups, #protocol, #version, #kind, ts',
       ExpressionAttributeNames: {
         '#protocol': 'protocol',
         '#version': 'version',
@@ -2480,6 +2483,7 @@ export async function handler(
     if (connItem.Item) {
       const userId = connItem.Item.userId?.S;
       const kind = connItem.Item.kind?.S;
+      const connTs = connItem.Item.ts?.N;
       const username = connItem.Item.username?.S;
       const email = connItem.Item.email?.S;
       const groupsStr = connItem.Item.groups?.S || '';
@@ -2499,6 +2503,18 @@ export async function handler(
           groups,
         });
       } else if (kind === 'client_pki_pending') {
+        // Close PKI-pending connections that have not completed auth within the timeout window
+        const tsMs = connTs ? parseInt(connTs, 10) : NaN;
+        const ageMs = Number.isFinite(tsMs) ? Date.now() - tsMs : 0;
+        if (Number.isFinite(tsMs) && ageMs > PKI_PENDING_TIMEOUT_MS) {
+          console.log('[PKI_PENDING_TIMEOUT]', { connectionId, ageMs, thresholdMs: PKI_PENDING_TIMEOUT_MS });
+          try {
+            await mgmt.send(new DeleteConnectionCommand({ ConnectionId: connectionId }));
+          } catch (e) {
+            console.warn('[PKI_PENDING_TIMEOUT] DeleteConnection failed (connection may already be closed):', e instanceof Error ? e.message : String(e));
+          }
+          return errorResponse(403, 'PKI authentication timeout');
+        }
         claims = { pkiPending: true };
         console.log('[AUTH_PKI_PENDING]', { connectionId });
       } else {

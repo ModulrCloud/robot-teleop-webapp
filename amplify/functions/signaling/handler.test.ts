@@ -845,11 +845,12 @@ describe('auth & validation errors', () => {
   });
 
   it('PKI-pending connection register when Robot not in table returns 400', async () => {
-    // Connection lookup: PKI-pending (no userId)
+    // Connection lookup: PKI-pending (no userId), ts recent so no timeout
     ddbSend.mockResolvedValueOnce({
       Item: {
         connectionId: { S: 'C-pki' },
         kind: { S: 'client_pki_pending' },
+        ts: { N: String(Date.now()) },
       },
     });
     // QueryCommand Robot by robotId -> empty (robot not in table)
@@ -862,6 +863,27 @@ describe('auth & validation errors', () => {
     }));
 
     expect(resp.statusCode).toBe(400);
+  });
+
+  it('PKI-pending connection older than timeout receives 403 and is closed', async () => {
+    const oldTs = Date.now() - 150_000; // 2.5 min ago
+    const stalePkiPendingItem = {
+      Item: {
+        connectionId: { S: 'C-stale-pki' },
+        kind: { S: 'client_pki_pending' },
+        ts: { N: String(oldTs) },
+      },
+    };
+    // Default mock returns {} for CONN_TABLE GetItem; override first call only so connection lookup gets stale item
+    ddbSend.mockImplementationOnce(() => Promise.resolve(stalePkiPendingItem));
+
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-stale-pki'),
+      queryStringParameters: {},
+      body: JSON.stringify({ type: 'ready' }),
+    }));
+
+    expect(resp.statusCode).toBe(403);
   });
 
   it('400 when register missing robotId', async () => {

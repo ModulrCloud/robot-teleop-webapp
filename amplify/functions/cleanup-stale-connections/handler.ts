@@ -7,7 +7,7 @@ import {
   UpdateItemCommand,
   GetItemCommand,
 } from '@aws-sdk/client-dynamodb';
-import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
+import { ApiGatewayManagementApiClient, PostToConnectionCommand, DeleteConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 import { buildAgentPingMessage } from '../shared/agent-protocol';
 
 const CONN_TABLE = process.env.CONN_TABLE!;
@@ -23,6 +23,9 @@ const mgmt = new ApiGatewayManagementApiClient({ endpoint: WS_MGMT_ENDPOINT });
 // Connections older than 1 hour (in milliseconds)
 const STALE_CONNECTION_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 
+// PKI-pending connections (no JWT, never completed register) are closed and removed after this
+const PKI_PENDING_STALE_MS = 2 * 60 * 1000; // 2 minutes
+
 // Batching: stay within Lambda 15 min limit; target 10 min run
 const MAX_RUN_SECONDS = 600; // 10 minutes
 const WAIT_PER_BATCH_SEC = 10;
@@ -37,6 +40,7 @@ interface CleanupStats {
   cleanedConnections: number;
   cleanedRobotPresence: number;
   cleanedSessions: number;
+  cleanedPkiPending: number;
   errors: number;
 }
 
@@ -136,6 +140,45 @@ async function cleanupOrphanedRobotPresence(stats: CleanupStats): Promise<void> 
     }
     lastEvaluatedKey = result.LastEvaluatedKey;
   } while (lastEvaluatedKey);
+}
+
+/**
+ * Collects connection records that are client_pki_pending and older than PKI_PENDING_STALE_MS.
+ * These are closed and removed so we don't leave idle unauthenticated connections.
+ */
+async function collectStalePkiPendingConnections(thresholdTimestamp: number): Promise<StaleConnection[]> {
+  const stale: StaleConnection[] = [];
+  let lastEvaluatedKey: Record<string, AttributeValue> | undefined;
+
+  do {
+    const scanResult = await db.send(
+      new ScanCommand({
+        TableName: CONN_TABLE,
+        ExclusiveStartKey: lastEvaluatedKey,
+        FilterExpression: '#kind = :kind AND ts < :threshold',
+        ExpressionAttributeNames: { '#kind': 'kind' },
+        ExpressionAttributeValues: {
+          ':kind': { S: 'client_pki_pending' },
+          ':threshold': { N: String(thresholdTimestamp) },
+        },
+        ProjectionExpression: 'connectionId, #kind',
+        Limit: 100,
+      })
+    );
+
+    for (const item of scanResult.Items || []) {
+      const connectionId = item.connectionId?.S;
+      if (!connectionId) continue;
+      stale.push({
+        connectionId,
+        kind: item.kind?.S,
+      });
+    }
+
+    lastEvaluatedKey = scanResult.LastEvaluatedKey;
+  } while (lastEvaluatedKey);
+
+  return stale;
 }
 
 /**
@@ -288,6 +331,47 @@ async function cleanupConnectionSessions(connectionId: string): Promise<void> {
 }
 
 /**
+ * Closes and removes a single PKI-pending connection (no pong check; just close and delete).
+ */
+async function cleanupPkiPendingConnection(
+  connectionId: string,
+  stats: CleanupStats
+): Promise<void> {
+  try {
+    await mgmt.send(new DeleteConnectionCommand({ ConnectionId: connectionId }));
+  } catch (error: unknown) {
+    const err = error as { name?: string; Code?: string };
+    if (err?.name === 'GoneException' || err?.Code === 'GoneException') {
+      // Connection already closed; still remove DB rows
+    } else {
+      console.warn(`[CLEANUP] DeleteConnection failed for PKI-pending ${connectionId}:`, err?.name || err);
+    }
+  }
+
+  try {
+    await cleanupRobotPresence(connectionId);
+    stats.cleanedRobotPresence++;
+  } catch (e) {
+    console.warn(`[CLEANUP] cleanupRobotPresence failed for ${connectionId}:`, e);
+  }
+
+  try {
+    await db.send(
+      new DeleteItemCommand({
+        TableName: CONN_TABLE,
+        Key: { connectionId: { S: connectionId } },
+      })
+    );
+    stats.cleanedConnections++;
+    stats.cleanedPkiPending++;
+    console.log(`[CLEANUP] Cleaned PKI-pending connection ${connectionId}`);
+  } catch (error) {
+    stats.errors++;
+    console.error(`[CLEANUP] Failed to delete CONN_TABLE row for ${connectionId}:`, error);
+  }
+}
+
+/**
  * Deletes a stale connection and all associated records.
  */
 async function cleanupStaleConnection(
@@ -333,12 +417,23 @@ export const handler = async (): Promise<{ statusCode: number; body: string }> =
     cleanedConnections: 0,
     cleanedRobotPresence: 0,
     cleanedSessions: 0,
+    cleanedPkiPending: 0,
     errors: 0,
   };
 
   try {
     // First: clean orphaned ROBOT_PRESENCE entries (connectionId no longer in CONN_TABLE)
     await cleanupOrphanedRobotPresence(stats);
+
+    // Second: close and remove PKI-pending connections older than 2 minutes (no auth completed)
+    const pkiPendingThreshold = Date.now() - PKI_PENDING_STALE_MS;
+    const stalePkiPending = await collectStalePkiPendingConnections(pkiPendingThreshold);
+    for (const conn of stalePkiPending) {
+      await cleanupPkiPendingConnection(conn.connectionId, stats);
+    }
+    if (stalePkiPending.length > 0) {
+      console.log('[CLEANUP] Cleaned PKI-pending connections', { count: stalePkiPending.length });
+    }
 
     const thresholdTimestamp = Date.now() - STALE_CONNECTION_THRESHOLD_MS;
     const staleConnections = await collectStaleConnections(thresholdTimestamp);

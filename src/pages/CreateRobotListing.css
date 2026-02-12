@@ -146,6 +146,27 @@
   gap: 0.5rem;
 }
 
+/* Wrapper so QR button can sit inside the input on the right */
+.pki-input-with-qr {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+
+.pki-input-with-qr .pki-public-key-input {
+  padding-right: 3rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.pki-qr-tease.pki-qr-inside {
+  position: absolute;
+  top: 50%;
+  right: 0.5rem;
+  transform: translateY(-50%);
+  margin: 0;
+}
+
 .pki-public-key-input {
   font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
   font-size: 1.2rem !important;
