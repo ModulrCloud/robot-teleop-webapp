@@ -18,10 +18,12 @@ import {
   faWallet,
   faShieldAlt,
   faGaugeHigh,
-  faGlobe
+  faGlobe,
+  faSatelliteDish,
 } from '@fortawesome/free-solid-svg-icons';
 import "./Navbar.css";
 import { formatGroupName, capitalizeName } from "./utils/formatters";
+import { MOCK_ORGANISATIONS } from "./mocks/organisation";
 
 export default function Navbar() {
   const { isLoggedIn, signOut, user } = useAuthStatus();
@@ -161,6 +163,12 @@ export default function Navbar() {
                       <FontAwesomeIcon icon={faCoins} />
                       <span>Credits</span>
                     </Link>
+                    {MOCK_ORGANISATIONS.length > 0 && (
+                      <Link to={`/command-hq/${MOCK_ORGANISATIONS[0].id}`} className="dropdown-item" onClick={() => setShowUserMenu(false)}>
+                        <FontAwesomeIcon icon={faSatelliteDish} />
+                        <span>Command HQ</span>
+                      </Link>
+                    )}
                     {hasAdminAccess(user?.email, user?.group ? [user.group] : undefined) && (
                       <Link to="/admin" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
                         <FontAwesomeIcon icon={faShieldAlt} />
