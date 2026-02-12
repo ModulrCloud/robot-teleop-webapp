@@ -104,7 +104,9 @@ export function useCustomCommandBindings({
 
     logger.log(`[CUSTOM_COMMANDS] Executing command: ${command.name} (${inputMethod})`);
 
-    // Mock execution - in Phase 4, this will send via WebRTC
+    // Mock execution - in Phase 4, this will send via WebRTC data channel. When implementing,
+    // use the same envelope format as movement (type, version, id, timestamp, payload) so the
+    // Rust agent can parse it; see useWebRTC.ts buildDataChannelEnvelope and agent.* types.
     const result: CustomCommandExecutionResult = {
       commandId: command.id,
       commandName: command.name,

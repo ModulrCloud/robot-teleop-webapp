@@ -197,7 +197,7 @@ type InternalOutboundMessage =
   | { type: 'offer' | 'answer' | 'candidate'; to: string; from: string; sdp?: string; candidate?: string; [k: string]: unknown }
   | { type: 'error'; error: string; message: string; robotId?: string; currentCredits?: number; requiredCredits?: number }
   | { type: 'session-locked'; robotId: string; lockedBy: string }
-  | { type: 'session-created'; sessionId: string }
+  | { type: 'session-created'; sessionId: string; robotProtocol?: ConnectionProtocol }
   | { type: 'welcome'; connectionId: string }
   | { type: 'monitor-confirmed'; robotId: string; message: string }
   | { type: 'admin-takeover'; robotId: string; by: string }
@@ -2392,13 +2392,15 @@ async function handleSignal(
             }
           }
         } else {
-          // Send session ID to client when session is created
+          // Send session ID and robot protocol to client so it can choose data-channel message format (legacy vs envelope)
           try {
+            const robotProto = await getConnectionProtocol(targetConn);
             await postFormatted(sourceConnId, {
               type: 'session-created',
               sessionId: sessionId,
+              robotProtocol: robotProto?.protocol ?? 'legacy',
             });
-            console.log('[SESSION] Sent session ID to client:', { sessionId, connectionId: sourceConnId });
+            console.log('[SESSION] Sent session ID to client:', { sessionId, connectionId: sourceConnId, robotProtocol: robotProto?.protocol });
           } catch (e) {
             console.warn('[SESSION] Failed to send session ID to client:', e);
           }

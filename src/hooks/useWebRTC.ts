@@ -16,6 +16,10 @@ export interface ConnectionStats {
   bitrate: number | null;         // Current bitrate in kbps
 }
 
+import { getMovementMessage, type RobotDataChannelProtocol } from '../utils/dataChannelMessageFormat';
+
+export type { RobotDataChannelProtocol };
+
 export interface WebRTCStatus {
   connecting: boolean;
   connected: boolean;
@@ -24,6 +28,8 @@ export interface WebRTCStatus {
   robotBusy: boolean;
   busyUser: string | null;
   sessionId: string | null;
+  /** When set, we use envelope format on data channel for movement; otherwise legacy flat format. */
+  robotDataChannelProtocol: RobotDataChannelProtocol | null;
   stats: ConnectionStats;
 }
 
@@ -126,6 +132,7 @@ export function useWebRTC(options: WebRTCOptions) {
     robotBusy: false,
     busyUser: null,
     sessionId: null,
+    robotDataChannelProtocol: null,
     stats: defaultStats,
   });
 
@@ -142,6 +149,12 @@ export function useWebRTC(options: WebRTCOptions) {
   const webrtcConnectedRef = useRef<boolean>(false);
   const myIdRef = useRef<string>(myId || ''); // Store actual connection ID
   const isThisInstanceConnecting = useRef<boolean>(false); // Track if this instance initiated the connection
+  const robotDataChannelProtocolRef = useRef<RobotDataChannelProtocol | null>(null);
+
+  // Keep ref in sync so sendCommand (stable callback) always sees current protocol
+  useEffect(() => {
+    robotDataChannelProtocolRef.current = status.robotDataChannelProtocol;
+  }, [status.robotDataChannelProtocol]);
 
   // Collect WebRTC stats
   const collectStats = useCallback(async () => {
@@ -263,7 +276,7 @@ export function useWebRTC(options: WebRTCOptions) {
       cleanup();
     }
 
-    setStatus({ connecting: true, connected: false, error: null, videoStream: null, robotBusy: false, busyUser: null, sessionId: null, stats: defaultStats });
+    setStatus({ connecting: true, connected: false, error: null, videoStream: null, robotBusy: false, busyUser: null, sessionId: null, robotDataChannelProtocol: null, stats: defaultStats });
 
     try {
       // Get JWT token for WebSocket authentication
@@ -448,10 +461,12 @@ export function useWebRTC(options: WebRTCOptions) {
         }
         
         if (msg.type === 'session-created' && msg.sessionId) {
-          logger.log('[WEBRTC] Session created with ID:', msg.sessionId);
+          logger.log('[WEBRTC] Session created with ID:', msg.sessionId, 'robotProtocol:', msg.robotProtocol);
+          const protocol: RobotDataChannelProtocol = msg.robotProtocol === 'modulr-v0' ? 'modulr-v0' : 'legacy';
           setStatus(prev => ({
             ...prev,
             sessionId: msg.sessionId,
+            robotDataChannelProtocol: protocol,
           }));
           return;
         }
@@ -594,13 +609,12 @@ export function useWebRTC(options: WebRTCOptions) {
   const sendCommand = useCallback((linearX: number, angularZ: number) => {
     if (!rosBridgeRef.current) return;
 
-    rosBridgeRef.current.send({
-      type: "MovementCommand",
-      params: {
-        "forward": linearX,
-        "turn": angularZ,
-      }
-    });
+    // TEMPORARY: Agent uses legacy signaling but new movement protocol. Always use envelope
+    // until the agent uses new signaling too; then replace with the commented block below
+    // so we branch on robotDataChannelProtocol again.
+    rosBridgeRef.current.send(getMovementMessage('modulr-v0', linearX, angularZ));
+    // const protocol = robotDataChannelProtocolRef.current;
+    // rosBridgeRef.current.send(getMovementMessage(protocol, linearX, angularZ));
   }, []);
 
   const stopRobot = useCallback(() => {
