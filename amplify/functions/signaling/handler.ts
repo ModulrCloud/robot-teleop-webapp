@@ -795,7 +795,7 @@ async function postTo(connectionId: string, message: unknown): Promise<void> {
 }
 
 /** DynamoDB Item shape for robot presence (subset we use when reusing a single read). */
-type RobotPresenceItem = { connectionId?: { S?: string }; ownerUserId?: { S?: string } } | undefined;
+type RobotPresenceItem = { connectionId?: { S?: string }; ownerUserId?: { S?: string }; status?: { S?: string } } | undefined;
 
 // If caller is the robot owner, a delegated operator, or in an admin group return True
 // Optional presenceItem: when provided (from a prior GetItem in the same request), avoids an extra DB read.
@@ -1713,10 +1713,11 @@ async function handleRegister(
             status: { S: 'pending' },
             updatedAt: { N: String(Date.now()) },
           },
-          // Allow first-time or re-register by same owner or same connection (idempotent)
-          ConditionExpression: 'attribute_not_exists(robotId) OR ownerUserId = :owner OR connectionId = :conn',
+          // Only allow first-time claim or same-connection re-register (idempotent). Do NOT allow
+          // ownerUserId = :owner: that would let an unauthenticated connection overwrite an existing
+          // presence row (e.g. live robot) because :owner is derived from robot metadata, not from PKI proof.
+          ConditionExpression: 'attribute_not_exists(robotId) OR connectionId = :conn',
           ExpressionAttributeValues: {
-            ':owner': { S: ownerId },
             ':conn': { S: connectionId },
           },
         }),
@@ -2081,7 +2082,8 @@ async function handleSignal(
     const robotPresence = await db.send(new GetItemCommand({
       TableName: ROBOT_PRESENCE_TABLE,
       Key: { robotId: { S: robotId } },
-      ProjectionExpression: 'connectionId, ownerUserId',
+      ProjectionExpression: 'connectionId, ownerUserId, #status',
+      ExpressionAttributeNames: { '#status': 'status' },
     }));
     robotPresenceItem = robotPresence.Item as RobotPresenceItem;
     if (robotPresenceItem?.connectionId?.S === sourceConnId) {
@@ -2252,9 +2254,11 @@ async function handleSignal(
     }
   } else {
     // Reuse presence we already fetched (same row as is-from-robot check).
+    // Only route to robot when status is 'online' (or missing for legacy rows). Pending = PKI not verified; do not send client traffic there.
+    const presenceStatus = robotPresenceItem?.status?.S;
     const robotConn = robotPresenceItem?.connectionId?.S;
-    if (!robotConn) {
-      return errorResponse(404, 'target offline');
+    if (!robotConn || presenceStatus === 'pending') {
+      return errorResponse(404, 'Robot is offline or not ready');
     }
     targetConn = robotConn;
   }
