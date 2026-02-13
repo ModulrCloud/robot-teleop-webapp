@@ -2535,16 +2535,8 @@ async function handleSignal(
   // Only attempt to send if we have a valid target connection (not a placeholder)
   if (targetConn && targetConn !== 'PLACEHOLDER_NO_CLIENT') {
     try {
-      // When forwarding to robot, use source (client) connection's protocol so robot gets new-protocol envelope (e.g. signalling.offer) when client uses new protocol (PKI).
-      const formatForTarget =
-        target === 'robot'
-          ? await getConnectionProtocol(sourceConnId)
-          : undefined;
-      await postFormatted(
-        targetConn,
-        outbound as InternalOutboundMessage,
-        formatForTarget ? { protocol: formatForTarget.protocol, version: formatForTarget.version } : undefined,
-      );
+      // Use recipient's protocol so legacy robots get legacy format and new-protocol robots get envelope (signalling.offer). Mixed client/robot protocol combos work correctly.
+      await postFormatted(targetConn, outbound as InternalOutboundMessage);
       console.log('[PACKET_FORWARD_SUCCESS]', {
         targetConnectionId: targetConn,
         messageType: type,

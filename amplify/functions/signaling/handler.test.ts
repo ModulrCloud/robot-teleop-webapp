@@ -591,10 +591,8 @@ describe('Stage 2: new-protocol integration', () => {
     ddbSend.mockResolvedValueOnce({
       Item: { username: { S: 'user-1' }, email: { S: 'user-1@example.com' } },
     });
-    ddbSend.mockResolvedValueOnce({
-      Item: { protocol: { S: 'modulr-v0' }, version: { S: '0.0' } },
-    });
-    // getConnectionProtocol(C-1) when forwarding to robot (use source protocol → signalling.offer)
+    ddbSend.mockResolvedValueOnce({}); // extra GetItem/Query in path (e.g. session/balance)
+    // getConnectionProtocol(R-1) — recipient protocol so new-protocol robot gets signalling.offer, legacy robot gets offer
     ddbSend.mockResolvedValueOnce({
       Item: { protocol: { S: 'modulr-v0' }, version: { S: '0.0' } },
     });
