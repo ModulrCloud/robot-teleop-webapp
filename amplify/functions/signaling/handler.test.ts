@@ -3,6 +3,8 @@
 //-------------------------------
 
 // amplify/functions/signaling/handler.test.ts
+// Must run before handler load so getRobotByRobotId sees ROBOT_TABLE_NAME (handler reads env at load time)
+import './handler-test-env';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type {
   APIGatewayProxyEvent,
@@ -108,6 +110,7 @@ import {
   UpdateItemCommand,
 } from '@aws-sdk/client-dynamodb';
 import { PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
+import { GetCommand } from '@aws-sdk/lib-dynamodb';
 
 // ---------- Helpers ----------
 function mkToken(payload: Record<string, unknown>) {
@@ -588,7 +591,8 @@ describe('Stage 2: new-protocol integration', () => {
     ddbSend.mockResolvedValueOnce({
       Item: { username: { S: 'user-1' }, email: { S: 'user-1@example.com' } },
     });
-    // getConnectionProtocol(R-1) - robot uses new protocol
+    ddbSend.mockResolvedValueOnce({}); // extra GetItem/Query in path (e.g. session/balance)
+    // getConnectionProtocol(R-1) — recipient protocol so new-protocol robot gets signalling.offer, legacy robot gets offer
     ddbSend.mockResolvedValueOnce({
       Item: { protocol: { S: 'modulr-v0' }, version: { S: '0.0' } },
     });
@@ -884,6 +888,290 @@ describe('auth & validation errors', () => {
     }));
 
     expect(resp.statusCode).toBe(403);
+  });
+
+  // Stage 1: Only override the first ddbSend call (GetItem CONN for auth). If auth works we get into
+  // handleRegister; Query gets default { Items: [] } so we expect 400 "Robot not found". No DB delay –
+  // the mock is in-memory and runs when the handler calls db.send().
+  it('PKI-pending Stage 1: auth returns pki_pending then handleRegister sees no robot (400)', async () => {
+    ddbSend.mockResolvedValueOnce({
+      Item: {
+        connectionId: { S: 'C-pki' },
+        kind: { S: 'client_pki_pending' },
+        ts: { N: String(Date.now()) },
+        protocol: { S: 'legacy' },
+      },
+    });
+
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-pki'),
+      queryStringParameters: {},
+      body: JSON.stringify({ type: 'register', robotId: 'robot-pki' }),
+    }));
+
+    expect(resp.statusCode).toBe(400);
+    const body = JSON.parse(resp.body || '{}');
+    expect(body.error).toMatch(/robot not found|Robot not found/i);
+    expect(ddbSend).toHaveBeenCalled();
+    const firstCall = ddbSend.mock.calls[0]?.[0];
+    expect(firstCall).toBeInstanceOf(GetItemCommand);
+  });
+
+  // Stage 2: Auth + robot + partner. Use a single mockImplementation that returns by command/table
+  // so we don't depend on call order (CONN GetItem, Robot Query, Partner Get, then Put/Update).
+  it('PKI-pending Stage 2: auth + robot + partner → 200 and pki_challenge sent', async () => {
+    // Use same pattern as "Robot not in table" test: default mock + Once overrides. Include protocol
+    // so we skip UpdateItem; order is GetItem CONN, Query robot, Get partner, then Put/Update/Query.
+    ddbSend.mockResolvedValueOnce({
+      Item: {
+        connectionId: { S: 'C-pki' },
+        kind: { S: 'client_pki_pending' },
+        ts: { N: String(Date.now()) },
+        protocol: { S: 'legacy' },
+      },
+    });
+    ddbSend.mockResolvedValueOnce({
+      Items: [{
+        robotId: { S: 'robot-pki' },
+        publicKey: { S: '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA\n-----END PUBLIC KEY-----' },
+        partnerId: { S: 'partner-1' },
+      }],
+    });
+    ddbSend.mockResolvedValueOnce({ Item: { owner: 'owner-1' } });
+    apigwSend.mockResolvedValue({});
+
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-pki'),
+      queryStringParameters: {},
+      body: JSON.stringify({ type: 'register', robotId: 'robot-pki' }),
+    }));
+
+    expect(resp.statusCode).toBe(200);
+    const postCall = apigwSend.mock.calls.find((c: unknown[]) => c[0]?.constructor?.name === 'PostToConnectionCommand');
+    expect(postCall).toBeDefined();
+    const cmd = (postCall as unknown[])[0] as { input?: { Data?: Buffer | Uint8Array } };
+    const data = cmd?.input?.Data;
+    expect(data).toBeDefined();
+    const body = JSON.parse(Buffer.from(data as Buffer).toString('utf8'));
+    expect(body.type).toBe('pki_challenge');
+    expect(typeof body.challenge).toBe('string');
+    expect(body.challengeType).toBeDefined();
+  });
+
+  // Stage 3: Full first-register flow (same as Stage 2 plus assert challenge stored on CONN).
+  it('PKI-pending first register: sends pki_challenge and stores challenge on CONN', async () => {
+    ddbSend.mockResolvedValueOnce({
+      Item: {
+        connectionId: { S: 'C-pki' },
+        kind: { S: 'client_pki_pending' },
+        ts: { N: String(Date.now()) },
+        protocol: { S: 'legacy' },
+      },
+    });
+    ddbSend.mockResolvedValueOnce({
+      Items: [{
+        robotId: { S: 'robot-pki' },
+        publicKey: { S: '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA\n-----END PUBLIC KEY-----' },
+        partnerId: { S: 'partner-1' },
+      }],
+    });
+    ddbSend.mockResolvedValueOnce({ Item: { owner: 'owner-1' } });
+    apigwSend.mockResolvedValue({});
+
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-pki'),
+      queryStringParameters: {},
+      body: JSON.stringify({ type: 'register', robotId: 'robot-pki' }),
+    }));
+
+    expect(resp.statusCode).toBe(200);
+    const postCall = apigwSend.mock.calls.find((c: unknown[]) => c[0]?.constructor?.name === 'PostToConnectionCommand');
+    expect(postCall).toBeDefined();
+    const cmd = (postCall as unknown[])[0] as { input?: { Data?: Buffer | Uint8Array } };
+    const data = cmd?.input?.Data;
+    expect(data).toBeDefined();
+    const body = JSON.parse(Buffer.from(data as Buffer).toString('utf8'));
+    expect(body.type).toBe('pki_challenge');
+    expect(typeof body.challenge).toBe('string');
+    expect(body.challengeType).toBe('xor');
+    const updateCalls = ddbSend.mock.calls.filter((c: unknown[]) => c[0] instanceof UpdateItemCommand);
+    const connUpdate = updateCalls.find((c: unknown[]) => (c[0] as { input?: { UpdateExpression?: string } }).input?.UpdateExpression?.includes('pkiChallenge'));
+    expect(connUpdate).toBeDefined();
+  });
+
+  it('PKI-pending register with signature but no stored challenge returns 401', async () => {
+    let connAuthCalls = 0;
+    ddbSend.mockImplementation((cmd: unknown) => {
+      if (cmd instanceof GetItemCommand) {
+        const input = (cmd as { input?: { TableName?: string; ProjectionExpression?: string } }).input;
+        const table = input?.TableName;
+        if (table === 'LocalConnections' || table === process.env.CONN_TABLE) {
+          connAuthCalls++;
+          if (connAuthCalls === 1) {
+            return Promise.resolve({
+              Item: {
+                connectionId: { S: 'C-pki' },
+                kind: { S: 'client_pki_pending' },
+                ts: { N: String(Date.now()) },
+                protocol: { S: 'legacy' },
+              },
+            });
+          }
+          return Promise.resolve({ Item: {} });
+        }
+      }
+      if (cmd instanceof QueryCommand) {
+        const table = (cmd as { input?: { TableName?: string } }).input?.TableName;
+        if (table === 'LocalRobots' || table === process.env.ROBOT_TABLE_NAME) {
+          return Promise.resolve({
+            Items: [{ robotId: { S: 'robot-pki' }, publicKey: { S: 'pem' }, partnerId: { S: 'p1' } }],
+          });
+        }
+      }
+      if (cmd instanceof GetCommand) {
+        const table = (cmd as { input?: { TableName?: string } }).input?.TableName;
+        if (table === 'LocalPartners' || table === process.env.PARTNER_TABLE_NAME) {
+          return Promise.resolve({ Item: { owner: 'owner-1' } });
+        }
+      }
+      return Promise.resolve({});
+    });
+
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-pki'),
+      queryStringParameters: {},
+      body: JSON.stringify({
+        type: 'register',
+        robotId: 'robot-pki',
+        signature: 'dGVzdC1zaWduYXR1cmU=',
+      }),
+    }));
+
+    expect(resp.statusCode).toBe(401);
+  });
+
+  it('PKI-pending register with invalid signature returns 401', async () => {
+    const { generateKeyPairSync } = await import('crypto');
+    const { publicKey } = generateKeyPairSync('ed25519', {
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+    const publicKeyPem = typeof publicKey === 'string' ? publicKey : (publicKey as import('crypto').KeyObject).export({ type: 'spki', format: 'pem' }).toString();
+    const challenge = Buffer.alloc(32, 1);
+    const challengeBase64 = challenge.toString('base64');
+    const wrongSignature = Buffer.alloc(64, 0).toString('base64');
+
+    let connAuthCalls = 0;
+    ddbSend.mockImplementation((cmd: unknown) => {
+      if (cmd instanceof GetItemCommand) {
+        const input = (cmd as { input?: { TableName?: string; ProjectionExpression?: string } }).input;
+        const table = input?.TableName;
+        if (table === 'LocalConnections' || table === process.env.CONN_TABLE) {
+          connAuthCalls++;
+          if (connAuthCalls === 1) {
+            return Promise.resolve({
+              Item: {
+                connectionId: { S: 'C-pki' },
+                kind: { S: 'client_pki_pending' },
+                ts: { N: String(Date.now()) },
+                protocol: { S: 'legacy' },
+              },
+            });
+          }
+          return Promise.resolve({
+            Item: {
+              pkiChallenge: { S: challengeBase64 },
+              pkiChallengeRobotId: { S: 'robot-pki' },
+              pkiChallengeType: { S: 'plain' },
+            },
+          });
+        }
+      }
+      if (cmd instanceof QueryCommand) {
+        const table = (cmd as { input?: { TableName?: string } }).input?.TableName;
+        if (table === 'LocalRobots' || table === process.env.ROBOT_TABLE_NAME) {
+          return Promise.resolve({
+            Items: [{ robotId: { S: 'robot-pki' }, publicKey: { S: publicKeyPem }, partnerId: { S: 'p1' } }],
+          });
+        }
+      }
+      if (cmd instanceof GetCommand) {
+        const table = (cmd as { input?: { TableName?: string } }).input?.TableName;
+        if (table === 'LocalPartners' || table === process.env.PARTNER_TABLE_NAME) {
+          return Promise.resolve({ Item: { owner: 'owner-1' } });
+        }
+      }
+      return Promise.resolve({});
+    });
+
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-pki'),
+      queryStringParameters: {},
+      body: JSON.stringify({
+        type: 'register',
+        robotId: 'robot-pki',
+        signature: wrongSignature,
+        challengeType: 'plain',
+      }),
+    }));
+
+    expect(resp.statusCode).toBe(401);
+  });
+
+  // Stage 3: Valid Ed25519 signature → verify and upgrade presence to online.
+  it('PKI-pending register with valid Ed25519 signature upgrades to online', async () => {
+    const { generateKeyPairSync, sign } = await import('crypto');
+    const { publicKey, privateKey } = generateKeyPairSync('ed25519', {
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    });
+    const publicKeyPem = typeof publicKey === 'string' ? publicKey : (publicKey as import('crypto').KeyObject).export({ type: 'spki', format: 'pem' }).toString();
+    const challenge = Buffer.alloc(32, 1);
+    const challengeBase64 = challenge.toString('base64');
+    const signature = sign(null, challenge, privateKey);
+    const signatureBase64 = signature.toString('base64');
+
+    // Order: 1) GetItem CONN (auth), 2) Query robot, 3) Get partner, 4) GetItem CONN (challenge), 5) UpdateItem presence, 6) UpdateItem CONN REMOVE
+    ddbSend.mockResolvedValueOnce({
+      Item: {
+        connectionId: { S: 'C-pki' },
+        kind: { S: 'client_pki_pending' },
+        ts: { N: String(Date.now()) },
+        protocol: { S: 'legacy' },
+      },
+    });
+    ddbSend.mockResolvedValueOnce({
+      Items: [{ robotId: { S: 'robot-pki' }, publicKey: { S: publicKeyPem }, partnerId: { S: 'p1' } }],
+    });
+    ddbSend.mockResolvedValueOnce({ Item: { owner: 'owner-1' } });
+    ddbSend.mockResolvedValueOnce({
+      Item: {
+        pkiChallenge: { S: challengeBase64 },
+        pkiChallengeRobotId: { S: 'robot-pki' },
+        pkiChallengeType: { S: 'plain' },
+      },
+    });
+    ddbSend.mockResolvedValueOnce({});
+    ddbSend.mockResolvedValueOnce({});
+
+    const resp = await handler(asHandlerEvent({
+      requestContext: makeRequestContext('$default', 'C-pki'),
+      queryStringParameters: {},
+      body: JSON.stringify({
+        type: 'register',
+        robotId: 'robot-pki',
+        signature: signatureBase64,
+        challengeType: 'plain',
+      }),
+    }));
+
+    expect(resp.statusCode).toBe(200);
+    const updateCalls = ddbSend.mock.calls.filter((c: unknown[]) => c[0] instanceof UpdateItemCommand);
+    const presenceUpdate = updateCalls.find((c: unknown[]) => {
+      const input = (c[0] as { input?: { TableName?: string; UpdateExpression?: string } }).input;
+      return input?.TableName === process.env.ROBOT_PRESENCE_TABLE && input?.UpdateExpression?.includes('#status');
+    });
+    expect(presenceUpdate).toBeDefined();
   });
 
   it('400 when register missing robotId', async () => {

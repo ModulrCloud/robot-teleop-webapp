@@ -10,7 +10,7 @@ import {
     ScanCommand,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand as DocQueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, randomUUID, randomBytes, verify as cryptoVerify, createPublicKey } from 'crypto';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand, DeleteConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
@@ -31,6 +31,10 @@ const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 
 // PKI-pending connections that never complete auth are closed after this (ms). Env override: PKI_PENDING_TIMEOUT_MS.
 const PKI_PENDING_TIMEOUT_MS = Number(process.env.PKI_PENDING_TIMEOUT_MS) || 120_000; // 2 minutes
+
+// Challenge type for PKI challenge-response (Phase 4). Default 'xor'; 'plain' = sign raw challenge.
+const DEFAULT_CHALLENGE_TYPE = 'xor';
+const PKI_CHALLENGE_NONCE_BYTES = 32;
 
 // Default platform markup (30%) if not set
 const DEFAULT_PLATFORM_MARKUP_PERCENT = 30;
@@ -97,6 +101,10 @@ type InboundMessage = Partial<{
     target: Target;
     clientConnectionId: string;
     payload: Record<string, unknown>;
+    /** Phase 4: signature from robot (base64) after pki_challenge */
+    signature?: string;
+    /** Phase 4: challenge type used when signing (xor | plain) */
+    challengeType?: string;
 }>;
 
 // Raw wire shape (browser or robot could send anything so we normalize here)
@@ -205,6 +213,7 @@ type InternalOutboundMessage =
   | { type: 'monitor-confirmed'; robotId: string; message: string }
   | { type: 'admin-takeover'; robotId: string; by: string }
   | { type: 'signalling.capabilities'; supportedVersions: readonly string[] }
+  | { type: 'pki_challenge'; challenge: string; challengeType: string }
   | Record<string, unknown>;
 
 /**
@@ -277,9 +286,15 @@ export function formatOutboundForConnection(
 
 /**
  * Sends a message to a connection, formatting for that connection's protocol.
+ * Optional override: when forwarding to a robot, pass the source (client) connection's protocol
+ * so the robot receives new-protocol envelope (e.g. signalling.offer) when the client uses new protocol.
  */
-async function postFormatted(connectionId: string, internalMsg: InternalOutboundMessage): Promise<void> {
-  const proto = await getConnectionProtocol(connectionId);
+async function postFormatted(
+  connectionId: string,
+  internalMsg: InternalOutboundMessage,
+  formatOverride?: { protocol?: ConnectionProtocol; version?: string },
+): Promise<void> {
+  const proto = formatOverride ?? (await getConnectionProtocol(connectionId));
   const formatted = formatOutboundForConnection(internalMsg, proto?.protocol, proto?.version);
   await postTo(connectionId, formatted);
 }
@@ -614,12 +629,16 @@ export function normalizeNewProtocol(raw: RawMessage): InboundMessage | null {
   switch (typeStr) {
     case 'signalling.register': {
       const agentId = typeof p.agentId === 'string' ? p.agentId.trim() : undefined;
+      const signature = typeof p.signature === 'string' ? p.signature : undefined;
+      const challengeType = typeof p.challengeType === 'string' ? p.challengeType : undefined;
       return {
         type: 'register',
         robotId: agentId,
         target: undefined,
         clientConnectionId: undefined,
         payload: { capabilities: p.capabilities, metadata: p.metadata },
+        ...(signature !== undefined && { signature }),
+        ...(challengeType !== undefined && { challengeType }),
       };
     }
 
@@ -721,12 +740,16 @@ function normalizeMessage(raw: RawMessage): InboundMessage {
   const target = extractTarget(raw);
   const clientConnectionId = extractClientConnectionId(raw, type, robotId);
 
+  const signature = typeof raw.signature === 'string' ? raw.signature : undefined;
+  const challengeType = typeof raw.challengeType === 'string' ? raw.challengeType : undefined;
   return {
     type,
     robotId,
     target,
     clientConnectionId,
     payload,
+    ...(signature !== undefined && { signature }),
+    ...(challengeType !== undefined && { challengeType }),
   };
 }
 
@@ -1426,6 +1449,82 @@ async function getPartnerOwnerIdentifier(partnerId: string): Promise<string | un
 }
 
 /**
+ * Create a public key for Ed25519 verification. Accepts PEM or base64-encoded raw 32-byte key.
+ */
+function createEd25519PublicKey(publicKeyPemOrBase64: string): import('crypto').KeyObject | null {
+  const trimmed = publicKeyPemOrBase64.trim();
+  try {
+    if (trimmed.startsWith('-----')) {
+      return createPublicKey(trimmed);
+    }
+    const raw = Buffer.from(trimmed, 'base64');
+    if (raw.length === 32) {
+      // Node 18+ supports raw Ed25519; @types/node may not include format 'raw'
+      return createPublicKey({ key: raw, format: 'raw', type: 'ed25519' } as unknown as import('crypto').PublicKeyInput);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * XOR two buffers byte-wise. If b is shorter, cycles through b.
+ */
+function xorBuffers(a: Buffer, b: Buffer): Buffer {
+  const out = Buffer.alloc(a.length);
+  for (let i = 0; i < a.length; i++) {
+    out[i] = a[i] ^ b[i % b.length];
+  }
+  return out;
+}
+
+/**
+ * Verify PKI challenge-response signature (Phase 4). Returns true if valid.
+ * - plain: verify(signature, challengeBytes)
+ * - xor: derive payload = xor(challengeBytes, first 32 bytes of SHA256(connectionId + challengeBase64)), then verify(signature, payload)
+ */
+function verifyPkiSignature(
+  connectionId: string,
+  challengeBase64: string,
+  challengeType: string,
+  publicKeyPemOrBase64: string,
+  signatureBase64: string,
+): boolean {
+  const key = createEd25519PublicKey(publicKeyPemOrBase64);
+  if (!key) return false;
+  let challengeBytes: Buffer;
+  try {
+    challengeBytes = Buffer.from(challengeBase64, 'base64');
+  } catch {
+    return false;
+  }
+  let signature: Buffer;
+  try {
+    signature = Buffer.from(signatureBase64, 'base64');
+  } catch {
+    return false;
+  }
+  let dataToVerify: Buffer;
+  const ct = (challengeType || DEFAULT_CHALLENGE_TYPE).toLowerCase();
+  if (ct === 'plain') {
+    dataToVerify = challengeBytes;
+  } else if (ct === 'xor') {
+    const input = connectionId + challengeBase64;
+    const hash = createHash('sha256').update(input, 'utf8').digest();
+    const keyMaterial = hash.subarray(0, Math.min(32, challengeBytes.length));
+    dataToVerify = xorBuffers(challengeBytes, keyMaterial);
+  } else {
+    return false;
+  }
+  try {
+    return cryptoVerify(null, dataToVerify, key, signature);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Removes robot presence when a robot's WebSocket disconnects.
  * This ensures the robot shows as "offline" immediately when it disconnects.
  * Paginates the scan so all matching rows are removed even with a large table.
@@ -1687,7 +1786,7 @@ async function handleRegister(
     return errorResponse(400, 'robotId required');
   }
 
-  // PKI-pending path: connection has no JWT; robot must have publicKey on file, we write presence as "pending"
+  // PKI-pending path: connection has no JWT; robot must have publicKey on file
   if (claims.pkiPending) {
     const robotItem = await getRobotByRobotId(robotId);
     if (!robotItem) {
@@ -1705,6 +1804,64 @@ async function handleRegister(
       console.warn('[REGISTER_PKI_PENDING] Could not resolve robot owner', { connectionId, robotId });
       return errorResponse(500, 'Could not resolve robot owner');
     }
+
+    // Phase 4: register with signature (response to pki_challenge) → verify and upgrade to online
+    if (msg.signature?.trim()) {
+      const connItem = await db.send(
+        new GetItemCommand({
+          TableName: CONN_TABLE,
+          Key: { connectionId: { S: connectionId } },
+          ProjectionExpression: 'pkiChallenge, pkiChallengeRobotId, pkiChallengeType',
+        }),
+      );
+      const storedChallenge = connItem.Item?.pkiChallenge?.S;
+      const storedRobotId = connItem.Item?.pkiChallengeRobotId?.S;
+      const storedType = connItem.Item?.pkiChallengeType?.S ?? DEFAULT_CHALLENGE_TYPE;
+      if (!storedChallenge?.trim() || storedRobotId !== robotId) {
+        console.warn('[REGISTER_PKI] Missing or wrong challenge', { connectionId, robotId });
+        return errorResponse(401, 'Invalid or expired PKI challenge');
+      }
+      const publicKey = robotItem.publicKey?.S?.trim();
+      if (!publicKey) return errorResponse(401, 'Robot has no public key');
+      const valid = verifyPkiSignature(connectionId, storedChallenge, storedType, publicKey, msg.signature.trim());
+      if (!valid) {
+        console.warn('[REGISTER_PKI] Signature verification failed', { connectionId, robotId });
+        return errorResponse(401, 'Invalid PKI signature');
+      }
+      try {
+        await db.send(
+          new UpdateItemCommand({
+            TableName: ROBOT_PRESENCE_TABLE,
+            Key: { robotId: { S: robotId } },
+            UpdateExpression: 'SET #status = :online, updatedAt = :ts',
+            ConditionExpression: 'connectionId = :conn',
+            ExpressionAttributeNames: { '#status': 'status' },
+            ExpressionAttributeValues: {
+              ':online': { S: 'online' },
+              ':ts': { N: String(Date.now()) },
+              ':conn': { S: connectionId },
+            },
+          }),
+        );
+      } catch (e: unknown) {
+        const err = e as { name?: string; code?: string };
+        if (err?.name === 'ConditionalCheckFailedException' || err?.code === 'ConditionalCheckFailedException') {
+          return errorResponse(401, 'Connection does not own this robot');
+        }
+        throw e;
+      }
+      await db.send(
+        new UpdateItemCommand({
+          TableName: CONN_TABLE,
+          Key: { connectionId: { S: connectionId } },
+          UpdateExpression: 'REMOVE pkiChallenge, pkiChallengeRobotId, pkiChallengeType, pkiChallengeTs',
+        }),
+      );
+      console.log('[REGISTER_PKI_VERIFIED]', { connectionId, robotId });
+      return { statusCode: 200, body: '' };
+    }
+
+    // First register: write presence as pending, store challenge on CONN, send pki_challenge
     try {
       await db.send(
         new PutItemCommand({
@@ -1716,9 +1873,6 @@ async function handleRegister(
             status: { S: 'pending' },
             updatedAt: { N: String(Date.now()) },
           },
-          // Only allow first-time claim or same-connection re-register (idempotent). Do NOT allow
-          // ownerUserId = :owner: that would let an unauthenticated connection overwrite an existing
-          // presence row (e.g. live robot) because :owner is derived from robot metadata, not from PKI proof.
           ConditionExpression: 'attribute_not_exists(robotId) OR connectionId = :conn',
           ExpressionAttributeValues: {
             ':conn': { S: connectionId },
@@ -1732,6 +1886,27 @@ async function handleRegister(
       }
       console.warn('Presence put_item error (pending)', e);
       return errorResponse(500, 'DynamoDB error');
+    }
+    const nonce = randomBytes(PKI_CHALLENGE_NONCE_BYTES);
+    const challengeBase64 = nonce.toString('base64');
+    const challengeType = DEFAULT_CHALLENGE_TYPE;
+    await db.send(
+      new UpdateItemCommand({
+        TableName: CONN_TABLE,
+        Key: { connectionId: { S: connectionId } },
+        UpdateExpression: 'SET pkiChallenge = :c, pkiChallengeRobotId = :r, pkiChallengeType = :t, pkiChallengeTs = :ts',
+        ExpressionAttributeValues: {
+          ':c': { S: challengeBase64 },
+          ':r': { S: robotId },
+          ':t': { S: challengeType },
+          ':ts': { N: String(Date.now()) },
+        },
+      }),
+    );
+    try {
+      await postFormatted(connectionId, { type: 'pki_challenge', challenge: challengeBase64, challengeType });
+    } catch (e) {
+      console.warn('[REGISTER_PENDING] Failed to send pki_challenge', e);
     }
     console.log('[REGISTER_PENDING]', { connectionId, robotId, ownerId });
     const monitorMessage = {
@@ -2360,6 +2535,7 @@ async function handleSignal(
   // Only attempt to send if we have a valid target connection (not a placeholder)
   if (targetConn && targetConn !== 'PLACEHOLDER_NO_CLIENT') {
     try {
+      // Use recipient's protocol so legacy robots get legacy format and new-protocol robots get envelope (signalling.offer). Mixed client/robot protocol combos work correctly.
       await postFormatted(targetConn, outbound as InternalOutboundMessage);
       console.log('[PACKET_FORWARD_SUCCESS]', {
         targetConnectionId: targetConn,
