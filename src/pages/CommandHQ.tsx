@@ -24,6 +24,9 @@ import {
   faCheck,
   faTimesCircle,
   faDownload,
+  faProjectDiagram,
+  faDotCircle,
+  faList,
 } from "@fortawesome/free-solid-svg-icons";
 import type {
   Organisation,
@@ -131,7 +134,8 @@ export const CommandHQ = () => {
         <div className="chq-org-avatar">{orgInitial}</div>
         <div className="chq-header-info">
           <div className="chq-header-row">
-            <h1>{org.name}</h1>
+            <h1>Command HQ</h1>
+            <span className="chq-slug">/{org.slug}</span>
             <span className={`chq-badge chq-badge--${org.status}`}>{org.status}</span>
             {currentRole && (
               <span className="chq-badge chq-badge--role">
@@ -140,7 +144,6 @@ export const CommandHQ = () => {
               </span>
             )}
           </div>
-          <span className="chq-slug">/{org.slug}</span>
         </div>
       </header>
 
@@ -162,7 +165,7 @@ export const CommandHQ = () => {
         <main className="chq-main">
           {activeTab === "overview" && <OverviewTab org={org} members={members} roles={roles} invites={invites} />}
           {activeTab === "members" && (
-            <MembersTab members={members} invites={invites} roles={roles} org={org} canManage={hasPermission("members:manage")} />
+            <MembersTab members={members} invites={invites} roles={roles} robots={robots} org={org} canManage={hasPermission("members:manage")} />
           )}
           {activeTab === "robots" && (
             <RobotsTab robots={robots} members={members} canManage={hasPermission("robots:manage")} />
@@ -260,12 +263,14 @@ function MembersTab({
   members,
   invites,
   roles,
+  robots,
   org,
   canManage,
 }: {
   members: OrgMember[];
   invites: OrgInvite[];
   roles: OrgRole[];
+  robots: OrgRobot[];
   org: Organisation;
   canManage: boolean;
 }) {
@@ -331,24 +336,41 @@ function MembersTab({
                       </td>
                     )}
                   </tr>
-                  {isOpen && role && (
-                    <tr className="chq-tr-expand">
-                      <td colSpan={canManage ? 5 : 4}>
-                        <div className="chq-expand-content">
-                          <span className="chq-expand-label">Permissions:</span>
-                          <div className="chq-perm-tags">
-                            {role.permissions.includes("*") ? (
-                              <span className="chq-perm wildcard">All Permissions</span>
-                            ) : (
-                              role.permissions.map((p) => (
-                                <span key={p} className="chq-perm">{PERMISSION_LABELS[p] || p}</span>
-                              ))
-                            )}
+                  {isOpen && role && (() => {
+                    const memberRobots = robots.filter((r) => r.assignedOperators.includes(m.userId));
+                    return (
+                      <tr className="chq-tr-expand">
+                        <td colSpan={canManage ? 5 : 4}>
+                          <div className="chq-expand-content">
+                            <span className="chq-expand-label">Permissions:</span>
+                            <div className="chq-perm-tags">
+                              {role.permissions.includes("*") ? (
+                                <span className="chq-perm wildcard">All Permissions</span>
+                              ) : (
+                                role.permissions.map((p) => (
+                                  <span key={p} className="chq-perm">{PERMISSION_LABELS[p] || p}</span>
+                                ))
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
+                          <div className="chq-expand-content" style={{ marginTop: "0.5rem" }}>
+                            <span className="chq-expand-label">Robot Access:</span>
+                            <div className="chq-perm-tags">
+                              {memberRobots.length > 0 ? (
+                                memberRobots.map((r) => (
+                                  <span key={r.id} className={`chq-perm chq-perm--robot chq-perm--${r.connectionStatus}`}>
+                                    <FontAwesomeIcon icon={faRobot} /> {r.name}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="chq-perm">No robots assigned</span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })()}
                 </Fragment>
               );
             })}
@@ -391,6 +413,8 @@ function MembersTab({
   );
 }
 
+type RobotsLayout = "diagram" | "bubble" | "list";
+
 function RobotsTab({
   robots,
   members,
@@ -400,11 +424,61 @@ function RobotsTab({
   members: OrgMember[];
   canManage: boolean;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [lines, setLines] = useState<{ x1: number; y1: number; x2: number; y2: number; status: string }[]>([]);
-
+  const [layout, setLayout] = useState<RobotsLayout>("diagram");
   const onlineCount = robots.filter((r) => r.connectionStatus === "online").length;
   const errorCount = robots.filter((r) => r.connectionStatus === "error").length;
+
+  if (robots.length === 0) {
+    return (
+      <section>
+        <div className="chq-center chq-center--compact">
+          <div className="chq-placeholder-icon"><FontAwesomeIcon icon={faRobot} /></div>
+          <h3>No robots yet</h3>
+          <p className="chq-muted">Add your first robot to start managing your fleet.</p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <div className="chq-section-header">
+        <div>
+          <h2>Robots</h2>
+          <p className="chq-subtitle">
+            {onlineCount} online &middot; {robots.length} total
+            {errorCount > 0 && <span className="chq-text-warn"> &middot; {errorCount} error</span>}
+          </p>
+        </div>
+        {canManage && (
+          <button className="chq-btn chq-btn-primary">
+            <FontAwesomeIcon icon={faPlus} /> Add Robot
+          </button>
+        )}
+      </div>
+
+      <div className="chq-tab-toggle">
+        <button className={`chq-toggle-btn ${layout === "diagram" ? "active" : ""}`} onClick={() => setLayout("diagram")}>
+          <FontAwesomeIcon icon={faProjectDiagram} /> Diagram
+        </button>
+        <button className={`chq-toggle-btn ${layout === "bubble" ? "active" : ""}`} onClick={() => setLayout("bubble")}>
+          <FontAwesomeIcon icon={faDotCircle} /> Bubble
+        </button>
+        <button className={`chq-toggle-btn ${layout === "list" ? "active" : ""}`} onClick={() => setLayout("list")}>
+          <FontAwesomeIcon icon={faList} /> List
+        </button>
+      </div>
+
+      {layout === "diagram" && <DiagramView robots={robots} members={members} />}
+      {layout === "bubble" && <BubbleView robots={robots} members={members} />}
+      {layout === "list" && <ListView robots={robots} members={members} />}
+    </section>
+  );
+}
+
+function DiagramView({ robots, members }: { robots: OrgRobot[]; members: OrgMember[] }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [lines, setLines] = useState<{ x1: number; y1: number; x2: number; y2: number; status: string }[]>([]);
 
   const calculateLines = useCallback(() => {
     const el = containerRef.current;
@@ -460,35 +534,8 @@ function RobotsTab({
     };
   }, [calculateLines]);
 
-  if (robots.length === 0) {
-    return (
-      <section>
-        <div className="chq-center chq-center--compact">
-          <div className="chq-placeholder-icon"><FontAwesomeIcon icon={faRobot} /></div>
-          <h3>No robots yet</h3>
-          <p className="chq-muted">Add your first robot to start managing your fleet.</p>
-        </div>
-      </section>
-    );
-  }
-
   return (
-    <section>
-      <div className="chq-section-header">
-        <div>
-          <h2>Robots</h2>
-          <p className="chq-subtitle">
-            {onlineCount} online &middot; {robots.length} total
-            {errorCount > 0 && <span className="chq-text-warn"> &middot; {errorCount} error</span>}
-          </p>
-        </div>
-        {canManage && (
-          <button className="chq-btn chq-btn-primary">
-            <FontAwesomeIcon icon={faPlus} /> Add Robot
-          </button>
-        )}
-      </div>
-
+    <>
       <div className="chq-diagram" ref={containerRef}>
         <svg className="chq-diagram-svg">
           {lines.map((l, i) => {
@@ -505,17 +552,12 @@ function RobotsTab({
             );
           })}
         </svg>
-
         <div className="chq-diagram-col">
           <div className="chq-diagram-label">Operators</div>
           {members.map((m) => {
             const hasRobot = robots.some((r) => r.assignedOperators.includes(m.userId));
             return (
-              <div
-                key={m.id}
-                className={`chq-diagram-node ${!hasRobot ? "chq-diagram-node--dim" : ""}`}
-                data-member={m.userId}
-              >
+              <div key={m.id} className={`chq-diagram-node ${!hasRobot ? "chq-diagram-node--dim" : ""}`} data-member={m.userId}>
                 <div className="chq-avatar-sm">{(m.userEmail || m.userId).charAt(0).toUpperCase()}</div>
                 <div className="chq-row-text">
                   <span className="chq-row-primary">{m.userEmail || m.userId}</span>
@@ -526,41 +568,232 @@ function RobotsTab({
             );
           })}
         </div>
-
         <div className="chq-diagram-col">
           <div className="chq-diagram-label">Fleet</div>
-          {robots.map((r) => {
-            const unassigned = r.assignedOperators.length === 0;
-            return (
-              <div
-                key={r.id}
-                className={`chq-diagram-node chq-diagram-node--robot ${unassigned ? "chq-diagram-node--unassigned" : ""}`}
-                data-robot={r.id}
-              >
-                <div className={`chq-robot-icon-sm chq-robot-icon-sm--${r.connectionStatus}`}>
-                  <FontAwesomeIcon icon={faRobot} />
-                </div>
-                <div className="chq-row-text">
-                  <span className="chq-row-primary">{r.name}</span>
-                  <span className="chq-row-secondary">{r.model} &middot; {r.robotType}</span>
-                </div>
-                <span className={`chq-conn chq-conn--${r.connectionStatus}`}>
-                  <FontAwesomeIcon icon={r.connectionStatus === "error" ? faExclamationTriangle : faWifi} />
-                  {r.connectionStatus}
-                </span>
+          {robots.map((r) => (
+            <div key={r.id} className={`chq-diagram-node chq-diagram-node--robot ${r.assignedOperators.length === 0 ? "chq-diagram-node--unassigned" : ""}`} data-robot={r.id}>
+              <div className={`chq-robot-icon-sm chq-robot-icon-sm--${r.connectionStatus}`}>
+                <FontAwesomeIcon icon={faRobot} />
               </div>
-            );
-          })}
+              <div className="chq-row-text">
+                <span className="chq-row-primary">{r.name}</span>
+                <span className="chq-row-secondary">{r.model} &middot; {r.robotType}</span>
+              </div>
+              <span className={`chq-conn chq-conn--${r.connectionStatus}`}>
+                <FontAwesomeIcon icon={r.connectionStatus === "error" ? faExclamationTriangle : faWifi} />
+                {r.connectionStatus}
+              </span>
+            </div>
+          ))}
         </div>
       </div>
-
       <div className="chq-diagram-legend">
         <span className="chq-legend-item"><span className="chq-legend-line chq-legend-line--online" /> Online</span>
         <span className="chq-legend-item"><span className="chq-legend-line chq-legend-line--offline" /> Offline</span>
         <span className="chq-legend-item"><span className="chq-legend-line chq-legend-line--error" /> Error</span>
         <span className="chq-legend-item"><span className="chq-legend-dot" /> Unassigned</span>
       </div>
-    </section>
+    </>
+  );
+}
+
+function BubbleView({ robots, members }: { robots: OrgRobot[]; members: OrgMember[] }) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const [nodes, setNodes] = useState<{ id: string; type: string; x: number; y: number; r: number; label: string; sub: string; color: string; glow: string }[]>([]);
+  const [links, setLinks] = useState<{ x1: number; y1: number; x2: number; y2: number; status: string; source: string; target: string }[]>([]);
+
+  useEffect(() => {
+    import("d3-force").then(({ forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide }) => {
+      const WIDTH = 700;
+      const HEIGHT = 500;
+
+      const roleColors: Record<number, string> = { 0: "#ffc107", 1: "#60a5fa", 2: "#34d399", 3: "rgba(255,255,255,0.35)" };
+      const statusColors: Record<string, string> = { online: "#4ade80", offline: "rgba(255,255,255,0.25)", error: "#f87171" };
+      const statusGlow: Record<string, string> = { online: "rgba(74,222,128,0.15)", offline: "rgba(255,255,255,0.04)", error: "rgba(248,113,113,0.12)" };
+
+      const simNodes: { id: string; type: string; r: number; label: string; sub: string; color: string; glow: string; x?: number; y?: number }[] = [];
+      const simLinks: { source: string; target: string; status: string }[] = [];
+
+      members.forEach((m) => {
+        const robotCount = robots.filter((r) => r.assignedOperators.includes(m.userId)).length;
+        const r = Math.max(20, 14 + robotCount * 8);
+        const role = parseInt(Object.keys(roleColors).find((k) => m.roleName?.toLowerCase().includes(["owner", "admin", "operator", "viewer"][Number(k)]) ? true : false) || "3");
+        simNodes.push({
+          id: `m-${m.userId}`,
+          type: "member",
+          r,
+          label: (m.userEmail || m.userId).split("@")[0],
+          sub: m.roleName || "",
+          color: roleColors[role] || roleColors[3],
+          glow: "rgba(255,255,255,0.06)",
+        });
+      });
+
+      robots.forEach((robot) => {
+        const r = Math.max(18, 12 + Math.sqrt(robot.totalSessions) * 3);
+        simNodes.push({
+          id: `r-${robot.id}`,
+          type: "robot",
+          r,
+          label: robot.name,
+          sub: robot.model,
+          color: statusColors[robot.connectionStatus] || statusColors.offline,
+          glow: statusGlow[robot.connectionStatus] || statusGlow.offline,
+        });
+
+        robot.assignedOperators.forEach((opId) => {
+          simLinks.push({ source: `m-${opId}`, target: `r-${robot.id}`, status: robot.connectionStatus });
+        });
+      });
+
+      const sim = forceSimulation(simNodes as any)
+        .force("link", forceLink(simLinks as any).id((d: any) => d.id).distance(80).strength(0.6))
+        .force("charge", forceManyBody().strength(-200))
+        .force("center", forceCenter(WIDTH / 2, HEIGHT / 2))
+        .force("collide", forceCollide().radius((d: any) => d.r + 6).strength(0.8));
+
+      sim.tick(200);
+      sim.stop();
+
+      const finalNodes = (simNodes as any[]).map((n) => ({
+        id: n.id,
+        type: n.type,
+        x: n.x as number,
+        y: n.y as number,
+        r: n.r,
+        label: n.label,
+        sub: n.sub,
+        color: n.color,
+        glow: n.glow,
+      }));
+
+      const nodeMap = new Map(finalNodes.map((n) => [n.id, n]));
+      const finalLinks = simLinks.map((l) => {
+        const s = nodeMap.get(typeof l.source === "object" ? (l.source as any).id : l.source);
+        const t = nodeMap.get(typeof l.target === "object" ? (l.target as any).id : l.target);
+        return {
+          x1: s?.x ?? 0, y1: s?.y ?? 0,
+          x2: t?.x ?? 0, y2: t?.y ?? 0,
+          status: l.status,
+          source: s?.id ?? "",
+          target: t?.id ?? "",
+        };
+      });
+
+      setNodes(finalNodes);
+      setLinks(finalLinks);
+    });
+  }, [robots, members]);
+
+  const isConnected = (nodeId: string) => {
+    if (!hoveredNode) return true;
+    if (nodeId === hoveredNode) return true;
+    return links.some((l) => (l.source === hoveredNode && l.target === nodeId) || (l.target === hoveredNode && l.source === nodeId));
+  };
+
+  const isLinkConnected = (l: { source: string; target: string }) => {
+    if (!hoveredNode) return true;
+    return l.source === hoveredNode || l.target === hoveredNode;
+  };
+
+  return (
+    <>
+      <svg ref={svgRef} className="chq-bubble-svg" viewBox="0 0 700 500" preserveAspectRatio="xMidYMid meet">
+        {links.map((l, i) => (
+          <line
+            key={i}
+            x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
+            className={`chq-bubble-link chq-bubble-link--${l.status}`}
+            style={{ opacity: isLinkConnected(l) ? 1 : 0.08 }}
+          />
+        ))}
+        {nodes.map((n) => {
+          const connected = isConnected(n.id);
+          return (
+            <g
+              key={n.id}
+              className="chq-bubble-node"
+              style={{ opacity: connected ? 1 : 0.15 }}
+              onMouseEnter={() => setHoveredNode(n.id)}
+              onMouseLeave={() => setHoveredNode(null)}
+            >
+              <circle cx={n.x} cy={n.y} r={n.r + 4} fill={n.glow} />
+              <circle cx={n.x} cy={n.y} r={n.r} fill="rgba(15,15,20,0.85)" stroke={n.color} strokeWidth={2} />
+              {n.type === "robot" && (
+                <text x={n.x} y={n.y + 1} textAnchor="middle" dominantBaseline="middle" fill={n.color} fontSize={n.r * 0.55} className="chq-bubble-icon">
+                  &#xf544;
+                </text>
+              )}
+              {n.type === "member" && (
+                <text x={n.x} y={n.y + 1} textAnchor="middle" dominantBaseline="middle" fill={n.color} fontSize={n.r * 0.6} fontWeight="700" className="chq-bubble-initial">
+                  {n.label.charAt(0).toUpperCase()}
+                </text>
+              )}
+              <text x={n.x} y={n.y + n.r + 14} textAnchor="middle" fill="rgba(255,255,255,0.6)" fontSize="11" fontWeight="600" className="chq-bubble-label">
+                {n.label}
+              </text>
+              <text x={n.x} y={n.y + n.r + 26} textAnchor="middle" fill="rgba(255,255,255,0.25)" fontSize="9" className="chq-bubble-sub">
+                {n.sub}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <div className="chq-diagram-legend">
+        <span className="chq-legend-item"><span className="chq-legend-line chq-legend-line--online" /> Online</span>
+        <span className="chq-legend-item"><span className="chq-legend-line chq-legend-line--offline" /> Offline</span>
+        <span className="chq-legend-item"><span className="chq-legend-line chq-legend-line--error" /> Error</span>
+      </div>
+    </>
+  );
+}
+
+function ListView({ robots, members }: { robots: OrgRobot[]; members: OrgMember[] }) {
+  const getOperatorNames = (ops: string[]) =>
+    ops.map((id) => members.find((m) => m.userId === id)?.userEmail?.split("@")[0] || id).join(", ");
+
+  return (
+    <div className="chq-panel">
+      <table className="chq-table">
+        <thead>
+          <tr>
+            <th>Robot</th>
+            <th>Model</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Operators</th>
+            <th>Sessions</th>
+            <th>Hours</th>
+          </tr>
+        </thead>
+        <tbody>
+          {robots.map((r) => (
+            <tr key={r.id} className="chq-tr">
+              <td>
+                <div className="chq-cell-user">
+                  <div className={`chq-robot-icon-sm chq-robot-icon-sm--${r.connectionStatus}`}>
+                    <FontAwesomeIcon icon={faRobot} />
+                  </div>
+                  <span>{r.name}</span>
+                </div>
+              </td>
+              <td className="chq-dimmed">{r.model}</td>
+              <td className="chq-dimmed">{r.robotType}</td>
+              <td>
+                <span className={`chq-conn chq-conn--${r.connectionStatus}`}>
+                  <FontAwesomeIcon icon={r.connectionStatus === "error" ? faExclamationTriangle : faWifi} />
+                  {r.connectionStatus}
+                </span>
+              </td>
+              <td className="chq-dimmed">{r.assignedOperators.length > 0 ? getOperatorNames(r.assignedOperators) : "—"}</td>
+              <td>{r.totalSessions}</td>
+              <td className="chq-dimmed">{r.totalHours}h</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

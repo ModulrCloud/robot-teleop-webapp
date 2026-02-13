@@ -73,8 +73,6 @@
   font-size: 0.88rem;
   color: rgba(255, 255, 255, 0.25);
   font-family: ui-monospace, SFMono-Regular, monospace;
-  margin-top: 0.2rem;
-  display: block;
 }
 
 /* ─── Badges ─── */
@@ -553,6 +551,28 @@
   color: rgba(255, 193, 7, 0.7);
 }
 
+.chq-perm--robot {
+  gap: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+}
+
+.chq-perm--robot svg {
+  font-size: 0.7rem;
+}
+
+.chq-perm--robot.chq-perm--online {
+  background: rgba(74, 222, 128, 0.07);
+  border-color: rgba(74, 222, 128, 0.15);
+  color: rgba(74, 222, 128, 0.7);
+}
+
+.chq-perm--robot.chq-perm--error {
+  background: rgba(248, 113, 113, 0.07);
+  border-color: rgba(248, 113, 113, 0.15);
+  color: rgba(248, 113, 113, 0.7);
+}
+
 /* ─── Buttons ─── */
 
 .chq-btn {
@@ -819,6 +839,55 @@
 
 .chq-text-warn {
   color: #f87171;
+}
+
+/* ─── Bubble View ─── */
+
+.chq-bubble-svg {
+  width: 100%;
+  height: 500px;
+  background: rgba(10, 10, 15, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+}
+
+.chq-bubble-link {
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  transition: opacity 0.2s;
+}
+
+.chq-bubble-link--online { stroke: rgba(74, 222, 128, 0.3); }
+.chq-bubble-link--offline { stroke: rgba(255, 255, 255, 0.06); }
+.chq-bubble-link--error { stroke: rgba(248, 113, 113, 0.25); }
+
+.chq-bubble-node {
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.chq-bubble-node circle {
+  transition: stroke-width 0.15s;
+}
+
+.chq-bubble-node:hover circle:last-of-type {
+  stroke-width: 3;
+}
+
+.chq-bubble-icon {
+  font-family: "Font Awesome 6 Free", "Font Awesome 5 Free";
+  font-weight: 900;
+  pointer-events: none;
+}
+
+.chq-bubble-initial {
+  pointer-events: none;
+  font-family: inherit;
+}
+
+.chq-bubble-label,
+.chq-bubble-sub {
+  pointer-events: none;
 }
 
 .chq-text-live {
