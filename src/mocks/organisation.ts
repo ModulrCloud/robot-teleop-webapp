@@ -1,4 +1,4 @@
-import type { Organisation, OrgRole, OrgMember, OrgInvite, OrgRobot } from '../types/organisation';
+import type { Organisation, OrgRole, OrgMember, OrgInvite, OrgRobot, OrgSession, OrgLog } from '../types/organisation';
 
 export const MOCK_ROLES: OrgRole[] = [
   {
@@ -226,4 +226,166 @@ export function getMockInvitesForOrg(orgId: string): OrgInvite[] {
 
 export function getMockRobotsForOrg(orgId: string): OrgRobot[] {
   return MOCK_ROBOTS.filter((r) => r.orgId === orgId);
+}
+
+export const MOCK_SESSIONS: OrgSession[] = [
+  {
+    id: 'sess-001',
+    orgId: 'org-001',
+    robotId: 'robot-001',
+    robotName: 'Spot Alpha',
+    operatorId: 'user-abc123',
+    operatorEmail: 'ken@modulr.cloud',
+    status: 'active',
+    startedAt: '2026-02-10T14:00:00Z',
+    endedAt: null,
+    durationMinutes: null,
+    creditsUsed: null,
+  },
+  {
+    id: 'sess-002',
+    orgId: 'org-001',
+    robotId: 'robot-002',
+    robotName: 'Arm Beta',
+    operatorId: 'user-def456',
+    operatorEmail: 'alex@modulr.cloud',
+    status: 'completed',
+    startedAt: '2026-02-10T10:15:00Z',
+    endedAt: '2026-02-10T11:45:00Z',
+    durationMinutes: 90,
+    creditsUsed: 45,
+  },
+  {
+    id: 'sess-003',
+    orgId: 'org-001',
+    robotId: 'robot-001',
+    robotName: 'Spot Alpha',
+    operatorId: 'user-ghi789',
+    operatorEmail: 'jordan@example.com',
+    status: 'completed',
+    startedAt: '2026-02-09T16:30:00Z',
+    endedAt: '2026-02-09T17:15:00Z',
+    durationMinutes: 45,
+    creditsUsed: 22,
+  },
+  {
+    id: 'sess-004',
+    orgId: 'org-001',
+    robotId: 'robot-004',
+    robotName: 'Rover Delta',
+    operatorId: 'user-abc123',
+    operatorEmail: 'ken@modulr.cloud',
+    status: 'failed',
+    startedAt: '2026-02-09T09:00:00Z',
+    endedAt: '2026-02-09T09:12:00Z',
+    durationMinutes: 12,
+    creditsUsed: 0,
+  },
+  {
+    id: 'sess-005',
+    orgId: 'org-001',
+    robotId: 'robot-003',
+    robotName: 'Drone Gamma',
+    operatorId: 'user-abc123',
+    operatorEmail: 'ken@modulr.cloud',
+    status: 'terminated',
+    startedAt: '2026-02-08T14:00:00Z',
+    endedAt: '2026-02-08T14:30:00Z',
+    durationMinutes: 30,
+    creditsUsed: 15,
+  },
+  {
+    id: 'sess-006',
+    orgId: 'org-001',
+    robotId: 'robot-002',
+    robotName: 'Arm Beta',
+    operatorId: 'user-def456',
+    operatorEmail: 'alex@modulr.cloud',
+    status: 'completed',
+    startedAt: '2026-02-08T09:00:00Z',
+    endedAt: '2026-02-08T12:30:00Z',
+    durationMinutes: 210,
+    creditsUsed: 105,
+  },
+];
+
+export const MOCK_LOGS: OrgLog[] = [
+  {
+    id: 'log-001',
+    orgId: 'org-001',
+    robotId: 'robot-004',
+    robotName: 'Rover Delta',
+    level: 'error',
+    message: 'Connection lost: motor controller timeout after 30s',
+    timestamp: '2026-02-09T09:12:00Z',
+    source: 'hardware',
+  },
+  {
+    id: 'log-002',
+    orgId: 'org-001',
+    robotId: 'robot-004',
+    robotName: 'Rover Delta',
+    level: 'warn',
+    message: 'Battery level critically low (8%)',
+    timestamp: '2026-02-09T09:10:00Z',
+    source: 'power',
+  },
+  {
+    id: 'log-003',
+    orgId: 'org-001',
+    robotId: 'robot-001',
+    robotName: 'Spot Alpha',
+    level: 'info',
+    message: 'Session started by ken@modulr.cloud',
+    timestamp: '2026-02-10T14:00:00Z',
+    source: 'session',
+  },
+  {
+    id: 'log-004',
+    orgId: 'org-001',
+    robotId: 'robot-003',
+    robotName: 'Drone Gamma',
+    level: 'warn',
+    message: 'GPS signal degraded — switching to visual odometry',
+    timestamp: '2026-02-08T14:25:00Z',
+    source: 'navigation',
+  },
+  {
+    id: 'log-005',
+    orgId: 'org-001',
+    robotId: 'robot-002',
+    robotName: 'Arm Beta',
+    level: 'info',
+    message: 'Firmware update completed: v5.11.4',
+    timestamp: '2026-02-07T22:00:00Z',
+    source: 'system',
+  },
+  {
+    id: 'log-006',
+    orgId: 'org-001',
+    robotId: 'robot-001',
+    robotName: 'Spot Alpha',
+    level: 'error',
+    message: 'IMU calibration failed — retrying in 5s',
+    timestamp: '2026-02-07T16:30:00Z',
+    source: 'hardware',
+  },
+  {
+    id: 'log-007',
+    orgId: 'org-001',
+    robotId: 'robot-002',
+    robotName: 'Arm Beta',
+    level: 'info',
+    message: 'Joint calibration completed successfully',
+    timestamp: '2026-02-07T15:00:00Z',
+    source: 'hardware',
+  },
+];
+
+export function getMockSessionsForOrg(orgId: string): OrgSession[] {
+  return MOCK_SESSIONS.filter((s) => s.orgId === orgId);
+}
+
+export function getMockLogsForOrg(orgId: string): OrgLog[] {
+  return MOCK_LOGS.filter((l) => l.orgId === orgId);
 }

@@ -72,6 +72,34 @@ export interface OrgRobot {
   createdAt: string;
 }
 
+export type SessionStatus = 'active' | 'completed' | 'terminated' | 'failed';
+export type LogLevel = 'info' | 'warn' | 'error';
+
+export interface OrgSession {
+  id: string;
+  orgId: string;
+  robotId: string;
+  robotName: string;
+  operatorId: string;
+  operatorEmail: string;
+  status: SessionStatus;
+  startedAt: string;
+  endedAt: string | null;
+  durationMinutes: number | null;
+  creditsUsed: number | null;
+}
+
+export interface OrgLog {
+  id: string;
+  orgId: string;
+  robotId: string;
+  robotName: string;
+  level: LogLevel;
+  message: string;
+  timestamp: string;
+  source: string;
+}
+
 export const ORG_PERMISSIONS = [
   'members:view',
   'members:manage',

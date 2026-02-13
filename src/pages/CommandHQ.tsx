@@ -20,6 +20,10 @@ import {
   faPlus,
   faWifi,
   faExclamationTriangle,
+  faPlay,
+  faCheck,
+  faTimesCircle,
+  faDownload,
 } from "@fortawesome/free-solid-svg-icons";
 import type {
   Organisation,
@@ -27,6 +31,8 @@ import type {
   OrgMember,
   OrgInvite,
   OrgRobot,
+  OrgSession,
+  OrgLog,
   CommandHQTab,
 } from "../types/organisation";
 import { PERMISSION_LABELS } from "../types/organisation";
@@ -36,6 +42,8 @@ import {
   getMockMembersForOrg,
   getMockInvitesForOrg,
   getMockRobotsForOrg,
+  getMockSessionsForOrg,
+  getMockLogsForOrg,
 } from "../mocks/organisation";
 import "./CommandHQ.css";
 
@@ -61,6 +69,8 @@ export const CommandHQ = () => {
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [invites, setInvites] = useState<OrgInvite[]>([]);
   const [robots, setRobots] = useState<OrgRobot[]>([]);
+  const [sessions, setSessions] = useState<OrgSession[]>([]);
+  const [logs, setLogs] = useState<OrgLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -72,6 +82,8 @@ export const CommandHQ = () => {
       setMembers(getMockMembersForOrg(orgId));
       setInvites(getMockInvitesForOrg(orgId));
       setRobots(getMockRobotsForOrg(orgId));
+      setSessions(getMockSessionsForOrg(orgId));
+      setLogs(getMockLogsForOrg(orgId));
     }
     setLoading(false);
   }, [orgId]);
@@ -155,7 +167,8 @@ export const CommandHQ = () => {
           {activeTab === "robots" && (
             <RobotsTab robots={robots} members={members} canManage={hasPermission("robots:manage")} />
           )}
-          {!["overview", "members", "robots"].includes(activeTab) && <PlaceholderTab tab={activeTab} />}
+          {activeTab === "sessions" && <SessionsTab sessions={sessions} logs={logs} />}
+          {!["overview", "members", "robots", "sessions"].includes(activeTab) && <PlaceholderTab tab={activeTab} />}
         </main>
       </div>
     </div>
@@ -547,6 +560,129 @@ function RobotsTab({
         <span className="chq-legend-item"><span className="chq-legend-line chq-legend-line--error" /> Error</span>
         <span className="chq-legend-item"><span className="chq-legend-dot" /> Unassigned</span>
       </div>
+    </section>
+  );
+}
+
+function SessionsTab({ sessions, logs }: { sessions: OrgSession[]; logs: OrgLog[] }) {
+  const [view, setView] = useState<"sessions" | "logs">("sessions");
+
+  const activeSessions = sessions.filter((s) => s.status === "active").length;
+  const totalCredits = sessions.reduce((sum, s) => sum + (s.creditsUsed || 0), 0);
+  const errorLogs = logs.filter((l) => l.level === "error").length;
+
+  const formatDuration = (mins: number | null) => {
+    if (mins === null) return "In progress";
+    if (mins < 60) return `${mins}m`;
+    return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  };
+
+  const formatTime = (ts: string) => {
+    const d = new Date(ts);
+    return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+
+  const sessionIcon = (status: string) => {
+    switch (status) {
+      case "active": return faPlay;
+      case "completed": return faCheck;
+      case "failed": return faExclamationTriangle;
+      case "terminated": return faTimesCircle;
+      default: return faCircle;
+    }
+  };
+
+  return (
+    <section>
+      <div className="chq-section-header">
+        <div>
+          <h2>Sessions & Logs</h2>
+          <p className="chq-subtitle">
+            {activeSessions > 0 && <><span className="chq-text-live">{activeSessions} live</span> &middot; </>}
+            {sessions.length} total sessions &middot; {totalCredits} credits used
+            {errorLogs > 0 && <span className="chq-text-warn"> &middot; {errorLogs} errors</span>}
+          </p>
+        </div>
+        <button className="chq-btn chq-btn-outline">
+          <FontAwesomeIcon icon={faDownload} /> Export
+        </button>
+      </div>
+
+      <div className="chq-tab-toggle">
+        <button
+          className={`chq-toggle-btn ${view === "sessions" ? "active" : ""}`}
+          onClick={() => setView("sessions")}
+        >
+          <FontAwesomeIcon icon={faHistory} /> Sessions
+        </button>
+        <button
+          className={`chq-toggle-btn ${view === "logs" ? "active" : ""}`}
+          onClick={() => setView("logs")}
+        >
+          <FontAwesomeIcon icon={faTerminal} /> Logs
+          {errorLogs > 0 && <span className="chq-toggle-badge">{errorLogs}</span>}
+        </button>
+      </div>
+
+      {view === "sessions" && (
+        <div className="chq-panel">
+          <table className="chq-table">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Robot</th>
+                <th>Operator</th>
+                <th>Started</th>
+                <th>Duration</th>
+                <th>Credits</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.map((s) => (
+                <tr key={s.id} className="chq-tr">
+                  <td>
+                    <span className={`chq-session-status chq-session-status--${s.status}`}>
+                      <FontAwesomeIcon icon={sessionIcon(s.status)} />
+                      {s.status}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="chq-row-primary">{s.robotName}</span>
+                  </td>
+                  <td className="chq-dimmed">{s.operatorEmail}</td>
+                  <td className="chq-dimmed">{formatTime(s.startedAt)}</td>
+                  <td>
+                    <span className={s.status === "active" ? "chq-text-live" : ""}>
+                      {formatDuration(s.durationMinutes)}
+                    </span>
+                  </td>
+                  <td className="chq-dimmed">{s.creditsUsed ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {view === "logs" && (
+        <div className="chq-logs">
+          {logs.map((log) => (
+            <div key={log.id} className={`chq-log-entry chq-log-entry--${log.level}`}>
+              <div className="chq-log-left">
+                <span className={`chq-log-level chq-log-level--${log.level}`}>{log.level}</span>
+                <span className="chq-log-time">{formatTime(log.timestamp)}</span>
+              </div>
+              <div className="chq-log-body">
+                <span className="chq-log-msg">{log.message}</span>
+                <div className="chq-log-meta">
+                  <span className="chq-micro-tag">{log.robotName}</span>
+                  <span className="chq-micro-tag">{log.source}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
