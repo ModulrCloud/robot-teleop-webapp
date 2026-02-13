@@ -1103,26 +1103,21 @@ export const EditRobot = () => {
                 <div className="form-group">
                   <label htmlFor="robot-publicKey">Robot public key</label>
                   <div className="pki-public-key-row">
-                    <input
-                      type="text"
-                      id="robot-publicKey"
-                      name="publicKey"
-                      value={robotListing.publicKey}
-                      onChange={handleInputChange}
-                      placeholder="Paste base64 or hex public key (32 bytes)"
-                      disabled={isLoading || isViewMode}
-                      className={`pki-public-key-input${robotListing.publicKey.trim() ? ' pki-public-key-filled' : ''}`}
-                      autoComplete="off"
-                    />
-                    {robotListing.publicKey.trim() !== '' && validateEd25519PublicKeyFormat(robotListing.publicKey) && (
-                      <p className="form-help-text" style={{ color: 'var(--error-color, #dc2626)', marginTop: '0.25rem' }}>
-                        {validateEd25519PublicKeyFormat(robotListing.publicKey)}
-                      </p>
-                    )}
-                    <div className="pki-actions">
+                    <div className="pki-input-with-qr">
+                      <input
+                        type="text"
+                        id="robot-publicKey"
+                        name="publicKey"
+                        value={robotListing.publicKey}
+                        onChange={handleInputChange}
+                        placeholder="Paste base64 or hex public key (32 bytes)"
+                        disabled={isLoading || isViewMode}
+                        className={`pki-public-key-input${robotListing.publicKey.trim() ? ' pki-public-key-filled' : ''}`}
+                        autoComplete="off"
+                      />
                       <button
                         type="button"
-                        className="pki-qr-tease"
+                        className="pki-qr-tease pki-qr-inside"
                         title="Scan QR code"
                         onClick={() => setShowQrScanner(true)}
                         disabled={isLoading || isViewMode}
@@ -1130,7 +1125,14 @@ export const EditRobot = () => {
                       >
                         <FontAwesomeIcon icon={faQrcode} />
                       </button>
-                      {robotListing.publicKey.trim() !== '' && !isViewMode && (
+                    </div>
+                    {robotListing.publicKey.trim() !== '' && validateEd25519PublicKeyFormat(robotListing.publicKey) && (
+                      <p className="form-help-text" style={{ color: 'var(--error-color, #dc2626)', marginTop: '0.25rem' }}>
+                        {validateEd25519PublicKeyFormat(robotListing.publicKey)}
+                      </p>
+                    )}
+                    {robotListing.publicKey.trim() !== '' && !isViewMode && (
+                      <div className="pki-actions">
                         <button
                           type="button"
                           className="pki-remove-key"
@@ -1140,8 +1142,8 @@ export const EditRobot = () => {
                         >
                           Remove key
                         </button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
