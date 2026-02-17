@@ -276,6 +276,11 @@ export function formatOutboundForConnection(
     if (m.robotId) (envelope.payload as Record<string, unknown>).robotId = m.robotId;
     if (m.currentCredits !== undefined) (envelope.payload as Record<string, unknown>).currentCredits = m.currentCredits;
     if (m.requiredCredits !== undefined) (envelope.payload as Record<string, unknown>).requiredCredits = m.requiredCredits;
+  } else if (envelopeType === 'pki_challenge') {
+    envelope.type = 'signalling.pki_challenge';
+    const m = msg as { challenge?: string; challengeType?: string };
+    (envelope.payload as Record<string, unknown>).challenge = m.challenge ?? '';
+    (envelope.payload as Record<string, unknown>).challengeType = m.challengeType ?? 'xor';
   } else {
     // Platform messages (welcome, session-locked, session-created, monitor-confirmed, admin-takeover)
     // Keep in legacy top-level format per plan; new-protocol clients receive same shape

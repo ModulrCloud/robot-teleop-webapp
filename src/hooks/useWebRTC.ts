@@ -526,6 +526,21 @@ export function useWebRTC(options: WebRTCOptions) {
             releaseConnectionLock();
             logger.log('[WEBRTC] Video stream received, connection established');
             const stream = event.streams[0];
+
+            // Reduce jitter buffer for low-latency teleop (browser default is often 200–500ms)
+            queueMicrotask(() => {
+              for (const receiver of pc.getReceivers()) {
+                if (receiver.track?.kind === 'video' && 'jitterBufferTarget' in receiver) {
+                  try {
+                    (receiver as RTCRtpReceiver & { jitterBufferTarget?: number }).jitterBufferTarget = 50;
+                    logger.log('[WEBRTC] Set jitterBufferTarget=50ms for low-latency video');
+                  } catch (e) {
+                    logger.debug('[WEBRTC] Could not set jitterBufferTarget:', e);
+                  }
+                  break;
+                }
+              }
+            });
             setStatus(prev => ({
               ...prev,
               connected: true,
