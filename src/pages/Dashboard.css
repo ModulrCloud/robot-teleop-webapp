@@ -518,6 +518,90 @@
   box-shadow: 0 6px 24px rgba(255, 193, 7, 0.4);
 }
 
+/* Organisation Cards */
+.org-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.org-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.org-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 193, 7, 0.3);
+  transform: translateY(-2px);
+}
+
+.org-card-avatar {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 193, 7, 0.12);
+  border-radius: 10px;
+  color: #ffc107;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.org-card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.org-card-content h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  margin: 0 0 0.15rem 0;
+}
+
+.org-card-slug {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.35);
+  font-family: ui-monospace, monospace;
+}
+
+.org-card-stats {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.org-card-stats span {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.org-card-arrow {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.9rem;
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.org-card:hover .org-card-arrow {
+  transform: translateX(3px);
+  color: #ffc107;
+}
+
 /* Responsive */
 @media (max-width: 968px) {
   .dashboard-welcome {

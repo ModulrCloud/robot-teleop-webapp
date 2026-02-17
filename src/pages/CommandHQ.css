@@ -1,0 +1,1133 @@
+.chq-page {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1.75rem 2.5rem 3rem;
+}
+
+/* ─── Header ─── */
+
+.chq-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1.5rem;
+  margin-bottom: 1.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chq-back {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+  font-size: 0.9rem;
+}
+
+.chq-back:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+.chq-org-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(255, 193, 7, 0.12);
+  border: 2px solid rgba(255, 193, 7, 0.25);
+  color: #ffc107;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+.chq-header-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.chq-header-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.chq-header-row h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.chq-slug {
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.25);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+/* ─── Badges ─── */
+
+.chq-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 5px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1.6;
+}
+
+.chq-badge--active {
+  background: rgba(255, 193, 7, 0.14);
+  color: #ffc107;
+  border: 1px solid rgba(255, 193, 7, 0.25);
+}
+
+.chq-badge--suspended {
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.chq-badge--denied {
+  background: rgba(107, 114, 128, 0.12);
+  color: #9ca3af;
+  border: 1px solid rgba(107, 114, 128, 0.2);
+}
+
+.chq-badge--role {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chq-badge--role svg {
+  font-size: 0.65rem;
+  color: #ffc107;
+}
+
+/* ─── Layout ─── */
+
+.chq-layout {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+.chq-main {
+  min-width: 0;
+  width: 100%;
+}
+
+/* ─── Sidebar ─── */
+
+.chq-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: sticky;
+  top: 1.5rem;
+}
+
+.chq-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.85rem;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.92rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s;
+  text-align: left;
+}
+
+.chq-nav:hover {
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.chq-nav.active {
+  color: #ffc107;
+  background: rgba(255, 193, 7, 0.07);
+}
+
+.chq-nav-icon {
+  width: 16px;
+  text-align: center;
+  font-size: 0.88rem;
+  flex-shrink: 0;
+}
+
+.chq-nav-label {
+  flex: 1;
+}
+
+.chq-nav-chevron {
+  font-size: 0.6rem;
+  opacity: 0.45;
+}
+
+/* ─── Section headers ─── */
+
+.chq-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.25rem;
+}
+
+.chq-section-header h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.chq-subtitle {
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin: 0.2rem 0 0;
+}
+
+.chq-section-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 2.25rem 0 0.85rem;
+}
+
+/* ─── Panels (cards) ─── */
+
+.chq-panel {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.chq-panel + .chq-panel {
+  margin-top: 0.85rem;
+}
+
+.chq-panel-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.3);
+  padding: 1rem 1.35rem 0;
+}
+
+.chq-panel-body {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.6;
+  padding: 0.5rem 1.35rem 1.1rem;
+  margin: 0;
+}
+
+.chq-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.chq-count {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.15rem 0.55rem;
+  border-radius: 10px;
+}
+
+/* ─── Stats ─── */
+
+.chq-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1.35rem;
+}
+
+.chq-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1.05rem 1.2rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+}
+
+.chq-stat-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 193, 7, 0.08);
+  border-radius: 10px;
+  color: rgba(255, 193, 7, 0.65);
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.chq-stat-val {
+  display: block;
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.2;
+}
+
+.chq-stat-lbl {
+  display: block;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+/* ─── Two-col grid ─── */
+
+.chq-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+  margin-top: 0.85rem;
+}
+
+/* ─── Rows inside panels ─── */
+
+.chq-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1.35rem;
+  transition: background 0.1s;
+}
+
+.chq-row:hover {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.chq-row:last-child {
+  margin-bottom: 0.3rem;
+}
+
+.chq-avatar-sm {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 193, 7, 0.1);
+  color: rgba(255, 193, 7, 0.75);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 0.82rem;
+  flex-shrink: 0;
+}
+
+.chq-row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.chq-row-primary {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chq-row-secondary {
+  display: block;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.chq-role-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chq-priority-0 { background: #ffc107; color: #ffc107; }
+.chq-priority-1 { background: #60a5fa; color: #60a5fa; }
+.chq-priority-2 { background: #34d399; color: #34d399; }
+.chq-priority-3 { background: rgba(255, 255, 255, 0.2); color: rgba(255, 255, 255, 0.5); }
+
+.chq-dot {
+  font-size: 0.45rem;
+  flex-shrink: 0;
+}
+
+.chq-dot--active { color: #4ade80; }
+.chq-dot--suspended { color: #f87171; }
+
+.chq-micro-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+}
+
+/* ─── Table ─── */
+
+.chq-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.chq-table th {
+  text-align: left;
+  padding: 0.75rem 1.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.chq-table td {
+  padding: 0.75rem 1.35rem;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.75);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  vertical-align: middle;
+}
+
+.chq-tr {
+  transition: background 0.1s;
+  cursor: pointer;
+}
+
+.chq-tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.chq-tr--open {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.chq-tr--open td {
+  border-bottom-color: transparent;
+}
+
+.chq-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.chq-cell-user {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-weight: 500;
+}
+
+.chq-dimmed {
+  color: rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Role badge */
+.chq-role-badge {
+  display: inline-block;
+  padding: 0.18rem 0.6rem;
+  border-radius: 5px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.chq-role-badge.chq-priority-0 {
+  background: rgba(255, 193, 7, 0.12);
+  color: #ffc107;
+}
+
+.chq-role-badge.chq-priority-1 {
+  background: rgba(96, 165, 250, 0.1);
+  color: #60a5fa;
+}
+
+.chq-role-badge.chq-priority-2 {
+  background: rgba(52, 211, 153, 0.1);
+  color: #34d399;
+}
+
+/* Status */
+.chq-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.chq-status svg {
+  font-size: 0.38rem;
+}
+
+.chq-status--active { color: #4ade80; }
+.chq-status--pending { color: #fbbf24; }
+.chq-status--suspended { color: #f87171; }
+.chq-status--expired { color: rgba(255, 255, 255, 0.25); }
+
+/* Expanded permission row */
+.chq-tr-expand td {
+  padding: 0 1.35rem 1rem !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
+}
+
+.chq-expand-content {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.015);
+  border-radius: 8px;
+}
+
+.chq-expand-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.35);
+  margin-right: 0.3rem;
+  padding-top: 0.15rem;
+}
+
+.chq-perm-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chq-perm {
+  padding: 0.2rem 0.55rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 5px;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.chq-perm.wildcard {
+  background: rgba(255, 193, 7, 0.08);
+  border-color: rgba(255, 193, 7, 0.15);
+  color: rgba(255, 193, 7, 0.7);
+}
+
+.chq-perm--robot {
+  gap: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+}
+
+.chq-perm--robot svg {
+  font-size: 0.7rem;
+}
+
+.chq-perm--robot.chq-perm--online {
+  background: rgba(74, 222, 128, 0.07);
+  border-color: rgba(74, 222, 128, 0.15);
+  color: rgba(74, 222, 128, 0.7);
+}
+
+.chq-perm--robot.chq-perm--error {
+  background: rgba(248, 113, 113, 0.07);
+  border-color: rgba(248, 113, 113, 0.15);
+  color: rgba(248, 113, 113, 0.7);
+}
+
+/* ─── Buttons ─── */
+
+.chq-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  border: none;
+}
+
+.chq-btn-primary {
+  padding: 0.55rem 1.1rem;
+  background: #ffc107;
+  color: #000;
+}
+
+.chq-btn-primary:hover {
+  background: #ffca2c;
+  box-shadow: 0 2px 10px rgba(255, 193, 7, 0.2);
+}
+
+.chq-btn-outline {
+  padding: 0.5rem 1rem;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.chq-btn-outline:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.chq-btn-sm {
+  padding: 0.32rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+/* ─── Utility ─── */
+
+.chq-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 55vh;
+  text-align: center;
+}
+
+.chq-center--compact {
+  min-height: 40vh;
+}
+
+.chq-center h2 {
+  color: #fff;
+  margin: 0 0 0.4rem;
+  font-size: 1.35rem;
+}
+
+.chq-center h3 {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 1.15rem;
+  margin: 0 0 0.3rem;
+}
+
+.chq-muted {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.95rem;
+  margin: 0 0 1.5rem;
+}
+
+.chq-spin-icon {
+  font-size: 2rem;
+  color: #ffc107;
+  margin-bottom: 1rem;
+}
+
+.chq-placeholder-icon {
+  width: 60px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  font-size: 1.35rem;
+  color: rgba(255, 255, 255, 0.12);
+  margin-bottom: 1.15rem;
+}
+
+/* ─── Robot Diagram ─── */
+
+.chq-diagram {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 160px;
+  padding: 0.5rem 0 0;
+}
+
+.chq-diagram-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.chq-diagram-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.chq-diagram-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.2);
+  padding: 0 0.6rem 0.4rem;
+}
+
+.chq-diagram-node {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.05rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  transition: border-color 0.15s, opacity 0.15s;
+}
+
+.chq-diagram-node:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.chq-diagram-node--dim {
+  opacity: 0.4;
+}
+
+.chq-diagram-node--unassigned {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+.chq-robot-icon-sm {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  background: rgba(255, 193, 7, 0.06);
+  color: rgba(255, 193, 7, 0.45);
+}
+
+.chq-robot-icon-sm--online {
+  background: rgba(74, 222, 128, 0.07);
+  color: rgba(74, 222, 128, 0.6);
+}
+
+.chq-robot-icon-sm--error {
+  background: rgba(248, 113, 113, 0.07);
+  color: rgba(248, 113, 113, 0.6);
+}
+
+.chq-conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.chq-conn svg { font-size: 0.65rem; }
+.chq-conn--online { color: #4ade80; }
+.chq-conn--offline { color: rgba(255, 255, 255, 0.2); }
+.chq-conn--error { color: #f87171; }
+
+/* SVG connection lines */
+.chq-line {
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.chq-line--online {
+  stroke: rgba(74, 222, 128, 0.45);
+  stroke-dasharray: 6 4;
+  animation: chq-flow 0.8s linear infinite;
+}
+
+.chq-line--offline {
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-dasharray: 3 6;
+}
+
+.chq-line--error {
+  stroke: rgba(248, 113, 113, 0.4);
+  stroke-dasharray: 4 4;
+  animation: chq-pulse-line 1.5s ease-in-out infinite;
+}
+
+@keyframes chq-flow {
+  to { stroke-dashoffset: -10; }
+}
+
+@keyframes chq-pulse-line {
+  50% { stroke-opacity: 0.15; }
+}
+
+.chq-dot-end { transition: fill 0.15s; }
+.chq-dot-end--online { fill: rgba(74, 222, 128, 0.65); }
+.chq-dot-end--offline { fill: rgba(255, 255, 255, 0.1); }
+.chq-dot-end--error { fill: rgba(248, 113, 113, 0.55); }
+
+/* Legend */
+.chq-diagram-legend {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.chq-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.chq-legend-line {
+  width: 26px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.chq-legend-line--online { background: rgba(74, 222, 128, 0.5); }
+.chq-legend-line--offline { background: rgba(255, 255, 255, 0.1); }
+.chq-legend-line--error { background: rgba(248, 113, 113, 0.45); }
+
+.chq-legend-dot {
+  width: 10px;
+  height: 10px;
+  border: 1.5px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+}
+
+.chq-text-warn {
+  color: #f87171;
+}
+
+/* ─── Bubble View ─── */
+
+.chq-bubble-svg {
+  width: 100%;
+  height: 500px;
+  background: rgba(10, 10, 15, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+}
+
+.chq-bubble-link {
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  transition: opacity 0.2s;
+}
+
+.chq-bubble-link--online { stroke: rgba(74, 222, 128, 0.3); }
+.chq-bubble-link--offline { stroke: rgba(255, 255, 255, 0.06); }
+.chq-bubble-link--error { stroke: rgba(248, 113, 113, 0.25); }
+
+.chq-bubble-node {
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.chq-bubble-node circle {
+  transition: stroke-width 0.15s;
+}
+
+.chq-bubble-node:hover circle:last-of-type {
+  stroke-width: 3;
+}
+
+.chq-bubble-icon {
+  font-family: "Font Awesome 6 Free", "Font Awesome 5 Free";
+  font-weight: 900;
+  pointer-events: none;
+}
+
+.chq-bubble-initial {
+  pointer-events: none;
+  font-family: inherit;
+}
+
+.chq-bubble-label,
+.chq-bubble-sub {
+  pointer-events: none;
+}
+
+.chq-text-live {
+  color: #4ade80;
+  font-weight: 600;
+}
+
+/* ─── Tab toggle ─── */
+
+.chq-tab-toggle {
+  display: flex;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+  padding: 3px;
+  margin-bottom: 1.25rem;
+  width: fit-content;
+}
+
+.chq-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 1.1rem;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chq-toggle-btn:hover {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.chq-toggle-btn.active {
+  background: rgba(255, 193, 7, 0.1);
+  color: #ffc107;
+}
+
+.chq-toggle-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(248, 113, 113, 0.2);
+  color: #f87171;
+  padding: 0.05rem 0.4rem;
+  border-radius: 8px;
+  line-height: 1.4;
+}
+
+/* ─── Session status ─── */
+
+.chq-session-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.chq-session-status svg {
+  font-size: 0.7rem;
+}
+
+.chq-session-status--active { color: #4ade80; }
+.chq-session-status--completed { color: rgba(255, 255, 255, 0.45); }
+.chq-session-status--failed { color: #f87171; }
+.chq-session-status--terminated { color: #fbbf24; }
+
+/* ─── Log entries ─── */
+
+.chq-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.chq-log-entry {
+  display: flex;
+  gap: 1rem;
+  padding: 0.75rem 1.35rem;
+  border-left: 3px solid transparent;
+  transition: background 0.1s;
+}
+
+.chq-log-entry:hover {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.chq-log-entry--error {
+  border-left-color: rgba(248, 113, 113, 0.5);
+  background: rgba(248, 113, 113, 0.02);
+}
+
+.chq-log-entry--warn {
+  border-left-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.015);
+}
+
+.chq-log-entry--info {
+  border-left-color: rgba(255, 255, 255, 0.08);
+}
+
+.chq-log-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  min-width: 100px;
+}
+
+.chq-log-level {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+}
+
+.chq-log-level--error {
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
+}
+
+.chq-log-level--warn {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+}
+
+.chq-log-level--info {
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.chq-log-time {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.2);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.chq-log-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.chq-log-msg {
+  display: block;
+  font-size: 0.92rem;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.45;
+  margin-bottom: 0.35rem;
+}
+
+.chq-log-meta {
+  display: flex;
+  gap: 0.35rem;
+}
+
+/* ─── Responsive ─── */
+
+@media (max-width: 960px) {
+  .chq-page {
+    padding: 1.25rem 1rem 2rem;
+  }
+
+  .chq-layout {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .chq-sidebar {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 2px;
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    -webkit-overflow-scrolling: touch;
+    position: static;
+  }
+
+  .chq-nav {
+    padding: 0.5rem 0.7rem;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+  }
+
+  .chq-nav-label {
+    display: none;
+  }
+
+  .chq-nav-chevron {
+    display: none;
+  }
+
+  .chq-cols {
+    grid-template-columns: 1fr;
+  }
+
+  .chq-diagram {
+    grid-template-columns: 1fr;
+    column-gap: 0;
+    gap: 1.25rem;
+  }
+
+  .chq-diagram-svg {
+    display: none;
+  }
+
+  .chq-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .chq-header-row h1 {
+    font-size: 1.3rem;
+  }
+
+  .chq-org-avatar {
+    width: 42px;
+    height: 42px;
+    font-size: 1.1rem;
+  }
+}
+
+@media (max-width: 540px) {
+  .chq-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .chq-table {
+    table-layout: auto;
+  }
+}

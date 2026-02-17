@@ -33,6 +33,7 @@ const Admin = lazy(() => import("./pages/Admin").then(module => ({ default: modu
 const PartnerProfile = lazy(() => import("./pages/PartnerProfile"));
 const EditPartnerProfile = lazy(() => import("./pages/EditPartnerProfile"));
 const Social = lazy(() => import("./pages/Social").then(module => ({ default: module.Social })));
+const CommandHQ = lazy(() => import("./pages/CommandHQ").then(module => ({ default: module.CommandHQ })));
 const DebugPanel = lazy(() => import("./components/DebugPanel").then(module => ({ default: module.DebugPanel })));
 
 // Amplify configuration is now in main.tsx
@@ -219,6 +220,14 @@ function App() {
               <Suspense fallback={<RouteLoadingSpinner />}>
                 <PrivateRoute>
                   <Social />
+                </PrivateRoute>
+              </Suspense>
+            }
+            />
+            <Route path='/command-hq/:orgId' element={
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <PrivateRoute>
+                  <CommandHQ />
                 </PrivateRoute>
               </Suspense>
             }
