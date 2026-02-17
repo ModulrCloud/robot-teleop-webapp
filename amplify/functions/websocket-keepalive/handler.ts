@@ -1,18 +1,50 @@
-import { DynamoDBClient, ScanCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, ScanCommand, type ScanCommandOutput, type AttributeValue } from '@aws-sdk/client-dynamodb';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 import { buildAgentPingMessage } from '../shared/agent-protocol';
 
 const CONN_TABLE = process.env.CONN_TABLE!;
+const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!;
+// Set SKIP_ROBOT_PING=true to skip pinging robots (for experimentation). Default: false = ping everyone including robots.
+const SKIP_ROBOT_PING = process.env.SKIP_ROBOT_PING === 'true';
 
 const db = new DynamoDBClient({});
 const mgmt = new ApiGatewayManagementApiClient({ endpoint: WS_MGMT_ENDPOINT });
 
 interface KeepaliveStats {
   totalConnections: number;
+  skippedRobots: number;
   successfulPings: number;
   failedPings: number;
   errors: number;
+}
+
+/**
+ * Returns the set of connectionIds that belong to robots (from ROBOT_PRESENCE_TABLE).
+ * Only used when SKIP_ROBOT_PING=true to skip pinging robots.
+ */
+async function getRobotConnectionIds(): Promise<Set<string>> {
+  const robotConnIds = new Set<string>();
+  let lastEvaluatedKey: Record<string, AttributeValue> | undefined;
+
+  do {
+    const result = await db.send(
+      new ScanCommand({
+        TableName: ROBOT_PRESENCE_TABLE,
+        ProjectionExpression: 'connectionId',
+        ExclusiveStartKey: lastEvaluatedKey,
+        Limit: 100,
+      })
+    );
+
+    for (const item of result.Items || []) {
+      const connId = item.connectionId?.S;
+      if (connId) robotConnIds.add(connId);
+    }
+    lastEvaluatedKey = result.LastEvaluatedKey;
+  } while (lastEvaluatedKey);
+
+  return robotConnIds;
 }
 
 /**
@@ -30,14 +62,15 @@ async function sendKeepalivePing(connectionId: string): Promise<boolean> {
       })
     );
     return true; // Ping successful
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as { name?: string; Code?: string; message?: string };
     // GoneException means the connection is dead (expected for some connections)
-    if (error?.name === 'GoneException' || error?.Code === 'GoneException') {
+    if (err?.name === 'GoneException' || err?.Code === 'GoneException') {
       // This is expected - connection was already closed, not an error
       return false;
     }
     // Other errors (e.g., network issues) - log but don't count as failure
-    console.warn(`[KEEPALIVE] Error pinging connection ${connectionId}:`, error?.name || error?.message);
+    console.warn(`[KEEPALIVE] Error pinging connection ${connectionId}:`, err?.name || err?.message);
     return false;
   }
 }
@@ -55,19 +88,26 @@ export const handler = async (): Promise<{ statusCode: number; body: string }> =
 
   const stats: KeepaliveStats = {
     totalConnections: 0,
+    skippedRobots: 0,
     successfulPings: 0,
     failedPings: 0,
     errors: 0,
   };
 
   try {
+    // When SKIP_ROBOT_PING=true, skip pinging robots (clients/monitors only). Default: ping everyone.
+    const robotConnectionIds = SKIP_ROBOT_PING ? await getRobotConnectionIds() : new Set<string>();
+    if (SKIP_ROBOT_PING) {
+      console.log('[WEBSOCKET_KEEPALIVE] SKIP_ROBOT_PING=true, will skip', robotConnectionIds.size, 'robot connections');
+    }
+
     // Scan all connections from the connections table
-    let lastEvaluatedKey: any = undefined;
+    let lastEvaluatedKey: Record<string, import('@aws-sdk/client-dynamodb').AttributeValue> | undefined = undefined;
     let scanCount = 0;
     const maxScans = 10; // Limit to prevent infinite loops
 
     do {
-      const scanResult = await db.send(
+      const scanResult: ScanCommandOutput = await db.send(
         new ScanCommand({
           TableName: CONN_TABLE,
           ExclusiveStartKey: lastEvaluatedKey,
@@ -78,11 +118,16 @@ export const handler = async (): Promise<{ statusCode: number; body: string }> =
       const connections = scanResult.Items || [];
       stats.totalConnections += connections.length;
 
-      // Send ping to each connection
-      const pingPromises = connections.map(async (item) => {
+      // Send ping to each connection (skip robots)
+      const pingPromises = connections.map(async (item: Record<string, AttributeValue>) => {
         const connectionId = item.connectionId?.S;
         if (!connectionId) {
           stats.errors++;
+          return;
+        }
+
+        if (SKIP_ROBOT_PING && robotConnectionIds.has(connectionId)) {
+          stats.skippedRobots++;
           return;
         }
 

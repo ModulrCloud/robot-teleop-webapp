@@ -44,7 +44,7 @@ export const PlatformSettings = () => {
   const [creditTiers, setCreditTiers] = useState<CreditTier[]>([]);
   const [loadingTiers, setLoadingTiers] = useState(false);
   const [editingTier, setEditingTier] = useState<string | null>(null);
-  const [newTier, setNewTier] = useState<any | null>(null);
+  const [newTier, setNewTier] = useState<Partial<CreditTier> & { name?: string; basePrice?: number; baseCredits?: number } | null>(null);
   
   // Local error/success state
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +59,7 @@ export const PlatformSettings = () => {
   };
 
   const loadPlatformMarkup = async () => {
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       return;
     }
 
@@ -84,7 +84,7 @@ export const PlatformSettings = () => {
   };
 
   const savePlatformMarkup = async () => {
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       return;
     }
 
@@ -136,7 +136,7 @@ export const PlatformSettings = () => {
   };
 
   const loadLowCreditsWarningSetting = async () => {
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       return;
     }
 
@@ -161,7 +161,7 @@ export const PlatformSettings = () => {
   };
 
   const saveLowCreditsWarningSetting = async () => {
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       return;
     }
 
@@ -213,7 +213,7 @@ export const PlatformSettings = () => {
   };
 
   const initializeDefaultTiers = async () => {
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       return;
     }
 
@@ -271,7 +271,7 @@ export const PlatformSettings = () => {
   };
 
   const loadCreditTiers = async () => {
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       return;
     }
 
@@ -307,13 +307,13 @@ export const PlatformSettings = () => {
     }
   };
 
-  const saveCreditTier = async (tier: CreditTier) => {
+  const saveCreditTier = async (tier: Partial<CreditTier> & Pick<CreditTier, 'name' | 'basePrice' | 'baseCredits'>) => {
     logger.log("🔵 [FRONTEND] saveCreditTier function called");
     logger.log("🔵 [FRONTEND] Tier data:", JSON.stringify(tier, null, 2));
     logger.log("🔵 [FRONTEND] User email:", user?.email);
-    logger.log("🔵 [FRONTEND] Has admin access:", hasAdminAccess(user?.email || ''));
+    logger.log("🔵 [FRONTEND] Has admin access:", hasAdminAccess(user?.email || '', user?.group ? [user.group] : undefined));
     
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       logger.error("🔴 [FRONTEND] Unauthorized - no admin access");
       setError("Unauthorized: Admin access required. Only @modulr.cloud email addresses can manage credit tiers.");
       setTimeout(() => setError(null), 5000);
@@ -508,7 +508,7 @@ export const PlatformSettings = () => {
   };
 
   const deleteCreditTier = async (tierId: string) => {
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       return;
     }
 
@@ -587,7 +587,7 @@ export const PlatformSettings = () => {
   };
 
   useEffect(() => {
-    if (user?.email && hasAdminAccess(user.email)) {
+    if (user?.email && hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       loadPlatformMarkup();
       loadLowCreditsWarningSetting();
       loadCreditTiers();
@@ -818,7 +818,7 @@ export const PlatformSettings = () => {
                           }}
                         />
                         <small style={{ display: 'block', marginTop: '0.25rem', color: 'rgba(255, 255, 255, 0.6)' }}>
-                          Tier ID will be auto-generated from price: {newTier.basePrice > 0 ? generateTierId(newTier.basePrice) : '—'}
+                          Tier ID will be auto-generated from price: {(newTier.basePrice ?? 0) > 0 ? generateTierId(newTier.basePrice ?? 0) : '—'}
                         </small>
                       </label>
                       <label>
@@ -876,8 +876,14 @@ export const PlatformSettings = () => {
                       <button
                         className="admin-button"
                         onClick={async () => {
+                          if (!newTier?.name || newTier.basePrice == null || newTier.baseCredits == null) return;
                           try {
-                            await saveCreditTier(newTier);
+                            await saveCreditTier({
+                              ...newTier,
+                              name: newTier.name,
+                              basePrice: newTier.basePrice,
+                              baseCredits: newTier.baseCredits,
+                            });
                           } catch (err) {
                             logger.error('[Button Click] Error in saveCreditTier:', err);
                             setError(`Unexpected error: ${err instanceof Error ? err.message : 'Unknown error'}`);

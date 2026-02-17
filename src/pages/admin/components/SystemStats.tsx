@@ -23,12 +23,18 @@ import type {
 
 const client = generateClient<Schema>();
 
-interface SystemStatsProps {
-  activeRobots?: number | null;
-  loadingActiveRobots?: boolean;
+/** Abbreviates large numbers (e.g. 118901 → "119k") to prevent card overflow. Tooltip shows full value. */
+function formatCompactNumber(value: number): string {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  }
+  if (value >= 1_000) {
+    return `${Math.round(value / 1_000)}k`;
+  }
+  return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
-export const SystemStats = ({ activeRobots, loadingActiveRobots }: SystemStatsProps) => {
+export const SystemStats = () => {
   const { user } = useAuthStatus();
   const [systemStats, setSystemStats] = useState<SystemStatsType | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
@@ -36,7 +42,7 @@ export const SystemStats = ({ activeRobots, loadingActiveRobots }: SystemStatsPr
   const loadSystemStats = async () => {
     logger.debug("🔍 [SYSTEM STATS] loadSystemStats called");
     
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       logger.debug("🔍 [SYSTEM STATS] User doesn't have admin access, skipping");
       return;
     }
@@ -77,6 +83,7 @@ export const SystemStats = ({ activeRobots, loadingActiveRobots }: SystemStatsPr
           platformMarkupPercent: statsData.stats.platformMarkupPercent ?? 30,
           totalCredits: statsData.stats.totalCredits ?? 0,
           activeSessions: statsData.stats.activeSessions ?? 0,
+          robotsOnline: statsData.stats.robotsOnline ?? 0,
         };
         logger.log("✅ Setting system stats:", stats);
         setSystemStats(stats);
@@ -136,8 +143,8 @@ export const SystemStats = ({ activeRobots, loadingActiveRobots }: SystemStatsPr
                 <FontAwesomeIcon icon={faDollarSign} />
               </div>
               <div className="stat-content">
-                <div className="stat-value">
-                  ${systemStats.totalRevenue?.toLocaleString() || '0.00'}
+                <div className="stat-value stat-value-with-tooltip" title={`$${(systemStats.totalRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}>
+                  ${(systemStats.totalRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 <div className="stat-label">Total Revenue</div>
               </div>
@@ -147,8 +154,8 @@ export const SystemStats = ({ activeRobots, loadingActiveRobots }: SystemStatsPr
                 <FontAwesomeIcon icon={faCoins} />
               </div>
               <div className="stat-content">
-                <div className="stat-value">
-                  ${systemStats.platformRevenue?.toLocaleString() ?? '0.00'}
+                <div className="stat-value stat-value-with-tooltip" title={`$${(systemStats.platformRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}>
+                  ${(systemStats.platformRevenue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
                 <div className="stat-label">Platform Balance</div>
               </div>
@@ -169,8 +176,8 @@ export const SystemStats = ({ activeRobots, loadingActiveRobots }: SystemStatsPr
                 <FontAwesomeIcon icon={faCoins} />
               </div>
               <div className="stat-content">
-                <div className="stat-value">
-                  {systemStats.totalCredits?.toLocaleString() || '0'}
+                <div className="stat-value stat-value-with-tooltip" title={(systemStats.totalCredits ?? 0).toLocaleString(undefined, { maximumFractionDigits: 6 })}>
+                  {formatCompactNumber(systemStats.totalCredits ?? 0)}
                 </div>
                 <div className="stat-label">Total Credits</div>
               </div>
@@ -181,9 +188,9 @@ export const SystemStats = ({ activeRobots, loadingActiveRobots }: SystemStatsPr
               </div>
               <div className="stat-content">
                 <div className="stat-value">
-                  {loadingActiveRobots ? '...' : (activeRobots ?? 'N/A')}
+                  {systemStats.robotsOnline ?? 'N/A'}
                 </div>
-                <div className="stat-label">Active Robots</div>
+                <div className="stat-label">Robots Online</div>
               </div>
             </div>
             <div className="stat-card">

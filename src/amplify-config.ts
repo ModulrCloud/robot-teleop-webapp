@@ -45,7 +45,7 @@ try {
     // logger.warn('Region missing after initial configure, reconfiguring with explicit structure');
     
     // Build the complete Auth.Cognito structure with region included
-    const loginWith: any = {
+    const loginWith: Record<string, unknown> = {
       email: true,
       phone: false,
       username: false
@@ -64,7 +64,7 @@ try {
     }
     
     // Create complete config structure with Auth.Cognito including region
-    const completeConfig: any = {
+    const completeConfig: Record<string, unknown> = {
       Auth: {
         Cognito: {
           userPoolId: outputs.auth.user_pool_id,

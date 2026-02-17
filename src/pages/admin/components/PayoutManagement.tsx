@@ -35,7 +35,7 @@ export const PayoutManagement = () => {
   const [success, setSuccess] = useState<string | null>(null);
 
   const loadPayouts = async (token?: string | null, status?: string) => {
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       return;
     }
 
@@ -121,7 +121,7 @@ export const PayoutManagement = () => {
   };
 
   useEffect(() => {
-    if (user?.email && hasAdminAccess(user.email)) {
+    if (user?.email && hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       loadPayouts(null, payoutStatusFilter);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -139,7 +139,7 @@ export const PayoutManagement = () => {
   };
 
   const handleProcessPayout = async (payoutId: string) => {
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       setError("Unauthorized: Admin access required");
       return;
     }
@@ -168,7 +168,7 @@ export const PayoutManagement = () => {
           return;
         }
       } else {
-        resultData = result.data as any;
+        resultData = result.data as LambdaResponse<{ success?: boolean; totalDollars?: number; error?: string }> | null;
       }
 
       if (result.errors && result.errors.length > 0) {
@@ -178,16 +178,17 @@ export const PayoutManagement = () => {
         return;
       }
 
-      if (resultData?.statusCode === 200) {
-        const body = typeof resultData.body === 'string' ? JSON.parse(resultData.body) : resultData.body;
-        if (body.success) {
+      const resultWithBody = resultData as { statusCode?: number; body?: string | { success?: boolean; totalDollars?: number; error?: string } } | null;
+      if (resultWithBody?.statusCode === 200) {
+        const body = typeof resultWithBody.body === 'string' ? JSON.parse(resultWithBody.body) : resultWithBody.body;
+        if (body?.success) {
           setSuccess(`Successfully processed payout: $${body.totalDollars?.toFixed(2) || '0.00'}`);
           await loadPayouts(null, payoutStatusFilter);
         } else {
           setError(body.error || "Failed to process payout");
         }
       } else {
-        const body = typeof resultData?.body === 'string' ? JSON.parse(resultData.body) : resultData?.body;
+        const body = typeof resultWithBody?.body === 'string' ? JSON.parse(resultWithBody.body) : resultWithBody?.body;
         setError(body?.error || "Failed to process payout");
       }
     } catch (err) {
@@ -204,7 +205,7 @@ export const PayoutManagement = () => {
   };
 
   const handleProcessMultiplePayouts = async (payoutIds: string[]) => {
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       setError("Unauthorized: Admin access required");
       return;
     }
@@ -242,7 +243,7 @@ export const PayoutManagement = () => {
           return;
         }
       } else {
-        resultData = result.data as any;
+        resultData = result.data as LambdaResponse<{ success?: boolean; totalDollars?: number; processedCount?: number; error?: string }> | null;
       }
 
       if (result.errors && result.errors.length > 0) {
@@ -252,16 +253,17 @@ export const PayoutManagement = () => {
         return;
       }
 
-      if (resultData?.statusCode === 200) {
-        const body = typeof resultData.body === 'string' ? JSON.parse(resultData.body) : resultData.body;
-        if (body.success) {
+      const resultWithBody = resultData as { statusCode?: number; body?: string | { success?: boolean; totalDollars?: number; processedCount?: number; error?: string } } | null;
+      if (resultWithBody?.statusCode === 200) {
+        const body = typeof resultWithBody.body === 'string' ? JSON.parse(resultWithBody.body) : resultWithBody.body;
+        if (body?.success) {
           setSuccess(`Successfully processed ${body.processedCount || 0} payout(s): $${body.totalDollars?.toFixed(2) || '0.00'}`);
           await loadPayouts(null, payoutStatusFilter);
         } else {
-          setError(body.error || "Failed to process payouts");
+          setError(body?.error || "Failed to process payouts");
         }
       } else {
-        const body = typeof resultData?.body === 'string' ? JSON.parse(resultData.body) : resultData?.body;
+        const body = typeof resultWithBody?.body === 'string' ? JSON.parse(resultWithBody.body) : resultWithBody?.body;
         setError(body?.error || "Failed to process payouts");
       }
     } catch (err) {

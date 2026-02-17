@@ -63,7 +63,7 @@ export const Admin = () => {
     );
   }
 
-  if (error && !hasAdminAccess(user?.email)) {
+  if (error && !hasAdminAccess(user?.email, user?.group ? [user.group] : undefined)) {
     return (
       <div className="admin-page">
         <div className="admin-error">

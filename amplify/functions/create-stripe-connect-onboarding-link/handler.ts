@@ -22,6 +22,8 @@ export const handler: Schema["createStripeConnectOnboardingLinkLambda"]["functio
   const cognitoUsername = identity.username;
 
   try {
+    // console.log("[createStripeConnectOnboardingLink] start", { cognitoUsername });
+
     const partnerResult = await docClient.send(
       new QueryCommand({
         TableName: PARTNER_TABLE_NAME,
@@ -31,6 +33,9 @@ export const handler: Schema["createStripeConnectOnboardingLinkLambda"]["functio
         Limit: 1,
       })
     );
+    // const partnerQueryMs = Date.now() - partnerQueryStart;
+    // console.log("[createStripeConnectOnboardingLink] DynamoDB partner query done", { partnerQueryMs, elapsedTotalMs: Date.now() - startMs });
+
     const partner = partnerResult.Items?.[0];
     if (!partner?.id) {
       throw new Error("Partner not found");
@@ -45,6 +50,9 @@ export const handler: Schema["createStripeConnectOnboardingLinkLambda"]["functio
         capabilities: { transfers: { requested: true } },
       });
       accountId = account.id;
+      // const stripeAccountMs = Date.now() - stripeAccountStart;
+      // console.log("[createStripeConnectOnboardingLink] Stripe account create done", { stripeAccountMs, elapsedTotalMs: Date.now() - startMs });
+
       await docClient.send(
         new UpdateCommand({
           TableName: PARTNER_TABLE_NAME,
@@ -53,7 +61,12 @@ export const handler: Schema["createStripeConnectOnboardingLinkLambda"]["functio
           ExpressionAttributeValues: { ":aid": accountId },
         })
       );
+      // const updateMs = Date.now() - updateStart;
+      // console.log("[createStripeConnectOnboardingLink] DynamoDB update (stripeConnectAccountId) done", { updateMs, elapsedTotalMs: Date.now() - startMs });
     }
+    // else {
+    //   console.log("[createStripeConnectOnboardingLink] using existing Stripe Connect account", { accountId: accountId.slice(0, 12) + "…" });
+    // }
 
     const accountLink = await stripe.accountLinks.create({
       account: accountId,
@@ -61,10 +74,14 @@ export const handler: Schema["createStripeConnectOnboardingLinkLambda"]["functio
       return_url: returnUrl,
       type: "account_onboarding",
     });
+    // const accountLinkMs = Date.now() - accountLinkStart;
+    // console.log("[createStripeConnectOnboardingLink] Stripe accountLinks.create done", { accountLinkMs, elapsedTotalMs: Date.now() - startMs });
 
     if (!accountLink.url) {
       throw new Error("Stripe did not return an onboarding URL");
     }
+    // const totalMs = Date.now() - startMs;
+    // console.log("[createStripeConnectOnboardingLink] success", { totalMs });
     return JSON.stringify({ success: true, url: accountLink.url });
   } catch (err) {
     console.error("[createStripeConnectOnboardingLink]", err);

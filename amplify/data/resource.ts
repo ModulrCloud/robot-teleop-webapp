@@ -40,6 +40,8 @@ import { listSessionsByRobot } from "../functions/list-sessions-by-robot/resourc
 import { triggerConnectionCleanup } from "../functions/trigger-connection-cleanup/resource";
 import { getActiveRobots } from "../functions/get-active-robots/resource";
 import { manageCreditTier } from "../functions/manage-credit-tier/resource";
+import { manageOrganisation } from "../functions/manage-organisation/resource";
+import { manageOrgMember } from "../functions/manage-org-member/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -321,6 +323,7 @@ const schema = a.schema({
     country: a.string(),
     latitude: a.float(),
     longitude: a.float(),
+    publicKey: a.string(), // Optional: Ed25519 public key (base64 or hex) for PKI auth; 32-byte key
     ratings: a.hasMany('RobotRating', 'robotUuid'), // Relationship to ratings
     reservations: a.hasMany('RobotReservation', 'robotUuid'), // Relationship to reservations
     availability: a.hasMany('RobotAvailability', 'robotUuid'), // Relationship to availability blocks
@@ -507,6 +510,127 @@ const schema = a.schema({
       // This is handled via a Lambda function since we need to check robot ownership
     ]),
 
+  // Command HQ: Organisation Models
+
+  Organisation: a.model({
+    id: a.id(),
+    name: a.string().required(),
+    slug: a.string().required(),
+    description: a.string(),
+    logoUrl: a.string(),
+    ownerId: a.string().required(),
+    status: a.string().default('active'),
+    creationCostCredits: a.float(),
+    maxMembers: a.integer().default(10),
+    members: a.hasMany('OrgMember', 'orgId'),
+    roles: a.hasMany('OrgRole', 'orgId'),
+    invites: a.hasMany('OrgInvite', 'orgId'),
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime(),
+  })
+    .secondaryIndexes(index => [
+      index("ownerId").name("ownerIdIndex"),
+      index("slug").name("slugIndex"),
+    ])
+    .authorization(allow => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  OrgRole: a.model({
+    id: a.id(),
+    orgId: a.id().required(),
+    org: a.belongsTo('Organisation', 'orgId'),
+    name: a.string().required(),
+    description: a.string(),
+    permissions: a.json().required(),
+    isSystem: a.boolean().default(false),
+    priority: a.integer(),
+    members: a.hasMany('OrgMember', 'roleId'),
+    createdAt: a.datetime().required(),
+  })
+    .secondaryIndexes(index => [
+      index("orgId").name("orgIdIndex"),
+    ])
+    .authorization(allow => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  OrgMember: a.model({
+    id: a.id(),
+    orgId: a.id().required(),
+    org: a.belongsTo('Organisation', 'orgId'),
+    userId: a.string().required(),
+    userEmail: a.string(),
+    roleId: a.id().required(),
+    role: a.belongsTo('OrgRole', 'roleId'),
+    status: a.string().default('active'),
+    joinedAt: a.datetime().required(),
+  })
+    .secondaryIndexes(index => [
+      index("orgId").name("orgIdIndex"),
+      index("userId").name("userIdIndex"),
+    ])
+    .authorization(allow => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  OrgInvite: a.model({
+    id: a.id(),
+    orgId: a.id().required(),
+    org: a.belongsTo('Organisation', 'orgId'),
+    email: a.string().required(),
+    roleId: a.id().required(),
+    invitedBy: a.string().required(),
+    status: a.string().default('pending'),
+    inviteCode: a.string().required(),
+    expiresAt: a.datetime().required(),
+    createdAt: a.datetime().required(),
+  })
+    .secondaryIndexes(index => [
+      index("orgId").name("orgIdIndex"),
+      index("email").name("emailIndex"),
+      index("inviteCode").name("inviteCodeIndex"),
+    ])
+    .authorization(allow => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  manageOrganisationLambda: a
+    .mutation()
+    .arguments({
+      action: a.string().required(),
+      name: a.string(),
+      slug: a.string(),
+      description: a.string(),
+      orgId: a.string(),
+      logoUrl: a.string(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(manageOrganisation)),
+
+  manageOrgMemberLambda: a
+    .mutation()
+    .arguments({
+      action: a.string().required(),
+      orgId: a.string(),
+      email: a.string(),
+      roleId: a.string(),
+      targetUserId: a.string(),
+      inviteCode: a.string(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(manageOrgMember)),
+
   setUserGroupLambda: a
     .mutation()
     .arguments({
@@ -557,6 +681,7 @@ const schema = a.schema({
       country: a.string(),
       latitude: a.float(),
       longitude: a.float(),
+      publicKey: a.string(), // Optional: Ed25519 public key (base64 or hex) for PKI auth
     })
     .returns(a.string())
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (owner/admin check)

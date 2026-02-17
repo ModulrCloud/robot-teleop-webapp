@@ -96,6 +96,7 @@ export interface SystemStats {
   platformMarkupPercent?: number;
   totalCredits?: number;
   activeSessions?: number;
+  robotsOnline?: number;
 }
 
 // Platform Settings Types

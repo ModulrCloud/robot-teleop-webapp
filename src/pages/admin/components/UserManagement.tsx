@@ -115,7 +115,7 @@ export const UserManagement = () => {
   };
 
   const loadUsers = async (token?: string | null) => {
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       return;
     }
 
@@ -155,7 +155,7 @@ export const UserManagement = () => {
           return;
         }
       } else {
-        usersData = result.data as any;
+        usersData = result.data as UsersResponse | null;
       }
 
       logger.debug("📊 [DEBUG] Parsed users data:", JSON.stringify(usersData, null, 2));
@@ -190,7 +190,7 @@ export const UserManagement = () => {
   };
 
   useEffect(() => {
-    if (user?.email && hasAdminAccess(user.email)) {
+    if (user?.email && hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       loadUsers().catch(err => {
         logger.error("Failed to load users on mount:", err);
       });
@@ -208,7 +208,7 @@ export const UserManagement = () => {
   };
 
   const handleAdjustCredits = async (userId: string, credits: number) => {
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       setError("Unauthorized: Admin access required");
       return;
     }
@@ -337,7 +337,7 @@ export const UserManagement = () => {
         errorMessage = err.message;
       } else if (typeof err === 'object' && err !== null) {
         // Try to extract error message from various error formats
-        const errObj = err as any;
+        const errObj = err as { message?: string; error?: { message?: string }; errors?: Array<{ message?: string }> };
         errorMessage = errObj.message || errObj.error?.message || errObj.errors?.[0]?.message || JSON.stringify(err);
       }
       
@@ -361,7 +361,7 @@ export const UserManagement = () => {
   };
 
   const handleClassificationChange = async (username: string, newClassification: string) => {
-    if (!user?.email || !hasAdminAccess(user.email)) {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       return;
     }
 
@@ -732,7 +732,7 @@ export const UserManagement = () => {
               </div>
 
               {/* Credit Adjustment (Admin Only) */}
-              {user?.email && hasAdminAccess(user.email) && (
+              {user?.email && hasAdminAccess(user.email, user?.group ? [user.group] : undefined) && (
                 <div className="user-detail-section">
                   <h3>Adjust Credits</h3>
                   <div className="form-row">

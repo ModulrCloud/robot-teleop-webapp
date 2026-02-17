@@ -182,7 +182,7 @@ export function RobotSchedulingModal({
     }
 
     if (userCredits < depositCredits) {
-      setError(`Insufficient credits. You need ${formatCreditsAsCurrencySync(depositCredits, userCurrency as any, exchangeRates)} for the deposit, but you only have ${formatCreditsAsCurrencySync(userCredits, userCurrency as any, exchangeRates)}.`);
+      setError(`Insufficient credits. You need ${formatCreditsAsCurrencySync(depositCredits, userCurrency, exchangeRates)} for the deposit, but you only have ${formatCreditsAsCurrencySync(userCredits, userCurrency, exchangeRates)}.`);
       return;
     }
 
@@ -207,7 +207,7 @@ export function RobotSchedulingModal({
         const parsed = JSON.parse(result.data as string);
         if (parsed.statusCode === 200) {
           const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
-          setSuccess(`Reservation created successfully! Deposit of ${formatCreditsAsCurrencySync(body.depositCredits, userCurrency as any, exchangeRates)} has been charged.`);
+          setSuccess(`Reservation created successfully! Deposit of ${formatCreditsAsCurrencySync(body.depositCredits, userCurrency, exchangeRates)} has been charged.`);
           
           // Close modal after a short delay
           setTimeout(() => {
@@ -295,8 +295,8 @@ export function RobotSchedulingModal({
                     <strong>Duration:</strong> {durationMinutes} minutes
                   </div>
                   <div className="cost-preview">
-                    <strong>Estimated Cost:</strong> {formatCreditsAsCurrencySync(totalCostCredits, userCurrency as any, exchangeRates)}
-                    <span className="deposit-note">(Deposit: {formatCreditsAsCurrencySync(depositCredits, userCurrency as any, exchangeRates)})</span>
+                    <strong>Estimated Cost:</strong> {formatCreditsAsCurrencySync(totalCostCredits, userCurrency, exchangeRates)}
+                    <span className="deposit-note">(Deposit: {formatCreditsAsCurrencySync(depositCredits, userCurrency, exchangeRates)})</span>
                   </div>
                   <div className="deposit-warning">
                     <FontAwesomeIcon icon={faInfoCircle} />
@@ -378,19 +378,19 @@ export function RobotSchedulingModal({
                   <h4>Cost Breakdown</h4>
                   <div className="cost-item">
                     <span>Base Rate ({durationMinutes} min):</span>
-                    <span>{formatCreditsAsCurrencySync(baseCostCredits, userCurrency as any, exchangeRates)}</span>
+                    <span>{formatCreditsAsCurrencySync(baseCostCredits, userCurrency, exchangeRates)}</span>
                   </div>
                   <div className="cost-item">
                     <span>Platform Fee ({platformMarkup}%):</span>
-                    <span>{formatCreditsAsCurrencySync(platformFeeCredits, userCurrency as any, exchangeRates)}</span>
+                    <span>{formatCreditsAsCurrencySync(platformFeeCredits, userCurrency, exchangeRates)}</span>
                   </div>
                   <div className="cost-item total">
                     <span>Total Cost:</span>
-                    <span>{formatCreditsAsCurrencySync(totalCostCredits, userCurrency as any, exchangeRates)}</span>
+                    <span>{formatCreditsAsCurrencySync(totalCostCredits, userCurrency, exchangeRates)}</span>
                   </div>
                   <div className="cost-item deposit">
                     <span>Deposit (charged now):</span>
-                    <span>{formatCreditsAsCurrencySync(depositCredits, userCurrency as any, exchangeRates)}</span>
+                    <span>{formatCreditsAsCurrencySync(depositCredits, userCurrency, exchangeRates)}</span>
                   </div>
                   <div className="deposit-warning">
                     <FontAwesomeIcon icon={faInfoCircle} />

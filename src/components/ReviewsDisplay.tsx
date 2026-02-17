@@ -121,19 +121,19 @@ export function ReviewsDisplay({ robotId, isPartner, partnerId, onResponseSubmit
       });
 
       if (result.data) {
-        let parsed: any;
+        let parsed: { statusCode?: number; body?: string | { success?: boolean; error?: string } };
         if (typeof result.data === 'string') {
-          parsed = JSON.parse(result.data);
+          parsed = JSON.parse(result.data) as { statusCode?: number; body?: string | { success?: boolean; error?: string } };
         } else {
-          parsed = result.data;
+          parsed = result.data as { statusCode?: number; body?: string | { success?: boolean; error?: string } };
         }
         
         // Handle double-encoded JSON
         if (typeof parsed === 'string') {
-          parsed = JSON.parse(parsed);
+          parsed = JSON.parse(parsed) as { statusCode?: number; body?: string | { success?: boolean; error?: string } };
         }
         
-        if (parsed.statusCode === 200) {
+        if (parsed?.statusCode === 200) {
           const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
           if (body.success) {
             setResponseText('');
@@ -147,8 +147,8 @@ export function ReviewsDisplay({ robotId, isPartner, partnerId, onResponseSubmit
             setResponseError(body.error || 'Failed to submit response');
           }
         } else {
-          const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
-          setResponseError(body.error || 'Failed to submit response');
+          const body = (typeof parsed?.body === 'string' ? JSON.parse(parsed.body) : parsed?.body) as { error?: string } | undefined;
+          setResponseError(body?.error || 'Failed to submit response');
         }
       } else if (result.errors) {
         setResponseError(result.errors[0]?.message || 'Failed to submit response');

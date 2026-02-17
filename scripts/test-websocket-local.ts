@@ -205,20 +205,24 @@ async function runTests() {
         sdp: 'mock-sdp-offer-from-client1',
       },
     });
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
-    // Step 5: Robot sends answer back
+    // Step 5: Robot sends answer back (use client connectionId from offer the robot received)
+    const client1ConnId = await robot.waitForMessage('offer', 3000).then(m => m.from).catch(() => null);
+    if (!client1ConnId) {
+      console.log('  ⚠️  Could not get client connectionId from offer - answer step may fail');
+    }
     console.log('\n📡 Step 5: Robot sending answer to client...');
     robot.send({
       type: 'answer',
       robotId: ROBOT_ID,
       target: 'client',
-      clientConnectionId: 'CLIENT1_CONN_ID', // In real scenario, this would be the actual connection ID
+      clientConnectionId: client1ConnId || 'CLIENT1_CONN_ID',
       payload: {
         sdp: 'mock-sdp-answer-from-robot',
       },
     });
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
     // Step 6: Client 2 connects (to test delegation)
     console.log('\n📡 Step 6: Client 2 connecting (testing delegation)...');

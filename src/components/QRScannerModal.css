@@ -1,0 +1,170 @@
+.qr-scanner-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: qrScannerFadeIn 0.2s ease-out;
+}
+
+@keyframes qrScannerFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.qr-scanner-modal {
+  background: #10131a;
+  border: 2px solid rgba(255, 183, 0, 0.3);
+  border-radius: 16px;
+  width: 90%;
+  max-width: 480px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: qrScannerSlideUp 0.3s ease-out;
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes qrScannerSlideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.qr-scanner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 183, 0, 0.2);
+}
+
+.qr-scanner-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.qr-scanner-icon {
+  font-size: 1.5rem;
+  color: var(--yellow, #ffb700);
+}
+
+.qr-scanner-header h2 {
+  margin: 0;
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.qr-scanner-subtitle {
+  margin: 0.25rem 0 0 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.875rem;
+}
+
+.qr-scanner-close {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.qr-scanner-close:hover {
+  border-color: rgba(255, 183, 0, 0.5);
+  color: #ffb700;
+}
+
+.qr-scanner-video-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  overflow: hidden;
+}
+
+.qr-scanner-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.qr-scanner-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.qr-scanner-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.85);
+}
+
+.qr-scanner-error svg {
+  font-size: 2.5rem;
+  color: #ff9800;
+}
+
+.qr-scanner-error p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.qr-scanner-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid rgba(255, 183, 0, 0.2);
+}
+
+.qr-scanner-cancel {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.qr-scanner-cancel:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 183, 0, 0.3);
+}

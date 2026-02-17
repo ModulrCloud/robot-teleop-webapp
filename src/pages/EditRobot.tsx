@@ -22,8 +22,11 @@ import {
   faCircle,
   faCloudUploadAlt,
   faTimes,
-  faLock
+  faLock,
+  faQrcode
 } from '@fortawesome/free-solid-svg-icons';
+import { useToast } from '../hooks/useToast';
+import { QRScannerModal } from '../components/QRScannerModal';
 
 // Robot types with their default images
 const ROBOT_TYPES = [
@@ -41,6 +44,44 @@ const getDefaultRobotImage = (robotType: string): string => {
   return type?.image || "/default/humanoid.png";
 };
 
+/** Validates Ed25519 public key format (32 bytes). Accepts base64, base64url, or hex. Returns error message or null if valid. */
+function validateEd25519PublicKeyFormat(input: string): string | null {
+  const trimmed = input.trim();
+  if (trimmed.length === 0) return null;
+  try {
+    let decoded: Uint8Array;
+    const hexOnly = trimmed.replace(/[^0-9a-fA-F]/g, '');
+    if (hexOnly.length === 64) {
+      decoded = Uint8Array.from(hexOnly.match(/.{2}/g)!.map(byte => parseInt(byte, 16)));
+    } else {
+      const base64 = trimmed.replace(/-/g, '+').replace(/_/g, '/').replace(/\s/g, '');
+      if (!/^[A-Za-z0-9+/]+(?:={0,2})$/.test(base64)) {
+        return 'Invalid Ed25519 public key: use base64, base64url, or hex (64 hex characters for 32-byte key).';
+      }
+      const binary = atob(base64);
+      decoded = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) decoded[i] = binary.charCodeAt(i);
+    }
+    if (decoded.length !== 32) {
+      return `Invalid Ed25519 public key: expected 32 bytes after decode, got ${decoded.length}. Use base64 or hex (64 characters).`;
+    }
+    return null;
+  } catch {
+    return 'Invalid Ed25519 public key: use base64, base64url, or hex (64 hex characters for 32-byte key).';
+  }
+}
+
+/** Returns the normalized public key string to send to the server (same format the validator accepts). Aligns submit payload with UI validation so server accepts what we validated. */
+function normalizePublicKeyForSubmit(input: string): string | null {
+  const trimmed = input.trim();
+  if (trimmed.length === 0) return null;
+  const hexOnly = trimmed.replace(/[^0-9a-fA-F]/g, '');
+  if (hexOnly.length === 64) return hexOnly;
+  const base64 = trimmed.replace(/-/g, '+').replace(/_/g, '/').replace(/\s/g, '');
+  if (!/^[A-Za-z0-9+/]+(?:={0,2})$/.test(base64)) return null;
+  return base64;
+}
+
 type RobotListing = {
   robotName: string;
   description: string;
@@ -53,6 +94,7 @@ type RobotListing = {
   country: string;
   latitude: string;
   longitude: string;
+  publicKey: string; // Optional Ed25519 public key (base64 or hex) for PKI auth
 };
 
 const client = generateClient<Schema>();
@@ -60,6 +102,7 @@ const client = generateClient<Schema>();
 export const EditRobot = () => {
   usePageTitle();
   const navigate = useNavigate();
+  const { toast, showToast } = useToast();
   const [searchParams] = useSearchParams();
   const robotId = searchParams.get('robotId');
   const isViewMode = searchParams.get('mode') === 'view';
@@ -70,7 +113,7 @@ export const EditRobot = () => {
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [robotName, setRobotName] = useState<string>('');
-  const [robotStatus, setRobotStatus] = useState<{ isOnline: boolean; lastSeen?: number } | null>(null);
+  const [robotStatus, setRobotStatus] = useState<{ isOnline: boolean; lastSeen?: number; status?: string } | null>(null);
   const [isLoadingStatus, setIsLoadingStatus] = useState(false);
   const [robotIdForStatus, setRobotIdForStatus] = useState<string>(''); // robotId field (robot-XXXXXXXX)
 
@@ -86,6 +129,7 @@ export const EditRobot = () => {
     country: "",
     latitude: "",
     longitude: "",
+    publicKey: "",
   });
   const [isVerified, setIsVerified] = useState(false);
 
@@ -107,6 +151,12 @@ export const EditRobot = () => {
   exchangeRatesRef.current = exchangeRates;
   currencyCodeRef.current = currencyCode;
   const [hourlyRateCurrency, setHourlyRateCurrency] = useState<number>(1.00);
+  const [showQrScanner, setShowQrScanner] = useState(false);
+
+  // Scroll to top when the page mounts (avoids ending up scrolled down from restoration or layout)
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   // Fetch exchange rates on mount
   useEffect(() => {
@@ -221,6 +271,7 @@ export const EditRobot = () => {
 
         const loadedHourlyRateCredits = robotData.hourlyRateCredits ?? 100;
 
+        const extendedRobotData = robotData as typeof robotData & { publicKey?: string | null };
         setRobotListing({
           robotName: name,
           description: robotData.description || "",
@@ -233,6 +284,7 @@ export const EditRobot = () => {
           country: robotData.country || "",
           latitude: robotData.latitude?.toString() || "",
           longitude: robotData.longitude?.toString() || "",
+          publicKey: extendedRobotData.publicKey ?? "",
         });
 
         // Immediately update currency display if exchange rates are available
@@ -289,6 +341,7 @@ export const EditRobot = () => {
           setRobotStatus({
             isOnline: status.data.isOnline || false,
             lastSeen: status.data.lastSeen || undefined,
+            status: status.data.status || undefined,
           });
         } else {
           setRobotStatus({ isOnline: false });
@@ -444,6 +497,16 @@ export const EditRobot = () => {
       ? validRobotType
       : ROBOT_TYPES[0].value;
 
+    const publicKeyTrimmed = robotListing.publicKey.trim();
+    if (publicKeyTrimmed !== '') {
+      const publicKeyError = validateEd25519PublicKeyFormat(publicKeyTrimmed);
+      if (publicKeyError) {
+        setError(publicKeyError);
+        setIsLoading(false);
+        return;
+      }
+    }
+
     const robotData = {
       robotName: robotListing.robotName,
       description: robotListing.description,
@@ -458,6 +521,7 @@ export const EditRobot = () => {
       country: robotListing.country || undefined,
       latitude: robotListing.latitude ? (isNaN(parseFloat(robotListing.latitude)) ? undefined : parseFloat(robotListing.latitude)) : undefined,
       longitude: robotListing.longitude ? (isNaN(parseFloat(robotListing.longitude)) ? undefined : parseFloat(robotListing.longitude)) : undefined,
+      publicKey: publicKeyTrimmed === '' ? null : (normalizePublicKeyForSubmit(publicKeyTrimmed) ?? publicKeyTrimmed),
     };
 
     try {
@@ -483,6 +547,54 @@ export const EditRobot = () => {
       setSuccess(false);
     }
 
+    setIsLoading(false);
+  };
+
+  const handleRemovePublicKey = async () => {
+    if (!robotId || isViewMode) return;
+    if (robotListing.publicKey.trim() === '') return;
+    setIsLoading(true);
+    setError(null);
+    const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
+      ? robotListing.allowedUserEmails
+        .split(/[,\n]/)
+        .map((email: string) => email.trim())
+        .filter((email: string) => email.length > 0 && email.includes('@'))
+      : [];
+    const validRobotType = robotListing.robotType && robotListing.robotType.trim() !== ''
+      ? robotListing.robotType.trim().toLowerCase()
+      : ROBOT_TYPES[0].value;
+    const robotTypeToSend = ROBOT_TYPES.some(t => t.value === validRobotType)
+      ? validRobotType
+      : ROBOT_TYPES[0].value;
+    const robotData = {
+      robotName: robotListing.robotName,
+      description: robotListing.description,
+      model: robotTypeToSend,
+      robotType: robotTypeToSend,
+      hourlyRateCredits: robotListing.hourlyRateCredits,
+      enableAccessControl: robotListing.enableAccessControl,
+      additionalAllowedUsers: emailList,
+      ...(isVerified && existingImageKey ? { imageUrl: existingImageKey } : {}),
+      city: robotListing.city || undefined,
+      state: robotListing.state || undefined,
+      country: robotListing.country || undefined,
+      latitude: robotListing.latitude ? (isNaN(parseFloat(robotListing.latitude)) ? undefined : parseFloat(robotListing.latitude)) : undefined,
+      longitude: robotListing.longitude ? (isNaN(parseFloat(robotListing.longitude)) ? undefined : parseFloat(robotListing.longitude)) : undefined,
+      publicKey: null,
+    };
+    try {
+      const robot = await client.mutations.updateRobotLambda({ robotId, ...robotData });
+      if (robot.errors) {
+        setError(robot.errors[0]?.message || 'Failed to remove key');
+      } else {
+        setRobotListing(prev => ({ ...prev, publicKey: '' }));
+        showToast('Public key removed. Robot will use JWT until a key is set again.', 'success');
+      }
+    } catch (error) {
+      logger.error('Error removing public key:', error);
+      setError(error instanceof Error ? error.message : 'Failed to remove key');
+    }
     setIsLoading(false);
   };
 
@@ -566,18 +678,18 @@ export const EditRobot = () => {
                 alignItems: 'center',
                 gap: '0.5rem',
                 fontSize: '0.9rem',
-                color: robotStatus?.isOnline ? '#ffb700' : '#666',
+                color: robotStatus?.isOnline ? '#ffb700' : robotStatus?.status === 'pending' ? '#ff9800' : '#666',
                 fontWeight: 500
               }}>
                 <FontAwesomeIcon
                   icon={faCircle}
                   style={{
                     fontSize: '0.6rem',
-                    color: robotStatus?.isOnline ? '#ffb700' : '#666'
+                    color: robotStatus?.isOnline ? '#ffb700' : robotStatus?.status === 'pending' ? '#ff9800' : '#666'
                   }}
                 />
                 <span>
-                  {isLoadingStatus ? 'Checking...' : (robotStatus?.isOnline ? 'Online' : 'Offline')}
+                  {isLoadingStatus ? 'Checking...' : robotStatus?.status === 'pending' ? 'Pending' : (robotStatus?.isOnline ? 'Online' : 'Offline')}
                 </span>
               </div>
             )}
@@ -898,7 +1010,7 @@ export const EditRobot = () => {
                     />
                     <p className="form-help-text">
                       Enter email addresses of users who should have access to this robot.
-                      You (the owner), chris@modulr.cloud, and mike@modulr.cloud are automatically included.
+                      You (the owner) and modulr employees are automatically included.
                     </p>
                   </div>
                 )}
@@ -982,6 +1094,60 @@ export const EditRobot = () => {
                 </p>
               </div>
 
+              <div className="form-section pki-section">
+                <h3>PKI authentication <span className="optional">(optional)</span></h3>
+                <p className="form-help-text">
+                  For robots that support PKI, paste the robot&apos;s public key here.
+                  Key must be base64, base64url, or hex (64 hex characters).
+                </p>
+                <div className="form-group">
+                  <label htmlFor="robot-publicKey">Robot public key</label>
+                  <div className="pki-public-key-row">
+                    <div className="pki-input-with-qr">
+                      <input
+                        type="text"
+                        id="robot-publicKey"
+                        name="publicKey"
+                        value={robotListing.publicKey}
+                        onChange={handleInputChange}
+                        placeholder="Paste base64 or hex public key (32 bytes)"
+                        disabled={isLoading || isViewMode}
+                        className={`pki-public-key-input${robotListing.publicKey.trim() ? ' pki-public-key-filled' : ''}`}
+                        autoComplete="off"
+                      />
+                      <button
+                        type="button"
+                        className="pki-qr-tease pki-qr-inside"
+                        title="Scan QR code"
+                        onClick={() => setShowQrScanner(true)}
+                        disabled={isLoading || isViewMode}
+                        aria-label="Scan QR code"
+                      >
+                        <FontAwesomeIcon icon={faQrcode} />
+                      </button>
+                    </div>
+                    {robotListing.publicKey.trim() !== '' && validateEd25519PublicKeyFormat(robotListing.publicKey) && (
+                      <p className="form-help-text" style={{ color: 'var(--error-color, #dc2626)', marginTop: '0.25rem' }}>
+                        {validateEd25519PublicKeyFormat(robotListing.publicKey)}
+                      </p>
+                    )}
+                    {robotListing.publicKey.trim() !== '' && !isViewMode && (
+                      <div className="pki-actions">
+                        <button
+                          type="button"
+                          className="pki-remove-key"
+                          onClick={handleRemovePublicKey}
+                          disabled={isLoading}
+                          aria-label="Remove public key"
+                        >
+                          Remove key
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {robotIdForStatus && (
                 <div className="form-section">
                   <RobotAvailabilityManager
@@ -1048,7 +1214,12 @@ export const EditRobot = () => {
                   <button
                     type="submit"
                     className="submit-btn"
-                    disabled={isLoading || isDeleting || !robotListing.robotName.trim()}
+                    disabled={
+                      isLoading ||
+                      isDeleting ||
+                      !robotListing.robotName.trim() ||
+                      (robotListing.publicKey.trim() !== '' && validateEd25519PublicKeyFormat(robotListing.publicKey) !== null)
+                    }
                   >
                     {isLoading ? (
                       <>
@@ -1088,6 +1259,34 @@ export const EditRobot = () => {
           </>
         )}
       </div>
+
+      <QRScannerModal
+        isOpen={showQrScanner}
+        onClose={() => setShowQrScanner(false)}
+        onScan={(data) => {
+          const trimmed = data.trim();
+          setShowQrScanner(false);
+          if (!trimmed) {
+            showToast('No text found in QR code.', 'warning');
+            return;
+          }
+          setRobotListing((prev) => ({ ...prev, publicKey: trimmed }));
+          const formatError = validateEd25519PublicKeyFormat(trimmed);
+          if (formatError) {
+            showToast('Scanned; check format — ' + formatError.split('.')[0] + '.', 'warning');
+          } else {
+            showToast('Public key scanned.', 'success');
+          }
+        }}
+      />
+
+      {/* Toast Notification */}
+      {toast.visible && (
+        <div className={`toast-notification ${toast.type}`}>
+          <FontAwesomeIcon icon={toast.type === 'error' ? faExclamationCircle : toast.type === 'success' ? faCheckCircle : faInfoCircle} />
+          <span>{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 };

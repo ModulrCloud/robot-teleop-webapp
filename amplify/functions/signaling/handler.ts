@@ -4,12 +4,14 @@ import {
     PutItemCommand,
     DeleteItemCommand,
     GetItemCommand,
+    GetItemCommandOutput,
     QueryCommand,
     UpdateItemCommand,
+    ScanCommand,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand as DocQueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
-import { createHash } from 'crypto';
-import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
+import { createHash, randomUUID, randomBytes, verify as cryptoVerify, createPublicKey } from 'crypto';
+import { ApiGatewayManagementApiClient, PostToConnectionCommand, DeleteConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
 
@@ -26,6 +28,13 @@ const PLATFORM_SETTINGS_TABLE = process.env.PLATFORM_SETTINGS_TABLE;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!; // HTTPS management API
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
+
+// PKI-pending connections that never complete auth are closed after this (ms). Env override: PKI_PENDING_TIMEOUT_MS.
+const PKI_PENDING_TIMEOUT_MS = Number(process.env.PKI_PENDING_TIMEOUT_MS) || 120_000; // 2 minutes
+
+// Challenge type for PKI challenge-response (Phase 4). Default 'xor'; 'plain' = sign raw challenge.
+const DEFAULT_CHALLENGE_TYPE = 'xor';
+const PKI_CHALLENGE_NONCE_BYTES = 32;
 
 // Default platform markup (30%) if not set
 const DEFAULT_PLATFORM_MARKUP_PERCENT = 30;
@@ -44,7 +53,7 @@ const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
 // Types
 // ---------------------------------
 
-type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong';
+type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong' | 'agent.ping' | 'agent.pong' | 'signalling.capabilities';
 type Target = 'robot' | 'client';
 
 // ---------------------------------
@@ -82,6 +91,8 @@ type Claims = {
     aud?: string;
     email?: string;
     'cognito:username'?: string;
+    /** Set when connection is PKI-pending (no JWT); only register (and ping/pong) are allowed. */
+    pkiPending?: boolean;
 };
 
 type InboundMessage = Partial<{
@@ -90,10 +101,208 @@ type InboundMessage = Partial<{
     target: Target;
     clientConnectionId: string;
     payload: Record<string, unknown>;
+    /** Phase 4: signature from robot (base64) after pki_challenge */
+    signature?: string;
+    /** Phase 4: challenge type used when signing (xor | plain) */
+    challengeType?: string;
 }>;
 
-// Raw wire shape (browser or robot could send anythign so we normalize here)
-type RawMessage = any;
+// Raw wire shape (browser or robot could send anything so we normalize here)
+type RawMessage = Record<string, unknown>;
+
+// ---------------------------------
+// Protocol detection (dual-protocol: legacy vs Modulr Interface Spec)
+// ---------------------------------
+
+/** Supported protocol versions for the new (domain.message) format. */
+const SUPPORTED_PROTOCOL_VERSIONS = ['0.0', '0.1'] as const;
+
+/** Connection protocol: legacy (type: "register") or new (type: "signalling.register"). */
+export type ConnectionProtocol = 'legacy' | 'modulr-v0';
+
+/**
+ * Returns true if the message uses the new protocol (type contains a dot, e.g. signalling.register).
+ */
+export function isNewProtocol(raw: RawMessage): boolean {
+  if (typeof raw.type !== 'string') return false;
+  return raw.type.includes('.');
+}
+
+/**
+ * Extracts the version field from a new-protocol message envelope.
+ */
+export function extractNewProtocolVersion(raw: RawMessage): string | undefined {
+  if (typeof raw.version !== 'string') return undefined;
+  return raw.version.trim();
+}
+
+/**
+ * Returns true if the given version is in our supported list.
+ */
+export function isSupportedProtocolVersion(version: string | undefined): boolean {
+  if (!version) return false;
+  return SUPPORTED_PROTOCOL_VERSIONS.includes(version as (typeof SUPPORTED_PROTOCOL_VERSIONS)[number]);
+}
+
+/**
+ * Updates the connection record with protocol and version (for persistence).
+ */
+async function updateConnectionProtocol(
+  connectionId: string,
+  protocol: ConnectionProtocol,
+  version?: string,
+): Promise<void> {
+  try {
+    const updateExpr = version
+      ? 'SET #protocol = :protocol, #version = :version'
+      : 'SET #protocol = :protocol';
+    const exprValues: Record<string, import('@aws-sdk/client-dynamodb').AttributeValue> = {
+      ':protocol': { S: protocol },
+    };
+    if (version) {
+      exprValues[':version'] = { S: version };
+    }
+    await db.send(
+      new UpdateItemCommand({
+        TableName: CONN_TABLE,
+        Key: { connectionId: { S: connectionId } },
+        UpdateExpression: updateExpr,
+        ExpressionAttributeNames: version
+          ? { '#protocol': 'protocol', '#version': 'version' }
+          : { '#protocol': 'protocol' },
+        ExpressionAttributeValues: exprValues,
+      }),
+    );
+  } catch (err) {
+    console.warn('[PROTOCOL_UPDATE_ERROR]', { connectionId, protocol, version, error: err instanceof Error ? err.message : String(err) });
+  }
+}
+
+/** Fetches stored protocol and version for a connection. Returns null if not found or no protocol set. */
+async function getConnectionProtocol(
+  connectionId: string,
+): Promise<{ protocol: ConnectionProtocol; version?: string } | null> {
+  try {
+    const res = await db.send(
+      new GetItemCommand({
+        TableName: CONN_TABLE,
+        Key: { connectionId: { S: connectionId } },
+        ProjectionExpression: '#protocol, #version',
+        ExpressionAttributeNames: { '#protocol': 'protocol', '#version': 'version' },
+      }),
+    );
+    const protocol = res.Item?.protocol?.S as ConnectionProtocol | undefined;
+    if (!protocol) return null;
+    return {
+      protocol,
+      version: res.Item?.version?.S,
+    };
+  } catch (err) {
+    console.warn('[GET_PROTOCOL_ERROR]', { connectionId, error: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
+
+/** Internal outbound message shape (what handlers build). */
+type InternalOutboundMessage =
+  | { type: 'offer' | 'answer' | 'candidate'; to: string; from: string; sdp?: string; candidate?: string; [k: string]: unknown }
+  | { type: 'error'; error: string; message: string; robotId?: string; currentCredits?: number; requiredCredits?: number }
+  | { type: 'session-locked'; robotId: string; lockedBy: string }
+  | { type: 'session-created'; sessionId: string; robotProtocol?: ConnectionProtocol }
+  | { type: 'welcome'; connectionId: string }
+  | { type: 'monitor-confirmed'; robotId: string; message: string }
+  | { type: 'admin-takeover'; robotId: string; by: string }
+  | { type: 'signalling.capabilities'; supportedVersions: readonly string[] }
+  | { type: 'pki_challenge'; challenge: string; challengeType: string }
+  | Record<string, unknown>;
+
+/**
+ * Formats an internal outbound message for the recipient's protocol.
+ * Legacy: returns message as-is. New (modulr-v0): wraps in envelope (type, version, id, timestamp, payload).
+ */
+export function formatOutboundForConnection(
+  msg: InternalOutboundMessage,
+  connectionProtocol: ConnectionProtocol | null | undefined,
+  connectionVersion?: string,
+): Record<string, unknown> {
+  if (connectionProtocol !== 'modulr-v0') {
+    return msg as Record<string, unknown>;
+  }
+  const version = connectionVersion ?? '0.0';
+  const envelopeType = msg.type as string;
+  const envelope: Record<string, unknown> = {
+    type: envelopeType,
+    version,
+    id: randomUUID(),
+    timestamp: new Date().toISOString(),
+    payload: {},
+  };
+
+  // Map internal types to new-protocol envelope types and payload shape
+  if (envelopeType === 'offer') {
+    envelope.type = 'signalling.offer';
+    envelope.payload = {
+      sdp: (msg as { sdp?: string }).sdp,
+      sdpType: 'offer',
+      connectionId: (msg as { from?: string }).from,
+    };
+  } else if (envelopeType === 'answer') {
+    envelope.type = 'signalling.answer';
+    envelope.payload = {
+      sdp: (msg as { sdp?: string }).sdp,
+      sdpType: 'answer',
+      connectionId: (msg as { to?: string }).to,
+    };
+  } else if (envelopeType === 'candidate') {
+    envelope.type = 'signalling.ice_candidate';
+    const m = msg as { candidate?: string; to?: string; from?: string; sdpMid?: string; sdpMLineIndex?: number; clientConnectionId?: string };
+    // Client conn id: when client->robot it's "from"; when robot->client it's "to"
+    const clientConnId = m.clientConnectionId ?? (m.from && !m.from.startsWith('robot') ? m.from : m.to) ?? m.from;
+    envelope.payload = {
+      candidate: m.candidate,
+      connectionId: clientConnId,
+    };
+    if (m.sdpMid !== undefined) (envelope.payload as Record<string, unknown>).sdpMid = m.sdpMid;
+    if (m.sdpMLineIndex !== undefined) (envelope.payload as Record<string, unknown>).sdpMLineIndex = m.sdpMLineIndex;
+  } else if (envelopeType === 'signalling.capabilities') {
+    envelope.type = 'signalling.capabilities';
+    const m = msg as { supportedVersions?: readonly string[] };
+    envelope.payload = { supportedVersions: m.supportedVersions ?? [] };
+  } else if (envelopeType === 'error') {
+    envelope.type = 'signalling.error';
+    const m = msg as { error?: string; message?: string; robotId?: string; currentCredits?: number; requiredCredits?: number };
+    (envelope.payload as Record<string, unknown>).code = m.error ?? 'UNKNOWN';
+    (envelope.payload as Record<string, unknown>).message = m.message ?? '';
+    if (m.robotId) (envelope.payload as Record<string, unknown>).robotId = m.robotId;
+    if (m.currentCredits !== undefined) (envelope.payload as Record<string, unknown>).currentCredits = m.currentCredits;
+    if (m.requiredCredits !== undefined) (envelope.payload as Record<string, unknown>).requiredCredits = m.requiredCredits;
+  } else if (envelopeType === 'pki_challenge') {
+    envelope.type = 'signalling.pki_challenge';
+    const m = msg as { challenge?: string; challengeType?: string };
+    (envelope.payload as Record<string, unknown>).challenge = m.challenge ?? '';
+    (envelope.payload as Record<string, unknown>).challengeType = m.challengeType ?? 'xor';
+  } else {
+    // Platform messages (welcome, session-locked, session-created, monitor-confirmed, admin-takeover)
+    // Keep in legacy top-level format per plan; new-protocol clients receive same shape
+    return msg as Record<string, unknown>;
+  }
+  return envelope;
+}
+
+/**
+ * Sends a message to a connection, formatting for that connection's protocol.
+ * Optional override: when forwarding to a robot, pass the source (client) connection's protocol
+ * so the robot receives new-protocol envelope (e.g. signalling.offer) when the client uses new protocol.
+ */
+async function postFormatted(
+  connectionId: string,
+  internalMsg: InternalOutboundMessage,
+  formatOverride?: { protocol?: ConnectionProtocol; version?: string },
+): Promise<void> {
+  const proto = formatOverride ?? (await getConnectionProtocol(connectionId));
+  const formatted = formatOutboundForConnection(internalMsg, proto?.protocol, proto?.version);
+  await postTo(connectionId, formatted);
+}
 
 // ---------------------------------
 // Helpers
@@ -230,6 +439,7 @@ async function verifyCognitoJWT(token: string | null | undefined): Promise<Claim
 /**
  * Extracts and normalizes the message type from a raw message.
  * Maps legacy 'candidate' to 'ice-candidate' for backward compatibility.
+ * Includes ping/pong and agent.ping/agent.pong for keepalive and liveness.
  */
 function extractMessageType(raw: RawMessage): MessageType | undefined {
   if (typeof raw.type !== 'string') return undefined;
@@ -243,7 +453,12 @@ function extractMessageType(raw: RawMessage): MessageType | undefined {
     t === 'register' ||
     t === 'takeover' ||
     t === 'ice-candidate' ||
-    t === 'monitor'
+    t === 'monitor' ||
+    t === 'ping' ||
+    t === 'pong' ||
+    t === 'agent.ping' ||
+    t === 'agent.pong' ||
+    t === 'signalling.capabilities'
   ) {
     return t as MessageType;
   }
@@ -397,6 +612,120 @@ function extractClientConnectionId(
 }
 
 /**
+ * Maps new protocol (Modulr Interface Spec) messages to internal InboundMessage format.
+ * Used for signalling.register, signalling.offer, signalling.answer, signalling.ice_candidate,
+ * and agent.ping/agent.pong (pass-through for keepalive/liveness).
+ * Returns null for unknown new-protocol types.
+ *
+ * Field mappings per plan:
+ * - signalling.register: payload.agentId → robotId
+ * - signalling.offer: payload.robotId/agentId → robotId, payload.connectionId → clientConnectionId (when applicable), payload.sdp
+ * - signalling.answer: payload.connectionId → clientConnectionId, payload.sdp
+ * - signalling.ice_candidate: payload.connectionId → clientConnectionId, payload.candidate
+ */
+export function normalizeNewProtocol(raw: RawMessage): InboundMessage | null {
+  if (!raw || typeof raw !== 'object' || typeof raw.type !== 'string' || !raw.type.includes('.')) {
+    return null;
+  }
+
+  const p = (raw.payload && typeof raw.payload === 'object') ? raw.payload as Record<string, unknown> : {};
+  const typeStr = String(raw.type).toLowerCase();
+
+  switch (typeStr) {
+    case 'signalling.register': {
+      const agentId = typeof p.agentId === 'string' ? p.agentId.trim() : undefined;
+      const signature = typeof p.signature === 'string' ? p.signature : undefined;
+      const challengeType = typeof p.challengeType === 'string' ? p.challengeType : undefined;
+      return {
+        type: 'register',
+        robotId: agentId,
+        target: undefined,
+        clientConnectionId: undefined,
+        payload: { capabilities: p.capabilities, metadata: p.metadata },
+        ...(signature !== undefined && { signature }),
+        ...(challengeType !== undefined && { challengeType }),
+      };
+    }
+
+    case 'signalling.offer': {
+      const robotId = extractNewProtocolRobotId(raw, p);
+      const connectionId = typeof p.connectionId === 'string' ? p.connectionId.trim() : undefined;
+      const sdp = p.sdp;
+      return {
+        type: 'offer',
+        robotId,
+        target: 'robot',
+        clientConnectionId: connectionId,
+        payload: { sdp, sdpType: p.sdpType ?? 'offer', iceRestart: p.iceRestart },
+      };
+    }
+
+    case 'signalling.answer': {
+      const robotId = extractNewProtocolRobotId(raw, p);
+      const connectionId = typeof p.connectionId === 'string' ? p.connectionId.trim() : undefined;
+      const sdp = p.sdp;
+      return {
+        type: 'answer',
+        robotId,
+        target: 'client',
+        clientConnectionId: connectionId,
+        payload: { sdp, sdpType: p.sdpType ?? 'answer' },
+      };
+    }
+
+    case 'signalling.ice_candidate': {
+      const robotId = extractNewProtocolRobotId(raw, p);
+      const connectionId = typeof p.connectionId === 'string' ? p.connectionId.trim() : undefined;
+      const candidate = p.candidate;
+      return {
+        type: 'ice-candidate',
+        robotId,
+        target: undefined, // handleSignal infers from isFromRobot
+        clientConnectionId: connectionId,
+        payload: {
+          candidate,
+          sdpMid: p.sdpMid,
+          sdpMLineIndex: p.sdpMLineIndex,
+          usernameFragment: p.usernameFragment,
+        },
+      };
+    }
+
+    case 'agent.ping':
+    case 'agent.pong':
+      // Pass-through: no field mapping needed; used for keepalive/liveness (websocket-keepalive Lambda)
+      return { type: typeStr as MessageType };
+
+    case 'signalling.capabilities':
+      // Request for supported versions; handler responds with signalling.capabilities payload
+      return { type: 'signalling.capabilities' };
+
+    default:
+      return null;
+  }
+}
+
+/**
+ * Extracts robotId from new-protocol payload or top-level fields.
+ * Used for offer, answer, ice_candidate routing.
+ */
+function extractNewProtocolRobotId(raw: RawMessage, payload: Record<string, unknown>): string | undefined {
+  if (typeof payload.robotId === 'string' && payload.robotId.trim().length > 0) {
+    return payload.robotId.trim();
+  }
+  if (typeof payload.agentId === 'string' && payload.agentId.trim().length > 0) {
+    return payload.agentId.trim();
+  }
+  if (typeof raw.robotId === 'string' && raw.robotId.trim().length > 0) {
+    return raw.robotId.trim();
+  }
+  if (typeof raw.agentId === 'string' && raw.agentId.trim().length > 0) {
+    return raw.agentId.trim();
+  }
+  return undefined;
+}
+
+/**
  * Normalizes a raw message into the internal InboundMessage format.
  * 
  * This function handles multiple message formats and normalizes them into a consistent
@@ -416,12 +745,16 @@ function normalizeMessage(raw: RawMessage): InboundMessage {
   const target = extractTarget(raw);
   const clientConnectionId = extractClientConnectionId(raw, type, robotId);
 
+  const signature = typeof raw.signature === 'string' ? raw.signature : undefined;
+  const challengeType = typeof raw.challengeType === 'string' ? raw.challengeType : undefined;
   return {
     type,
     robotId,
     target,
     clientConnectionId,
     payload,
+    ...(signature !== undefined && { signature }),
+    ...(challengeType !== undefined && { challengeType }),
   };
 }
 
@@ -484,16 +817,16 @@ async function postTo(connectionId: string, message: unknown): Promise<void> {
                 Data: Buffer.from(JSON.stringify(message), 'utf-8'),
             }),
         );
-    } catch (err: any) {
+    } catch (err: unknown) {
         // Ignore when the socket is already closed
-        if (err?.name !== 'GoneException') {
+        if ((err as { name?: string })?.name !== 'GoneException') {
             console.warn('post_to_connection error', err)
         }
     }
 }
 
 /** DynamoDB Item shape for robot presence (subset we use when reusing a single read). */
-type RobotPresenceItem = { connectionId?: { S?: string }; ownerUserId?: { S?: string } } | undefined;
+type RobotPresenceItem = { connectionId?: { S?: string }; ownerUserId?: { S?: string }; status?: { S?: string } } | undefined;
 
 // If caller is the robot owner, a delegated operator, or in an admin group return True
 // Optional presenceItem: when provided (from a prior GetItem in the same request), avoids an extra DB read.
@@ -516,8 +849,8 @@ async function isOwnerOrAdmin(
     }
     const isAdmin = (claims.groups ?? []).some((g) => g === 'ADMINS' || g === 'admin');
     
-    // Check if user is owner
-    if (!!owner && owner === claims.sub) {
+    // Check if user is owner (ownerUserId may be Cognito sub or, for pending presence, cognitoUsername)
+    if (!!owner && (owner === claims.sub || owner === (claims as Claims & { 'cognito:username'?: string })['cognito:username'])) {
         return true;
     }
     
@@ -632,7 +965,7 @@ async function canAccessRobot(
         const userIdentifiers = [
             userEmailOrUsername?.toLowerCase(),
             claims.email?.toLowerCase(),
-            (claims as any)['cognito:username']?.toLowerCase(),
+            claims['cognito:username']?.toLowerCase(),
             claims.sub, // Last resort - unlikely to match but included for completeness
         ].filter(Boolean) as string[];
 
@@ -1085,6 +1418,160 @@ async function endUserSessions(userId: string): Promise<void> {
   }
 }
 
+/** Robot item shape (subset) when querying by robotId. */
+type RobotItemShape = { robotId?: { S?: string }; publicKey?: { S?: string }; partnerId?: { S?: string }; name?: { S?: string } } | undefined;
+
+/** Load Robot by robotId (GSI robotIdIndex). Returns undefined if not found. */
+async function getRobotByRobotId(robotId: string): Promise<RobotItemShape> {
+  if (!ROBOT_TABLE_NAME) return undefined;
+  const result = await db.send(
+    new QueryCommand({
+      TableName: ROBOT_TABLE_NAME,
+      IndexName: 'robotIdIndex',
+      KeyConditionExpression: 'robotId = :robotId',
+      ExpressionAttributeValues: { ':robotId': { S: robotId } },
+      Limit: 1,
+    }),
+  );
+  return result.Items?.[0] as RobotItemShape | undefined;
+}
+
+/** Resolve partner's owner identifier (Cognito sub or cognitoUsername) for presence. */
+async function getPartnerOwnerIdentifier(partnerId: string): Promise<string | undefined> {
+  if (!PARTNER_TABLE_NAME) return undefined;
+  try {
+    const res = await docClient.send(
+      new GetCommand({
+        TableName: PARTNER_TABLE_NAME,
+        Key: { id: partnerId },
+      }),
+    );
+    const item = res.Item as { owner?: string; cognitoUsername?: string } | undefined;
+    return item?.owner ?? item?.cognitoUsername;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Create a public key for Ed25519 verification. Accepts PEM or base64-encoded raw 32-byte key.
+ */
+function createEd25519PublicKey(publicKeyPemOrBase64: string): import('crypto').KeyObject | null {
+  const trimmed = publicKeyPemOrBase64.trim();
+  try {
+    if (trimmed.startsWith('-----')) {
+      return createPublicKey(trimmed);
+    }
+    const raw = Buffer.from(trimmed, 'base64');
+    if (raw.length === 32) {
+      // Node 18+ supports raw Ed25519; @types/node may not include format 'raw'
+      return createPublicKey({ key: raw, format: 'raw', type: 'ed25519' } as unknown as import('crypto').PublicKeyInput);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * XOR two buffers byte-wise. If b is shorter, cycles through b.
+ */
+function xorBuffers(a: Buffer, b: Buffer): Buffer {
+  const out = Buffer.alloc(a.length);
+  for (let i = 0; i < a.length; i++) {
+    out[i] = a[i] ^ b[i % b.length];
+  }
+  return out;
+}
+
+/**
+ * Verify PKI challenge-response signature (Phase 4). Returns true if valid.
+ * - plain: verify(signature, challengeBytes)
+ * - xor: derive payload = xor(challengeBytes, first 32 bytes of SHA256(connectionId + challengeBase64)), then verify(signature, payload)
+ */
+function verifyPkiSignature(
+  connectionId: string,
+  challengeBase64: string,
+  challengeType: string,
+  publicKeyPemOrBase64: string,
+  signatureBase64: string,
+): boolean {
+  const key = createEd25519PublicKey(publicKeyPemOrBase64);
+  if (!key) return false;
+  let challengeBytes: Buffer;
+  try {
+    challengeBytes = Buffer.from(challengeBase64, 'base64');
+  } catch {
+    return false;
+  }
+  let signature: Buffer;
+  try {
+    signature = Buffer.from(signatureBase64, 'base64');
+  } catch {
+    return false;
+  }
+  let dataToVerify: Buffer;
+  const ct = (challengeType || DEFAULT_CHALLENGE_TYPE).toLowerCase();
+  if (ct === 'plain') {
+    dataToVerify = challengeBytes;
+  } else if (ct === 'xor') {
+    const input = connectionId + challengeBase64;
+    const hash = createHash('sha256').update(input, 'utf8').digest();
+    const keyMaterial = hash.subarray(0, Math.min(32, challengeBytes.length));
+    dataToVerify = xorBuffers(challengeBytes, keyMaterial);
+  } else {
+    return false;
+  }
+  try {
+    return cryptoVerify(null, dataToVerify, key, signature);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Removes robot presence when a robot's WebSocket disconnects.
+ * This ensures the robot shows as "offline" immediately when it disconnects.
+ * Paginates the scan so all matching rows are removed even with a large table.
+ */
+async function cleanupRobotPresenceOnDisconnect(connectionId: string): Promise<void> {
+  try {
+    let lastEvaluatedKey: Record<string, import('@aws-sdk/client-dynamodb').AttributeValue> | undefined;
+
+    do {
+      const result = await db.send(
+        new ScanCommand({
+          TableName: ROBOT_PRESENCE_TABLE,
+          FilterExpression: 'connectionId = :connId',
+          ExpressionAttributeValues: { ':connId': { S: connectionId } },
+          ExclusiveStartKey: lastEvaluatedKey,
+          Limit: 100,
+        })
+      );
+
+      for (const item of result.Items || []) {
+        const robotId = item.robotId?.S;
+        if (robotId) {
+          await db.send(
+            new DeleteItemCommand({
+              TableName: ROBOT_PRESENCE_TABLE,
+              Key: { robotId: { S: robotId } },
+            })
+          );
+          console.log('[DISCONNECT] Removed robot presence:', { robotId, connectionId });
+        }
+      }
+
+      lastEvaluatedKey = result.LastEvaluatedKey;
+    } while (lastEvaluatedKey);
+  } catch (err) {
+    console.warn('[DISCONNECT] Failed to cleanup robot presence:', {
+      connectionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 async function endConnectionSessions(connectionId: string): Promise<void> {
   if (!SESSION_TABLE_NAME) return;
 
@@ -1150,43 +1637,62 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
     // Clients / robots will pass ?token=<JWT> in the URL
     const token = event.queryStringParameters?.token ?? null;
 
-    // DEVELOPMENT/TESTING MODE: Allow connections without token if ALLOW_NO_TOKEN is set
-    // ⚠️ WARNING: Only enable this for local development/testing. NEVER in production!
+    // No token: either dev mock user (ALLOW_NO_TOKEN) or PKI-pending connection for PKI auth path
     const allowNoToken = process.env.ALLOW_NO_TOKEN === 'true';
-    
-    if (allowNoToken && !token) {
-        console.warn('⚠️ DEVELOPMENT MODE: Allowing connection without token (ALLOW_NO_TOKEN=true)');
+    if (!token) {
+        if (allowNoToken) {
+            // DEVELOPMENT/TESTING MODE: mock user when ALLOW_NO_TOKEN is set
+            // ⚠️ WARNING: Only enable this for local development/testing. NEVER in production!
+            console.warn('⚠️ DEVELOPMENT MODE: Allowing connection without token (ALLOW_NO_TOKEN=true)');
+            try {
+                await db.send(
+                    new PutItemCommand({
+                        TableName: CONN_TABLE,
+                        Item: {
+                            connectionId: { S: connectionId },
+                            userId: { S: 'dev-test-user' },
+                            username: { S: 'dev-test-user' },
+                            groups: { S: 'PARTNERS' },
+                            kind: { S: 'client' },
+                            ts: { N: String(Date.now()) },
+                        },
+                    }),
+                );
+                console.log('[CONNECTION_SUCCESS]', { connectionId, mode: 'dev-no-token' });
+                try {
+                    await postFormatted(connectionId, { type: 'welcome', connectionId });
+                } catch (e) {
+                    console.warn('Failed to send welcome message:', e);
+                }
+            } catch (e) {
+                console.warn('Connect put_item error', e);
+                console.error('[CONNECTION_ERROR]', { connectionId, error: String(e) });
+            }
+            return { statusCode: 200, body: '' };
+        }
+        // PKI path: allow connection without JWT; robot will complete auth via register (Phase 3: challenge)
         try {
-            // Create a mock user for testing
             await db.send(
                 new PutItemCommand({
                     TableName: CONN_TABLE,
                     Item: {
-                        connectionId: { S: connectionId},
-                        userId: { S: 'dev-test-user' },
-                        username: { S: 'dev-test-user' },
-                        groups: { S: 'PARTNERS' }, // Give dev user PARTNERS group for testing
-                        kind: { S: 'client' },
+                        connectionId: { S: connectionId },
+                        kind: { S: 'client_pki_pending' },
                         ts: { N: String(Date.now()) },
                     },
                 }),
             );
-            console.log('[CONNECTION_SUCCESS]', { connectionId, mode: 'dev-no-token' });
-            
-            // Send connection ID back to client (dev mode)
+            console.log('[CONNECTION_SUCCESS]', { connectionId, kind: 'client_pki_pending' });
             try {
-                await postTo(connectionId, {
-                    type: 'welcome',
-                    connectionId: connectionId,
-                });
+                await postFormatted(connectionId, { type: 'welcome', connectionId });
             } catch (e) {
                 console.warn('Failed to send welcome message:', e);
             }
+            return { statusCode: 200, body: '' };
         } catch (e) {
-            console.warn('Connect put_item error', e);
-            console.error('[CONNECTION_ERROR]', { connectionId, error: String(e) });
+            console.warn('Connect put_item error (PKI-pending)', e);
+            return errorResponse(500, 'Connection failed');
         }
-        return {statusCode: 200, body: '' };
     }
 
     // Verify JWT token signature and expiration
@@ -1244,9 +1750,12 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
 
 async function onDisconnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
     const connectionId = event.requestContext.connectionId!;
-    
+
+    // Remove robot presence if this connection was a robot (ensures "offline" status)
+    await cleanupRobotPresenceOnDisconnect(connectionId);
+
     await endConnectionSessions(connectionId);
-    
+
     try {
         await db.send(
             new DeleteItemCommand({
@@ -1266,13 +1775,13 @@ async function onDisconnect(event: APIGatewayProxyEvent): Promise<APIGatewayProx
 // ---------------------------------
 
 async function handleRegister(
-  claims: { sub?: string; groups?: string[] },
+  claims: Claims,
   event: APIGatewayProxyEvent,
   msg: InboundMessage,
 ): Promise<APIGatewayProxyResult> {
-  const robotId = msg.robotId;
+  const robotId = msg.robotId?.trim();
   const connectionId = event.requestContext.connectionId!;
-  
+
   if (!robotId) {
     console.error('[REGISTER_ERROR]', {
       connectionId,
@@ -1282,9 +1791,149 @@ async function handleRegister(
     return errorResponse(400, 'robotId required');
   }
 
-  const caller = claims.sub!;
+  // PKI-pending path: connection has no JWT; robot must have publicKey on file
+  if (claims.pkiPending) {
+    const robotItem = await getRobotByRobotId(robotId);
+    if (!robotItem) {
+      console.warn('[REGISTER_PKI_PENDING] Robot not found', { connectionId, robotId });
+      return errorResponse(400, 'Robot not found');
+    }
+    const hasPublicKey = !!robotItem.publicKey?.S?.trim();
+    if (!hasPublicKey) {
+      console.warn('[REGISTER_PKI_PENDING] Robot has no publicKey, JWT required', { connectionId, robotId });
+      return errorResponse(400, 'This robot requires JWT authentication');
+    }
+    const partnerId = robotItem.partnerId?.S;
+    const ownerId = partnerId ? await getPartnerOwnerIdentifier(partnerId) : undefined;
+    if (!ownerId) {
+      console.warn('[REGISTER_PKI_PENDING] Could not resolve robot owner', { connectionId, robotId });
+      return errorResponse(500, 'Could not resolve robot owner');
+    }
+
+    // Phase 4: register with signature (response to pki_challenge) → verify and upgrade to online
+    if (msg.signature?.trim()) {
+      const connItem = await db.send(
+        new GetItemCommand({
+          TableName: CONN_TABLE,
+          Key: { connectionId: { S: connectionId } },
+          ProjectionExpression: 'pkiChallenge, pkiChallengeRobotId, pkiChallengeType',
+        }),
+      );
+      const storedChallenge = connItem.Item?.pkiChallenge?.S;
+      const storedRobotId = connItem.Item?.pkiChallengeRobotId?.S;
+      const storedType = connItem.Item?.pkiChallengeType?.S ?? DEFAULT_CHALLENGE_TYPE;
+      if (!storedChallenge?.trim() || storedRobotId !== robotId) {
+        console.warn('[REGISTER_PKI] Missing or wrong challenge', { connectionId, robotId });
+        return errorResponse(401, 'Invalid or expired PKI challenge');
+      }
+      const publicKey = robotItem.publicKey?.S?.trim();
+      if (!publicKey) return errorResponse(401, 'Robot has no public key');
+      const valid = verifyPkiSignature(connectionId, storedChallenge, storedType, publicKey, msg.signature.trim());
+      if (!valid) {
+        console.warn('[REGISTER_PKI] Signature verification failed', { connectionId, robotId });
+        return errorResponse(401, 'Invalid PKI signature');
+      }
+      try {
+        await db.send(
+          new UpdateItemCommand({
+            TableName: ROBOT_PRESENCE_TABLE,
+            Key: { robotId: { S: robotId } },
+            UpdateExpression: 'SET #status = :online, updatedAt = :ts',
+            ConditionExpression: 'connectionId = :conn',
+            ExpressionAttributeNames: { '#status': 'status' },
+            ExpressionAttributeValues: {
+              ':online': { S: 'online' },
+              ':ts': { N: String(Date.now()) },
+              ':conn': { S: connectionId },
+            },
+          }),
+        );
+      } catch (e: unknown) {
+        const err = e as { name?: string; code?: string };
+        if (err?.name === 'ConditionalCheckFailedException' || err?.code === 'ConditionalCheckFailedException') {
+          return errorResponse(401, 'Connection does not own this robot');
+        }
+        throw e;
+      }
+      await db.send(
+        new UpdateItemCommand({
+          TableName: CONN_TABLE,
+          Key: { connectionId: { S: connectionId } },
+          UpdateExpression: 'REMOVE pkiChallenge, pkiChallengeRobotId, pkiChallengeType, pkiChallengeTs',
+        }),
+      );
+      console.log('[REGISTER_PKI_VERIFIED]', { connectionId, robotId });
+      return { statusCode: 200, body: '' };
+    }
+
+    // First register: write presence as pending, store challenge on CONN, send pki_challenge
+    try {
+      await db.send(
+        new PutItemCommand({
+          TableName: ROBOT_PRESENCE_TABLE,
+          Item: {
+            robotId: { S: robotId },
+            ownerUserId: { S: ownerId },
+            connectionId: { S: connectionId },
+            status: { S: 'pending' },
+            updatedAt: { N: String(Date.now()) },
+          },
+          ConditionExpression: 'attribute_not_exists(robotId) OR connectionId = :conn',
+          ExpressionAttributeValues: {
+            ':conn': { S: connectionId },
+          },
+        }),
+      );
+    } catch (e: unknown) {
+      const err = e as { name?: string; Code?: string; code?: string };
+      if (err?.name === 'ConditionalCheckFailedException' || err?.code === 'ConditionalCheckFailedException') {
+        return errorResponse(409, 'Robot is already registered');
+      }
+      console.warn('Presence put_item error (pending)', e);
+      return errorResponse(500, 'DynamoDB error');
+    }
+    const nonce = randomBytes(PKI_CHALLENGE_NONCE_BYTES);
+    const challengeBase64 = nonce.toString('base64');
+    const challengeType = DEFAULT_CHALLENGE_TYPE;
+    await db.send(
+      new UpdateItemCommand({
+        TableName: CONN_TABLE,
+        Key: { connectionId: { S: connectionId } },
+        UpdateExpression: 'SET pkiChallenge = :c, pkiChallengeRobotId = :r, pkiChallengeType = :t, pkiChallengeTs = :ts',
+        ExpressionAttributeValues: {
+          ':c': { S: challengeBase64 },
+          ':r': { S: robotId },
+          ':t': { S: challengeType },
+          ':ts': { N: String(Date.now()) },
+        },
+      }),
+    );
+    try {
+      await postFormatted(connectionId, { type: 'pki_challenge', challenge: challengeBase64, challengeType });
+    } catch (e) {
+      console.warn('[REGISTER_PENDING] Failed to send pki_challenge', e);
+    }
+    console.log('[REGISTER_PENDING]', { connectionId, robotId, ownerId });
+    const monitorMessage = {
+      type: 'register',
+      robotId,
+      from: 'pki-pending',
+      _monitor: true,
+      _source: connectionId,
+      _direction: 'robot-to-server',
+      timestamp: new Date().toISOString(),
+    };
+    await notifyMonitors(robotId, monitorMessage);
+    return { statusCode: 200, body: '' };
+  }
+
+  // JWT path: require caller (claims.sub)
+  const caller = claims.sub;
+  if (!caller) {
+    return errorResponse(401, 'Unauthorized');
+  }
   const admin = isAdmin(claims.groups);
-  
+
   console.log('[REGISTER_PROCESSING]', {
     connectionId,
     robotId,
@@ -1299,29 +1948,28 @@ async function handleRegister(
         Item: {
           robotId: { S: robotId },
           ownerUserId: { S: caller },
-          connectionId: { S: event.requestContext.connectionId! },
+          connectionId: { S: connectionId },
           status: { S: 'online' },
           updatedAt: { N: String(Date.now()) },
         },
-        // Allow first-time claim OR re-claim by the same owner
         ConditionExpression: 'attribute_not_exists(ownerUserId) OR ownerUserId = :me',
         ExpressionAttributeValues: { ':me': { S: caller } },
       }),
     );
-  } catch (e: any) {
-    const code = e?.name || e?.Code || e?.code;
+  } catch (e: unknown) {
+    const err = e as { name?: string; Code?: string; code?: string };
+    const code = err?.name || err?.Code || err?.code;
     if (code === 'ConditionalCheckFailedException' && !admin) {
       return errorResponse(409, 'Robot is already registered by another owner');
     }
     if (code === 'ConditionalCheckFailedException' && admin) {
-      // Admin may force-claim
       await db.send(
         new PutItemCommand({
           TableName: ROBOT_PRESENCE_TABLE,
           Item: {
             robotId: { S: robotId },
             ownerUserId: { S: caller },
-            connectionId: { S: event.requestContext.connectionId! },
+            connectionId: { S: connectionId },
             status: { S: 'online' },
             updatedAt: { N: String(Date.now()) },
           },
@@ -1332,32 +1980,30 @@ async function handleRegister(
       console.error('[REGISTER_ERROR]', {
         connectionId,
         robotId,
-        error: String(e),
-        errorCode: e?.name || e?.Code || e?.code,
+        error: e instanceof Error ? e.message : String(e),
+        errorCode: err?.name || err?.Code || err?.code,
       });
       return errorResponse(500, 'DynamoDB error');
     }
   }
-  
+
   console.log('[REGISTER_SUCCESS]', {
     connectionId,
     robotId,
     userId: caller,
   });
 
-  // Notify monitoring connections about the registration
-  // Add _monitor flag and metadata to help logger identify and display the message
   const monitorMessage = {
     type: 'register',
     robotId: robotId,
     from: caller,
-    _monitor: true, // Flag to indicate this is a monitor copy
+    _monitor: true,
     _source: connectionId,
-    _direction: 'robot-to-server', // Robot is registering with the server
+    _direction: 'robot-to-server',
     timestamp: new Date().toISOString(),
   };
   await notifyMonitors(robotId, monitorMessage);
-  
+
   return { statusCode: 200, body: '' };
 }
 
@@ -1389,7 +2035,7 @@ async function handleMonitor(
     // Send error message to client through WebSocket (not just HTTP 403)
     // This ensures the user sees a clear error message
     try {
-      await postTo(connectionId, {
+      await postFormatted(connectionId, {
         type: 'error',
         error: 'access_denied',
         message: 'You are not authorized to monitor this robot. The robot owner may have restricted access to specific users. Please contact the robot owner if you believe this is an error.',
@@ -1438,7 +2084,7 @@ async function handleMonitor(
       });
 
     // Send confirmation to monitor
-    await postTo(connectionId, {
+    await postFormatted(connectionId, {
       type: 'monitor-confirmed',
       robotId: robotId,
       message: `Now monitoring messages for robot ${robotId}`,
@@ -1489,16 +2135,20 @@ async function getMonitoringConnections(robotId: string): Promise<string[]> {
   }
 }
 
+/** Minimal shape for logging message type. */
+type MessageWithType = { type?: string };
+
 // Helper function to send message copies to monitoring connections
 async function notifyMonitors(robotId: string, message: unknown): Promise<void> {
-  console.log('[NOTIFY_MONITORS_START]', { robotId, messageType: (message as any)?.type });
+  const msgType = (message as MessageWithType)?.type;
+  console.log('[NOTIFY_MONITORS_START]', { robotId, messageType: msgType });
   const monitorConnections = await getMonitoringConnections(robotId);
   
   if (monitorConnections.length === 0) {
     console.log('[NOTIFY_MONITORS_SKIP]', { 
       robotId, 
       reason: 'No monitoring connections found',
-      messageType: (message as any)?.type 
+      messageType: msgType 
     });
     return; // No monitors, skip
   }
@@ -1507,9 +2157,9 @@ async function notifyMonitors(robotId: string, message: unknown): Promise<void> 
   const notifyPromises = monitorConnections.map(async (connId) => {
     try {
       await postTo(connId, message);
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Ignore GoneException (connection already closed)
-      if (err?.name !== 'GoneException') {
+      if ((err as { name?: string })?.name !== 'GoneException') {
         console.warn('[MONITOR_NOTIFY_ERROR]', {
           connectionId: connId,
           robotId,
@@ -1562,14 +2212,11 @@ async function handleTakeover(
     return errorResponse(403, 'forbidden');
   }
 
-  await mgmt.send(new PostToConnectionCommand({
-    ConnectionId: robotConn,
-    Data: Buffer.from(JSON.stringify({
-      type: 'admin-takeover',
-      robotId,
-      by: caller,
-    }), 'utf-8'),
-  }));
+  await postFormatted(robotConn, {
+    type: 'admin-takeover',
+    robotId,
+    by: caller,
+  });
 
   return { statusCode: 200, body: 'ok' };
 }
@@ -1618,7 +2265,8 @@ async function handleSignal(
     const robotPresence = await db.send(new GetItemCommand({
       TableName: ROBOT_PRESENCE_TABLE,
       Key: { robotId: { S: robotId } },
-      ProjectionExpression: 'connectionId, ownerUserId',
+      ProjectionExpression: 'connectionId, ownerUserId, #status',
+      ExpressionAttributeNames: { '#status': 'status' },
     }));
     robotPresenceItem = robotPresence.Item as RobotPresenceItem;
     if (robotPresenceItem?.connectionId?.S === sourceConnId) {
@@ -1634,19 +2282,27 @@ async function handleSignal(
   }
   
   // If we detected it's from a robot but don't have clientConnectionId, try to get it from the original message
-  // This handles the case where normalizeMessage didn't extract it (e.g., if 'to' field wasn't recognized)
+  // This handles legacy 'to' field and new-protocol payload.connectionId
   if (isFromRobot && !msg.clientConnectionId) {
-    // Try to parse the original body to get the 'to' field
     try {
-      const rawBody = JSON.parse(event.body ?? '{}');
+      const rawBody = JSON.parse(event.body ?? '{}') as Record<string, unknown>;
       if (typeof rawBody.to === 'string' && rawBody.to.trim().length > 0 && rawBody.to !== robotId) {
-        // The 'to' field should be the client connection ID
         msg.clientConnectionId = rawBody.to.trim();
         console.log('[EXTRACTED_CLIENT_CONNECTION_ID]', {
           robotId,
           clientConnectionId: msg.clientConnectionId,
           fromOriginalTo: rawBody.to,
         });
+      } else {
+        const p = rawBody.payload as Record<string, unknown> | undefined;
+        if (p && typeof p.connectionId === 'string' && p.connectionId.trim().length > 0) {
+          msg.clientConnectionId = p.connectionId.trim();
+          console.log('[EXTRACTED_CLIENT_CONNECTION_ID]', {
+            robotId,
+            clientConnectionId: msg.clientConnectionId,
+            fromPayloadConnectionId: true,
+          });
+        }
       }
     } catch (e) {
       console.warn('Failed to extract clientConnectionId from original message:', e);
@@ -1699,7 +2355,7 @@ async function handleSignal(
       // Send error message to client through WebSocket (not just HTTP 403)
       // This ensures the user sees a clear error message
       try {
-        await postTo(sourceConnId, {
+        await postFormatted(sourceConnId, {
           type: 'error',
           error: 'access_denied',
           message: 'You are not authorized to access this robot. The robot owner may have restricted access to specific users. Please contact the robot owner if you believe this is an error.',
@@ -1729,7 +2385,7 @@ async function handleSignal(
         });
         
         try {
-          await postTo(sourceConnId, {
+          await postFormatted(sourceConnId, {
             type: 'session-locked',
             robotId,
             lockedBy: sessionLock.userEmail || 'Another user',
@@ -1781,9 +2437,11 @@ async function handleSignal(
     }
   } else {
     // Reuse presence we already fetched (same row as is-from-robot check).
+    // Only route to robot when status is 'online' (or missing for legacy rows). Pending = PKI not verified; do not send client traffic there.
+    const presenceStatus = robotPresenceItem?.status?.S;
     const robotConn = robotPresenceItem?.connectionId?.S;
-    if (!robotConn) {
-      return errorResponse(404, 'target offline');
+    if (!robotConn || presenceStatus === 'pending') {
+      return errorResponse(404, 'Robot is offline or not ready');
     }
     targetConn = robotConn;
   }
@@ -1852,6 +2510,11 @@ async function handleSignal(
     }
   });
 
+  // For new-protocol envelope: clientConnectionId is the client's WebSocket connection ID
+  if (outboundType === 'candidate') {
+    outbound.clientConnectionId = target === 'client' ? targetConn : sourceConnId;
+  }
+
   // Log packet forwarding for verification
   console.log('[PACKET_FORWARD]', {
     timestamp: new Date().toISOString(),
@@ -1877,10 +2540,8 @@ async function handleSignal(
   // Only attempt to send if we have a valid target connection (not a placeholder)
   if (targetConn && targetConn !== 'PLACEHOLDER_NO_CLIENT') {
     try {
-      await mgmt.send(new PostToConnectionCommand({
-        ConnectionId: targetConn,
-        Data: Buffer.from(JSON.stringify(outbound), 'utf-8'),
-      }));
+      // Use recipient's protocol so legacy robots get legacy format and new-protocol robots get envelope (signalling.offer). Mixed client/robot protocol combos work correctly.
+      await postFormatted(targetConn, outbound as InternalOutboundMessage);
       console.log('[PACKET_FORWARD_SUCCESS]', {
         targetConnectionId: targetConn,
         messageType: type,
@@ -1895,7 +2556,7 @@ async function handleSignal(
           const balanceCheck = await checkUserBalance(sessionUserId, robotId);
           if (!balanceCheck.sufficient) {
             try {
-              await postTo(sourceConnId, {
+              await postFormatted(sourceConnId, {
                 type: 'error',
                 error: 'insufficient_funds',
                 message: balanceCheck.error || 'Insufficient credits to start session',
@@ -1915,16 +2576,15 @@ async function handleSignal(
             }
           }
         } else {
-          // Send session ID to client when session is created
+          // Send session ID and robot protocol to client so it can choose data-channel message format (legacy vs envelope)
           try {
-            await mgmt.send(new PostToConnectionCommand({
-              ConnectionId: sourceConnId,
-              Data: Buffer.from(JSON.stringify({
-                type: 'session-created',
-                sessionId: sessionId,
-              }), 'utf-8'),
-            }));
-            console.log('[SESSION] Sent session ID to client:', { sessionId, connectionId: sourceConnId });
+            const robotProto = await getConnectionProtocol(targetConn);
+            await postFormatted(sourceConnId, {
+              type: 'session-created',
+              sessionId: sessionId,
+              robotProtocol: robotProto?.protocol ?? 'legacy',
+            });
+            console.log('[SESSION] Sent session ID to client:', { sessionId, connectionId: sourceConnId, robotProtocol: robotProto?.protocol });
           } catch (e) {
             console.warn('[SESSION] Failed to send session ID to client:', e);
           }
@@ -1986,17 +2646,25 @@ export async function handler(
   });
   
   let claims: Claims | null = null;
+  let connItem: GetItemCommandOutput | undefined;
   const token = event.queryStringParameters?.token ?? null; // Define token here for logging
   
   try {
-    const connItem = await db.send(new GetItemCommand({
+    connItem = await db.send(new GetItemCommand({
       TableName: CONN_TABLE,
       Key: { connectionId: { S: connectionId } },
-      ProjectionExpression: 'userId, username, email, groups',
+      ProjectionExpression: 'userId, username, email, groups, #protocol, #version, #kind, ts',
+      ExpressionAttributeNames: {
+        '#protocol': 'protocol',
+        '#version': 'version',
+        '#kind': 'kind',
+      },
     }));
     
     if (connItem.Item) {
       const userId = connItem.Item.userId?.S;
+      const kind = connItem.Item.kind?.S;
+      const connTs = connItem.Item.ts?.N;
       const username = connItem.Item.username?.S;
       const email = connItem.Item.email?.S;
       const groupsStr = connItem.Item.groups?.S || '';
@@ -2015,6 +2683,21 @@ export async function handler(
           username,
           groups,
         });
+      } else if (kind === 'client_pki_pending') {
+        // Close PKI-pending connections that have not completed auth within the timeout window
+        const tsMs = connTs ? parseInt(connTs, 10) : NaN;
+        const ageMs = Number.isFinite(tsMs) ? Date.now() - tsMs : 0;
+        if (Number.isFinite(tsMs) && ageMs > PKI_PENDING_TIMEOUT_MS) {
+          console.log('[PKI_PENDING_TIMEOUT]', { connectionId, ageMs, thresholdMs: PKI_PENDING_TIMEOUT_MS });
+          try {
+            await mgmt.send(new DeleteConnectionCommand({ ConnectionId: connectionId }));
+          } catch (e) {
+            console.warn('[PKI_PENDING_TIMEOUT] DeleteConnection failed (connection may already be closed):', e instanceof Error ? e.message : String(e));
+          }
+          return errorResponse(403, 'PKI authentication timeout');
+        }
+        claims = { pkiPending: true };
+        console.log('[AUTH_PKI_PENDING]', { connectionId });
       } else {
         console.warn('[AUTH_LOOKUP_MISSING_USERID]', {
           connectionId,
@@ -2036,12 +2719,10 @@ export async function handler(
   }
   
   // If we couldn't get claims from connection table, try token from query params (fallback)
-  // This handles edge cases where connection might not be in table yet
-  if (!claims?.sub) {
-    
+  // PKI-pending connections already have claims.pkiPending and must not be asked for JWT
+  if (!claims?.sub && !claims?.pkiPending) {
     // DEVELOPMENT/TESTING MODE: Allow messages without token if ALLOW_NO_TOKEN is set
     const allowNoToken = process.env.ALLOW_NO_TOKEN === 'true';
-    
     if (allowNoToken && !token) {
       console.warn('⚠️ DEVELOPMENT MODE: Allowing message without token (ALLOW_NO_TOKEN=true)');
       claims = {
@@ -2071,9 +2752,58 @@ export async function handler(
     return errorResponse(400, 'Invalid JSON');
   }
 
+  // Protocol detection and persistence (Stage 1: dual-protocol support)
+  const connProtocol = connItem?.Item?.protocol?.S as ConnectionProtocol | undefined;
+  const connVersion = connItem?.Item?.version?.S;
+  const messageIsNewProtocol = isNewProtocol(raw);
+  const messageVersion = extractNewProtocolVersion(raw);
+
+  // First message: detect and persist protocol
+  if (!connProtocol) {
+    if (messageIsNewProtocol) {
+      const supported = isSupportedProtocolVersion(messageVersion);
+      if (!supported) {
+        console.warn('[PROTOCOL_VERSION_UNSUPPORTED]', {
+          connectionId,
+          type: raw.type,
+          version: messageVersion ?? '(none)',
+          supported: SUPPORTED_PROTOCOL_VERSIONS,
+        });
+      }
+      await updateConnectionProtocol(connectionId, 'modulr-v0', messageVersion);
+    } else {
+      await updateConnectionProtocol(connectionId, 'legacy');
+    }
+  } else if (connProtocol === 'legacy' && messageIsNewProtocol) {
+    // Protocol mismatch: connection claimed legacy but sent new-format message
+    console.warn('[PROTOCOL_MISMATCH]', {
+      connectionId,
+      storedProtocol: connProtocol,
+      messageType: raw.type,
+      message: 'Connection claims legacy but sent new-protocol message; treating as new',
+    });
+  }
+
   // Normalize to our canonical shape
-  const msg = normalizeMessage(raw);
+  const msg: InboundMessage = messageIsNewProtocol
+    ? (normalizeNewProtocol(raw) ?? {})
+    : normalizeMessage(raw);
   const type = (msg.type || '').toString().trim().toLowerCase();
+
+  // Unknown new-protocol type: normalizeNewProtocol returned null
+  if (messageIsNewProtocol && !msg.type) {
+    const rawType = String(raw.type ?? '(unknown)');
+    console.warn('[UNKNOWN_NEW_PROTOCOL_TYPE]', {
+      connectionId,
+      type: rawType,
+      version: messageVersion,
+    });
+    return errorResponse(400, 'Unknown message type', {
+      type: 'signalling.error',
+      code: 'UNSUPPORTED_MESSAGE_TYPE',
+      message: `Unsupported new-protocol message type: ${rawType}`,
+    });
+  }
 
   // Log incoming message
   console.log('[MESSAGE_RECEIVED]', {
@@ -2085,11 +2815,17 @@ export async function handler(
     userId: claims?.sub,
   });
 
+  // PKI-pending connections may only send ready, register, or agent.pong until auth completes
+  if (claims?.pkiPending && type !== 'ready' && type !== 'register' && type !== 'agent.pong') {
+    console.warn('[PKI_PENDING_RESTRICTION]', { connectionId, type });
+    return errorResponse(401, 'Complete PKI authentication first');
+  }
+
   // Handle 'ready' message - send back connection ID
   if (raw?.type === 'ready') {
     console.log('[READY_MESSAGE]', { connectionId });
     try {
-      await postTo(connectionId, {
+      await postFormatted(connectionId, {
         type: 'welcome',
         connectionId: connectionId,
       });
@@ -2133,34 +2869,86 @@ export async function handler(
     return handleSignal(claims, event, msg);
   }
 
-  // Handle pong responses to keepalive pings
-  if (type === 'pong') {
-    // Access timestamp from raw message body if present
+  // Handle agent.pong (Modulr interface spec) - record lastPongAt for liveness checks
+  if (type === 'agent.pong') {
     const rawBody = event.body ? JSON.parse(event.body) : {};
-    console.log('[PONG_RECEIVED]', {
-      connectionId: event.requestContext.connectionId,
-      robotId: msg.robotId,
-      userId: claims?.sub,
-      timestamp: rawBody.timestamp || 'not provided',
-    });
-    // Pong messages don't need special handling - just acknowledge receipt
-    // The connection stays alive from receiving/sending the message
+    const now = Date.now();
+    try {
+      await db.send(
+        new UpdateItemCommand({
+          TableName: CONN_TABLE,
+          Key: { connectionId: { S: connectionId } },
+          UpdateExpression: 'SET lastPongAt = :ts',
+          ExpressionAttributeValues: { ':ts': { N: String(now) } },
+        })
+      );
+      console.log('[AGENT_PONG_RECEIVED]', {
+        connectionId,
+        correlationId: rawBody.correlationId,
+        lastPongAt: now,
+      });
+    } catch (err) {
+      console.warn('[AGENT_PONG_UPDATE_ERROR]', {
+        connectionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return successResponse({ type: 'agent.pong-acknowledged' });
+  }
+
+  // Handle legacy pong - also record lastPongAt for backward compatibility
+  if (type === 'pong') {
+    const rawBody = event.body ? JSON.parse(event.body) : {};
+    const now = Date.now();
+    try {
+      await db.send(
+        new UpdateItemCommand({
+          TableName: CONN_TABLE,
+          Key: { connectionId: { S: connectionId } },
+          UpdateExpression: 'SET lastPongAt = :ts',
+          ExpressionAttributeValues: { ':ts': { N: String(now) } },
+        })
+      );
+      console.log('[PONG_RECEIVED]', {
+        connectionId,
+        timestamp: rawBody.timestamp || 'not provided',
+        lastPongAt: now,
+      });
+    } catch (err) {
+      console.warn('[PONG_UPDATE_ERROR]', { connectionId, error: err instanceof Error ? err.message : String(err) });
+    }
     return successResponse({ type: 'pong-acknowledged' });
   }
 
-  // Handle ping messages (though these are typically sent via Management API, not through signaling)
-  if (type === 'ping') {
-    console.log('[PING_RECEIVED]', {
-      connectionId: event.requestContext.connectionId,
-      robotId: msg.robotId,
-      userId: claims?.sub,
-    });
-    // If a client/robot sends a ping, respond with pong
+  // Handle signalling.capabilities (Modulr interface spec) - return supported versions
+  if (type === 'signalling.capabilities') {
+    try {
+      await postFormatted(connectionId, {
+        type: 'signalling.capabilities',
+        supportedVersions: SUPPORTED_PROTOCOL_VERSIONS,
+      });
+      return successResponse({ type: 'signalling.capabilities-sent' });
+    } catch (e) {
+      console.warn('[CAPABILITIES_RESPONSE_ERROR]', { connectionId, error: e instanceof Error ? e.message : String(e) });
+      return errorResponse(500, 'Failed to send capabilities');
+    }
+  }
+
+  // Handle ping / agent.ping - respond with agent.pong (Modulr interface spec)
+  if (type === 'ping' || type === 'agent.ping') {
+    const rawBody = event.body ? JSON.parse(event.body) : {};
+    const pingId = rawBody.id ?? rawBody.timestamp ?? String(Date.now());
     try {
       await postTo(connectionId, {
-        type: 'pong',
-        timestamp: Date.now(),
-        keepalive: true,
+        type: 'agent.pong',
+        version: '0.0',
+        id: `${pingId}-pong`,
+        correlationId: pingId,
+        timestamp: new Date().toISOString(),
+      });
+      console.log('[PING_RESPONDED]', {
+        connectionId,
+        pingId,
       });
     } catch (err) {
       console.warn('[PING_RESPONSE_ERROR]', {
