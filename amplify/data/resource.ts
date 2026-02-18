@@ -308,28 +308,28 @@ const schema = a.schema({
     name: a.string().required(),
     description: a.string().required(),
     model: a.string(),
-    robotType: a.string(), // Robot type for default image: 'drone', 'humanoid', 'robodog', 'robot', 'rover', 'sub'
+    robotType: a.string(),
     robotId: a.string(),
     partnerId: a.id().required(),
     partner: a.belongsTo('Partner', 'partnerId'),
-    allowedUsers: a.string().array(), // Optional: if null/empty, robot is open access. If set, only listed users can access.
+    orgId: a.id(),
+    allowedUsers: a.string().array(),
     imageUrl: a.string(),
-    isVerified: a.boolean().default(false), // Only verified robots can upload custom images
-    // Pricing: Hourly rate in credits (before platform markup)
-    hourlyRateCredits: a.float().default(100), // Default 100 credits/hour (editable by robot owner)
-    // Location fields
+    isVerified: a.boolean().default(false),
+    hourlyRateCredits: a.float().default(100),
     city: a.string(),
     state: a.string(),
     country: a.string(),
     latitude: a.float(),
     longitude: a.float(),
-    publicKey: a.string(), // Optional: Ed25519 public key (base64 or hex) for PKI auth; 32-byte key
-    ratings: a.hasMany('RobotRating', 'robotUuid'), // Relationship to ratings
-    reservations: a.hasMany('RobotReservation', 'robotUuid'), // Relationship to reservations
-    availability: a.hasMany('RobotAvailability', 'robotUuid'), // Relationship to availability blocks
+    publicKey: a.string(),
+    ratings: a.hasMany('RobotRating', 'robotUuid'),
+    reservations: a.hasMany('RobotReservation', 'robotUuid'),
+    availability: a.hasMany('RobotAvailability', 'robotUuid'),
   })
     .secondaryIndexes(index => [
-      index("robotId").name("robotIdIndex"), // For lookups by robotId string (robot-XXXXXXXX)
+      index("robotId").name("robotIdIndex"),
+      index("orgId").name("orgIdIndex"),
     ])
     .authorization((allow) => [
       allow.owner().to(["update", "delete"]),
@@ -354,33 +354,33 @@ const schema = a.schema({
       allow.owner(), // Only the partner who owns the robot can manage operators
     ]),
 
-  // Session history for teleoperation sessions
   Session: a.model({
     id: a.id(),
-    userId: a.string().required(),        // Cognito username of the user
-    userEmail: a.string(),                // User's email for display
-    robotId: a.string().required(),       // Robot's robotId (robot-XXXXXXXX)
-    robotName: a.string(),                // Robot name for display
-    partnerId: a.string(),                // Partner who owns the robot
-    connectionId: a.string(),             // WebSocket connection ID (for cleanup on disconnect)
-    startedAt: a.datetime().required(),   // When session started
-    endedAt: a.datetime(),                // When session ended
-    durationSeconds: a.integer(),         // Total duration in seconds
-    status: a.string(),                   // 'active', 'completed', 'disconnected', 'insufficient_funds'
-    // Cost tracking
-    creditsCharged: a.float(),            // Total credits charged to user (includes markup) - final total when session ends
-    creditsDeductedSoFar: a.float(),     // Cumulative credits deducted during active session (real-time billing)
-    lastDeductionAt: a.datetime(),        // Timestamp of last per-minute deduction
-    partnerEarnings: a.float(),           // Credits earned by partner (after markup)
-    platformFee: a.float(),               // Platform markup in credits
-    hourlyRateCredits: a.float(),        // Robot's hourly rate at time of session (snapshot)
+    userId: a.string().required(),
+    userEmail: a.string(),
+    robotId: a.string().required(),
+    robotName: a.string(),
+    partnerId: a.string(),
+    orgId: a.id(),
+    connectionId: a.string(),
+    startedAt: a.datetime().required(),
+    endedAt: a.datetime(),
+    durationSeconds: a.integer(),
+    status: a.string(),
+    creditsCharged: a.float(),
+    creditsDeductedSoFar: a.float(),
+    lastDeductionAt: a.datetime(),
+    partnerEarnings: a.float(),
+    platformFee: a.float(),
+    hourlyRateCredits: a.float(),
   })
     .secondaryIndexes(index => [
       index("userId").name("userIdIndex"),
       index("partnerId").name("partnerIdIndex"),
       index("robotId").name("robotIdIndex"),
-      index("robotId").sortKeys(["startedAt"]).name("robotIdStartedAtIndex"), // Connection history: newest-first by startedAt
-      index("connectionId").name("connectionIdIndex") // GSI for fast lookup by connection ID (for cleanup on disconnect)
+      index("robotId").sortKeys(["startedAt"]).name("robotIdStartedAtIndex"),
+      index("connectionId").name("connectionIdIndex"),
+      index("orgId").name("orgIdIndex"),
     ])
     .authorization((allow) => [
       allow.owner().to(['create', 'read', 'update']),
@@ -525,6 +525,7 @@ const schema = a.schema({
     members: a.hasMany('OrgMember', 'orgId'),
     roles: a.hasMany('OrgRole', 'orgId'),
     invites: a.hasMany('OrgInvite', 'orgId'),
+    commands: a.hasMany('RosCommand', 'orgId'),
     createdAt: a.datetime().required(),
     updatedAt: a.datetime(),
   })
@@ -599,6 +600,122 @@ const schema = a.schema({
     ])
     .authorization(allow => [
       allow.authenticated().to(['read']),
+      allow.owner(),
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  OrgLog: a.model({
+    id: a.id(),
+    orgId: a.id().required(),
+    robotId: a.string(),
+    robotName: a.string(),
+    level: a.string().required(),
+    message: a.string().required(),
+    timestamp: a.datetime().required(),
+    source: a.string(),
+  })
+    .secondaryIndexes(index => [
+      index("orgId").sortKeys(["timestamp"]).name("orgIdTimestampIndex"),
+    ])
+    .authorization(allow => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  RosCommand: a.model({
+    id: a.id(),
+    orgId: a.id().required(),
+    org: a.belongsTo('Organisation', 'orgId'),
+    name: a.string().required(),
+    description: a.string(),
+    category: a.string().required(),
+    rosTopic: a.string().required(),
+    messageType: a.string().required(),
+    payloadTemplate: a.string().required(),
+    allowedRoleIds: a.string().array(),
+    targetRobotIds: a.string().array(),
+    isEnabled: a.boolean().default(true),
+    createdBy: a.string().required(),
+    executionCount: a.integer().default(0),
+    lastExecutedAt: a.datetime(),
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime(),
+  })
+    .secondaryIndexes(index => [
+      index("orgId").name("orgIdIndex"),
+    ])
+    .authorization(allow => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  DenyListEntry: a.model({
+    id: a.id(),
+    orgId: a.id().required(),
+    scope: a.string().required(),
+    value: a.string().required(),
+    reason: a.string().required(),
+    description: a.string(),
+    isActive: a.boolean().default(true),
+    createdBy: a.string().required(),
+    createdByEmail: a.string(),
+    expiresAt: a.datetime(),
+    createdAt: a.datetime().required(),
+  })
+    .secondaryIndexes(index => [
+      index("orgId").name("orgIdIndex"),
+    ])
+    .authorization(allow => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  NotificationRule: a.model({
+    id: a.id(),
+    orgId: a.id().required(),
+    name: a.string().required(),
+    description: a.string(),
+    type: a.string().required(),
+    event: a.string().required(),
+    channels: a.string().array(),
+    targetRoleIds: a.string().array(),
+    targetUserIds: a.string().array(),
+    isEnabled: a.boolean().default(true),
+    createdBy: a.string().required(),
+    triggerCount: a.integer().default(0),
+    lastTriggeredAt: a.datetime(),
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime(),
+  })
+    .secondaryIndexes(index => [
+      index("orgId").name("orgIdIndex"),
+    ])
+    .authorization(allow => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+      allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  OrgNotification: a.model({
+    id: a.id(),
+    orgId: a.id().required(),
+    ruleId: a.string(),
+    type: a.string().required(),
+    title: a.string().required(),
+    message: a.string().required(),
+    isRead: a.boolean().default(false),
+    robotId: a.string(),
+    robotName: a.string(),
+    createdAt: a.datetime().required(),
+  })
+    .secondaryIndexes(index => [
+      index("orgId").sortKeys(["createdAt"]).name("orgIdCreatedAtIndex"),
+    ])
+    .authorization(allow => [
+      allow.authenticated().to(['read', 'update']),
       allow.owner(),
       allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
     ]),

@@ -248,6 +248,7 @@ export const handler: Schema["manageOrganisationLambda"]["functionHandler"] = as
             isSystem: role.isSystem,
             priority: role.priority,
             createdAt: now,
+            updatedAt: now,
             owner: callerUsername,
           },
         })
@@ -265,6 +266,8 @@ export const handler: Schema["manageOrganisationLambda"]["functionHandler"] = as
           roleId: roleIds["Owner"],
           status: "active",
           joinedAt: now,
+          createdAt: now,
+          updatedAt: now,
           owner: callerUsername,
         },
       })

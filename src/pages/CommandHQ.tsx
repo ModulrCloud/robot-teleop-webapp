@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useNavigate } from "react-router-dom";
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useAuthStatus } from "../hooks/useAuthStatus";
@@ -36,6 +37,9 @@ import {
   faRunning,
   faThermometerHalf,
   faWrench,
+  faTimes,
+  faTrash,
+  faSpinner,
   faGlobe,
   faLaptop,
   faUser,
@@ -68,20 +72,12 @@ import type {
   CommandHQTab,
 } from "../types/organisation";
 import { PERMISSION_LABELS, ROS_COMMAND_CATEGORIES, DENY_SCOPES, DENY_REASONS, NOTIFICATION_EVENTS } from "../types/organisation";
-import {
-  getMockOrgById,
-  getMockRolesForOrg,
-  getMockMembersForOrg,
-  getMockInvitesForOrg,
-  getMockRobotsForOrg,
-  getMockSessionsForOrg,
-  getMockLogsForOrg,
-  getMockRosCommandsForOrg,
-  getMockDenyListForOrg,
-  getMockNotificationRulesForOrg,
-  getMockNotificationsForOrg,
-} from "../mocks/organisation";
+import { generateClient } from "aws-amplify/api";
+import type { Schema } from "../../amplify/data/resource";
+import { useOrganisationData } from "../hooks/useOrganisationData";
 import "./CommandHQ.css";
+
+const client = generateClient<Schema>();
 
 const TABS: { id: CommandHQTab; label: string; icon: typeof faSatelliteDish }[] = [
   { id: "overview", label: "Overview", icon: faSatelliteDish },
@@ -100,37 +96,11 @@ export const CommandHQ = () => {
   const { user } = useAuthStatus();
 
   const [activeTab, setActiveTab] = useState<CommandHQTab>("overview");
-  const [org, setOrg] = useState<Organisation | null>(null);
-  const [roles, setRoles] = useState<OrgRole[]>([]);
-  const [members, setMembers] = useState<OrgMember[]>([]);
-  const [invites, setInvites] = useState<OrgInvite[]>([]);
-  const [robots, setRobots] = useState<OrgRobot[]>([]);
-  const [sessions, setSessions] = useState<OrgSession[]>([]);
-  const [logs, setLogs] = useState<OrgLog[]>([]);
-  const [commands, setCommands] = useState<RosCommand[]>([]);
-  const [denyList, setDenyList] = useState<DenyListEntry[]>([]);
-  const [notifRules, setNotifRules] = useState<NotificationRule[]>([]);
-  const [notifications, setNotifications] = useState<OrgNotification[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!orgId) return;
-    const mockOrg = getMockOrgById(orgId);
-    if (mockOrg) {
-      setOrg(mockOrg);
-      setRoles(getMockRolesForOrg(orgId));
-      setMembers(getMockMembersForOrg(orgId));
-      setInvites(getMockInvitesForOrg(orgId));
-      setRobots(getMockRobotsForOrg(orgId));
-      setSessions(getMockSessionsForOrg(orgId));
-      setLogs(getMockLogsForOrg(orgId));
-      setCommands(getMockRosCommandsForOrg(orgId));
-      setDenyList(getMockDenyListForOrg(orgId));
-      setNotifRules(getMockNotificationRulesForOrg(orgId));
-      setNotifications(getMockNotificationsForOrg(orgId));
-    }
-    setLoading(false);
-  }, [orgId]);
+  const {
+    org, roles, members, invites, robots, sessions, logs,
+    commands, denyList, notifRules, notifications,
+    loading, error, refetch,
+  } = useOrganisationData(orgId);
 
   const currentMember = members.find((m) => m.userId === user?.username) || members[0];
   const currentRole = roles.find((r) => r.id === currentMember?.roleId);
@@ -150,12 +120,12 @@ export const CommandHQ = () => {
     );
   }
 
-  if (!org) {
+  if (error || !org) {
     return (
       <div className="chq-page">
         <div className="chq-center">
-          <h2>Organisation not found</h2>
-          <p className="chq-muted">This organisation doesn't exist or you don't have access.</p>
+          <h2>{error ? "Error Loading Organisation" : "Organisation not found"}</h2>
+          <p className="chq-muted">{error || "This organisation doesn't exist or you don't have access."}</p>
           <button onClick={() => navigate("/")} className="chq-btn chq-btn-outline">
             <FontAwesomeIcon icon={faArrowLeft} /> Back to Dashboard
           </button>
@@ -206,7 +176,7 @@ export const CommandHQ = () => {
         <main className="chq-main">
           {activeTab === "overview" && <OverviewTab org={org} members={members} roles={roles} invites={invites} />}
           {activeTab === "members" && (
-            <MembersTab members={members} invites={invites} roles={roles} robots={robots} org={org} canManage={hasPermission("members:manage")} />
+            <MembersTab members={members} invites={invites} roles={roles} robots={robots} org={org} canManage={hasPermission("members:manage")} onRefetch={refetch} />
           )}
           {activeTab === "robots" && (
             <RobotsTab robots={robots} members={members} canManage={hasPermission("robots:manage")} />
@@ -315,6 +285,7 @@ function MembersTab({
   robots,
   org,
   canManage,
+  onRefetch,
 }: {
   members: OrgMember[];
   invites: OrgInvite[];
@@ -322,11 +293,89 @@ function MembersTab({
   robots: OrgRobot[];
   org: Organisation;
   canManage: boolean;
+  onRefetch: () => void;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRoleId, setInviteRoleId] = useState("");
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteError, setInviteError] = useState("");
+  const [changeRoleMember, setChangeRoleMember] = useState<OrgMember | null>(null);
+  const [changeRoleId, setChangeRoleId] = useState("");
+  const [changeRoleLoading, setChangeRoleLoading] = useState(false);
+  const [changeRoleError, setChangeRoleError] = useState("");
+  const [removeMember, setRemoveMember] = useState<OrgMember | null>(null);
+  const [removeLoading, setRemoveLoading] = useState(false);
+  const [removeError, setRemoveError] = useState("");
 
-  const toggleExpand = (id: string) => {
-    setExpandedId(expandedId === id ? null : id);
+  const toggleExpand = (id: string) => setExpandedId(expandedId === id ? null : id);
+
+  const handleInvite = async () => {
+    if (!inviteEmail.trim() || !inviteRoleId) return;
+    setInviteLoading(true);
+    setInviteError("");
+    try {
+      const result = await client.mutations.manageOrgMemberLambda({
+        action: "invite",
+        orgId: org.id,
+        email: inviteEmail.trim(),
+        roleId: inviteRoleId,
+      });
+      const data = typeof result.data === "string" ? JSON.parse(result.data) : result.data;
+      if (data?.error) throw new Error(data.message || data.error);
+      setInviteOpen(false);
+      setInviteEmail("");
+      setInviteRoleId("");
+      onRefetch();
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : "Failed to send invite");
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
+  const handleChangeRole = async () => {
+    if (!changeRoleMember || !changeRoleId) return;
+    setChangeRoleLoading(true);
+    setChangeRoleError("");
+    try {
+      const result = await client.mutations.manageOrgMemberLambda({
+        action: "updateRole",
+        orgId: org.id,
+        targetUserId: changeRoleMember.userId,
+        roleId: changeRoleId,
+      });
+      const data = typeof result.data === "string" ? JSON.parse(result.data) : result.data;
+      if (data?.error) throw new Error(data.message || data.error);
+      setChangeRoleMember(null);
+      onRefetch();
+    } catch (err) {
+      setChangeRoleError(err instanceof Error ? err.message : "Failed to change role");
+    } finally {
+      setChangeRoleLoading(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    if (!removeMember) return;
+    setRemoveLoading(true);
+    setRemoveError("");
+    try {
+      const result = await client.mutations.manageOrgMemberLambda({
+        action: "remove",
+        orgId: org.id,
+        targetUserId: removeMember.userId,
+      });
+      const data = typeof result.data === "string" ? JSON.parse(result.data) : result.data;
+      if (data?.error) throw new Error(data.message || data.error);
+      setRemoveMember(null);
+      onRefetch();
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : "Failed to remove member");
+    } finally {
+      setRemoveLoading(false);
+    }
   };
 
   return (
@@ -337,7 +386,7 @@ function MembersTab({
           <p className="chq-subtitle">{members.length} of {org.maxMembers} members</p>
         </div>
         {canManage && (
-          <button className="chq-btn chq-btn-primary">
+          <button className="chq-btn chq-btn-primary" onClick={() => { setInviteOpen(true); setInviteError(""); }}>
             <FontAwesomeIcon icon={faUserPlus} /> Invite Member
           </button>
         )}
@@ -365,7 +414,7 @@ function MembersTab({
                     <td>
                       <div className="chq-cell-user">
                         <div className="chq-avatar-sm">{(m.userEmail || m.userId).charAt(0).toUpperCase()}</div>
-                        <span>{m.userEmail || m.userId}</span>
+                        <span title={m.userEmail || m.userId}>{m.userEmail || (m.userId.startsWith("google_") ? `Google User …${m.userId.slice(-6)}` : m.userId)}</span>
                       </div>
                     </td>
                     <td><span className={`chq-role-badge chq-priority-${role?.priority ?? 3}`}>{m.roleName}</span></td>
@@ -377,11 +426,18 @@ function MembersTab({
                     <td className="chq-dimmed">{new Date(m.joinedAt).toLocaleDateString()}</td>
                     {canManage && (
                       <td>
-                        {!isOwner && (
-                          <button className="chq-btn chq-btn-outline chq-btn-sm" onClick={(e) => e.stopPropagation()}>
-                            Change Role
-                          </button>
-                        )}
+                        <div style={{ display: "flex", gap: "0.4rem" }} onClick={(e) => e.stopPropagation()}>
+                          {!isOwner && (
+                            <button className="chq-btn chq-btn-outline chq-btn-sm" onClick={() => { setChangeRoleMember(m); setChangeRoleId(m.roleId); setChangeRoleError(""); }}>
+                              Change Role
+                            </button>
+                          )}
+                          {!isOwner && (
+                            <button className="chq-btn chq-btn-outline chq-btn-sm" style={{ color: "#f87171", borderColor: "rgba(248,113,113,0.2)" }} onClick={() => { setRemoveMember(m); setRemoveError(""); }}>
+                              <FontAwesomeIcon icon={faTrash} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -457,6 +513,94 @@ function MembersTab({
             </table>
           </div>
         </>
+      )}
+
+      {inviteOpen && createPortal(
+        <div className="chq-modal-overlay" onClick={() => setInviteOpen(false)}>
+          <div className="chq-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="chq-modal-header">
+              <h3>Invite Member</h3>
+              <button className="chq-modal-close" onClick={() => setInviteOpen(false)}><FontAwesomeIcon icon={faTimes} /></button>
+            </div>
+            <div className="chq-modal-body">
+              <div className="chq-form-group">
+                <label>Email Address</label>
+                <input className="chq-input" type="email" placeholder="user@example.com" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
+              </div>
+              <div className="chq-form-group">
+                <label>Role</label>
+                <select className="chq-select" value={inviteRoleId} onChange={(e) => setInviteRoleId(e.target.value)}>
+                  <option value="">Select a role</option>
+                  {roles.filter(r => r.priority > 0).map(r => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+              </div>
+              {inviteError && <div className="chq-modal-error">{inviteError}</div>}
+              <div className="chq-modal-actions">
+                <button className="chq-btn chq-btn-outline" onClick={() => setInviteOpen(false)}>Cancel</button>
+                <button className="chq-btn chq-btn-primary" onClick={handleInvite} disabled={inviteLoading || !inviteEmail.trim() || !inviteRoleId}>
+                  {inviteLoading ? <FontAwesomeIcon icon={faSpinner} spin /> : "Send Invite"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {changeRoleMember && createPortal(
+        <div className="chq-modal-overlay" onClick={() => setChangeRoleMember(null)}>
+          <div className="chq-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="chq-modal-header">
+              <h3>Change Role</h3>
+              <button className="chq-modal-close" onClick={() => setChangeRoleMember(null)}><FontAwesomeIcon icon={faTimes} /></button>
+            </div>
+            <div className="chq-modal-body">
+              <p className="chq-confirm-text">Change role for <strong>{changeRoleMember.userEmail || changeRoleMember.userId}</strong></p>
+              <div className="chq-form-group" style={{ marginTop: "0.75rem" }}>
+                <label>New Role</label>
+                <select className="chq-select" value={changeRoleId} onChange={(e) => setChangeRoleId(e.target.value)}>
+                  {roles.filter(r => r.priority > 0).map(r => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+              </div>
+              {changeRoleError && <div className="chq-modal-error">{changeRoleError}</div>}
+              <div className="chq-modal-actions">
+                <button className="chq-btn chq-btn-outline" onClick={() => setChangeRoleMember(null)}>Cancel</button>
+                <button className="chq-btn chq-btn-primary" onClick={handleChangeRole} disabled={changeRoleLoading || changeRoleId === changeRoleMember.roleId}>
+                  {changeRoleLoading ? <FontAwesomeIcon icon={faSpinner} spin /> : "Update Role"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {removeMember && createPortal(
+        <div className="chq-modal-overlay" onClick={() => setRemoveMember(null)}>
+          <div className="chq-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="chq-modal-header">
+              <h3>Remove Member</h3>
+              <button className="chq-modal-close" onClick={() => setRemoveMember(null)}><FontAwesomeIcon icon={faTimes} /></button>
+            </div>
+            <div className="chq-modal-body">
+              <p className="chq-confirm-text">
+                Are you sure you want to remove <strong>{removeMember.userEmail || removeMember.userId}</strong> from this organisation? They will lose access immediately.
+              </p>
+              {removeError && <div className="chq-modal-error">{removeError}</div>}
+              <div className="chq-modal-actions">
+                <button className="chq-btn chq-btn-outline" onClick={() => setRemoveMember(null)}>Cancel</button>
+                <button className="chq-btn chq-btn-primary" style={{ background: "#dc2626" }} onClick={handleRemove} disabled={removeLoading}>
+                  {removeLoading ? <FontAwesomeIcon icon={faSpinner} spin /> : "Remove Member"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
     </section>
   );

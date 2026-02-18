@@ -14,6 +14,7 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
 
   const robotTableName = process.env.ROBOT_TABLE_NAME!;
   const partnerTableName = process.env.PARTNER_TABLE_NAME!;
+  const orgTableName = process.env.ORG_TABLE;
 
   if (!robotTableName || !partnerTableName) {
     throw new Error("ROBOT_TABLE_NAME or PARTNER_TABLE_NAME environment variable not set");
@@ -36,6 +37,26 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
     throw new Error("No Partner found for this user");
   }
   const partnerId = partnerItem.id.S;
+
+  let orgId: string | undefined;
+  if (orgTableName) {
+    try {
+      const orgQuery = await ddbClient.send(
+        new QueryCommand({
+          TableName: orgTableName,
+          IndexName: "ownerIdIndex",
+          KeyConditionExpression: "ownerId = :uid",
+          ExpressionAttributeValues: {
+            ":uid": { S: identity.username },
+          },
+          Limit: 1,
+        })
+      );
+      orgId = orgQuery.Items?.[0]?.id?.S || undefined;
+    } catch {
+      // org lookup is best-effort
+    }
+  }
 
   const id = uuidv4();
   const robotIdValue = `robot-${id.substring(0, 8)}`;
@@ -69,6 +90,10 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
   };
 
   const item = putItemInput.Item as Record<string, unknown>;
+
+  if (orgId) {
+    item.orgId = { S: orgId };
+  }
 
   if (imageUrl) {
     item.imageUrl = { S: imageUrl };

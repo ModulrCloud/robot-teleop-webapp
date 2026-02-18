@@ -296,7 +296,8 @@ robotOperatorTable.grantReadData(signalingFunction); // Read-only for checking d
 tables.Robot.grantReadData(signalingFunction); // Read-only for checking ACLs and session metadata
 tables.Partner.grantReadData(signalingFunction); // Read-only for partnerId (Cognito username) on session creation
 tables.Session.grantReadWriteData(signalingFunction); // Read/write for session management
-tables.UserCredits.grantReadData(signalingFunction); // Read-only for balance checks
+tables.OrgLog.grantWriteData(signalingFunction);
+tables.UserCredits.grantReadData(signalingFunction);
 tables.PlatformSettings.grantReadData(signalingFunction); // Read-only for platform markup
 // Grant permission to query GSIs
 signalingFunction.addToRolePolicy(new PolicyStatement({
@@ -309,6 +310,7 @@ signalingFunction.addToRolePolicy(new PolicyStatement({
 signalingCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
 signalingCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
 signalingCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
+signalingCdkFunction.addEnvironment('ORG_LOG_TABLE', tables.OrgLog.tableName);
 
 // Grant DynamoDB permissions to revoke token function
 revokedTokensTable.grantWriteData(revokeTokenLambdaFunction);
@@ -343,6 +345,7 @@ backend.addOutput({
 backend.setUserGroupLambda.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 backend.setRobotLambda.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 backend.setRobotLambda.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+backend.setRobotLambda.addEnvironment('ORG_TABLE', tables.Organisation.tableName);
 backend.updateRobotLambda.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 backend.updateRobotLambda.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
 
@@ -391,7 +394,12 @@ setRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
     ]
 }));
 tables.Robot.grantWriteData(setRobotLambdaFunction);
-userInvalidationTable.grantReadData(setRobotLambdaFunction); // Read-only for checking session invalidation
+tables.Organisation.grantReadData(setRobotLambdaFunction);
+setRobotLambdaFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query'],
+  resources: [`${tables.Organisation.tableArn}/index/ownerIdIndex`],
+}));
+userInvalidationTable.grantReadData(setRobotLambdaFunction);
 const setRobotCdkFunction = setRobotLambdaFunction as CdkFunction;
 setRobotCdkFunction.addEnvironment('USER_INVALIDATION_TABLE', userInvalidationTable.tableName);
 tables.Partner.grantReadData(updateRobotLambdaFunction);

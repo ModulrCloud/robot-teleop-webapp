@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useAuthStatus } from "../hooks/useAuthStatus";
 import { usePageTitle } from "../hooks/usePageTitle";
@@ -20,13 +21,15 @@ import {
   faBuilding,
   faUsers,
   faPlus,
+  faTimes,
+  faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
 import { generateClient } from 'aws-amplify/api';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
 import "./Dashboard.css";
 import { PayoutPreferencesModal, type PayoutType } from "../components/PayoutPreferencesModal";
-import { getMockOrgsForUser } from "../mocks/organisation";
+import { fetchUserOrganisations } from "../hooks/useOrganisationData";
 import type { Organisation } from "../types/organisation";
 import { logger } from '../utils/logger';
 import outputs from '../../amplify_outputs.json';
@@ -84,7 +87,63 @@ export const Dashboard = () => {
   const [stripeConnectError, setStripeConnectError] = useState<string | null>(null);
   const [payoutModalOpen, setPayoutModalOpen] = useState(false);
 
-  const [userOrgs] = useState<Organisation[]>(getMockOrgsForUser());
+  const [userOrgs, setUserOrgs] = useState<Organisation[]>([]);
+  const [createOrgOpen, setCreateOrgOpen] = useState(false);
+  const [createOrgName, setCreateOrgName] = useState("");
+  const [createOrgSlug, setCreateOrgSlug] = useState("");
+  const [createOrgDesc, setCreateOrgDesc] = useState("");
+  const [createOrgLoading, setCreateOrgLoading] = useState(false);
+  const [createOrgError, setCreateOrgError] = useState("");
+
+  const reloadOrgs = useCallback(() => {
+    if (!user?.username) return;
+    fetchUserOrganisations(user.username).then(setUserOrgs).catch(err => {
+      logger.warn('Failed to load organisations:', err);
+    });
+  }, [user?.username]);
+
+  useEffect(() => {
+    reloadOrgs();
+  }, [reloadOrgs]);
+
+  const handleCreateOrg = async () => {
+    if (!createOrgName.trim() || !createOrgSlug.trim()) return;
+    setCreateOrgLoading(true);
+    setCreateOrgError("");
+    try {
+      const result = await client.mutations.manageOrganisationLambda({
+        action: "create",
+        name: createOrgName.trim(),
+        slug: createOrgSlug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+        description: createOrgDesc.trim() || undefined,
+      });
+      logger.log('createOrg result:', JSON.stringify(result));
+      if (result.errors?.length) {
+        throw new Error(result.errors[0].message || "Failed to create organisation");
+      }
+      let raw: unknown = result.data;
+      while (typeof raw === "string") raw = JSON.parse(raw);
+      const data = raw as Record<string, unknown> | null;
+      if (data?.error) throw new Error((data.message as string) || (data.error as string));
+
+      setCreateOrgOpen(false);
+      setCreateOrgName("");
+      setCreateOrgSlug("");
+      setCreateOrgDesc("");
+
+      const newOrgId = (data?.orgId || data?.id) as string | undefined;
+      logger.log('createOrg newOrgId:', newOrgId);
+      if (newOrgId) {
+        navigate(`/command-hq/${newOrgId}`);
+      } else {
+        setTimeout(reloadOrgs, 1000);
+      }
+    } catch (err) {
+      setCreateOrgError(err instanceof Error ? err.message : "Failed to create organisation");
+    } finally {
+      setCreateOrgLoading(false);
+    }
+  };
 
   const [systemStatus, setSystemStatus] = useState<SystemStatus>({
     webrtc: false,
@@ -653,7 +712,7 @@ export const Dashboard = () => {
       <div className="dashboard-section">
         <div className="section-header">
           <h2 className="section-title">Your Organisations</h2>
-          <button className="view-all-btn" onClick={() => {/* TODO: create org flow */}}>
+          <button className="view-all-btn" onClick={() => { setCreateOrgOpen(true); setCreateOrgError(""); }}>
             <FontAwesomeIcon icon={faPlus} /> Create
           </button>
         </div>
@@ -685,7 +744,7 @@ export const Dashboard = () => {
             <FontAwesomeIcon icon={faBuilding} className="empty-icon" />
             <h3>No Organisations Yet</h3>
             <p>Create an organisation to manage your team and robots.</p>
-            <button className="empty-action-btn" onClick={() => {/* TODO: create org flow */}}>
+            <button className="empty-action-btn" onClick={() => { setCreateOrgOpen(true); setCreateOrgError(""); }}>
               <FontAwesomeIcon icon={faPlus} /> Create Organisation
             </button>
           </div>
@@ -775,6 +834,61 @@ export const Dashboard = () => {
             />
           )}
         </div>
+      )}
+      {createOrgOpen && createPortal(
+        <div className="chq-modal-overlay" onClick={() => setCreateOrgOpen(false)}>
+          <div className="chq-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="chq-modal-header">
+              <h3>Create Organisation</h3>
+              <button className="chq-modal-close" onClick={() => setCreateOrgOpen(false)}><FontAwesomeIcon icon={faTimes} /></button>
+            </div>
+            <div className="chq-modal-body">
+              <div className="chq-form-group">
+                <label>Name</label>
+                <input
+                  className="chq-input"
+                  type="text"
+                  placeholder="My Organisation"
+                  value={createOrgName}
+                  onChange={(e) => {
+                    setCreateOrgName(e.target.value);
+                    if (!createOrgSlug || createOrgSlug === createOrgName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")) {
+                      setCreateOrgSlug(e.target.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""));
+                    }
+                  }}
+                />
+              </div>
+              <div className="chq-form-group">
+                <label>Slug</label>
+                <input
+                  className="chq-input"
+                  type="text"
+                  placeholder="my-organisation"
+                  value={createOrgSlug}
+                  onChange={(e) => setCreateOrgSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                />
+              </div>
+              <div className="chq-form-group">
+                <label>Description (optional)</label>
+                <input
+                  className="chq-input"
+                  type="text"
+                  placeholder="What does your organisation do?"
+                  value={createOrgDesc}
+                  onChange={(e) => setCreateOrgDesc(e.target.value)}
+                />
+              </div>
+              {createOrgError && <div className="chq-modal-error">{createOrgError}</div>}
+              <div className="chq-modal-actions">
+                <button className="chq-btn chq-btn-outline" onClick={() => setCreateOrgOpen(false)}>Cancel</button>
+                <button className="chq-btn chq-btn-primary" onClick={handleCreateOrg} disabled={createOrgLoading || !createOrgName.trim() || !createOrgSlug.trim()}>
+                  {createOrgLoading ? <FontAwesomeIcon icon={faSpinner} spin /> : "Create Organisation"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

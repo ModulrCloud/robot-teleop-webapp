@@ -25,7 +25,8 @@ const PARTNER_TABLE_NAME = process.env.PARTNER_TABLE_NAME;
 const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME; // For session lock enforcement
 const USER_CREDITS_TABLE = process.env.USER_CREDITS_TABLE;
 const PLATFORM_SETTINGS_TABLE = process.env.PLATFORM_SETTINGS_TABLE;
-const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!; // HTTPS management API
+const ORG_LOG_TABLE = process.env.ORG_LOG_TABLE;
+const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!;
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 
@@ -1194,6 +1195,35 @@ async function checkUserBalance(
   }
 }
 
+async function writeOrgLog(
+  orgId: string,
+  robotId: string | undefined,
+  robotName: string | undefined,
+  level: 'info' | 'warn' | 'error',
+  message: string,
+  source: string,
+): Promise<void> {
+  if (!ORG_LOG_TABLE || !orgId) return;
+  try {
+    await db.send(new PutItemCommand({
+      TableName: ORG_LOG_TABLE,
+      Item: {
+        id: { S: randomUUID() },
+        orgId: { S: orgId },
+        ...(robotId ? { robotId: { S: robotId } } : {}),
+        ...(robotName ? { robotName: { S: robotName } } : {}),
+        level: { S: level },
+        message: { S: message },
+        timestamp: { S: new Date().toISOString() },
+        source: { S: source },
+        __typename: { S: 'OrgLog' },
+      },
+    }));
+  } catch (err) {
+    console.error('[writeOrgLog] Failed to write org log:', err);
+  }
+}
+
 /**
  * Creates a new session for billing and tracking.
  * Checks for existing active sessions to prevent duplicates (e.g., from React StrictMode).
@@ -1253,9 +1283,9 @@ async function createSession(
   const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
   const now = new Date().toISOString();
 
-  // Resolve robot name and partner Cognito username for Session record
   let robotName = robotId;
   let partnerIdCognito: string | undefined;
+  let robotOrgId: string | undefined;
   if (ROBOT_TABLE_NAME) {
     try {
       const robotQuery = await db.send(new QueryCommand({
@@ -1268,6 +1298,7 @@ async function createSession(
       const robotItem = robotQuery.Items?.[0];
       if (robotItem) {
         robotName = robotItem.name?.S ?? robotId;
+        robotOrgId = robotItem.orgId?.S;
         const partnerTableId = robotItem.partnerId?.S;
         if (partnerTableId && PARTNER_TABLE_NAME) {
           const partnerResult = await docClient.send(new GetCommand({
@@ -1306,13 +1337,20 @@ async function createSession(
     if (partnerIdCognito) {
       sessionItem.partnerId = { S: partnerIdCognito };
     }
+    if (robotOrgId) {
+      sessionItem.orgId = { S: robotOrgId };
+    }
 
     await db.send(new PutItemCommand({
       TableName: SESSION_TABLE_NAME,
       Item: sessionItem,
     }));
 
-    console.log('[SESSION] Created new session:', { sessionId, userId, robotId, robotName, partnerId: partnerIdCognito ?? '(none)', connectionId });
+    if (robotOrgId) {
+      writeOrgLog(robotOrgId, robotId, robotName, 'info', `Session started by ${userEmail || userId}`, 'session');
+    }
+
+    console.log('[SESSION] Created new session:', { sessionId, userId, robotId, robotName, partnerId: partnerIdCognito ?? '(none)', orgId: robotOrgId ?? '(none)', connectionId });
     return sessionId;
   } catch (err) {
     console.error('[SESSION] Failed to create session:', {
@@ -1364,6 +1402,15 @@ async function endSession(sessionId: string): Promise<void> {
         ':now': { S: now },
       },
     }));
+
+    const sessionOrgId = session.orgId?.S;
+    const sessionRobotId = session.robotId?.S;
+    const sessionRobotName = session.robotName?.S;
+    const sessionUser = session.userEmail?.S || session.userId?.S || 'unknown';
+    const durationMin = Math.round(durationSeconds / 60);
+    if (sessionOrgId) {
+      writeOrgLog(sessionOrgId, sessionRobotId, sessionRobotName, 'info', `Session ended by ${sessionUser} (${durationMin}m)`, 'session');
+    }
 
     console.log('[SESSION] Ended session:', { sessionId, durationSeconds });
   } catch (err) {

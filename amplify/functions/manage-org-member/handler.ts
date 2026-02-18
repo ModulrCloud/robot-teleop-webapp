@@ -133,6 +133,7 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
           inviteCode,
           expiresAt: expiresAt.toISOString(),
           createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
           owner: callerUsername,
         },
       })
@@ -163,9 +164,9 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
         new UpdateCommand({
           TableName: ORG_INVITE_TABLE,
           Key: { id: invite.id },
-          UpdateExpression: "SET #s = :expired",
+          UpdateExpression: "SET #s = :expired, updatedAt = :now",
           ExpressionAttributeNames: { "#s": "status" },
-          ExpressionAttributeValues: { ":expired": "expired" },
+          ExpressionAttributeValues: { ":expired": "expired", ":now": new Date().toISOString() },
         })
       );
       throw new Error("Invite has expired");
@@ -195,6 +196,8 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
           roleId: invite.roleId,
           status: "active",
           joinedAt: now,
+          createdAt: now,
+          updatedAt: now,
           owner: callerUsername,
         },
       })
@@ -204,9 +207,9 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
       new UpdateCommand({
         TableName: ORG_INVITE_TABLE,
         Key: { id: invite.id },
-        UpdateExpression: "SET #s = :accepted",
+        UpdateExpression: "SET #s = :accepted, updatedAt = :now",
         ExpressionAttributeNames: { "#s": "status" },
-        ExpressionAttributeValues: { ":accepted": "accepted" },
+        ExpressionAttributeValues: { ":accepted": "accepted", ":now": new Date().toISOString() },
       })
     );
 
@@ -270,8 +273,8 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
       new UpdateCommand({
         TableName: ORG_MEMBER_TABLE,
         Key: { id: targetMembership.id },
-        UpdateExpression: "SET roleId = :roleId",
-        ExpressionAttributeValues: { ":roleId": roleId },
+        UpdateExpression: "SET roleId = :roleId, updatedAt = :now",
+        ExpressionAttributeValues: { ":roleId": roleId, ":now": new Date().toISOString() },
       })
     );
 
