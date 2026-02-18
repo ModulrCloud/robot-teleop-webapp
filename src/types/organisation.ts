@@ -100,6 +100,113 @@ export interface OrgLog {
   source: string;
 }
 
+export type RosCommandCategory = 'motion' | 'sensor' | 'system' | 'custom';
+
+export interface RosCommand {
+  id: string;
+  orgId: string;
+  name: string;
+  description: string | null;
+  category: RosCommandCategory;
+  rosTopic: string;
+  messageType: string;
+  payloadTemplate: string;
+  allowedRoleIds: string[];
+  targetRobotIds: string[];
+  isEnabled: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string | null;
+  lastExecutedAt: string | null;
+  executionCount: number;
+}
+
+export const ROS_COMMAND_CATEGORIES: { id: RosCommandCategory; label: string }[] = [
+  { id: 'motion', label: 'Motion' },
+  { id: 'sensor', label: 'Sensor' },
+  { id: 'system', label: 'System' },
+  { id: 'custom', label: 'Custom' },
+];
+
+export type DenyReason = 'abuse' | 'safety' | 'policy' | 'other';
+export type DenyScope = 'ip' | 'user' | 'device' | 'region';
+
+export interface DenyListEntry {
+  id: string;
+  orgId: string;
+  scope: DenyScope;
+  value: string;
+  reason: DenyReason;
+  description: string | null;
+  isActive: boolean;
+  createdBy: string;
+  createdByEmail: string;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+export const DENY_SCOPES: { id: DenyScope; label: string }[] = [
+  { id: 'ip', label: 'IP Address' },
+  { id: 'user', label: 'User' },
+  { id: 'device', label: 'Device' },
+  { id: 'region', label: 'Region' },
+];
+
+export const DENY_REASONS: { id: DenyReason; label: string }[] = [
+  { id: 'abuse', label: 'Abuse' },
+  { id: 'safety', label: 'Safety Violation' },
+  { id: 'policy', label: 'Policy Violation' },
+  { id: 'other', label: 'Other' },
+];
+
+export type NotificationType = 'alert' | 'info' | 'warning' | 'system';
+export type NotificationChannel = 'in_app' | 'email' | 'webhook';
+export type NotificationStatus = 'active' | 'paused';
+
+export interface NotificationRule {
+  id: string;
+  orgId: string;
+  name: string;
+  description: string | null;
+  type: NotificationType;
+  event: string;
+  channels: NotificationChannel[];
+  targetRoleIds: string[];
+  targetUserIds: string[];
+  isEnabled: boolean;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string | null;
+  lastTriggeredAt: string | null;
+  triggerCount: number;
+}
+
+export interface OrgNotification {
+  id: string;
+  orgId: string;
+  ruleId: string | null;
+  type: NotificationType;
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+  robotId: string | null;
+  robotName: string | null;
+}
+
+export const NOTIFICATION_EVENTS: { id: string; label: string }[] = [
+  { id: 'robot:disconnect', label: 'Robot Disconnected' },
+  { id: 'robot:error', label: 'Robot Error' },
+  { id: 'robot:battery_low', label: 'Battery Low' },
+  { id: 'session:start', label: 'Session Started' },
+  { id: 'session:end', label: 'Session Ended' },
+  { id: 'session:fail', label: 'Session Failed' },
+  { id: 'member:join', label: 'Member Joined' },
+  { id: 'member:leave', label: 'Member Left' },
+  { id: 'denylist:triggered', label: 'Deny List Triggered' },
+  { id: 'command:executed', label: 'Command Executed' },
+];
+
 export const ORG_PERMISSIONS = [
   'members:view',
   'members:manage',

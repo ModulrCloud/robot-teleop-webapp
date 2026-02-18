@@ -1058,6 +1058,597 @@
 
 /* ─── Responsive ─── */
 
+/* ─── ROS Commands Tab ─── */
+
+.chq-cmd-toolbar {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.chq-cmd-search {
+  flex: 1;
+  min-width: 180px;
+  padding: 0.55rem 0.85rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.92rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.chq-cmd-search:focus {
+  border-color: rgba(255, 193, 7, 0.4);
+}
+
+.chq-cmd-search::placeholder {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.chq-cmd-filter {
+  padding: 0.55rem 0.85rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.88rem;
+  outline: none;
+  cursor: pointer;
+  min-width: 140px;
+}
+
+.chq-cmd-filter option {
+  background: #10131a;
+}
+
+.chq-cmd-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.chq-cmd-card {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.chq-cmd-card:hover {
+  border-color: rgba(255, 193, 7, 0.18);
+}
+
+.chq-cmd-card--open {
+  border-color: rgba(255, 193, 7, 0.25);
+  box-shadow: 0 2px 16px rgba(255, 193, 7, 0.06);
+}
+
+.chq-cmd-card--disabled {
+  opacity: 0.55;
+}
+
+.chq-cmd-card--disabled:hover {
+  opacity: 0.7;
+}
+
+.chq-cmd-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.9rem 1.1rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chq-cmd-icon-wrap {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+}
+
+.chq-cmd-cat-icon {
+  font-size: 1.1rem;
+}
+
+.chq-cmd-cat--motion { color: #60a5fa; }
+.chq-cmd-cat--sensor { color: #34d399; }
+.chq-cmd-cat--system { color: #fbbf24; }
+.chq-cmd-cat--custom { color: #c084fc; }
+
+.chq-cmd-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.chq-cmd-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.15rem;
+}
+
+.chq-cmd-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chq-cmd-badge {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.chq-cmd-badge--disabled {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.chq-cmd-topic {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.35);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.chq-cmd-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.chq-cmd-meta-stat {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.35);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.chq-cmd-toggle {
+  background: none;
+  border: none;
+  padding: 0.25rem;
+  cursor: pointer;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.chq-cmd-on { color: #34d399; }
+.chq-cmd-off { color: rgba(255, 255, 255, 0.2); }
+
+/* Command Card Body */
+.chq-cmd-card-body {
+  padding: 0 1.1rem 1.1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  animation: chqCmdExpand 0.2s ease-out;
+}
+
+@keyframes chqCmdExpand {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.chq-cmd-desc {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.9rem;
+  margin: 0.85rem 0;
+  line-height: 1.5;
+}
+
+.chq-cmd-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.chq-cmd-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.chq-cmd-detail-label {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.chq-cmd-detail-value {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.75);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.chq-cmd-mono {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.85rem;
+}
+
+/* Payload Section */
+.chq-cmd-payload-section {
+  margin-bottom: 1rem;
+}
+
+.chq-cmd-payload-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+
+.chq-cmd-copy {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.78rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.chq-cmd-copy:hover {
+  color: #ffc107;
+  border-color: rgba(255, 193, 7, 0.3);
+}
+
+.chq-cmd-payload {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.82rem;
+  color: #34d399;
+  overflow-x: auto;
+  margin: 0;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+/* Tags Section */
+.chq-cmd-tags-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.chq-cmd-tag-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.chq-cmd-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chq-cmd-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chq-cmd-tag--robot { border-color: rgba(96, 165, 250, 0.2); color: #60a5fa; }
+.chq-cmd-tag--online { border-color: rgba(52, 211, 153, 0.3); color: #34d399; }
+.chq-cmd-tag--offline { border-color: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.35); }
+.chq-cmd-tag--error { border-color: rgba(248, 113, 113, 0.3); color: #f87171; }
+.chq-cmd-tag--role { border-color: rgba(192, 132, 252, 0.2); color: #c084fc; }
+
+/* Actions */
+.chq-cmd-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.chq-btn-danger {
+  color: #f87171 !important;
+  border-color: rgba(248, 113, 113, 0.2) !important;
+}
+
+.chq-btn-danger:hover {
+  background: rgba(248, 113, 113, 0.1) !important;
+}
+
+/* ─── Deny List Tab ─── */
+
+.chq-deny-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+
+.chq-deny-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.85rem 0.5rem;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+}
+
+.chq-deny-stat-icon {
+  font-size: 1.15rem;
+  margin-bottom: 0.15rem;
+}
+
+.chq-deny-stat-count {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.chq-deny-stat-label {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.chq-deny-scope--ip { color: #60a5fa; }
+.chq-deny-scope--user { color: #f87171; }
+.chq-deny-scope--device { color: #fbbf24; }
+.chq-deny-scope--region { color: #34d399; }
+
+.chq-deny-scope-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+  white-space: nowrap;
+}
+
+.chq-deny-value {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.9rem;
+  color: #fff;
+  font-weight: 500;
+}
+
+.chq-deny-desc {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0.2rem 0 0;
+  line-height: 1.4;
+}
+
+.chq-deny-reason {
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.chq-deny-reason--abuse { color: #f87171; background: rgba(248, 113, 113, 0.1); }
+.chq-deny-reason--safety { color: #fbbf24; background: rgba(251, 191, 36, 0.1); }
+.chq-deny-reason--policy { color: #60a5fa; background: rgba(96, 165, 250, 0.1); }
+.chq-deny-reason--other { color: rgba(255, 255, 255, 0.5); background: rgba(255, 255, 255, 0.04); }
+
+.chq-deny-permanent {
+  color: rgba(255, 255, 255, 0.25);
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+.chq-tr--inactive {
+  opacity: 0.45;
+}
+
+.chq-btn--active {
+  background: rgba(255, 193, 7, 0.1) !important;
+  border-color: rgba(255, 193, 7, 0.3) !important;
+  color: #ffc107 !important;
+}
+
+.chq-status--expired .svg-inline--fa { color: rgba(255, 255, 255, 0.25); }
+.chq-status--expired { color: rgba(255, 255, 255, 0.35); }
+
+/* ─── Notifications Tab ─── */
+
+.chq-notif-toggle {
+  display: flex;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+  padding: 3px;
+  margin-bottom: 1.25rem;
+  width: fit-content;
+}
+
+.chq-notif-toggle-btn {
+  padding: 0.5rem 1.1rem;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.15s;
+}
+
+.chq-notif-toggle-btn.active {
+  background: rgba(255, 193, 7, 0.12);
+  color: #ffc107;
+}
+
+.chq-notif-toggle-btn:hover:not(.active) {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.chq-notif-badge {
+  background: #f87171;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
+/* Notification Feed */
+.chq-notif-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.chq-notif-item {
+  display: flex;
+  gap: 0.85rem;
+  padding: 0.9rem 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  transition: border-color 0.15s;
+}
+
+.chq-notif-item:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.chq-notif-item--unread {
+  background: rgba(255, 193, 7, 0.03);
+  border-color: rgba(255, 193, 7, 0.12);
+}
+
+.chq-notif-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+  font-size: 1rem;
+}
+
+.chq-notif-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.chq-notif-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.2rem;
+}
+
+.chq-notif-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffc107;
+  flex-shrink: 0;
+}
+
+.chq-notif-message {
+  font-size: 0.87rem;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.45;
+  margin: 0 0 0.35rem;
+}
+
+.chq-notif-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.chq-notif-meta-tag {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.chq-notif-time {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+/* Notification Rule Channels */
+.chq-notif-channels {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.chq-notif-channel-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.75rem;
+}
+
+.chq-notif-channel-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  text-transform: capitalize;
+  margin-right: 0.5rem;
+}
+
 @media (max-width: 960px) {
   .chq-page {
     padding: 1.25rem 1rem 2rem;
@@ -1108,6 +1699,22 @@
   }
 
   .chq-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .chq-cmd-toolbar {
+    flex-direction: column;
+  }
+
+  .chq-cmd-filter {
+    min-width: 0;
+  }
+
+  .chq-cmd-detail-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .chq-deny-stats {
     grid-template-columns: repeat(2, 1fr);
   }
 

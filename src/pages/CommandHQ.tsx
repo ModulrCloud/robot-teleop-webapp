@@ -27,6 +27,28 @@ import {
   faProjectDiagram,
   faDotCircle,
   faList,
+  faCopy,
+  faPen,
+  faToggleOn,
+  faToggleOff,
+  faCode,
+  faCog,
+  faRunning,
+  faThermometerHalf,
+  faWrench,
+  faGlobe,
+  faLaptop,
+  faUser,
+  faMapMarkerAlt,
+  faClock,
+  faEnvelope,
+  faLink,
+  faEye,
+  faEyeSlash,
+  faBullhorn,
+  faInfoCircle,
+  faExclamationCircle,
+  faServer,
 } from "@fortawesome/free-solid-svg-icons";
 import type {
   Organisation,
@@ -36,9 +58,16 @@ import type {
   OrgRobot,
   OrgSession,
   OrgLog,
+  RosCommand,
+  RosCommandCategory,
+  DenyListEntry,
+  DenyScope,
+  NotificationRule,
+  OrgNotification,
+  NotificationType,
   CommandHQTab,
 } from "../types/organisation";
-import { PERMISSION_LABELS } from "../types/organisation";
+import { PERMISSION_LABELS, ROS_COMMAND_CATEGORIES, DENY_SCOPES, DENY_REASONS, NOTIFICATION_EVENTS } from "../types/organisation";
 import {
   getMockOrgById,
   getMockRolesForOrg,
@@ -47,6 +76,10 @@ import {
   getMockRobotsForOrg,
   getMockSessionsForOrg,
   getMockLogsForOrg,
+  getMockRosCommandsForOrg,
+  getMockDenyListForOrg,
+  getMockNotificationRulesForOrg,
+  getMockNotificationsForOrg,
 } from "../mocks/organisation";
 import "./CommandHQ.css";
 
@@ -74,6 +107,10 @@ export const CommandHQ = () => {
   const [robots, setRobots] = useState<OrgRobot[]>([]);
   const [sessions, setSessions] = useState<OrgSession[]>([]);
   const [logs, setLogs] = useState<OrgLog[]>([]);
+  const [commands, setCommands] = useState<RosCommand[]>([]);
+  const [denyList, setDenyList] = useState<DenyListEntry[]>([]);
+  const [notifRules, setNotifRules] = useState<NotificationRule[]>([]);
+  const [notifications, setNotifications] = useState<OrgNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -87,6 +124,10 @@ export const CommandHQ = () => {
       setRobots(getMockRobotsForOrg(orgId));
       setSessions(getMockSessionsForOrg(orgId));
       setLogs(getMockLogsForOrg(orgId));
+      setCommands(getMockRosCommandsForOrg(orgId));
+      setDenyList(getMockDenyListForOrg(orgId));
+      setNotifRules(getMockNotificationRulesForOrg(orgId));
+      setNotifications(getMockNotificationsForOrg(orgId));
     }
     setLoading(false);
   }, [orgId]);
@@ -171,7 +212,15 @@ export const CommandHQ = () => {
             <RobotsTab robots={robots} members={members} canManage={hasPermission("robots:manage")} />
           )}
           {activeTab === "sessions" && <SessionsTab sessions={sessions} logs={logs} />}
-          {!["overview", "members", "robots", "sessions"].includes(activeTab) && <PlaceholderTab tab={activeTab} />}
+          {activeTab === "commands" && (
+            <RosCommandsTab commands={commands} robots={robots} roles={roles} canManage={hasPermission("commands:manage")} canExecute={hasPermission("commands:execute")} />
+          )}
+          {activeTab === "denylist" && (
+            <DenyListTab entries={denyList} canManage={hasPermission("settings:manage")} />
+          )}
+          {activeTab === "notifications" && (
+            <NotificationsTab rules={notifRules} notifications={notifications} roles={roles} members={members} canManage={hasPermission("notifications:manage")} />
+          )}
         </main>
       </div>
     </div>
@@ -920,25 +969,575 @@ function SessionsTab({ sessions, logs }: { sessions: OrgSession[]; logs: OrgLog[
   );
 }
 
-function PlaceholderTab({ tab }: { tab: string }) {
-  const labels: Record<string, string> = {
-    robots: "Robots",
-    sessions: "Sessions & Logs",
-    commands: "ROS Commands",
-    roles: "Roles & Permissions",
-    denylist: "Deny List",
-    notifications: "Notifications",
-    settings: "Settings",
+const CATEGORY_ICONS: Record<RosCommandCategory, typeof faTerminal> = {
+  motion: faRunning,
+  sensor: faThermometerHalf,
+  system: faCog,
+  custom: faCode,
+};
+
+function RosCommandsTab({
+  commands,
+  robots,
+  roles,
+  canManage,
+  canExecute,
+}: {
+  commands: RosCommand[];
+  robots: OrgRobot[];
+  roles: OrgRole[];
+  canManage: boolean;
+  canExecute: boolean;
+}) {
+  const [filterCategory, setFilterCategory] = useState<RosCommandCategory | "all">("all");
+  const [filterRobot, setFilterRobot] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const filtered = commands.filter((cmd) => {
+    if (filterCategory !== "all" && cmd.category !== filterCategory) return false;
+    if (filterRobot !== "all" && !cmd.targetRobotIds.includes(filterRobot)) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      return cmd.name.toLowerCase().includes(q) || cmd.rosTopic.toLowerCase().includes(q) || (cmd.description || "").toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const enabledCount = commands.filter((c) => c.isEnabled).length;
+  const totalExecutions = commands.reduce((sum, c) => sum + c.executionCount, 0);
+
+  const handleCopyPayload = (cmd: RosCommand) => {
+    navigator.clipboard.writeText(cmd.payloadTemplate);
+    setCopiedId(cmd.id);
+    setTimeout(() => setCopiedId(null), 1500);
   };
+
+  const getRobotName = (id: string) => robots.find((r) => r.id === id)?.name || id;
+  const getRoleName = (id: string) => roles.find((r) => r.id === id)?.name || id;
+
   return (
     <section>
-      <div className="chq-center chq-center--compact">
-        <div className="chq-placeholder-icon">
-          <FontAwesomeIcon icon={faSatelliteDish} />
+      <div className="chq-section-header">
+        <div>
+          <h2>ROS Commands</h2>
+          <p className="chq-subtitle">{commands.length} commands &middot; {enabledCount} enabled &middot; {totalExecutions} total executions</p>
         </div>
-        <h3>{labels[tab] || tab}</h3>
-        <p className="chq-muted">This section is under development.</p>
+        {canManage && (
+          <button className="chq-btn chq-btn-primary">
+            <FontAwesomeIcon icon={faPlus} /> New Command
+          </button>
+        )}
       </div>
+
+      <div className="chq-cmd-toolbar">
+        <input
+          className="chq-cmd-search"
+          type="text"
+          placeholder="Search commands, topics..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        <select className="chq-cmd-filter" value={filterCategory} onChange={(e) => setFilterCategory(e.target.value as RosCommandCategory | "all")}>
+          <option value="all">All Categories</option>
+          {ROS_COMMAND_CATEGORIES.map((c) => (
+            <option key={c.id} value={c.id}>{c.label}</option>
+          ))}
+        </select>
+        <select className="chq-cmd-filter" value={filterRobot} onChange={(e) => setFilterRobot(e.target.value)}>
+          <option value="all">All Robots</option>
+          {robots.map((r) => (
+            <option key={r.id} value={r.id}>{r.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="chq-center chq-center--compact">
+          <p className="chq-muted">No commands match your filters.</p>
+        </div>
+      ) : (
+        <div className="chq-cmd-grid">
+          {filtered.map((cmd) => {
+            const isOpen = expandedId === cmd.id;
+            return (
+              <div key={cmd.id} className={`chq-cmd-card ${!cmd.isEnabled ? "chq-cmd-card--disabled" : ""} ${isOpen ? "chq-cmd-card--open" : ""}`}>
+                <div className="chq-cmd-card-header" onClick={() => setExpandedId(isOpen ? null : cmd.id)}>
+                  <div className="chq-cmd-icon-wrap">
+                    <FontAwesomeIcon icon={CATEGORY_ICONS[cmd.category]} className={`chq-cmd-cat-icon chq-cmd-cat--${cmd.category}`} />
+                  </div>
+                  <div className="chq-cmd-card-info">
+                    <div className="chq-cmd-card-title">
+                      <span className="chq-cmd-name">{cmd.name}</span>
+                      {!cmd.isEnabled && <span className="chq-cmd-badge chq-cmd-badge--disabled">Disabled</span>}
+                    </div>
+                    <span className="chq-cmd-topic"><FontAwesomeIcon icon={faTerminal} /> {cmd.rosTopic}</span>
+                  </div>
+                  <div className="chq-cmd-card-meta">
+                    <span className="chq-cmd-meta-stat" title="Executions"><FontAwesomeIcon icon={faPlay} /> {cmd.executionCount}</span>
+                    {canManage && (
+                      <button className="chq-cmd-toggle" title={cmd.isEnabled ? "Disable" : "Enable"} onClick={(e) => { e.stopPropagation(); }}>
+                        <FontAwesomeIcon icon={cmd.isEnabled ? faToggleOn : faToggleOff} className={cmd.isEnabled ? "chq-cmd-on" : "chq-cmd-off"} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {isOpen && (
+                  <div className="chq-cmd-card-body">
+                    {cmd.description && <p className="chq-cmd-desc">{cmd.description}</p>}
+
+                    <div className="chq-cmd-detail-grid">
+                      <div className="chq-cmd-detail">
+                        <span className="chq-cmd-detail-label">Message Type</span>
+                        <span className="chq-cmd-detail-value chq-cmd-mono">{cmd.messageType}</span>
+                      </div>
+                      <div className="chq-cmd-detail">
+                        <span className="chq-cmd-detail-label">Category</span>
+                        <span className="chq-cmd-detail-value">
+                          <FontAwesomeIcon icon={CATEGORY_ICONS[cmd.category]} className={`chq-cmd-cat--${cmd.category}`} /> {ROS_COMMAND_CATEGORIES.find((c) => c.id === cmd.category)?.label}
+                        </span>
+                      </div>
+                      <div className="chq-cmd-detail">
+                        <span className="chq-cmd-detail-label">Last Executed</span>
+                        <span className="chq-cmd-detail-value">{cmd.lastExecutedAt ? new Date(cmd.lastExecutedAt).toLocaleString() : "Never"}</span>
+                      </div>
+                      <div className="chq-cmd-detail">
+                        <span className="chq-cmd-detail-label">Created</span>
+                        <span className="chq-cmd-detail-value">{new Date(cmd.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+
+                    <div className="chq-cmd-payload-section">
+                      <div className="chq-cmd-payload-header">
+                        <span className="chq-cmd-detail-label">Payload Template</span>
+                        <button className="chq-cmd-copy" onClick={() => handleCopyPayload(cmd)} title="Copy payload">
+                          <FontAwesomeIcon icon={copiedId === cmd.id ? faCheck : faCopy} />
+                          {copiedId === cmd.id ? " Copied" : " Copy"}
+                        </button>
+                      </div>
+                      <pre className="chq-cmd-payload">{(() => {
+                        try { return JSON.stringify(JSON.parse(cmd.payloadTemplate), null, 2); } catch { return cmd.payloadTemplate; }
+                      })()}</pre>
+                    </div>
+
+                    <div className="chq-cmd-tags-section">
+                      <div className="chq-cmd-tag-group">
+                        <span className="chq-cmd-detail-label">Target Robots</span>
+                        <div className="chq-cmd-tags">
+                          {cmd.targetRobotIds.map((rid) => {
+                            const robot = robots.find((r) => r.id === rid);
+                            return (
+                              <span key={rid} className={`chq-cmd-tag chq-cmd-tag--robot ${robot ? `chq-cmd-tag--${robot.connectionStatus}` : ""}`}>
+                                <FontAwesomeIcon icon={faRobot} /> {getRobotName(rid)}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="chq-cmd-tag-group">
+                        <span className="chq-cmd-detail-label">Allowed Roles</span>
+                        <div className="chq-cmd-tags">
+                          {cmd.allowedRoleIds.map((rid) => (
+                            <span key={rid} className="chq-cmd-tag chq-cmd-tag--role">
+                              <FontAwesomeIcon icon={faShieldAlt} /> {getRoleName(rid)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="chq-cmd-actions">
+                      {canExecute && cmd.isEnabled && (
+                        <button className="chq-btn chq-btn-primary chq-btn-sm">
+                          <FontAwesomeIcon icon={faPlay} /> Execute
+                        </button>
+                      )}
+                      {canManage && (
+                        <>
+                          <button className="chq-btn chq-btn-outline chq-btn-sm">
+                            <FontAwesomeIcon icon={faPen} /> Edit
+                          </button>
+                          <button className="chq-btn chq-btn-outline chq-btn-sm chq-btn-danger">
+                            <FontAwesomeIcon icon={faWrench} /> Delete
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }
+
+const DENY_SCOPE_ICONS: Record<DenyScope, typeof faBan> = {
+  ip: faGlobe,
+  user: faUser,
+  device: faLaptop,
+  region: faMapMarkerAlt,
+};
+
+function DenyListTab({
+  entries,
+  canManage,
+}: {
+  entries: DenyListEntry[];
+  canManage: boolean;
+}) {
+  const [filterScope, setFilterScope] = useState<DenyScope | "all">("all");
+  const [showInactive, setShowInactive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filtered = entries.filter((e) => {
+    if (filterScope !== "all" && e.scope !== filterScope) return false;
+    if (!showInactive && !e.isActive) return false;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      return e.value.toLowerCase().includes(q) || (e.description || "").toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const activeCount = entries.filter((e) => e.isActive).length;
+  const scopeCounts = entries.reduce<Record<string, number>>((acc, e) => {
+    acc[e.scope] = (acc[e.scope] || 0) + 1;
+    return acc;
+  }, {});
+
+  return (
+    <section>
+      <div className="chq-section-header">
+        <div>
+          <h2>Deny List</h2>
+          <p className="chq-subtitle">{activeCount} active rules &middot; {entries.length} total</p>
+        </div>
+        {canManage && (
+          <button className="chq-btn chq-btn-primary">
+            <FontAwesomeIcon icon={faPlus} /> Add Rule
+          </button>
+        )}
+      </div>
+
+      <div className="chq-deny-stats">
+        {DENY_SCOPES.map((s) => (
+          <div key={s.id} className="chq-deny-stat">
+            <FontAwesomeIcon icon={DENY_SCOPE_ICONS[s.id]} className={`chq-deny-stat-icon chq-deny-scope--${s.id}`} />
+            <span className="chq-deny-stat-count">{scopeCounts[s.id] || 0}</span>
+            <span className="chq-deny-stat-label">{s.label}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="chq-cmd-toolbar">
+        <input
+          className="chq-cmd-search"
+          type="text"
+          placeholder="Search values, descriptions..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        <select className="chq-cmd-filter" value={filterScope} onChange={(e) => setFilterScope(e.target.value as DenyScope | "all")}>
+          <option value="all">All Scopes</option>
+          {DENY_SCOPES.map((s) => (
+            <option key={s.id} value={s.id}>{s.label}</option>
+          ))}
+        </select>
+        <button
+          className={`chq-btn chq-btn-outline chq-btn-sm ${showInactive ? "chq-btn--active" : ""}`}
+          onClick={() => setShowInactive(!showInactive)}
+        >
+          <FontAwesomeIcon icon={showInactive ? faEye : faEyeSlash} /> {showInactive ? "Showing Inactive" : "Show Inactive"}
+        </button>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="chq-center chq-center--compact">
+          <p className="chq-muted">No deny list entries match your filters.</p>
+        </div>
+      ) : (
+        <div className="chq-panel">
+          <table className="chq-table">
+            <thead>
+              <tr>
+                <th>Scope</th>
+                <th>Value</th>
+                <th>Reason</th>
+                <th>Status</th>
+                <th>Expires</th>
+                <th>Created</th>
+                {canManage && <th>Actions</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((entry) => (
+                <tr key={entry.id} className={`chq-tr ${!entry.isActive ? "chq-tr--inactive" : ""}`}>
+                  <td>
+                    <span className={`chq-deny-scope-tag chq-deny-scope--${entry.scope}`}>
+                      <FontAwesomeIcon icon={DENY_SCOPE_ICONS[entry.scope]} /> {DENY_SCOPES.find((s) => s.id === entry.scope)?.label}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="chq-deny-value">{entry.value}</span>
+                    {entry.description && <p className="chq-deny-desc">{entry.description}</p>}
+                  </td>
+                  <td>
+                    <span className={`chq-deny-reason chq-deny-reason--${entry.reason}`}>
+                      {DENY_REASONS.find((r) => r.id === entry.reason)?.label}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`chq-status ${entry.isActive ? "chq-status--active" : "chq-status--expired"}`}>
+                      <FontAwesomeIcon icon={faCircle} /> {entry.isActive ? "Active" : "Inactive"}
+                    </span>
+                  </td>
+                  <td className="chq-dimmed">
+                    {entry.expiresAt ? (
+                      <span><FontAwesomeIcon icon={faClock} /> {new Date(entry.expiresAt).toLocaleDateString()}</span>
+                    ) : (
+                      <span className="chq-deny-permanent">Permanent</span>
+                    )}
+                  </td>
+                  <td>
+                    <span className="chq-dimmed">{entry.createdByEmail}</span>
+                    <br />
+                    <span className="chq-dimmed" style={{ fontSize: "0.78rem" }}>{new Date(entry.createdAt).toLocaleDateString()}</span>
+                  </td>
+                  {canManage && (
+                    <td>
+                      <div style={{ display: "flex", gap: "0.4rem" }}>
+                        <button className="chq-btn chq-btn-outline chq-btn-sm">
+                          <FontAwesomeIcon icon={faPen} />
+                        </button>
+                        <button className="chq-btn chq-btn-outline chq-btn-sm chq-btn-danger">
+                          <FontAwesomeIcon icon={faBan} />
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+const NOTIF_TYPE_ICONS: Record<NotificationType, typeof faBell> = {
+  alert: faExclamationCircle,
+  warning: faExclamationTriangle,
+  info: faInfoCircle,
+  system: faServer,
+};
+
+const NOTIF_TYPE_COLORS: Record<NotificationType, string> = {
+  alert: "#f87171",
+  warning: "#fbbf24",
+  info: "#60a5fa",
+  system: "#a78bfa",
+};
+
+function NotificationsTab({
+  rules,
+  notifications,
+  roles,
+  members,
+  canManage,
+}: {
+  rules: NotificationRule[];
+  notifications: OrgNotification[];
+  roles: OrgRole[];
+  members: OrgMember[];
+  canManage: boolean;
+}) {
+  const [activeView, setActiveView] = useState<"feed" | "rules">("feed");
+  const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
+
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
+  const enabledRules = rules.filter((r) => r.isEnabled).length;
+
+  const getRoleName = (id: string) => roles.find((r) => r.id === id)?.name || id;
+  const getMemberEmail = (id: string) => members.find((m) => m.userId === id)?.userEmail || id;
+
+  const channelIcon = (ch: string) => {
+    if (ch === "email") return faEnvelope;
+    if (ch === "webhook") return faLink;
+    return faBell;
+  };
+
+  return (
+    <section>
+      <div className="chq-section-header">
+        <div>
+          <h2>Notifications</h2>
+          <p className="chq-subtitle">{unreadCount} unread &middot; {enabledRules} active rules</p>
+        </div>
+        {canManage && (
+          <button className="chq-btn chq-btn-primary">
+            <FontAwesomeIcon icon={faPlus} /> New Rule
+          </button>
+        )}
+      </div>
+
+      <div className="chq-notif-toggle">
+        <button className={`chq-notif-toggle-btn ${activeView === "feed" ? "active" : ""}`} onClick={() => setActiveView("feed")}>
+          <FontAwesomeIcon icon={faBell} /> Feed {unreadCount > 0 && <span className="chq-notif-badge">{unreadCount}</span>}
+        </button>
+        <button className={`chq-notif-toggle-btn ${activeView === "rules" ? "active" : ""}`} onClick={() => setActiveView("rules")}>
+          <FontAwesomeIcon icon={faCog} /> Rules
+        </button>
+      </div>
+
+      {activeView === "feed" && (
+        <div className="chq-notif-feed">
+          {notifications.length === 0 ? (
+            <div className="chq-center chq-center--compact">
+              <p className="chq-muted">No notifications yet.</p>
+            </div>
+          ) : (
+            notifications.map((n) => (
+              <div key={n.id} className={`chq-notif-item ${!n.isRead ? "chq-notif-item--unread" : ""}`}>
+                <div className="chq-notif-icon" style={{ color: NOTIF_TYPE_COLORS[n.type] }}>
+                  <FontAwesomeIcon icon={NOTIF_TYPE_ICONS[n.type]} />
+                </div>
+                <div className="chq-notif-content">
+                  <div className="chq-notif-title">
+                    {n.title}
+                    {!n.isRead && <span className="chq-notif-dot" />}
+                  </div>
+                  <p className="chq-notif-message">{n.message}</p>
+                  <div className="chq-notif-meta">
+                    {n.robotName && (
+                      <span className="chq-notif-meta-tag">
+                        <FontAwesomeIcon icon={faRobot} /> {n.robotName}
+                      </span>
+                    )}
+                    <span className="chq-notif-time">{new Date(n.createdAt).toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {activeView === "rules" && (
+        <div className="chq-cmd-grid">
+          {rules.map((rule) => {
+            const isOpen = expandedRuleId === rule.id;
+            return (
+              <div key={rule.id} className={`chq-cmd-card ${!rule.isEnabled ? "chq-cmd-card--disabled" : ""} ${isOpen ? "chq-cmd-card--open" : ""}`}>
+                <div className="chq-cmd-card-header" onClick={() => setExpandedRuleId(isOpen ? null : rule.id)}>
+                  <div className="chq-cmd-icon-wrap" style={{ color: NOTIF_TYPE_COLORS[rule.type] }}>
+                    <FontAwesomeIcon icon={NOTIF_TYPE_ICONS[rule.type]} />
+                  </div>
+                  <div className="chq-cmd-card-info">
+                    <div className="chq-cmd-card-title">
+                      <span className="chq-cmd-name">{rule.name}</span>
+                      {!rule.isEnabled && <span className="chq-cmd-badge chq-cmd-badge--disabled">Paused</span>}
+                    </div>
+                    <span className="chq-cmd-topic">
+                      <FontAwesomeIcon icon={faBullhorn} /> {NOTIFICATION_EVENTS.find((e) => e.id === rule.event)?.label || rule.event}
+                    </span>
+                  </div>
+                  <div className="chq-cmd-card-meta">
+                    <div className="chq-notif-channels">
+                      {rule.channels.map((ch) => (
+                        <span key={ch} className="chq-notif-channel-icon" title={ch}>
+                          <FontAwesomeIcon icon={channelIcon(ch)} />
+                        </span>
+                      ))}
+                    </div>
+                    <span className="chq-cmd-meta-stat" title="Times triggered"><FontAwesomeIcon icon={faBell} /> {rule.triggerCount}</span>
+                    {canManage && (
+                      <button className="chq-cmd-toggle" title={rule.isEnabled ? "Pause" : "Enable"} onClick={(e) => e.stopPropagation()}>
+                        <FontAwesomeIcon icon={rule.isEnabled ? faToggleOn : faToggleOff} className={rule.isEnabled ? "chq-cmd-on" : "chq-cmd-off"} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {isOpen && (
+                  <div className="chq-cmd-card-body">
+                    {rule.description && <p className="chq-cmd-desc">{rule.description}</p>}
+
+                    <div className="chq-cmd-detail-grid">
+                      <div className="chq-cmd-detail">
+                        <span className="chq-cmd-detail-label">Event Trigger</span>
+                        <span className="chq-cmd-detail-value">{NOTIFICATION_EVENTS.find((e) => e.id === rule.event)?.label || rule.event}</span>
+                      </div>
+                      <div className="chq-cmd-detail">
+                        <span className="chq-cmd-detail-label">Channels</span>
+                        <span className="chq-cmd-detail-value">
+                          {rule.channels.map((ch) => (
+                            <span key={ch} className="chq-notif-channel-tag">
+                              <FontAwesomeIcon icon={channelIcon(ch)} /> {ch.replace("_", " ")}
+                            </span>
+                          ))}
+                        </span>
+                      </div>
+                      <div className="chq-cmd-detail">
+                        <span className="chq-cmd-detail-label">Last Triggered</span>
+                        <span className="chq-cmd-detail-value">{rule.lastTriggeredAt ? new Date(rule.lastTriggeredAt).toLocaleString() : "Never"}</span>
+                      </div>
+                      <div className="chq-cmd-detail">
+                        <span className="chq-cmd-detail-label">Created</span>
+                        <span className="chq-cmd-detail-value">{new Date(rule.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+
+                    <div className="chq-cmd-tags-section">
+                      {rule.targetRoleIds.length > 0 && (
+                        <div className="chq-cmd-tag-group">
+                          <span className="chq-cmd-detail-label">Notify Roles</span>
+                          <div className="chq-cmd-tags">
+                            {rule.targetRoleIds.map((rid) => (
+                              <span key={rid} className="chq-cmd-tag chq-cmd-tag--role">
+                                <FontAwesomeIcon icon={faShieldAlt} /> {getRoleName(rid)}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {rule.targetUserIds.length > 0 && (
+                        <div className="chq-cmd-tag-group">
+                          <span className="chq-cmd-detail-label">Notify Users</span>
+                          <div className="chq-cmd-tags">
+                            {rule.targetUserIds.map((uid) => (
+                              <span key={uid} className="chq-cmd-tag">
+                                <FontAwesomeIcon icon={faUser} /> {getMemberEmail(uid)}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {canManage && (
+                      <div className="chq-cmd-actions">
+                        <button className="chq-btn chq-btn-outline chq-btn-sm">
+                          <FontAwesomeIcon icon={faPen} /> Edit
+                        </button>
+                        <button className="chq-btn chq-btn-outline chq-btn-sm chq-btn-danger">
+                          <FontAwesomeIcon icon={faBan} /> Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
