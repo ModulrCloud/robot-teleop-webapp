@@ -49,6 +49,12 @@ import {
   faInfoCircle,
   faExclamationCircle,
   faServer,
+  faGamepad,
+  faKeyboard,
+  faSlidersH,
+  faMapMarkedAlt,
+  faCrosshairs,
+  faArrowsAlt,
 } from "@fortawesome/free-solid-svg-icons";
 import type {
   Organisation,
@@ -66,6 +72,10 @@ import type {
   OrgNotification,
   NotificationType,
   CommandHQTab,
+  CustomisationSubTab,
+  ControllerConfig,
+  LocationMapping,
+  KeyboardMapping,
 } from "../types/organisation";
 import { PERMISSION_LABELS, ROS_COMMAND_CATEGORIES, DENY_SCOPES, DENY_REASONS, NOTIFICATION_EVENTS } from "../types/organisation";
 import {
@@ -80,6 +90,9 @@ import {
   getMockDenyListForOrg,
   getMockNotificationRulesForOrg,
   getMockNotificationsForOrg,
+  getMockControllerConfigsForOrg,
+  getMockLocationMappingsForOrg,
+  getMockKeyboardMappingsForOrg,
 } from "../mocks/organisation";
 import "./CommandHQ.css";
 
@@ -88,7 +101,7 @@ const TABS: { id: CommandHQTab; label: string; icon: typeof faSatelliteDish }[] 
   { id: "members", label: "Members", icon: faUsers },
   { id: "robots", label: "Robots", icon: faRobot },
   { id: "sessions", label: "Sessions & Logs", icon: faHistory },
-  { id: "commands", label: "ROS Commands", icon: faTerminal },
+  { id: "customisations", label: "Customisations", icon: faSlidersH },
   { id: "denylist", label: "Deny List", icon: faBan },
   { id: "notifications", label: "Notifications", icon: faBell },
 ];
@@ -108,6 +121,9 @@ export const CommandHQ = () => {
   const [sessions, setSessions] = useState<OrgSession[]>([]);
   const [logs, setLogs] = useState<OrgLog[]>([]);
   const [commands, setCommands] = useState<RosCommand[]>([]);
+  const [controllerConfigs, setControllerConfigs] = useState<ControllerConfig[]>([]);
+  const [locationMappings, setLocationMappings] = useState<LocationMapping[]>([]);
+  const [keyboardMappings, setKeyboardMappings] = useState<KeyboardMapping[]>([]);
   const [denyList, setDenyList] = useState<DenyListEntry[]>([]);
   const [notifRules, setNotifRules] = useState<NotificationRule[]>([]);
   const [notifications, setNotifications] = useState<OrgNotification[]>([]);
@@ -125,6 +141,9 @@ export const CommandHQ = () => {
       setSessions(getMockSessionsForOrg(orgId));
       setLogs(getMockLogsForOrg(orgId));
       setCommands(getMockRosCommandsForOrg(orgId));
+      setControllerConfigs(getMockControllerConfigsForOrg(orgId));
+      setLocationMappings(getMockLocationMappingsForOrg(orgId));
+      setKeyboardMappings(getMockKeyboardMappingsForOrg(orgId));
       setDenyList(getMockDenyListForOrg(orgId));
       setNotifRules(getMockNotificationRulesForOrg(orgId));
       setNotifications(getMockNotificationsForOrg(orgId));
@@ -212,8 +231,12 @@ export const CommandHQ = () => {
             <RobotsTab robots={robots} members={members} canManage={hasPermission("robots:manage")} />
           )}
           {activeTab === "sessions" && <SessionsTab sessions={sessions} logs={logs} />}
-          {activeTab === "commands" && (
-            <RosCommandsTab commands={commands} robots={robots} roles={roles} canManage={hasPermission("commands:manage")} canExecute={hasPermission("commands:execute")} />
+          {activeTab === "customisations" && (
+            <CustomisationsTab
+              commands={commands} robots={robots} roles={roles}
+              controllerConfigs={controllerConfigs} locationMappings={locationMappings} keyboardMappings={keyboardMappings}
+              canManage={hasPermission("commands:manage")} canExecute={hasPermission("commands:execute")}
+            />
           )}
           {activeTab === "denylist" && (
             <DenyListTab entries={denyList} canManage={hasPermission("settings:manage")} />
@@ -969,6 +992,348 @@ function SessionsTab({ sessions, logs }: { sessions: OrgSession[]; logs: OrgLog[
   );
 }
 
+const CUSTOM_SUBTABS: { id: CustomisationSubTab; label: string; icon: typeof faTerminal }[] = [
+  { id: 'ros-commands', label: 'ROS Commands', icon: faTerminal },
+  { id: 'controller', label: 'Controller', icon: faGamepad },
+  { id: 'locations', label: 'Locations', icon: faMapMarkedAlt },
+  { id: 'keyboard', label: 'Keyboard', icon: faKeyboard },
+];
+
+function CustomisationsTab({
+  commands, robots, roles, controllerConfigs, locationMappings, keyboardMappings, canManage, canExecute,
+}: {
+  commands: RosCommand[];
+  robots: OrgRobot[];
+  roles: OrgRole[];
+  controllerConfigs: ControllerConfig[];
+  locationMappings: LocationMapping[];
+  keyboardMappings: KeyboardMapping[];
+  canManage: boolean;
+  canExecute: boolean;
+}) {
+  const [subTab, setSubTab] = useState<CustomisationSubTab>('ros-commands');
+
+  return (
+    <section>
+      <div className="chq-section-header">
+        <div>
+          <h2>Customisations</h2>
+          <p className="chq-subtitle">Configure commands, controllers, locations, and keyboard bindings</p>
+        </div>
+      </div>
+
+      <div className="chq-custom-subtabs">
+        {CUSTOM_SUBTABS.map((st) => (
+          <button
+            key={st.id}
+            className={`chq-custom-subtab ${subTab === st.id ? 'active' : ''}`}
+            onClick={() => setSubTab(st.id)}
+          >
+            <FontAwesomeIcon icon={st.icon} />
+            <span>{st.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'ros-commands' && (
+        <RosCommandsSubTab commands={commands} robots={robots} roles={roles} canManage={canManage} canExecute={canExecute} />
+      )}
+      {subTab === 'controller' && (
+        <ControllerConfigSubTab configs={controllerConfigs} robots={robots} canManage={canManage} />
+      )}
+      {subTab === 'locations' && (
+        <LocationMappingSubTab locations={locationMappings} robots={robots} canManage={canManage} />
+      )}
+      {subTab === 'keyboard' && (
+        <KeyboardMappingSubTab mappings={keyboardMappings} robots={robots} canManage={canManage} />
+      )}
+    </section>
+  );
+}
+
+function ControllerConfigSubTab({ configs, robots, canManage }: { configs: ControllerConfig[]; robots: OrgRobot[]; canManage: boolean }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const TYPE_ICONS: Record<string, typeof faGamepad> = { gamepad: faGamepad, joystick: faArrowsAlt, custom: faCog };
+
+  return (
+    <div className="chq-custom-section">
+      <div className="chq-custom-section-bar">
+        <span className="chq-custom-section-count">{configs.length} configurations</span>
+        {canManage && (
+          <button className="chq-btn chq-btn-primary chq-btn-sm"><FontAwesomeIcon icon={faPlus} /> New Config</button>
+        )}
+      </div>
+
+      <div className="chq-cmd-grid">
+        {configs.map((cfg) => {
+          const isOpen = expandedId === cfg.id;
+          return (
+            <div key={cfg.id} className={`chq-cmd-card ${isOpen ? 'chq-cmd-card--open' : ''}`}>
+              <div className="chq-cmd-card-header" onClick={() => setExpandedId(isOpen ? null : cfg.id)}>
+                <div className="chq-cmd-icon-wrap">
+                  <FontAwesomeIcon icon={TYPE_ICONS[cfg.controllerType] || faGamepad} className="chq-cmd-cat-icon chq-cmd-cat--motion" />
+                </div>
+                <div className="chq-cmd-card-info">
+                  <div className="chq-cmd-card-title">
+                    <span className="chq-cmd-name">{cfg.name}</span>
+                    {cfg.isDefault && <span className="chq-cmd-badge chq-cmd-badge--default">Default</span>}
+                  </div>
+                  <span className="chq-cmd-topic"><FontAwesomeIcon icon={faGamepad} /> {cfg.controllerType}</span>
+                </div>
+                <div className="chq-cmd-card-meta">
+                  <span className="chq-cmd-meta-stat" title="Axes"><FontAwesomeIcon icon={faArrowsAlt} /> {Object.keys(cfg.axisMapping).length}</span>
+                  <span className="chq-cmd-meta-stat" title="Buttons"><FontAwesomeIcon icon={faCrosshairs} /> {Object.keys(cfg.buttonMapping).length}</span>
+                </div>
+              </div>
+
+              {isOpen && (
+                <div className="chq-cmd-card-body">
+                  {cfg.description && <p className="chq-cmd-desc">{cfg.description}</p>}
+
+                  <div className="chq-cmd-detail-grid">
+                    <div className="chq-cmd-detail">
+                      <span className="chq-cmd-detail-label">Deadzone</span>
+                      <span className="chq-cmd-detail-value chq-cmd-mono">{cfg.deadzone}</span>
+                    </div>
+                    <div className="chq-cmd-detail">
+                      <span className="chq-cmd-detail-label">Sensitivity</span>
+                      <span className="chq-cmd-detail-value chq-cmd-mono">{cfg.sensitivity}</span>
+                    </div>
+                  </div>
+
+                  <div className="chq-custom-mapping-group">
+                    <span className="chq-cmd-detail-label">Axis Mapping</span>
+                    <div className="chq-custom-mapping-grid">
+                      {Object.entries(cfg.axisMapping).map(([input, topic]) => (
+                        <div key={input} className="chq-custom-mapping-row">
+                          <span className="chq-custom-key">{input}</span>
+                          <FontAwesomeIcon icon={faChevronRight} className="chq-custom-arrow" />
+                          <span className="chq-custom-value">{topic}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="chq-custom-mapping-group">
+                    <span className="chq-cmd-detail-label">Button Mapping</span>
+                    <div className="chq-custom-mapping-grid">
+                      {Object.entries(cfg.buttonMapping).map(([input, topic]) => (
+                        <div key={input} className="chq-custom-mapping-row">
+                          <span className="chq-custom-key">{input}</span>
+                          <FontAwesomeIcon icon={faChevronRight} className="chq-custom-arrow" />
+                          <span className="chq-custom-value">{topic}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="chq-cmd-tags-section">
+                    <div className="chq-cmd-tag-group">
+                      <span className="chq-cmd-detail-label">Target Robots</span>
+                      <div className="chq-cmd-tags">
+                        {cfg.targetRobotIds.map((rid) => (
+                          <span key={rid} className="chq-cmd-tag chq-cmd-tag--robot">
+                            <FontAwesomeIcon icon={faRobot} /> {robots.find((r) => r.id === rid)?.name || rid}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {canManage && (
+                    <div className="chq-cmd-actions">
+                      <button className="chq-btn chq-btn-outline chq-btn-sm"><FontAwesomeIcon icon={faPen} /> Edit</button>
+                      <button className="chq-btn chq-btn-outline chq-btn-sm chq-btn-danger"><FontAwesomeIcon icon={faWrench} /> Delete</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function LocationMappingSubTab({ locations, robots, canManage }: { locations: LocationMapping[]; robots: OrgRobot[]; canManage: boolean }) {
+  const [showInactive, setShowInactive] = useState(false);
+  const filtered = showInactive ? locations : locations.filter((l) => l.isActive);
+  const activeCount = locations.filter((l) => l.isActive).length;
+  const zones = [...new Set(locations.map((l) => l.zone).filter(Boolean))];
+
+  return (
+    <div className="chq-custom-section">
+      <div className="chq-custom-section-bar">
+        <span className="chq-custom-section-count">{activeCount} active locations &middot; {locations.length} total</span>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <button className={`chq-btn chq-btn-outline chq-btn-sm ${showInactive ? 'active' : ''}`} onClick={() => setShowInactive(!showInactive)}>
+            <FontAwesomeIcon icon={showInactive ? faEye : faEyeSlash} /> {showInactive ? 'Showing All' : 'Active Only'}
+          </button>
+          {canManage && (
+            <button className="chq-btn chq-btn-primary chq-btn-sm"><FontAwesomeIcon icon={faPlus} /> Add Location</button>
+          )}
+        </div>
+      </div>
+
+      {zones.length > 0 && (
+        <div className="chq-custom-zone-chips">
+          {zones.map((z) => (
+            <span key={z} className="chq-custom-zone-chip"><FontAwesomeIcon icon={faMapMarkedAlt} /> {z}</span>
+          ))}
+        </div>
+      )}
+
+      <div className="chq-panel">
+        <table className="chq-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Zone / Floor</th>
+              <th>Coordinates</th>
+              <th>Robots</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((loc) => (
+              <tr key={loc.id} className="chq-tr">
+                <td>
+                  <div className="chq-cell-user">
+                    <div className="chq-avatar-sm" style={{ background: loc.isActive ? 'rgba(52,211,153,0.2)' : 'rgba(255,255,255,0.05)', color: loc.isActive ? '#34d399' : 'rgba(255,255,255,0.3)' }}>
+                      <FontAwesomeIcon icon={faCrosshairs} />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{loc.label}</div>
+                      <div className="chq-dimmed" style={{ fontSize: '0.78rem' }}>{loc.name}</div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span className="chq-dimmed">{loc.zone || '—'}</span>
+                  <span className="chq-micro-tag" style={{ marginLeft: '0.4rem' }}>F{loc.floorLevel}</span>
+                </td>
+                <td className="chq-cmd-mono" style={{ fontSize: '0.82rem' }}>
+                  ({loc.coordinates.x}, {loc.coordinates.y}, {loc.coordinates.z})
+                </td>
+                <td>
+                  <div className="chq-cmd-tags" style={{ gap: '0.25rem' }}>
+                    {loc.targetRobotIds.map((rid) => (
+                      <span key={rid} className="chq-cmd-tag chq-cmd-tag--robot" style={{ fontSize: '0.72rem' }}>
+                        <FontAwesomeIcon icon={faRobot} /> {robots.find((r) => r.id === rid)?.name || rid}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+                <td>
+                  <span className={`chq-status chq-status--${loc.isActive ? 'active' : 'inactive'}`}>
+                    <FontAwesomeIcon icon={faCircle} /> {loc.isActive ? 'Active' : 'Inactive'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function KeyboardMappingSubTab({ mappings, robots, canManage }: { mappings: KeyboardMapping[]; robots: OrgRobot[]; canManage: boolean }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  return (
+    <div className="chq-custom-section">
+      <div className="chq-custom-section-bar">
+        <span className="chq-custom-section-count">{mappings.length} keyboard layouts</span>
+        {canManage && (
+          <button className="chq-btn chq-btn-primary chq-btn-sm"><FontAwesomeIcon icon={faPlus} /> New Layout</button>
+        )}
+      </div>
+
+      <div className="chq-cmd-grid">
+        {mappings.map((km) => {
+          const isOpen = expandedId === km.id;
+          return (
+            <div key={km.id} className={`chq-cmd-card ${isOpen ? 'chq-cmd-card--open' : ''}`}>
+              <div className="chq-cmd-card-header" onClick={() => setExpandedId(isOpen ? null : km.id)}>
+                <div className="chq-cmd-icon-wrap">
+                  <FontAwesomeIcon icon={faKeyboard} className="chq-cmd-cat-icon chq-cmd-cat--system" />
+                </div>
+                <div className="chq-cmd-card-info">
+                  <div className="chq-cmd-card-title">
+                    <span className="chq-cmd-name">{km.name}</span>
+                    {km.isDefault && <span className="chq-cmd-badge chq-cmd-badge--default">Default</span>}
+                  </div>
+                  <span className="chq-cmd-topic"><FontAwesomeIcon icon={faKeyboard} /> {Object.keys(km.bindings).length} bindings</span>
+                </div>
+                <div className="chq-cmd-card-meta">
+                  <span className="chq-cmd-meta-stat" title="Modifiers"><FontAwesomeIcon icon={faCog} /> {Object.keys(km.modifiers).length} mod</span>
+                </div>
+              </div>
+
+              {isOpen && (
+                <div className="chq-cmd-card-body">
+                  {km.description && <p className="chq-cmd-desc">{km.description}</p>}
+
+                  <div className="chq-custom-mapping-group">
+                    <span className="chq-cmd-detail-label">Key Bindings</span>
+                    <div className="chq-custom-mapping-grid">
+                      {Object.entries(km.bindings).map(([key, action]) => (
+                        <div key={key} className="chq-custom-mapping-row">
+                          <kbd className="chq-custom-kbd">{key}</kbd>
+                          <FontAwesomeIcon icon={faChevronRight} className="chq-custom-arrow" />
+                          <span className="chq-custom-value">{action}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {Object.keys(km.modifiers).length > 0 && (
+                    <div className="chq-custom-mapping-group">
+                      <span className="chq-cmd-detail-label">Modifiers</span>
+                      <div className="chq-custom-mapping-grid">
+                        {Object.entries(km.modifiers).map(([key, effect]) => (
+                          <div key={key} className="chq-custom-mapping-row">
+                            <kbd className="chq-custom-kbd chq-custom-kbd--mod">{key}</kbd>
+                            <FontAwesomeIcon icon={faChevronRight} className="chq-custom-arrow" />
+                            <span className="chq-custom-value">{effect}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="chq-cmd-tags-section">
+                    <div className="chq-cmd-tag-group">
+                      <span className="chq-cmd-detail-label">Target Robots</span>
+                      <div className="chq-cmd-tags">
+                        {km.targetRobotIds.map((rid) => (
+                          <span key={rid} className="chq-cmd-tag chq-cmd-tag--robot">
+                            <FontAwesomeIcon icon={faRobot} /> {robots.find((r) => r.id === rid)?.name || rid}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {canManage && (
+                    <div className="chq-cmd-actions">
+                      <button className="chq-btn chq-btn-outline chq-btn-sm"><FontAwesomeIcon icon={faPen} /> Edit</button>
+                      <button className="chq-btn chq-btn-outline chq-btn-sm chq-btn-danger"><FontAwesomeIcon icon={faWrench} /> Delete</button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const CATEGORY_ICONS: Record<RosCommandCategory, typeof faTerminal> = {
   motion: faRunning,
   sensor: faThermometerHalf,
@@ -976,7 +1341,7 @@ const CATEGORY_ICONS: Record<RosCommandCategory, typeof faTerminal> = {
   custom: faCode,
 };
 
-function RosCommandsTab({
+function RosCommandsSubTab({
   commands,
   robots,
   roles,
@@ -1018,14 +1383,11 @@ function RosCommandsTab({
   const getRoleName = (id: string) => roles.find((r) => r.id === id)?.name || id;
 
   return (
-    <section>
-      <div className="chq-section-header">
-        <div>
-          <h2>ROS Commands</h2>
-          <p className="chq-subtitle">{commands.length} commands &middot; {enabledCount} enabled &middot; {totalExecutions} total executions</p>
-        </div>
+    <div className="chq-custom-section">
+      <div className="chq-custom-section-bar">
+        <span className="chq-custom-section-count">{commands.length} commands &middot; {enabledCount} enabled &middot; {totalExecutions} total executions</span>
         {canManage && (
-          <button className="chq-btn chq-btn-primary">
+          <button className="chq-btn chq-btn-primary chq-btn-sm">
             <FontAwesomeIcon icon={faPlus} /> New Command
           </button>
         )}
@@ -1172,7 +1534,7 @@ function RosCommandsTab({
           })}
         </div>
       )}
-    </section>
+    </div>
   );
 }
 

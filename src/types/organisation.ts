@@ -245,13 +245,60 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'notifications:manage': 'Manage Notifications',
 };
 
+export type CustomisationSubTab = 'ros-commands' | 'controller' | 'locations' | 'keyboard';
+
+export interface ControllerConfig {
+  id: string;
+  orgId: string;
+  name: string;
+  description: string | null;
+  controllerType: 'gamepad' | 'joystick' | 'custom';
+  axisMapping: Record<string, string>;
+  buttonMapping: Record<string, string>;
+  deadzone: number;
+  sensitivity: number;
+  targetRobotIds: string[];
+  isDefault: boolean;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface LocationMapping {
+  id: string;
+  orgId: string;
+  name: string;
+  label: string;
+  description: string | null;
+  coordinates: { x: number; y: number; z: number };
+  mapId: string | null;
+  floorLevel: number;
+  zone: string | null;
+  targetRobotIds: string[];
+  isActive: boolean;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface KeyboardMapping {
+  id: string;
+  orgId: string;
+  name: string;
+  description: string | null;
+  bindings: Record<string, string>;
+  modifiers: Record<string, string>;
+  targetRobotIds: string[];
+  isDefault: boolean;
+  createdBy: string;
+  createdAt: string;
+}
+
 export type CommandHQTab =
   | 'overview'
   | 'members'
   | 'roles'
   | 'robots'
   | 'sessions'
-  | 'commands'
+  | 'customisations'
   | 'denylist'
   | 'notifications'
   | 'settings';
