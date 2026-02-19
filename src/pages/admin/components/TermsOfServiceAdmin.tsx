@@ -7,7 +7,7 @@ import type { Schema } from "../../../../amplify/data/resource";
 import { useAuthStatus } from "../../../hooks/useAuthStatus";
 import { hasAdminAccess } from "../../../utils/admin";
 import { logger } from "../../../utils/logger";
-import { TERMS_CONTENT_MARKDOWN_DEFAULT } from "../../../content/terms-v1";
+import { TERMS_CONTENT_MARKDOWN } from "../../../content/terms-v1";
 import "../../Admin.css";
 
 const client = generateClient<Schema>();
@@ -54,13 +54,13 @@ export const TermsOfServiceAdmin = () => {
       const contentItem = contentRes.data?.find((s) => s.settingKey === SETTING_KEYS.content);
       const versionItem = versionRes.data?.find((s) => s.settingKey === SETTING_KEYS.version);
       const updatedItem = updatedRes.data?.find((s) => s.settingKey === SETTING_KEYS.lastUpdated);
-      setMarkdown(contentItem?.settingValue?.trim() || TERMS_CONTENT_MARKDOWN_DEFAULT);
+      setMarkdown(contentItem?.settingValue?.trim() || TERMS_CONTENT_MARKDOWN);
       setCurrentVersion(versionItem?.settingValue || "1.0");
       setCurrentLastUpdated(updatedItem?.settingValue || "");
     } catch (err) {
       logger.error("Load TOS settings failed:", err);
       setMessage({ type: "error", text: "Failed to load terms settings." });
-      setMarkdown(TERMS_CONTENT_MARKDOWN_DEFAULT);
+      setMarkdown(TERMS_CONTENT_MARKDOWN);
       setCurrentVersion("1.0");
       setCurrentLastUpdated("");
     } finally {
@@ -118,7 +118,7 @@ export const TermsOfServiceAdmin = () => {
 
       await upsert(
         SETTING_KEYS.content,
-        markdown.trim() || TERMS_CONTENT_MARKDOWN_DEFAULT,
+        markdown.trim() || TERMS_CONTENT_MARKDOWN,
         "Terms of Service body (markdown)",
         contentSettings.data?.[0] ?? null
       );
