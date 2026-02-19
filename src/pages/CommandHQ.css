@@ -1,7 +1,9 @@
 .chq-page {
+  width: 100%;
   max-width: 1400px;
   margin: 0 auto;
   padding: 1.75rem 2.5rem 3rem;
+  box-sizing: border-box;
 }
 
 /* ─── Header ─── */
@@ -131,6 +133,7 @@
 .chq-main {
   min-width: 0;
   width: 100%;
+  min-height: 600px;
 }
 
 /* ─── Sidebar ─── */
@@ -1385,6 +1388,157 @@
 
 .chq-btn-danger:hover {
   background: rgba(248, 113, 113, 0.1) !important;
+}
+
+/* ─── Customisations Tab ─── */
+
+.chq-custom-subtabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+  margin-bottom: 1.5rem;
+}
+
+.chq-custom-subtab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chq-custom-subtab:hover {
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.chq-custom-subtab.active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.chq-custom-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.chq-custom-section-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chq-custom-section-count {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.chq-custom-mapping-group {
+  margin-top: 0.75rem;
+}
+
+.chq-custom-mapping-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+
+.chq-custom-mapping-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+
+.chq-custom-key {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  color: #fbbf24;
+  min-width: 80px;
+  text-align: center;
+}
+
+.chq-custom-arrow {
+  color: rgba(255, 255, 255, 0.15);
+  font-size: 0.65rem;
+}
+
+.chq-custom-value {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.chq-custom-kbd {
+  display: inline-block;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: #60a5fa;
+  min-width: 32px;
+  text-align: center;
+}
+
+.chq-custom-kbd--mod {
+  color: #c084fc;
+  border-color: rgba(192, 132, 252, 0.2);
+  background: rgba(192, 132, 252, 0.06);
+}
+
+.chq-custom-zone-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.chq-custom-zone-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.15);
+  border-radius: 20px;
+}
+
+.chq-cmd-badge--default {
+  background: rgba(52, 211, 153, 0.15);
+  color: #34d399;
+  font-size: 0.68rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-weight: 600;
 }
 
 /* ─── Deny List Tab ─── */
