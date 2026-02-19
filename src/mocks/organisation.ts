@@ -1,4 +1,4 @@
-import type { Organisation, OrgRole, OrgMember, OrgInvite, OrgRobot, OrgSession, OrgLog, RosCommand, DenyListEntry, NotificationRule, OrgNotification } from '../types/organisation';
+import type { Organisation, OrgRole, OrgMember, OrgInvite, OrgRobot, OrgSession, OrgLog, RosCommand, DenyListEntry, NotificationRule, OrgNotification, ControllerConfig, LocationMapping, KeyboardMapping } from '../types/organisation';
 
 export const MOCK_ROLES: OrgRole[] = [
   {
@@ -824,4 +824,234 @@ export function getMockSessionsForOrg(orgId: string): OrgSession[] {
 
 export function getMockLogsForOrg(orgId: string): OrgLog[] {
   return MOCK_LOGS.filter((l) => l.orgId === orgId);
+}
+
+export const MOCK_CONTROLLER_CONFIGS: ControllerConfig[] = [
+  {
+    id: 'ctrl-001',
+    orgId: 'org-001',
+    name: 'Standard Gamepad',
+    description: 'Default gamepad configuration for all robots',
+    controllerType: 'gamepad',
+    axisMapping: {
+      'left-stick-x': '/cmd_vel.linear.y',
+      'left-stick-y': '/cmd_vel.linear.x',
+      'right-stick-x': '/cmd_vel.angular.z',
+      'right-stick-y': '/camera.tilt',
+    },
+    buttonMapping: {
+      'A': '/gripper/open',
+      'B': '/gripper/close',
+      'X': '/arm/home',
+      'Y': '/arm/stow',
+      'LB': '/speed/decrease',
+      'RB': '/speed/increase',
+      'Start': '/estop/toggle',
+      'Back': '/mode/toggle',
+    },
+    deadzone: 0.08,
+    sensitivity: 1.0,
+    targetRobotIds: ['robot-001', 'robot-002'],
+    isDefault: true,
+    createdBy: 'user-001',
+    createdAt: '2026-01-20T10:00:00Z',
+  },
+  {
+    id: 'ctrl-002',
+    orgId: 'org-001',
+    name: 'Precision Joystick',
+    description: 'High-precision config for delicate operations',
+    controllerType: 'joystick',
+    axisMapping: {
+      'x-axis': '/cmd_vel.linear.x',
+      'y-axis': '/cmd_vel.linear.y',
+      'twist': '/cmd_vel.angular.z',
+      'throttle': '/arm/speed_scale',
+    },
+    buttonMapping: {
+      'trigger': '/gripper/toggle',
+      'thumb': '/camera/snapshot',
+      'btn-3': '/arm/home',
+      'btn-4': '/mode/toggle',
+    },
+    deadzone: 0.03,
+    sensitivity: 0.6,
+    targetRobotIds: ['robot-003'],
+    isDefault: false,
+    createdBy: 'user-001',
+    createdAt: '2026-01-25T14:30:00Z',
+  },
+  {
+    id: 'ctrl-003',
+    orgId: 'org-001',
+    name: 'Warehouse Nav Profile',
+    description: 'Custom profile for warehouse navigation robots',
+    controllerType: 'custom',
+    axisMapping: {
+      'left-stick-y': '/cmd_vel.linear.x',
+      'right-stick-x': '/cmd_vel.angular.z',
+    },
+    buttonMapping: {
+      'A': '/nav/waypoint_next',
+      'B': '/nav/waypoint_prev',
+      'X': '/nav/cancel',
+      'Y': '/nav/resume',
+      'Start': '/estop/toggle',
+    },
+    deadzone: 0.12,
+    sensitivity: 0.8,
+    targetRobotIds: ['robot-001'],
+    isDefault: false,
+    createdBy: 'user-002',
+    createdAt: '2026-02-01T09:00:00Z',
+  },
+];
+
+export const MOCK_LOCATION_MAPPINGS: LocationMapping[] = [
+  {
+    id: 'loc-001',
+    orgId: 'org-001',
+    name: 'dock-station-a',
+    label: 'Dock Station A',
+    description: 'Primary charging dock in warehouse bay 1',
+    coordinates: { x: 12.5, y: 3.2, z: 0 },
+    mapId: 'map-warehouse-1',
+    floorLevel: 1,
+    zone: 'Warehouse Bay 1',
+    targetRobotIds: ['robot-001', 'robot-002'],
+    isActive: true,
+    createdBy: 'user-001',
+    createdAt: '2026-01-18T10:00:00Z',
+  },
+  {
+    id: 'loc-002',
+    orgId: 'org-001',
+    name: 'inspection-point-b2',
+    label: 'Inspection Point B2',
+    description: 'Quality inspection station near conveyor belt',
+    coordinates: { x: 28.1, y: 15.7, z: 0 },
+    mapId: 'map-warehouse-1',
+    floorLevel: 1,
+    zone: 'Inspection Zone',
+    targetRobotIds: ['robot-001', 'robot-002', 'robot-003'],
+    isActive: true,
+    createdBy: 'user-001',
+    createdAt: '2026-01-18T10:30:00Z',
+  },
+  {
+    id: 'loc-003',
+    orgId: 'org-001',
+    name: 'loading-bay-c',
+    label: 'Loading Bay C',
+    description: 'Truck loading area, outdoor access',
+    coordinates: { x: 45.0, y: 0.5, z: 0 },
+    mapId: 'map-warehouse-1',
+    floorLevel: 1,
+    zone: 'Loading Bays',
+    targetRobotIds: ['robot-001'],
+    isActive: true,
+    createdBy: 'user-002',
+    createdAt: '2026-01-20T08:00:00Z',
+  },
+  {
+    id: 'loc-004',
+    orgId: 'org-001',
+    name: 'storage-rack-d12',
+    label: 'Storage Rack D12',
+    description: 'High-density storage area, narrow aisle navigation',
+    coordinates: { x: 33.8, y: 22.4, z: 2.5 },
+    mapId: 'map-warehouse-1',
+    floorLevel: 2,
+    zone: 'Storage D',
+    targetRobotIds: ['robot-002', 'robot-003'],
+    isActive: false,
+    createdBy: 'user-001',
+    createdAt: '2026-02-01T11:00:00Z',
+  },
+  {
+    id: 'loc-005',
+    orgId: 'org-001',
+    name: 'office-entrance',
+    label: 'Office Entrance',
+    description: 'Main office building entrance for delivery robots',
+    coordinates: { x: 0.0, y: 0.0, z: 0 },
+    mapId: 'map-campus',
+    floorLevel: 0,
+    zone: 'Campus',
+    targetRobotIds: ['robot-003'],
+    isActive: true,
+    createdBy: 'user-003',
+    createdAt: '2026-02-05T16:00:00Z',
+  },
+];
+
+export const MOCK_KEYBOARD_MAPPINGS: KeyboardMapping[] = [
+  {
+    id: 'kb-001',
+    orgId: 'org-001',
+    name: 'WASD Standard',
+    description: 'Standard WASD movement with arrow keys for camera',
+    bindings: {
+      'w': '/cmd_vel.linear.x +0.5',
+      's': '/cmd_vel.linear.x -0.5',
+      'a': '/cmd_vel.angular.z +0.5',
+      'd': '/cmd_vel.angular.z -0.5',
+      'ArrowUp': '/camera.tilt +5',
+      'ArrowDown': '/camera.tilt -5',
+      'ArrowLeft': '/camera.pan -5',
+      'ArrowRight': '/camera.pan +5',
+      'Space': '/estop/toggle',
+      'e': '/gripper/toggle',
+      'q': '/arm/home',
+      'r': '/mode/toggle',
+    },
+    modifiers: {
+      'Shift': 'speed_boost x2',
+      'Ctrl': 'fine_control x0.25',
+    },
+    targetRobotIds: ['robot-001', 'robot-002', 'robot-003'],
+    isDefault: true,
+    createdBy: 'user-001',
+    createdAt: '2026-01-20T10:00:00Z',
+  },
+  {
+    id: 'kb-002',
+    orgId: 'org-001',
+    name: 'Arm Control Layout',
+    description: 'Keyboard layout optimised for robotic arm control',
+    bindings: {
+      'w': '/arm/joint1 +5',
+      's': '/arm/joint1 -5',
+      'a': '/arm/joint2 +5',
+      'd': '/arm/joint2 -5',
+      'q': '/arm/joint3 +5',
+      'e': '/arm/joint3 -5',
+      'r': '/arm/joint4 +5',
+      'f': '/arm/joint4 -5',
+      'Space': '/gripper/toggle',
+      'Escape': '/arm/estop',
+      'h': '/arm/home',
+    },
+    modifiers: {
+      'Shift': 'speed_boost x3',
+      'Ctrl': 'fine_control x0.1',
+      'Alt': 'joint_lock',
+    },
+    targetRobotIds: ['robot-003'],
+    isDefault: false,
+    createdBy: 'user-002',
+    createdAt: '2026-02-03T11:00:00Z',
+  },
+];
+
+export function getMockControllerConfigsForOrg(orgId: string): ControllerConfig[] {
+  return MOCK_CONTROLLER_CONFIGS.filter((c) => c.orgId === orgId);
+}
+
+export function getMockLocationMappingsForOrg(orgId: string): LocationMapping[] {
+  return MOCK_LOCATION_MAPPINGS.filter((l) => l.orgId === orgId);
+}
+
+export function getMockKeyboardMappingsForOrg(orgId: string): KeyboardMapping[] {
+  return MOCK_KEYBOARD_MAPPINGS.filter((k) => k.orgId === orgId);
 }
