@@ -597,6 +597,137 @@
   background: rgba(255, 193, 7, 0.7);
 }
 
+/* Admin TOS edit modal */
+.admin-tos-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 2rem;
+  overflow-y: auto;
+}
+
+.admin-tos-modal {
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  max-width: 800px;
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  margin: auto;
+  padding: 1.5rem 2rem 2rem;
+}
+
+.admin-tos-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.admin-tos-modal-header h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #fff;
+  margin: 0;
+}
+
+.admin-tos-modal-close {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 8px;
+}
+
+.admin-tos-modal-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.admin-tos-modal-meta {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+  margin: 0 0 0.5rem 0;
+}
+
+.admin-tos-modal-hint {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.8rem;
+  margin: 0 0 0.75rem 0;
+}
+
+.admin-tos-modal-hint code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+.admin-tos-modal-textarea {
+  width: 100%;
+  min-height: 320px;
+  padding: 1rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  resize: vertical;
+  margin-bottom: 1rem;
+}
+
+.admin-tos-modal-textarea:focus {
+  outline: none;
+  border-color: rgba(255, 193, 7, 0.5);
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.15);
+}
+
+.admin-tos-modal-textarea::-webkit-scrollbar {
+  width: 8px;
+}
+
+.admin-tos-modal-textarea::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.admin-tos-modal-textarea::-webkit-scrollbar-thumb {
+  background: rgba(255, 193, 7, 0.5);
+  border-radius: 4px;
+}
+
+.admin-tos-modal-error {
+  color: #f87171;
+  font-size: 0.9rem;
+  margin: 0 0 1rem 0;
+}
+
+.admin-tos-modal-success {
+  color: #4ade80;
+  font-size: 0.9rem;
+  margin: 0 0 1rem 0;
+}
+
+.admin-tos-modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
 .user-detail-section {
   margin-bottom: 2rem;
 }

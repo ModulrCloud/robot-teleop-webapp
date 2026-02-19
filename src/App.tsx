@@ -9,6 +9,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { fetchAuthSession } from "aws-amplify/auth";
 import { PrivateRoute } from "./PrivateRoute";
 import { AppLayout } from "./components/AppLayout";
+import { TermsGate } from "./components/TermsGate";
 import { RouteLoadingSpinner } from "./components/RouteLoadingSpinner";
 import { logger } from './utils/logger';
 
@@ -34,6 +35,7 @@ const PartnerProfile = lazy(() => import("./pages/PartnerProfile"));
 const EditPartnerProfile = lazy(() => import("./pages/EditPartnerProfile"));
 const Social = lazy(() => import("./pages/Social").then(module => ({ default: module.Social })));
 const CommandHQ = lazy(() => import("./pages/CommandHQ").then(module => ({ default: module.CommandHQ })));
+const TermsOfService = lazy(() => import("./pages/TermsOfService").then(module => ({ default: module.TermsOfService })));
 const DebugPanel = lazy(() => import("./components/DebugPanel").then(module => ({ default: module.DebugPanel })));
 
 // Amplify configuration is now in main.tsx
@@ -62,10 +64,11 @@ function App() {
 
   return (
     <Router>
-      <Navbar />
-      <AppLayout>
-        <main className="main-content">
-          <Routes>
+      <TermsGate>
+        <Navbar />
+        <AppLayout>
+          <main className="main-content">
+            <Routes>
             <Route path='/' element={
               <Suspense fallback={<RouteLoadingSpinner />}>
                 <PrivateRoute>
@@ -232,12 +235,19 @@ function App() {
               </Suspense>
             }
             />
+            <Route path='/terms' element={
+              <Suspense fallback={<RouteLoadingSpinner />}>
+                <TermsOfService />
+              </Suspense>
+            }
+            />
           </Routes>
         </main>
       </AppLayout>
       <Suspense fallback={null}>
         <DebugPanel />
       </Suspense>
+      </TermsGate>
     </Router>
   );
 }

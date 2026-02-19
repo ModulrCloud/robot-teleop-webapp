@@ -1,6 +1,30 @@
 .app-layout {
   min-height: 100vh;
   background-color: #08090a;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-content {
+  flex: 1;
+}
+
+.app-footer {
+  padding: 0.75rem 1.5rem;
+  text-align: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background-color: #08090a;
+}
+
+.app-footer a {
+  color: #9ca3af;
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.app-footer a:hover {
+  color: #d1d5db;
+  text-decoration: underline;
 }
 
 .global-banner-container {

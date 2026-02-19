@@ -42,6 +42,8 @@ import { getActiveRobots } from "../functions/get-active-robots/resource";
 import { manageCreditTier } from "../functions/manage-credit-tier/resource";
 import { manageOrganisation } from "../functions/manage-organisation/resource";
 import { manageOrgMember } from "../functions/manage-org-member/resource";
+import { getTermsStatus } from "../functions/get-terms-status/resource";
+import { acceptTerms } from "../functions/accept-terms/resource";
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -257,7 +259,7 @@ const schema = a.schema({
   // Platform settings (markup percentage, etc.) - managed by ADMINS
   PlatformSettings: a.model({
     id: a.id(),
-    settingKey: a.string().required(), // 'platformMarkupPercent', 'minimumPayoutAmount', etc.
+    settingKey: a.string().required(), // 'platformMarkupPercent', 'minimumPayoutAmount', 'termsVersion', etc.
     settingValue: a.string().required(), // JSON string or simple value
     description: a.string(), // What this setting controls
     updatedBy: a.string(), // Admin user who last updated
@@ -271,6 +273,21 @@ const schema = a.schema({
       allow.authenticated().to(['read']),
       // Only ADMINS can create/update
       allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  // Per-user terms of service acceptance (version + timestamp)
+  UserTermsAcceptance: a.model({
+    id: a.id(),
+    userId: a.string().required(), // Cognito username
+    acceptedTermsVersion: a.string().required(),
+    acceptedTermsAt: a.string().required(), // ISO datetime
+  })
+    .secondaryIndexes(index => [
+      index("userId").name("userIdIndex"), // One record per user lookup
+    ])
+    .authorization((allow) => [
+      // Only Lambdas (and admins for support) manage this; users read own via Lambda
+      allow.groups(['ADMINS']).to(['read']),
     ]),
 
   // Partner payout tracking - tracks earnings and payouts for robot partners
@@ -630,6 +647,21 @@ const schema = a.schema({
     .returns(a.json())
     .authorization(allow => [allow.authenticated()])
     .handler(a.handler.function(manageOrgMember)),
+
+  getTermsStatusLambda: a
+    .query()
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(getTermsStatus)),
+
+  acceptTermsLambda: a
+    .mutation()
+    .arguments({
+      termsVersion: a.string().required(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(acceptTerms)),
 
   setUserGroupLambda: a
     .mutation()
