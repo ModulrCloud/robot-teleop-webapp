@@ -72,7 +72,7 @@ import type {
   OrgNotification,
   NotificationType,
   CommandHQTab,
-  CustomisationSubTab,
+  CustomizationSubTab,
   ControllerConfig,
   LocationMapping,
   KeyboardMapping,
@@ -101,7 +101,7 @@ const TABS: { id: CommandHQTab; label: string; icon: typeof faSatelliteDish }[] 
   { id: "members", label: "Members", icon: faUsers },
   { id: "robots", label: "Robots", icon: faRobot },
   { id: "sessions", label: "Sessions & Logs", icon: faHistory },
-  { id: "customisations", label: "Customisations", icon: faSlidersH },
+  { id: "customizations", label: "Customizations", icon: faSlidersH },
   { id: "denylist", label: "Deny List", icon: faBan },
   { id: "notifications", label: "Notifications", icon: faBell },
 ];
@@ -231,8 +231,8 @@ export const CommandHQ = () => {
             <RobotsTab robots={robots} members={members} canManage={hasPermission("robots:manage")} />
           )}
           {activeTab === "sessions" && <SessionsTab sessions={sessions} logs={logs} />}
-          {activeTab === "customisations" && (
-            <CustomisationsTab
+          {activeTab === "customizations" && (
+            <CustomizationsTab
               commands={commands} robots={robots} roles={roles}
               controllerConfigs={controllerConfigs} locationMappings={locationMappings} keyboardMappings={keyboardMappings}
               canManage={hasPermission("commands:manage")} canExecute={hasPermission("commands:execute")}
@@ -992,14 +992,14 @@ function SessionsTab({ sessions, logs }: { sessions: OrgSession[]; logs: OrgLog[
   );
 }
 
-const CUSTOM_SUBTABS: { id: CustomisationSubTab; label: string; icon: typeof faTerminal }[] = [
+const CUSTOM_SUBTABS: { id: CustomizationSubTab; label: string; icon: typeof faTerminal }[] = [
   { id: 'ros-commands', label: 'ROS Commands', icon: faTerminal },
   { id: 'controller', label: 'Controller', icon: faGamepad },
   { id: 'locations', label: 'Locations', icon: faMapMarkedAlt },
   { id: 'keyboard', label: 'Keyboard', icon: faKeyboard },
 ];
 
-function CustomisationsTab({
+function CustomizationsTab({
   commands, robots, roles, controllerConfigs, locationMappings, keyboardMappings, canManage, canExecute,
 }: {
   commands: RosCommand[];
@@ -1011,13 +1011,13 @@ function CustomisationsTab({
   canManage: boolean;
   canExecute: boolean;
 }) {
-  const [subTab, setSubTab] = useState<CustomisationSubTab>('ros-commands');
+  const [subTab, setSubTab] = useState<CustomizationSubTab>('ros-commands');
 
   return (
     <section>
       <div className="chq-section-header">
         <div>
-          <h2>Customisations</h2>
+          <h2>Customizations</h2>
           <p className="chq-subtitle">Configure commands, controllers, locations, and keyboard bindings</p>
         </div>
       </div>
