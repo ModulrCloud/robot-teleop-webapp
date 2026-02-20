@@ -245,7 +245,7 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'notifications:manage': 'Manage Notifications',
 };
 
-export type CustomisationSubTab = 'ros-commands' | 'controller' | 'locations' | 'keyboard';
+export type CustomizationSubTab = 'ros-commands' | 'controller' | 'locations' | 'keyboard';
 
 export interface ControllerConfig {
   id: string;
@@ -298,7 +298,7 @@ export type CommandHQTab =
   | 'roles'
   | 'robots'
   | 'sessions'
-  | 'customisations'
+  | 'customizations'
   | 'denylist'
   | 'notifications'
   | 'settings';
