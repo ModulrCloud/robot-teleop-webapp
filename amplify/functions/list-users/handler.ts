@@ -108,7 +108,7 @@ export const handler: Schema["listUsersLambda"]["functionHandler"] = async (even
     const cognitoUsers = await cognito.send(new ListUsersCommand(listUsersParams));
 
     const CLASSIFICATION_GROUPS = [
-      'ADMINS', 'SERVICE_PROVIDERS', 'ORGANIZATIONS', 'PARTNERS', 'CLIENTS',
+      'ADMINS', 'ORGANIZATIONS', 'SERVICE_PROVIDERS', 'PARTNERS', 'CLIENTS',
     ] as const;
     type ClassificationGroup = typeof CLASSIFICATION_GROUPS[number];
 
@@ -124,18 +124,27 @@ export const handler: Schema["listUsersLambda"]["functionHandler"] = async (even
 
     await Promise.all(
       CLASSIFICATION_GROUPS.map(async (groupName) => {
+        const usernames = new Set<string>();
         try {
-          const resp = await cognito.send(
-            new ListUsersInGroupCommand({ UserPoolId: USER_POOL_ID, GroupName: groupName })
-          );
-          const usernames = new Set(
-            (resp.Users || []).map(u => u.Username).filter((u): u is string => !!u)
-          );
-          groupMembers.set(groupName, usernames);
+          let nextToken: string | undefined;
+          do {
+            const resp = await cognito.send(
+              new ListUsersInGroupCommand({
+                UserPoolId: USER_POOL_ID,
+                GroupName: groupName,
+                Limit: 60,
+                NextToken: nextToken,
+              })
+            );
+            for (const u of resp.Users || []) {
+              if (u.Username) usernames.add(u.Username);
+            }
+            nextToken = resp.NextToken;
+          } while (nextToken);
         } catch (error) {
           console.warn(`Failed to list users in group ${groupName}:`, error);
-          groupMembers.set(groupName, new Set());
         }
+        groupMembers.set(groupName, usernames);
       })
     );
 

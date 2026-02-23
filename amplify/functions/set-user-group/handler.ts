@@ -17,7 +17,7 @@ const GROUP_NAME_MAP: Record<string, string> = {
   organization: "ORGANIZATIONS",
 };
 const ALLOWED_GROUPS = Array.from(Object.keys(GROUP_NAME_MAP));
-const CLASSIFICATION_GROUPS = ["CLIENTS", "PARTNERS", "SERVICE_PROVIDERS", "ORGANIZATIONS"];
+const CLASSIFICATION_GROUPS = ["ORGANIZATIONS", "SERVICE_PROVIDERS", "PARTNERS", "CLIENTS"];
 
 export const handler: Schema["setUserGroupLambda"]["functionHandler"] = async (event) => {
   console.log("Request event:", event);
