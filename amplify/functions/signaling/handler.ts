@@ -1859,7 +1859,8 @@ async function handleRegister(
         new UpdateItemCommand({
           TableName: CONN_TABLE,
           Key: { connectionId: { S: connectionId } },
-          UpdateExpression: 'REMOVE pkiChallenge, pkiChallengeRobotId, pkiChallengeType, pkiChallengeTs',
+          UpdateExpression: 'SET robotId = :rid REMOVE pkiChallenge, pkiChallengeRobotId, pkiChallengeType, pkiChallengeTs',
+          ExpressionAttributeValues: { ':rid': { S: robotId } },
         }),
       );
       console.log('[REGISTER_PKI_VERIFIED]', { connectionId, robotId });
@@ -1985,6 +1986,21 @@ async function handleRegister(
       });
       return errorResponse(500, 'DynamoDB error');
     }
+  }
+
+  // Persist robotId on the connection record so handleSignal can resolve it
+  // from connectionId alone (robot doesn't need to include robotId in every message)
+  try {
+    await db.send(
+      new UpdateItemCommand({
+        TableName: CONN_TABLE,
+        Key: { connectionId: { S: connectionId } },
+        UpdateExpression: 'SET robotId = :rid',
+        ExpressionAttributeValues: { ':rid': { S: robotId } },
+      }),
+    );
+  } catch (e) {
+    console.warn('[REGISTER] Failed to store robotId on connection record:', e);
   }
 
   console.log('[REGISTER_SUCCESS]', {
@@ -2229,9 +2245,30 @@ async function handleSignal(
   event: APIGatewayProxyEvent,
   msg: InboundMessage,
 ): Promise<APIGatewayProxyResult> {
-  const robotId = msg.robotId?.trim();
+  let robotId = msg.robotId?.trim();
   const type = msg.type;
-  
+  const sourceConnId = event.requestContext.connectionId!;
+
+  // If robotId is missing, resolve it from the connection record.
+  // Robots store their robotId on CONN_TABLE during registration, so answer/ice_candidate
+  // messages don't need to include robotId — the connection ID is proof of identity.
+  if (!robotId) {
+    try {
+      const connLookup = await db.send(new GetItemCommand({
+        TableName: CONN_TABLE,
+        Key: { connectionId: { S: sourceConnId } },
+        ProjectionExpression: 'robotId',
+      }));
+      const resolved = connLookup.Item?.robotId?.S?.trim();
+      if (resolved) {
+        robotId = resolved;
+        console.log('[HANDLE_SIGNAL_RESOLVED_ROBOT_ID]', { connectionId: sourceConnId, robotId });
+      }
+    } catch (e) {
+      console.warn('[HANDLE_SIGNAL] Failed to resolve robotId from connection:', e);
+    }
+  }
+
   // Log the incoming message for debugging
   console.log('[HANDLE_SIGNAL_INPUT]', {
     robotId,
@@ -2241,9 +2278,9 @@ async function handleSignal(
     clientConnectionId: msg.clientConnectionId,
     target: msg.target,
     payload: msg.payload,
-    sourceConnectionId: event.requestContext.connectionId,
+    sourceConnectionId: sourceConnId,
   });
-  
+
   if (!robotId || !type) {
     console.error('[HANDLE_SIGNAL_REJECTED]', {
       reason: !robotId ? 'Missing robotId' : 'Missing type',
@@ -2254,9 +2291,6 @@ async function handleSignal(
     return errorResponse(400, 'Invalid Signal');
   }
 
-  // Get source connection ID (needed for logging and ACL checks)
-  const sourceConnId = event.requestContext.connectionId!;
-  
   // Fetch robot presence once and reuse for: is-from-robot check, ACL (owner), and target connectionId.
   // This avoids 2 extra GetItem calls per message (saves DynamoDB read cost and latency).
   let robotPresenceItem: RobotPresenceItem = undefined;
@@ -2775,13 +2809,14 @@ export async function handler(
       await updateConnectionProtocol(connectionId, 'legacy');
     }
   } else if (connProtocol === 'legacy' && messageIsNewProtocol) {
-    // Protocol mismatch: connection claimed legacy but sent new-format message
+    // Protocol mismatch: connection claimed legacy but sent new-format message — upgrade
     console.warn('[PROTOCOL_MISMATCH]', {
       connectionId,
       storedProtocol: connProtocol,
       messageType: raw.type,
-      message: 'Connection claims legacy but sent new-protocol message; treating as new',
+      message: 'Connection claims legacy but sent new-protocol message; upgrading to modulr-v0',
     });
+    await updateConnectionProtocol(connectionId, 'modulr-v0', messageVersion);
   }
 
   // Normalize to our canonical shape

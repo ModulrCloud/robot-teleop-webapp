@@ -1,7 +1,7 @@
 import type { Schema } from "../../data/resource";
 import { CognitoIdentityProviderClient, ListUsersCommand, AdminGetUserCommand, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 
 const cognito = new CognitoIdentityProviderClient({});
 const dynamoClient = new DynamoDBClient({});
@@ -9,8 +9,6 @@ const docClient = DynamoDBDocumentClient.from(dynamoClient);
 
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 const USER_CREDITS_TABLE = process.env.USER_CREDITS_TABLE!;
-const PARTNER_TABLE_NAME = process.env.PARTNER_TABLE_NAME!;
-const CLIENT_TABLE_NAME = process.env.CLIENT_TABLE_NAME!;
 
 export const handler: Schema["listUsersLambda"]["functionHandler"] = async (event) => {
   console.log("=== LIST USERS LAMBDA START ===");
@@ -109,61 +107,55 @@ export const handler: Schema["listUsersLambda"]["functionHandler"] = async (even
 
     const cognitoUsers = await cognito.send(new ListUsersCommand(listUsersParams));
 
-    // Get list of admin usernames (for classification)
-    let adminUsernames: Set<string> = new Set();
-    try {
-      const adminGroupResponse = await cognito.send(
-        new ListUsersInGroupCommand({
-          UserPoolId: USER_POOL_ID,
-          GroupName: 'ADMINS',
-        })
-      );
-      adminUsernames = new Set(
-        (adminGroupResponse.Users || []).map(u => u.Username || '').filter(Boolean)
-      );
-    } catch (error) {
-      console.warn("Failed to get admin users list:", error);
-    }
+    const CLASSIFICATION_GROUPS = [
+      'ADMINS', 'ORGANIZATIONS', 'SERVICE_PROVIDERS', 'PARTNERS', 'CLIENTS',
+    ] as const;
+    type ClassificationGroup = typeof CLASSIFICATION_GROUPS[number];
 
-    // Get all Partner and Client records for classification lookup
-    let partnerUsernames: Set<string> = new Set();
-    let clientUsernames: Set<string> = new Set();
-    
-    try {
-      if (PARTNER_TABLE_NAME) {
-        const partnersResult = await docClient.send(
-          new ScanCommand({
-            TableName: PARTNER_TABLE_NAME,
-            ProjectionExpression: 'cognitoUsername',
-          })
-        );
-        partnerUsernames = new Set(
-          (partnersResult.Items || [])
-            .map(item => item.cognitoUsername)
-            .filter(Boolean)
-        );
-      }
-    } catch (error) {
-      console.warn("Failed to get partner usernames:", error);
-    }
+    const groupToClassification: Record<ClassificationGroup, string> = {
+      ADMINS: 'ADMIN',
+      PARTNERS: 'PARTNER',
+      CLIENTS: 'CLIENT',
+      SERVICE_PROVIDERS: 'SERVICE_PROVIDER',
+      ORGANIZATIONS: 'ORGANIZATION',
+    };
 
-    try {
-      if (CLIENT_TABLE_NAME) {
-        const clientsResult = await docClient.send(
-          new ScanCommand({
-            TableName: CLIENT_TABLE_NAME,
-            ProjectionExpression: 'cognitoUsername',
-          })
-        );
-        clientUsernames = new Set(
-          (clientsResult.Items || [])
-            .map(item => item.cognitoUsername)
-            .filter(Boolean)
-        );
+    const groupMembers = new Map<ClassificationGroup, Set<string>>();
+
+    await Promise.all(
+      CLASSIFICATION_GROUPS.map(async (groupName) => {
+        const usernames = new Set<string>();
+        try {
+          let nextToken: string | undefined;
+          do {
+            const resp = await cognito.send(
+              new ListUsersInGroupCommand({
+                UserPoolId: USER_POOL_ID,
+                GroupName: groupName,
+                Limit: 60,
+                NextToken: nextToken,
+              })
+            );
+            for (const u of resp.Users || []) {
+              if (u.Username) usernames.add(u.Username);
+            }
+            nextToken = resp.NextToken;
+          } while (nextToken);
+        } catch (error) {
+          console.warn(`Failed to list users in group ${groupName}:`, error);
+        }
+        groupMembers.set(groupName, usernames);
+      })
+    );
+
+    const classifyUser = (username: string): string => {
+      for (const group of CLASSIFICATION_GROUPS) {
+        if (groupMembers.get(group)?.has(username)) {
+          return groupToClassification[group];
+        }
       }
-    } catch (error) {
-      console.warn("Failed to get client usernames:", error);
-    }
+      return 'CLIENT';
+    };
 
     // Get credit balances and classification for all users
     const usersWithCredits = await Promise.all(
@@ -172,15 +164,7 @@ export const handler: Schema["listUsersLambda"]["functionHandler"] = async (even
         const email = cognitoUser.Attributes?.find(attr => attr.Name === 'email')?.Value || '';
         const name = cognitoUser.Attributes?.find(attr => attr.Name === 'name')?.Value || '';
         
-        // Determine user classification
-        let classification = 'CLIENT'; // Default
-        if (adminUsernames.has(username)) {
-          classification = 'ADMIN';
-        } else if (partnerUsernames.has(username)) {
-          classification = 'PARTNER';
-        } else if (clientUsernames.has(username)) {
-          classification = 'CLIENT';
-        }
+        const classification = classifyUser(username);
         
         // Get credit balance from DynamoDB
         let credits = 0;
@@ -210,7 +194,7 @@ export const handler: Schema["listUsersLambda"]["functionHandler"] = async (even
           email,
           name: name || email?.split('@')[0] || username,
           credits,
-          classification, // CLIENT, PARTNER, or ADMIN
+          classification,
           status: cognitoUser.UserStatus,
           enabled: cognitoUser.Enabled,
           createdAt: cognitoUser.UserCreateDate?.toISOString(),

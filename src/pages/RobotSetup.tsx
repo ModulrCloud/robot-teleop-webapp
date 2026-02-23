@@ -292,7 +292,7 @@ export default function RobotSetup() {
                         <button
                           type="button"
                           onClick={async () => {
-                            const startCommand = 'cargo run -- -vvv start --allow-skip-cert-check';
+                            const startCommand = 'cargo run -- -vvv start';
                             try {
                               await navigator.clipboard.writeText(startCommand);
                               setCopiedStartCommand(true);
@@ -318,12 +318,9 @@ export default function RobotSetup() {
                         </button>
                       </div>
                       <div className="codeblock-body">
-                        <pre className="codeblock-pre">cargo run -- -vvv start --allow-skip-cert-check</pre>
+                        <pre className="codeblock-pre">cargo run -- -vvv start</pre>
                       </div>
                     </div>
-                    <p className="step-note" style={{ marginTop: '0.75rem' }}>
-                      <strong>About <code>--allow-skip-cert-check</code>:</strong> Use this when the WebSocket server uses a self-signed or untrusted TLS certificate (e.g. local development or a custom server). For production Modulr cloud (<code>wss://*.execute-api.*.amazonaws.com</code>), the server certificate is CA-signed, so you can run <code>cargo run -- start</code> (with your config path if needed) without this flag if the connection succeeds. If you see TLS/certificate errors when connecting to Modulr cloud, contact support.
-                    </p>
                   </div>
                 </div>
 

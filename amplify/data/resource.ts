@@ -527,7 +527,7 @@ const schema = a.schema({
       // This is handled via a Lambda function since we need to check robot ownership
     ]),
 
-  // Command HQ: Organisation Models
+  // Command HQ: Organization Models (DynamoDB model name kept as 'Organisation' for backward compatibility)
 
   Organisation: a.model({
     id: a.id(),
