@@ -518,7 +518,7 @@
   box-shadow: 0 6px 24px rgba(255, 193, 7, 0.4);
 }
 
-/* Organisation Cards */
+/* Organization Cards */
 .org-cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));

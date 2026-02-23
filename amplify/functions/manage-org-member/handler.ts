@@ -81,7 +81,7 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
     if (!orgId || !email || !roleId) throw new Error("Missing required: orgId, email, roleId");
 
     const org = await getOrg(orgId);
-    if (!org) throw new Error("Organisation not found");
+    if (!org) throw new Error("Organization not found");
 
     if (!isPlatformAdmin) {
       const membership = await getCallerMembership(orgId, callerUsername);
@@ -93,7 +93,7 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
     }
 
     const targetRole = await getRole(roleId);
-    if (!targetRole || targetRole.orgId !== orgId) throw new Error("Role not found in this organisation");
+    if (!targetRole || targetRole.orgId !== orgId) throw new Error("Role not found in this organization");
 
     const members = await getOrgMembers(orgId);
     if (members.length >= (org.maxMembers ?? 10)) {
@@ -101,7 +101,7 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
     }
 
     const existingMember = members.find((m) => m.userEmail === email || m.userId === email);
-    if (existingMember) throw new Error("User is already a member of this organisation");
+    if (existingMember) throw new Error("User is already a member of this organization");
 
     const existingInvite = await docClient.send(
       new QueryCommand({
@@ -172,14 +172,14 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
     }
 
     const org = await getOrg(invite.orgId as string);
-    if (!org) throw new Error("Organisation no longer exists");
+    if (!org) throw new Error("Organization no longer exists");
 
     const members = await getOrgMembers(invite.orgId as string);
     const alreadyMember = members.find((m) => m.userId === callerUsername);
-    if (alreadyMember) throw new Error("You are already a member of this organisation");
+    if (alreadyMember) throw new Error("You are already a member of this organization");
 
     if (members.length >= (org.maxMembers ?? 10)) {
-      throw new Error("Organisation has reached its member cap");
+      throw new Error("Organization has reached its member cap");
     }
 
     const now = new Date().toISOString();
@@ -219,9 +219,9 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
     if (!orgId || !targetUserId) throw new Error("Missing required: orgId, targetUserId");
 
     const org = await getOrg(orgId);
-    if (!org) throw new Error("Organisation not found");
+    if (!org) throw new Error("Organization not found");
 
-    if (targetUserId === org.ownerId) throw new Error("Cannot remove the organisation owner");
+    if (targetUserId === org.ownerId) throw new Error("Cannot remove the organization owner");
 
     const isSelfRemoval = targetUserId === callerUsername;
     if (!isSelfRemoval && !isPlatformAdmin) {
@@ -247,7 +247,7 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
     if (!orgId || !targetUserId || !roleId) throw new Error("Missing required: orgId, targetUserId, roleId");
 
     const org = await getOrg(orgId);
-    if (!org) throw new Error("Organisation not found");
+    if (!org) throw new Error("Organization not found");
 
     if (targetUserId === org.ownerId) throw new Error("Cannot change the owner's role");
 
@@ -261,7 +261,7 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
     }
 
     const targetRole = await getRole(roleId);
-    if (!targetRole || targetRole.orgId !== orgId) throw new Error("Role not found in this organisation");
+    if (!targetRole || targetRole.orgId !== orgId) throw new Error("Role not found in this organization");
 
     const targetMembership = await getCallerMembership(orgId, targetUserId);
     if (!targetMembership) throw new Error("Target user is not a member");

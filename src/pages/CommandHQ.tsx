@@ -57,7 +57,7 @@ import {
   faArrowsAlt,
 } from "@fortawesome/free-solid-svg-icons";
 import type {
-  Organisation,
+  Organization,
   OrgRole,
   OrgMember,
   OrgInvite,
@@ -76,8 +76,8 @@ import type {
   ControllerConfig,
   LocationMapping,
   KeyboardMapping,
-} from "../types/organisation";
-import { PERMISSION_LABELS, ROS_COMMAND_CATEGORIES, DENY_SCOPES, DENY_REASONS, NOTIFICATION_EVENTS } from "../types/organisation";
+} from "../types/organization";
+import { PERMISSION_LABELS, ROS_COMMAND_CATEGORIES, DENY_SCOPES, DENY_REASONS, NOTIFICATION_EVENTS } from "../types/organization";
 import {
   getMockOrgById,
   getMockRolesForOrg,
@@ -93,7 +93,7 @@ import {
   getMockControllerConfigsForOrg,
   getMockLocationMappingsForOrg,
   getMockKeyboardMappingsForOrg,
-} from "../mocks/organisation";
+} from "../mocks/organization";
 import "./CommandHQ.css";
 
 const TABS: { id: CommandHQTab; label: string; icon: typeof faSatelliteDish }[] = [
@@ -113,7 +113,7 @@ export const CommandHQ = () => {
   const { user } = useAuthStatus();
 
   const [activeTab, setActiveTab] = useState<CommandHQTab>("overview");
-  const [org, setOrg] = useState<Organisation | null>(null);
+  const [org, setOrg] = useState<Organization | null>(null);
   const [roles, setRoles] = useState<OrgRole[]>([]);
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [invites, setInvites] = useState<OrgInvite[]>([]);
@@ -173,8 +173,8 @@ export const CommandHQ = () => {
     return (
       <div className="chq-page">
         <div className="chq-center">
-          <h2>Organisation not found</h2>
-          <p className="chq-muted">This organisation doesn't exist or you don't have access.</p>
+          <h2>Organization not found</h2>
+          <p className="chq-muted">This organization doesn't exist or you don't have access.</p>
           <button onClick={() => navigate("/")} className="chq-btn chq-btn-outline">
             <FontAwesomeIcon icon={faArrowLeft} /> Back to Dashboard
           </button>
@@ -256,7 +256,7 @@ function OverviewTab({
   roles,
   invites,
 }: {
-  org: Organisation;
+  org: Organization;
   members: OrgMember[];
   roles: OrgRole[];
   invites: OrgInvite[];
@@ -343,7 +343,7 @@ function MembersTab({
   invites: OrgInvite[];
   roles: OrgRole[];
   robots: OrgRobot[];
-  org: Organisation;
+  org: Organization;
   canManage: boolean;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
