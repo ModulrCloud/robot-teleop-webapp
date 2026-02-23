@@ -304,6 +304,8 @@ signalingFunction.addToRolePolicy(new PolicyStatement({
   resources: [
     `${connTable.tableArn}/index/monitoringRobotIdIndex`,
     `${tables.Session.tableArn}/index/connectionIdIndex`,
+    `${tables.UserCredits.tableArn}/index/userIdIndex`,
+    `${tables.Robot.tableArn}/index/robotIdIndex`,
   ],
 }));
 signalingCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
