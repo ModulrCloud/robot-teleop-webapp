@@ -83,7 +83,7 @@ export function UserSetup(_props: PrivateRouteProps) {
 
       await fetchAuthSession({ forceRefresh: true });
 
-      if (userGroup === "partner") {
+      if (userGroup === "partner" || userGroup === "organization") {
         const allPartners = await client.models.Partner.list({ limit: 100 });
         const emailPrefix = user?.email?.split('@')[0] || '';
         const existingPartner = allPartners.data?.find(p => 
@@ -116,19 +116,6 @@ export function UserSetup(_props: PrivateRouteProps) {
 
         if (createClientResp.errors) {
           setError("Failed to create profile. Please contact support.");
-          setSettingGroup(false);
-          return;
-        }
-      } else if (userGroup === "organization") {
-        const createPartnerResp = await client.models.Partner.create({
-          cognitoUsername: user?.username,
-          name: partnerDetails.name.trim(),
-          description: partnerDetails.description.trim(),
-          isPublicProfile: false,
-        });
-
-        if (createPartnerResp.errors) {
-          setError("Failed to create organization profile. Please contact support.");
           setSettingGroup(false);
           return;
         }

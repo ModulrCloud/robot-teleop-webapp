@@ -120,7 +120,7 @@ export const handler: Schema["listUsersLambda"]["functionHandler"] = async (even
       ORGANIZATIONS: 'ORGANIZATION',
     };
 
-    const usernameToClassification = new Map<string, string>();
+    const groupMembers = new Map<ClassificationGroup, Set<string>>();
 
     await Promise.all(
       CLASSIFICATION_GROUPS.map(async (groupName) => {
@@ -128,16 +128,25 @@ export const handler: Schema["listUsersLambda"]["functionHandler"] = async (even
           const resp = await cognito.send(
             new ListUsersInGroupCommand({ UserPoolId: USER_POOL_ID, GroupName: groupName })
           );
-          for (const u of resp.Users || []) {
-            if (u.Username && !usernameToClassification.has(u.Username)) {
-              usernameToClassification.set(u.Username, groupToClassification[groupName]);
-            }
-          }
+          const usernames = new Set(
+            (resp.Users || []).map(u => u.Username).filter((u): u is string => !!u)
+          );
+          groupMembers.set(groupName, usernames);
         } catch (error) {
           console.warn(`Failed to list users in group ${groupName}:`, error);
+          groupMembers.set(groupName, new Set());
         }
       })
     );
+
+    const classifyUser = (username: string): string => {
+      for (const group of CLASSIFICATION_GROUPS) {
+        if (groupMembers.get(group)?.has(username)) {
+          return groupToClassification[group];
+        }
+      }
+      return 'CLIENT';
+    };
 
     // Get credit balances and classification for all users
     const usersWithCredits = await Promise.all(
@@ -146,7 +155,7 @@ export const handler: Schema["listUsersLambda"]["functionHandler"] = async (even
         const email = cognitoUser.Attributes?.find(attr => attr.Name === 'email')?.Value || '';
         const name = cognitoUser.Attributes?.find(attr => attr.Name === 'name')?.Value || '';
         
-        const classification = usernameToClassification.get(username) || 'CLIENT';
+        const classification = classifyUser(username);
         
         // Get credit balance from DynamoDB
         let credits = 0;
