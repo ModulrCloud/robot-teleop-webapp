@@ -515,8 +515,8 @@ export function useWebRTC(options: WebRTCOptions) {
                   version: '0.0',
                   id: crypto.randomUUID(),
                   timestamp: new Date().toISOString(),
-                  robotId,
                   payload: {
+                    robotId,
                     connectionId: myIdRef.current,
                     candidate: c.candidate,
                     sdpMid: c.sdpMid ?? '0',
