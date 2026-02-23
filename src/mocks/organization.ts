@@ -1,4 +1,4 @@
-import type { Organisation, OrgRole, OrgMember, OrgInvite, OrgRobot, OrgSession, OrgLog, RosCommand, DenyListEntry, NotificationRule, OrgNotification, ControllerConfig, LocationMapping, KeyboardMapping } from '../types/organisation';
+import type { Organization, OrgRole, OrgMember, OrgInvite, OrgRobot, OrgSession, OrgLog, RosCommand, DenyListEntry, NotificationRule, OrgNotification, ControllerConfig, LocationMapping, KeyboardMapping } from '../types/organization';
 
 export const MOCK_ROLES: OrgRole[] = [
   {
@@ -48,7 +48,7 @@ export const MOCK_ROLES: OrgRole[] = [
     id: 'role-viewer',
     orgId: 'org-001',
     name: 'Viewer',
-    description: 'Read-only access to the organisation.',
+    description: 'Read-only access to the organization.',
     permissions: ['members:view', 'robots:view', 'sessions:view', 'logs:view'],
     isSystem: true,
     priority: 3,
@@ -171,7 +171,7 @@ export const MOCK_ROBOTS: OrgRobot[] = [
   },
 ];
 
-export const MOCK_ORGANISATIONS: Organisation[] = [
+export const MOCK_ORGANIZATIONS: Organization[] = [
   {
     id: 'org-001',
     name: 'Modulr Robotics',
@@ -204,12 +204,12 @@ export const MOCK_ORGANISATIONS: Organisation[] = [
   },
 ];
 
-export function getMockOrgsForUser(): Organisation[] {
-  return MOCK_ORGANISATIONS;
+export function getMockOrgsForUser(): Organization[] {
+  return MOCK_ORGANIZATIONS;
 }
 
-export function getMockOrgById(orgId: string): Organisation | undefined {
-  return MOCK_ORGANISATIONS.find((o) => o.id === orgId);
+export function getMockOrgById(orgId: string): Organization | undefined {
+  return MOCK_ORGANIZATIONS.find((o) => o.id === orgId);
 }
 
 export function getMockRolesForOrg(orgId: string): OrgRole[] {
@@ -758,7 +758,7 @@ export const MOCK_NOTIFICATIONS: OrgNotification[] = [
     ruleId: 'rule-004',
     type: 'info',
     title: 'New member joined',
-    message: 'jordan@example.com has joined the organisation as Operator.',
+    message: 'jordan@example.com has joined the organization as Operator.',
     isRead: true,
     createdAt: '2026-02-01T09:00:00Z',
     robotId: null,

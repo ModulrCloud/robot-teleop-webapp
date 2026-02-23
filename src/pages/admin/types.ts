@@ -8,7 +8,7 @@ export interface User {
   username: string;
   email?: string;
   name?: string;
-  classification?: 'CLIENT' | 'PARTNER' | 'ADMIN';
+  classification?: 'CLIENT' | 'PARTNER' | 'SERVICE_PROVIDER' | 'ORGANIZATION' | 'ADMIN';
   credits?: number;
   enabled?: boolean;
   createdAt?: string;

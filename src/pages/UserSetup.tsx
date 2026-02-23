@@ -9,7 +9,7 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { useLocation, useNavigate } from "react-router-dom";
 import { LoadingWheel } from "../components/LoadingWheel";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faRobot, faGamepad, faCheckCircle } from '@fortawesome/free-solid-svg-icons';
+import { faRobot, faGamepad, faCheckCircle, faServer, faSatelliteDish } from '@fortawesome/free-solid-svg-icons';
 import { formatGroupName } from "../utils/formatters";
 import { logger } from '../utils/logger';
 
@@ -49,17 +49,19 @@ export function UserSetup(_props: PrivateRouteProps) {
     }));
   };
 
+  const needsDetails = userGroup === "partner" || userGroup === "organization";
+
   const onConfirmUserGroup = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
 
-    if (userGroup === "partner") {
+    if (needsDetails) {
       if (!partnerDetails.name.trim()) {
-        setError("Partner name is required");
+        setError("Organization / company name is required");
         return;
       }
       if (!partnerDetails.description.trim()) {
-        setError("Partner description is required");
+        setError("Description is required");
         return;
       }
     }
@@ -103,17 +105,30 @@ export function UserSetup(_props: PrivateRouteProps) {
         });
 
         if (createPartnerResp.errors) {
-          setError("Failed to create partner profile. Please contact support.");
+          setError("Failed to create profile. Please contact support.");
           setSettingGroup(false);
           return;
         }
-      } else if (userGroup === "client") {
+      } else if (userGroup === "client" || userGroup === "service_provider") {
         const createClientResp = await client.models.Client.create({
           cognitoUsername: user?.username,
         });
 
         if (createClientResp.errors) {
-          setError("Failed to create client profile. Please contact support.");
+          setError("Failed to create profile. Please contact support.");
+          setSettingGroup(false);
+          return;
+        }
+      } else if (userGroup === "organization") {
+        const createPartnerResp = await client.models.Partner.create({
+          cognitoUsername: user?.username,
+          name: partnerDetails.name.trim(),
+          description: partnerDetails.description.trim(),
+          isPublicProfile: false,
+        });
+
+        if (createPartnerResp.errors) {
+          setError("Failed to create organization profile. Please contact support.");
           setSettingGroup(false);
           return;
         }
@@ -146,7 +161,39 @@ export function UserSetup(_props: PrivateRouteProps) {
     );
   }
 
-  const isPartner = userGroup === "partner";
+  const ACCOUNT_TYPES = [
+    {
+      id: 'client',
+      icon: faGamepad,
+      title: 'Client',
+      subtitle: 'I want to teleoperate robots',
+      features: ['Browse & access available robots', 'Remote teleoperation sessions', 'Session history & receipts'],
+    },
+    {
+      id: 'partner',
+      icon: faRobot,
+      title: 'Partner',
+      subtitle: 'I have robot(s) I want to rent out',
+      features: ['List your robots on the marketplace', 'Earn credits from teleop sessions', 'Manage robot access & pricing'],
+    },
+    {
+      id: 'service_provider',
+      icon: faServer,
+      title: 'Services Provider',
+      subtitle: 'I have AI/data/compute services to sell',
+      features: ['List AI & compute services', 'Integrate into teleop sessions', 'Service analytics & earnings'],
+    },
+    {
+      id: 'organization',
+      icon: faSatelliteDish,
+      title: 'Organization',
+      subtitle: 'I want to manage my robot team & fleet',
+      features: ['Command HQ fleet management', 'Team roles & permissions', 'Custom ROS commands & configs'],
+    },
+  ];
+
+  const selectedType = ACCOUNT_TYPES.find((t) => t.id === userGroup);
+  const btnLabel = selectedType ? `Create ${selectedType.title} Account` : 'Continue';
 
   return (
     <div className="setup-wrapper">
@@ -159,7 +206,7 @@ export function UserSetup(_props: PrivateRouteProps) {
               <span className="step-number">1</span>
               <span className="step-label">Choose Type</span>
             </div>
-            <div className={`step ${isPartner ? 'active' : ''}`}>
+            <div className={`step ${needsDetails ? 'active' : ''}`}>
               <span className="step-number">2</span>
               <span className="step-label">Details</span>
             </div>
@@ -171,51 +218,41 @@ export function UserSetup(_props: PrivateRouteProps) {
         </div>
 
         <form className="setup-form" onSubmit={onConfirmUserGroup}>
-          <div className="account-type-selector">
-            <div 
-              className={`type-card ${userGroup === 'client' ? 'selected' : ''}`}
-              onClick={() => !settingGroup && handleOptionChange('client')}
-            >
-              <FontAwesomeIcon icon={faGamepad} className="type-icon" />
-              <h3>Client Account</h3>
-              <p>Control robots remotely</p>
-              <ul className="type-features">
-                <li>Access available robots</li>
-                <li>Remote teleoperation</li>
-                <li>Session history & receipts</li>
-              </ul>
-              {userGroup === 'client' && <div className="selection-indicator">Selected</div>}
-            </div>
-
-            <div 
-              className={`type-card ${userGroup === 'partner' ? 'selected' : ''}`}
-              onClick={() => !settingGroup && handleOptionChange('partner')}
-            >
-              <FontAwesomeIcon icon={faRobot} className="type-icon" />
-              <h3>Partner Account</h3>
-              <p>Offer your robots & services</p>
-              <ul className="type-features">
-                <li>List your robots and earn from sessions</li>
-                <li>List your AI/data/compute services</li>
-                <li>Integrate directly during teleop sessions</li>
-              </ul>
-              {userGroup === 'partner' && <div className="selection-indicator">Selected</div>}
-            </div>
+          <div className="account-type-selector account-type-selector--4col">
+            {ACCOUNT_TYPES.map((acct) => (
+              <div
+                key={acct.id}
+                className={`type-card ${userGroup === acct.id ? 'selected' : ''}`}
+                onClick={() => !settingGroup && handleOptionChange(acct.id)}
+              >
+                <FontAwesomeIcon icon={acct.icon} className="type-icon" />
+                <h3>{acct.title}</h3>
+                <p>{acct.subtitle}</p>
+                <ul className="type-features">
+                  {acct.features.map((f) => <li key={f}>{f}</li>)}
+                </ul>
+                {userGroup === acct.id && <div className="selection-indicator">Selected</div>}
+              </div>
+            ))}
           </div>
 
-          {isPartner && (
+          {needsDetails && (
             <div className="partner-details-section">
-              <h3 className="section-title">Partner Information</h3>
+              <h3 className="section-title">
+                {userGroup === 'organization' ? 'Organization Details' : 'Company Details'}
+              </h3>
               
               <div className="form-group">
-                <label htmlFor="partnerName">Organization Name *</label>
+                <label htmlFor="partnerName">
+                  {userGroup === 'organization' ? 'Organization Name' : 'Company Name'} *
+                </label>
                 <input
                   id="partnerName"
                   name="name"
                   type="text"
                   value={partnerDetails.name}
                   onChange={handlePartnerInputChange}
-                  placeholder="e.g., RoboTech Solutions"
+                  placeholder={userGroup === 'organization' ? 'e.g., Modulr Robotics' : 'e.g., RoboTech Solutions'}
                   disabled={settingGroup}
                   required
                   className="form-input"
@@ -229,7 +266,11 @@ export function UserSetup(_props: PrivateRouteProps) {
                   name="description"
                   value={partnerDetails.description}
                   onChange={handlePartnerInputChange}
-                  placeholder="Tell clients about your robot services, expertise, and what makes you unique..."
+                  placeholder={
+                    userGroup === 'organization'
+                      ? 'Describe your organization, team size, and what robots you operate...'
+                      : 'Tell clients about your robots, expertise, and what makes you unique...'
+                  }
                   disabled={settingGroup}
                   rows={4}
                   required
@@ -253,7 +294,7 @@ export function UserSetup(_props: PrivateRouteProps) {
               </div>
             ) : (
               <button type="submit" className="btn-primary btn-large">
-                {isPartner ? "Create Partner Account" : "Create Client Account"}
+                {btnLabel}
               </button>
             )}
           </div>

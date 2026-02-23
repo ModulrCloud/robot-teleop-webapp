@@ -61,8 +61,8 @@ export function UserProfile() {
   });
   const [isEditingCurrency, setIsEditingCurrency] = useState(false);
 
-  const isPartner = user?.group === "PARTNERS";
-  const isClient = user?.group === "CLIENTS";
+  const isPartner = user?.group === "PARTNERS" || user?.group === "ORGANIZATIONS";
+  const isClient = user?.group === "CLIENTS" || user?.group === "SERVICE_PROVIDERS";
 
   useEffect(() => {
     loadProfileData();

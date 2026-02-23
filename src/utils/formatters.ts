@@ -2,8 +2,10 @@ export function formatGroupName(group?: string | null): string {
   if (!group) return "N/A";
 
   const groupMap: Record<string, string> = {
-    PARTNERS: "Partner",
     CLIENTS: "Client",
+    PARTNERS: "Partner",
+    SERVICE_PROVIDERS: "Services Provider",
+    ORGANIZATIONS: "Organization",
     ADMINS: "Admin",
   };
 

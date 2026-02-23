@@ -2,7 +2,7 @@ export type OrgStatus = 'active' | 'suspended' | 'denied';
 export type MemberStatus = 'active' | 'suspended';
 export type InviteStatus = 'pending' | 'accepted' | 'declined' | 'expired';
 
-export interface Organisation {
+export interface Organization {
   id: string;
   name: string;
   slug: string;
