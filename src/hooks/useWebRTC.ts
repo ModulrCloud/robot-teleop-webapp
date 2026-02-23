@@ -425,34 +425,37 @@ export function useWebRTC(options: WebRTCOptions) {
           return;
         }
 
-        // Handle error messages from signaling handler
-        if (msg.type === 'error') {
-          if (msg.error === 'insufficient_funds') {
-            logger.warn('[BROWSER] Insufficient funds to start session:', msg.message);
+        // Handle error messages from signaling handler (modulr-v0 envelope + legacy fallback)
+        if (msg.type === 'signalling.error' || msg.type === 'error') {
+          const errorCode = msg.type === 'signalling.error' ? msg.payload?.code : msg.error;
+          const errorMessage = msg.type === 'signalling.error' ? msg.payload?.message : msg.message;
+
+          if (errorCode === 'insufficient_funds') {
+            logger.warn('[BROWSER] Insufficient funds to start session:', errorMessage);
             setStatus(prev => ({
               ...prev,
               connecting: false,
               connected: false,
-              error: msg.message || 'Insufficient credits to start session. Please top up your account.',
+              error: errorMessage || 'Insufficient credits to start session. Please top up your account.',
               robotBusy: false,
             }));
-          } else if (msg.error === 'access_denied') {
-            logger.warn('[BROWSER] Access denied to robot:', msg.message);
+          } else if (errorCode === 'access_denied') {
+            logger.warn('[BROWSER] Access denied to robot:', errorMessage);
             setStatus(prev => ({
               ...prev,
               connecting: false,
               connected: false,
-              error: msg.message || 'You are not authorized to access this robot. The robot owner may have restricted access to specific users.',
+              error: errorMessage || 'You are not authorized to access this robot. The robot owner may have restricted access to specific users.',
               robotBusy: false,
             }));
           } else {
             // Generic error handling
-            logger.warn('[BROWSER] Error from server:', msg.message);
+            logger.warn('[BROWSER] Error from server:', errorMessage);
             setStatus(prev => ({
               ...prev,
               connecting: false,
               connected: false,
-              error: msg.message || 'An error occurred. Please try again.',
+              error: errorMessage || 'An error occurred. Please try again.',
               robotBusy: false,
             }));
           }
@@ -505,12 +508,21 @@ export function useWebRTC(options: WebRTCOptions) {
           pc.onicecandidate = (event) => {
             if (event.candidate && ws.readyState === WebSocket.OPEN) {
               logger.log('[WEBRTC] Sending ICE candidate to robot:', robotId);
+              const c = event.candidate;
               ws.send(
                 JSON.stringify({
-                  type: 'candidate',
-                  from: myIdRef.current,
-                  to: robotId,
-                  candidate: event.candidate,
+                  type: 'signalling.ice_candidate',
+                  version: '0.0',
+                  id: crypto.randomUUID(),
+                  timestamp: new Date().toISOString(),
+                  payload: {
+                    robotId,
+                    connectionId: myIdRef.current,
+                    candidate: c.candidate,
+                    sdpMid: c.sdpMid ?? '0',
+                    sdpMLineIndex: c.sdpMLineIndex ?? 0,
+                    ...(c.usernameFragment && { usernameFragment: c.usernameFragment }),
+                  },
                 })
               );
             }
@@ -572,39 +584,68 @@ export function useWebRTC(options: WebRTCOptions) {
           logger.log('[WEBRTC] Offer created, sending to robot:', robotId);
 
           const offerMessage = {
-            to: robotId,
-            from: myIdRef.current,
-            type: 'offer',
-            sdp: pc.localDescription?.sdp,
+            type: 'signalling.offer',
+            version: '0.0',
+            id: crypto.randomUUID(),
+            timestamp: new Date().toISOString(),
+            payload: {
+              robotId,
+              connectionId: myIdRef.current,
+              sdp: pc.localDescription?.sdp,
+              sdpType: 'offer',
+            },
           };
-          logger.log('[WEBRTC] Sending offer message:', { 
-            to: offerMessage.to, 
-            from: offerMessage.from, 
+          logger.log('[WEBRTC] Sending offer message:', {
             type: offerMessage.type,
-            sdpLength: offerMessage.sdp?.length 
+            robotId,
+            connectionId: myIdRef.current,
+            sdpLength: offerMessage.payload.sdp?.length
           });
-          
+
           ws.send(JSON.stringify(offerMessage));
           logger.log('[WEBRTC] Offer sent! Waiting for answer from robot...');
           return;
         }
 
-        // Handle WebRTC signaling messages
+        // Handle WebRTC signaling messages (modulr-v0 envelopes + legacy fallback)
         const pc = pcRef.current;
         if (!pc) return;
 
-        if (msg.type === 'answer' && msg.sdp) {
-          logger.log('[WEBRTC] Received answer from robot, setting remote description...');
+        // modulr-v0: signalling.answer
+        if (msg.type === 'signalling.answer' && msg.payload?.sdp) {
+          logger.log('[WEBRTC] Received answer (modulr-v0) from robot, setting remote description...');
+          try {
+            await pc.setRemoteDescription({ type: 'answer', sdp: msg.payload.sdp });
+            logger.log('[WEBRTC] Remote description set successfully');
+          } catch (e) {
+            logger.error('[WEBRTC] Error setting remote description:', e);
+          }
+        // modulr-v0: signalling.ice_candidate
+        } else if (msg.type === 'signalling.ice_candidate' && msg.payload?.candidate) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate({
+              candidate: msg.payload.candidate,
+              sdpMid: msg.payload.sdpMid,
+              sdpMLineIndex: msg.payload.sdpMLineIndex,
+            }));
+            logger.log('[WEBRTC] Added ICE candidate (modulr-v0) from robot');
+          } catch (e) {
+            logger.error('[WEBRTC] Error adding ICE candidate:', e);
+          }
+        // Legacy fallback: answer
+        } else if (msg.type === 'answer' && msg.sdp) {
+          logger.log('[WEBRTC] Received answer (legacy) from robot, setting remote description...');
           try {
             await pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp });
             logger.log('[WEBRTC] Remote description set successfully');
           } catch (e) {
             logger.error('[WEBRTC] Error setting remote description:', e);
           }
+        // Legacy fallback: candidate
         } else if (msg.type === 'candidate' && msg.candidate) {
           try {
             await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-            logger.log('[WEBRTC] Added ICE candidate from robot');
+            logger.log('[WEBRTC] Added ICE candidate (legacy) from robot');
           } catch (e) {
             logger.error('[WEBRTC] Error adding ICE candidate:', e);
           }
