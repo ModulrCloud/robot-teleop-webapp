@@ -111,7 +111,7 @@ type RawMessage = Record<string, unknown>;
 // ---------------------------------
 
 /** Supported protocol versions for the new (domain.message) format. */
-const SUPPORTED_PROTOCOL_VERSIONS = ['0.0', '0.1', '0.3'] as const;
+const SUPPORTED_PROTOCOL_VERSIONS = ['0.0', '0.3'] as const;
 
 /** Connection protocol: legacy (type: "register") or new (type: "signalling.register"). */
 export type ConnectionProtocol = 'legacy' | 'modulr-v0';
