@@ -42,6 +42,12 @@ import { getActiveRobots } from "../functions/get-active-robots/resource";
 import { manageCreditTier } from "../functions/manage-credit-tier/resource";
 import { manageOrganisation } from "../functions/manage-organisation/resource";
 import { manageOrgMember } from "../functions/manage-org-member/resource";
+import { regenerateEnrollmentToken } from "../functions/regenerate-enrollment-token/resource";
+
+const EnrollmentTokenResult = a.customType({
+  token: a.string().required(),
+  expiry: a.float().required(), // float to avoid 32-bit Int overflow for ms timestamps
+});
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -324,6 +330,8 @@ const schema = a.schema({
     latitude: a.float(),
     longitude: a.float(),
     publicKey: a.string(), // Optional: Ed25519 public key (base64 or hex) for PKI auth; 32-byte key
+    enrollmentToken: a.string(), // One-time token used by robot to self-register its public key; cleared after use
+    enrollmentTokenExpiry: a.float(), // Unix ms timestamp when enrollment token expires (7-day TTL); float to avoid 32-bit Int overflow
     ratings: a.hasMany('RobotRating', 'robotUuid'), // Relationship to ratings
     reservations: a.hasMany('RobotReservation', 'robotUuid'), // Relationship to reservations
     availability: a.hasMany('RobotAvailability', 'robotUuid'), // Relationship to availability blocks
@@ -686,6 +694,15 @@ const schema = a.schema({
     .returns(a.string())
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (owner/admin check)
     .handler(a.handler.function(updateRobotLambda)),
+
+  regenerateEnrollmentToken: a
+    .mutation()
+    .arguments({
+      robotId: a.string().required(), // Robot ID (UUID) - same convention as updateRobotLambda
+    })
+    .returns(EnrollmentTokenResult)
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(regenerateEnrollmentToken)),
 
   revokeTokenLambda: a
     .mutation()
