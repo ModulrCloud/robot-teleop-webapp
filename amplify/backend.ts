@@ -50,12 +50,14 @@ import { manageOrganisation } from './functions/manage-organisation/resource';
 import { manageOrgMember } from './functions/manage-org-member/resource';
 import { cleanupAuditLogs } from './functions/cleanup-audit-logs/resource';
 import { websocketKeepalive } from './functions/websocket-keepalive/resource';
+import { regenerateEnrollmentToken } from './functions/regenerate-enrollment-token/resource';
+import { registerRobotKey } from './functions/register-robot-key/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
 import { WebSocketLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
 import { RemovalPolicy, Stack, Duration } from 'aws-cdk-lib';
-import { Function as CdkFunction } from 'aws-cdk-lib/aws-lambda';
+import { Function as CdkFunction, FunctionUrlAuthType, HttpMethod } from 'aws-cdk-lib/aws-lambda';
 import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
 import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 
@@ -114,6 +116,8 @@ const backend = defineBackend({
   manageOrgMember,
   cleanupAuditLogs,
   websocketKeepalive,
+  regenerateEnrollmentToken,
+  registerRobotKey,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -304,6 +308,7 @@ signalingFunction.addToRolePolicy(new PolicyStatement({
   resources: [
     `${connTable.tableArn}/index/monitoringRobotIdIndex`,
     `${tables.Session.tableArn}/index/connectionIdIndex`,
+    `${tables.Session.tableArn}/index/robotIdIndex`,
     `${tables.UserCredits.tableArn}/index/userIdIndex`,
     `${tables.Robot.tableArn}/index/robotIdIndex`,
   ],
@@ -407,6 +412,49 @@ tables.Robot.grantReadWriteData(updateRobotLambdaFunction);
 userInvalidationTable.grantReadData(updateRobotLambdaFunction); // Read-only for checking session invalidation
 const updateRobotCdkFunction = updateRobotLambdaFunction as CdkFunction;
 updateRobotCdkFunction.addEnvironment('USER_INVALIDATION_TABLE', userInvalidationTable.tableName);
+
+// Regenerate enrollment token Lambda (authenticated: partner or admin regenerates token for their robot)
+backend.regenerateEnrollmentToken.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+backend.regenerateEnrollmentToken.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+const regenerateEnrollmentTokenFunction = backend.regenerateEnrollmentToken.resources.lambda;
+tables.Robot.grantReadWriteData(regenerateEnrollmentTokenFunction);
+tables.Partner.grantReadData(regenerateEnrollmentTokenFunction);
+regenerateEnrollmentTokenFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query'],
+  resources: [
+    `${tables.Partner.tableArn}/index/cognitoUsernameIndex`,
+  ],
+}));
+
+// Register robot key Lambda (unauthenticated: robot self-registers its Ed25519 public key using enrollment token)
+const registerRobotKeyFunction = backend.registerRobotKey.resources.lambda;
+const registerRobotKeyCdkFunction = registerRobotKeyFunction as CdkFunction;
+registerRobotKeyCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+registerRobotKeyCdkFunction.addEnvironment('ROBOT_ID_INDEX', 'robotIdIndex');
+tables.Robot.grantReadWriteData(registerRobotKeyFunction);
+registerRobotKeyFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query'],
+  resources: [
+    `${tables.Robot.tableArn}/index/robotIdIndex`,
+  ],
+}));
+
+// Expose register-robot-key as an unauthenticated HTTPS endpoint via Lambda Function URL
+const registerRobotKeyUrl = registerRobotKeyCdkFunction.addFunctionUrl({
+  authType: FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [HttpMethod.POST],
+    allowedHeaders: ['Content-Type'],
+  },
+});
+backend.addOutput({
+  custom: {
+    robotEnrollment: {
+      registrationUrl: registerRobotKeyUrl.url,
+    },
+  },
+});
 
 // Grant DynamoDB permissions to delete robot function
 tables.Robot.grantReadWriteData(deleteRobotLambdaFunction);

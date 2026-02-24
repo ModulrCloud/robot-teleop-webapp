@@ -1,5 +1,6 @@
 import { DynamoDBClient, PutItemCommand, QueryCommand } from '@aws-sdk/client-dynamodb';
 import { v4 as uuidv4 } from "uuid";
+import { randomBytes } from 'crypto';
 import { Schema } from '../../data/resource';
 
 const ddbClient = new DynamoDBClient({});
@@ -40,6 +41,8 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
   const id = uuidv4();
   const robotIdValue = `robot-${id.substring(0, 8)}`;
   const now = new Date().toISOString();
+  const enrollmentToken = randomBytes(32).toString('hex');
+  const enrollmentTokenExpiry = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 days
 
   const robot = {
     id,
@@ -65,6 +68,8 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
       createdAt: { S: now },
       updatedAt: { S: now },
       __typename: { S: robot.__typename },
+      enrollmentToken: { S: enrollmentToken },
+      enrollmentTokenExpiry: { N: enrollmentTokenExpiry.toString() },
     },
   };
 
