@@ -63,6 +63,8 @@ export interface AuditLogMetadata {
   creditsAmount?: number;
   oldClassification?: string;
   newClassification?: string;
+  oldGroup?: string;
+  newGroup?: string;
   tierId?: string;
   tierName?: string;
   deletedTier?: {

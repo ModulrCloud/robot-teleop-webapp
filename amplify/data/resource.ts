@@ -40,7 +40,7 @@ import { listSessionsByRobot } from "../functions/list-sessions-by-robot/resourc
 import { triggerConnectionCleanup } from "../functions/trigger-connection-cleanup/resource";
 import { getActiveRobots } from "../functions/get-active-robots/resource";
 import { manageCreditTier } from "../functions/manage-credit-tier/resource";
-import { manageOrganisation } from "../functions/manage-organisation/resource";
+import { manageOrganization } from "../functions/manage-organization/resource";
 import { manageOrgMember } from "../functions/manage-org-member/resource";
 import { regenerateEnrollmentToken } from "../functions/regenerate-enrollment-token/resource";
 
@@ -518,9 +518,9 @@ const schema = a.schema({
       // This is handled via a Lambda function since we need to check robot ownership
     ]),
 
-  // Command HQ: Organization Models (DynamoDB model name kept as 'Organisation' for backward compatibility)
+  // Command HQ: Organization Models
 
-  Organisation: a.model({
+  Organization: a.model({
     id: a.id(),
     name: a.string().required(),
     slug: a.string().required(),
@@ -549,7 +549,7 @@ const schema = a.schema({
   OrgRole: a.model({
     id: a.id(),
     orgId: a.id().required(),
-    org: a.belongsTo('Organisation', 'orgId'),
+    org: a.belongsTo('Organization', 'orgId'),
     name: a.string().required(),
     description: a.string(),
     permissions: a.json().required(),
@@ -570,7 +570,7 @@ const schema = a.schema({
   OrgMember: a.model({
     id: a.id(),
     orgId: a.id().required(),
-    org: a.belongsTo('Organisation', 'orgId'),
+    org: a.belongsTo('Organization', 'orgId'),
     userId: a.string().required(),
     userEmail: a.string(),
     roleId: a.id().required(),
@@ -591,7 +591,7 @@ const schema = a.schema({
   OrgInvite: a.model({
     id: a.id(),
     orgId: a.id().required(),
-    org: a.belongsTo('Organisation', 'orgId'),
+    org: a.belongsTo('Organization', 'orgId'),
     email: a.string().required(),
     roleId: a.id().required(),
     invitedBy: a.string().required(),
@@ -611,7 +611,7 @@ const schema = a.schema({
       allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
     ]),
 
-  manageOrganisationLambda: a
+  manageOrganizationLambda: a
     .mutation()
     .arguments({
       action: a.string().required(),
@@ -623,7 +623,7 @@ const schema = a.schema({
     })
     .returns(a.json())
     .authorization(allow => [allow.authenticated()])
-    .handler(a.handler.function(manageOrganisation)),
+    .handler(a.handler.function(manageOrganization)),
 
   manageOrgMemberLambda: a
     .mutation()

@@ -123,13 +123,17 @@
 
 .type-card {
   background: rgba(255, 255, 255, 0.025);
-  padding: 2rem 1.75rem 1.85rem;
+  padding: 2.5rem 2rem;
   border-radius: 0.85rem;
   border: 1.5px solid rgba(255, 255, 255, 0.07);
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .type-card:hover {
@@ -145,50 +149,25 @@
 }
 
 .type-icon {
-  font-size: 3rem;
+  font-size: 3.2rem;
   color: #f5c518;
-  margin-bottom: 1rem;
+  margin-bottom: 1.1rem;
 }
 
 .type-card h3 {
   color: #fff;
-  margin: 0 0 0.4rem;
-  font-size: 1.55rem;
+  margin: 0 0 0.6rem;
+  font-size: 1.7rem;
   font-weight: 600;
 }
 
 .type-card > p {
-  color: rgba(255, 255, 255, 0.45);
-  margin: 0 0 1.1rem;
-  font-size: 1.05rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0;
+  font-size: 1.15rem;
   line-height: 1.5;
 }
 
-.type-features {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  text-align: left;
-}
-
-.type-features li {
-  color: rgba(255, 255, 255, 0.55);
-  padding: 0.4rem 0;
-  font-size: 1.05rem;
-  line-height: 1.45;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-}
-
-.type-features li::before {
-  content: "✓";
-  color: #34d399;
-  font-weight: 700;
-  font-size: 1rem;
-  flex-shrink: 0;
-  margin-top: 0.1rem;
-}
 
 .selection-indicator {
   position: absolute;
