@@ -653,7 +653,7 @@ export const Dashboard = () => {
       {user?.group === 'ORGANIZATIONS' && (
         <div className="dashboard-section">
           <div className="section-header">
-            <h2 className="section-title">Your Organizations</h2>
+            <h2 className="section-title">Your Teams</h2>
             <button className="view-all-btn" onClick={() => {/* TODO: create org flow */}}>
               <FontAwesomeIcon icon={faPlus} /> Create
             </button>
@@ -684,10 +684,10 @@ export const Dashboard = () => {
           ) : (
             <div className="empty-state">
               <FontAwesomeIcon icon={faBuilding} className="empty-icon" />
-              <h3>No Organizations Yet</h3>
-              <p>Create an organization to manage your team and robots.</p>
+              <h3>No Teams Yet</h3>
+              <p>Create a team to manage your operators and robot fleet.</p>
               <button className="empty-action-btn" onClick={() => {/* TODO: create org flow */}}>
-                <FontAwesomeIcon icon={faPlus} /> Create Organization
+                <FontAwesomeIcon icon={faPlus} /> Create Team
               </button>
             </div>
           )}

@@ -16,6 +16,7 @@ import {
   faChevronRight,
   faEdit,
   faTrash,
+  faSearch,
 } from "@fortawesome/free-solid-svg-icons";
 import { logger } from "../../../utils/logger";
 import "../../Admin.css";
@@ -53,6 +54,9 @@ export const UserManagement = () => {
   const [userTransactions, setUserTransactions] = useState<CreditTransaction[]>([]);
   const [loadingUserDetail, setLoadingUserDetail] = useState(false);
   
+  // Search
+  const [searchQuery, setSearchQuery] = useState('');
+
   // Credit adjustment
   const [creditAdjustment, setCreditAdjustment] = useState<string>('');
   const [creditDescription, setCreditDescription] = useState<string>('');
@@ -546,6 +550,18 @@ export const UserManagement = () => {
     }
   };
 
+  const filteredUsers = searchQuery.trim()
+    ? users.filter((u) => {
+        const q = searchQuery.toLowerCase();
+        return (
+          (u.name || '').toLowerCase().includes(q) ||
+          (u.email || '').toLowerCase().includes(q) ||
+          (u.username || '').toLowerCase().includes(q) ||
+          (u.classification || '').toLowerCase().includes(q)
+        );
+      })
+    : users;
+
   return (
     <>
       <div className="admin-section">
@@ -570,17 +586,73 @@ export const UserManagement = () => {
           <p className="section-description">
             View and manage all platform users. Click "View Details" to see full profile information and manage credits.
           </p>
-          
+
+          <div className="admin-search-bar" style={{ marginBottom: '1rem' }}>
+            <div style={{ position: 'relative', maxWidth: '400px' }}>
+              <FontAwesomeIcon
+                icon={faSearch}
+                style={{
+                  position: 'absolute',
+                  left: '0.85rem',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: 'rgba(255,255,255,0.3)',
+                  fontSize: '0.85rem',
+                }}
+              />
+              <input
+                type="text"
+                placeholder="Search by name, email, or username..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.6rem 0.85rem 0.6rem 2.4rem',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '0.5rem',
+                  color: '#fff',
+                  fontSize: '0.9rem',
+                  outline: 'none',
+                  transition: 'border-color 0.2s',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = 'rgba(245,197,24,0.5)'; }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  style={{
+                    position: 'absolute',
+                    right: '0.6rem',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(255,255,255,0.4)',
+                    cursor: 'pointer',
+                    padding: '0.2rem',
+                    fontSize: '0.8rem',
+                  }}
+                  title="Clear search"
+                >
+                  <FontAwesomeIcon icon={faTimes} />
+                </button>
+              )}
+            </div>
+          </div>
+
           {loadingUsers ? (
             <div className="loading-state">
               <p>Loading users...</p>
             </div>
           ) : (
             <div className="users-list">
-              {users.length === 0 ? (
+              {filteredUsers.length === 0 ? (
                 <div className="empty-state">
                   <FontAwesomeIcon icon={faInfoCircle} />
-                  <p>No users found.</p>
+                  <p>{searchQuery ? 'No users match your search.' : 'No users found.'}</p>
                 </div>
               ) : (
                 <>
@@ -596,7 +668,7 @@ export const UserManagement = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {users.map((user, index) => (
+                      {filteredUsers.map((user, index) => (
                         <tr key={index}>
                           <td>{user.name || 'N/A'}</td>
                           <td>{user.email || 'N/A'}</td>
@@ -655,7 +727,7 @@ export const UserManagement = () => {
                         <span>Previous</span>
                       </button>
                       <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>
-                        Showing {users.length} user{users.length !== 1 ? 's' : ''}
+                        Showing {filteredUsers.length}{searchQuery ? ` of ${users.length}` : ''} user{filteredUsers.length !== 1 ? 's' : ''}
                       </span>
                       <button
                         className="admin-button admin-button-secondary"

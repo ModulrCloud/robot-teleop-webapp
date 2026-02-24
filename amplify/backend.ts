@@ -46,7 +46,7 @@ import { cleanupStaleConnections } from './functions/cleanup-stale-connections/r
 import { triggerConnectionCleanup } from './functions/trigger-connection-cleanup/resource';
 import { getActiveRobots } from './functions/get-active-robots/resource';
 import { manageCreditTier } from './functions/manage-credit-tier/resource';
-import { manageOrganisation } from './functions/manage-organisation/resource';
+import { manageOrganization } from './functions/manage-organization/resource';
 import { manageOrgMember } from './functions/manage-org-member/resource';
 import { cleanupAuditLogs } from './functions/cleanup-audit-logs/resource';
 import { websocketKeepalive } from './functions/websocket-keepalive/resource';
@@ -112,7 +112,7 @@ const backend = defineBackend({
   triggerConnectionCleanup,
   getActiveRobots,
   manageCreditTier,
-  manageOrganisation,
+  manageOrganization,
   manageOrgMember,
   cleanupAuditLogs,
   websocketKeepalive,
@@ -1148,26 +1148,26 @@ adminAuditTable.grantWriteData(manageCreditTierFunction);
 // Grant Cognito permission to get user email
 userPool.grant(manageCreditTierFunction, 'cognito-idp:AdminGetUser');
 
-// Manage Organisation Lambda
-const manageOrganisationFunction = backend.manageOrganisation.resources.lambda;
-const manageOrganisationCdkFunction = manageOrganisationFunction as CdkFunction;
-manageOrganisationCdkFunction.addEnvironment('ORG_TABLE', tables.Organisation.tableName);
-manageOrganisationCdkFunction.addEnvironment('ORG_ROLE_TABLE', tables.OrgRole.tableName);
-manageOrganisationCdkFunction.addEnvironment('ORG_MEMBER_TABLE', tables.OrgMember.tableName);
-manageOrganisationCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
-manageOrganisationCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
-manageOrganisationCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
-tables.Organisation.grantReadWriteData(manageOrganisationFunction);
-tables.OrgRole.grantReadWriteData(manageOrganisationFunction);
-tables.OrgMember.grantReadWriteData(manageOrganisationFunction);
-tables.UserCredits.grantReadWriteData(manageOrganisationFunction);
-tables.CreditTransaction.grantWriteData(manageOrganisationFunction);
-tables.PlatformSettings.grantReadData(manageOrganisationFunction);
-manageOrganisationFunction.addToRolePolicy(new PolicyStatement({
+// Manage Organization Lambda
+const manageOrganizationFunction = backend.manageOrganization.resources.lambda;
+const manageOrganizationCdkFunction = manageOrganizationFunction as CdkFunction;
+manageOrganizationCdkFunction.addEnvironment('ORG_TABLE', tables.Organization.tableName);
+manageOrganizationCdkFunction.addEnvironment('ORG_ROLE_TABLE', tables.OrgRole.tableName);
+manageOrganizationCdkFunction.addEnvironment('ORG_MEMBER_TABLE', tables.OrgMember.tableName);
+manageOrganizationCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+manageOrganizationCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
+manageOrganizationCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
+tables.Organization.grantReadWriteData(manageOrganizationFunction);
+tables.OrgRole.grantReadWriteData(manageOrganizationFunction);
+tables.OrgMember.grantReadWriteData(manageOrganizationFunction);
+tables.UserCredits.grantReadWriteData(manageOrganizationFunction);
+tables.CreditTransaction.grantWriteData(manageOrganizationFunction);
+tables.PlatformSettings.grantReadData(manageOrganizationFunction);
+manageOrganizationFunction.addToRolePolicy(new PolicyStatement({
   actions: ['dynamodb:Query'],
   resources: [
-    `${tables.Organisation.tableArn}/index/slugIndex`,
-    `${tables.Organisation.tableArn}/index/ownerIdIndex`,
+    `${tables.Organization.tableArn}/index/slugIndex`,
+    `${tables.Organization.tableArn}/index/ownerIdIndex`,
     `${tables.OrgRole.tableArn}/index/orgIdIndex`,
     `${tables.OrgMember.tableArn}/index/orgIdIndex`,
     `${tables.UserCredits.tableArn}/index/userIdIndex`,
@@ -1178,11 +1178,11 @@ manageOrganisationFunction.addToRolePolicy(new PolicyStatement({
 // Manage Org Member Lambda
 const manageOrgMemberFunction = backend.manageOrgMember.resources.lambda;
 const manageOrgMemberCdkFunction = manageOrgMemberFunction as CdkFunction;
-manageOrgMemberCdkFunction.addEnvironment('ORG_TABLE', tables.Organisation.tableName);
+manageOrgMemberCdkFunction.addEnvironment('ORG_TABLE', tables.Organization.tableName);
 manageOrgMemberCdkFunction.addEnvironment('ORG_ROLE_TABLE', tables.OrgRole.tableName);
 manageOrgMemberCdkFunction.addEnvironment('ORG_MEMBER_TABLE', tables.OrgMember.tableName);
 manageOrgMemberCdkFunction.addEnvironment('ORG_INVITE_TABLE', tables.OrgInvite.tableName);
-tables.Organisation.grantReadData(manageOrgMemberFunction);
+tables.Organization.grantReadData(manageOrgMemberFunction);
 tables.OrgRole.grantReadData(manageOrgMemberFunction);
 tables.OrgMember.grantReadWriteData(manageOrgMemberFunction);
 tables.OrgInvite.grantReadWriteData(manageOrgMemberFunction);

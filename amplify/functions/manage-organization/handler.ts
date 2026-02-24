@@ -142,7 +142,7 @@ async function batchDelete(tableName: string, items: Record<string, unknown>[]) 
   }
 }
 
-export const handler: Schema["manageOrganisationLambda"]["functionHandler"] = async (event) => {
+export const handler: Schema["manageOrganizationLambda"]["functionHandler"] = async (event) => {
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
     throw new Error("Unauthorized: must be logged in");
