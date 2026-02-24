@@ -308,6 +308,7 @@ signalingFunction.addToRolePolicy(new PolicyStatement({
   resources: [
     `${connTable.tableArn}/index/monitoringRobotIdIndex`,
     `${tables.Session.tableArn}/index/connectionIdIndex`,
+    `${tables.Session.tableArn}/index/robotIdIndex`,
     `${tables.UserCredits.tableArn}/index/userIdIndex`,
     `${tables.Robot.tableArn}/index/robotIdIndex`,
   ],
