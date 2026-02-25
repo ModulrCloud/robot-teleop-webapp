@@ -13,8 +13,11 @@ const ADMIN_AUDIT_TABLE = process.env.ADMIN_AUDIT_TABLE;
 const GROUP_NAME_MAP: Record<string, string> = {
   client: "CLIENTS",
   partner: "PARTNERS",
+  service_provider: "SERVICE_PROVIDERS",
+  organization: "ORGANIZATIONS",
 };
 const ALLOWED_GROUPS = Array.from(Object.keys(GROUP_NAME_MAP));
+const CLASSIFICATION_GROUPS = ["ORGANIZATIONS", "SERVICE_PROVIDERS", "PARTNERS", "CLIENTS"];
 
 export const handler: Schema["setUserGroupLambda"]["functionHandler"] = async (event) => {
   console.log("Request event:", event);
@@ -78,19 +81,17 @@ export const handler: Schema["setUserGroupLambda"]["functionHandler"] = async (e
       })
     );
     
-    // Find the old classification (CLIENTS or PARTNERS)
     const oldGroups = groupsResponse.Groups || [];
-    const oldGroup = oldGroups.find(g => g.GroupName === 'CLIENTS' || g.GroupName === 'PARTNERS');
+    const oldGroup = oldGroups.find(g => CLASSIFICATION_GROUPS.includes(g.GroupName!));
     const oldClassification = oldGroup?.GroupName || null;
     
-    // Remove from CLIENTS and PARTNERS groups
     for (const userGroup of oldGroups) {
-      if (userGroup.GroupName === 'CLIENTS' || userGroup.GroupName === 'PARTNERS') {
+      if (CLASSIFICATION_GROUPS.includes(userGroup.GroupName!)) {
         await cognito.send(
           new AdminRemoveUserFromGroupCommand({
             UserPoolId: USER_POOL_ID,
             Username: userId,
-            GroupName: userGroup.GroupName,
+            GroupName: userGroup.GroupName!,
           })
         );
       }
@@ -116,8 +117,6 @@ export const handler: Schema["setUserGroupLambda"]["functionHandler"] = async (e
         metadata: {
           oldGroup: oldClassification,
           newGroup: groupName,
-          oldClassification: oldClassification === 'CLIENTS' ? 'CLIENT' : (oldClassification === 'PARTNERS' ? 'PARTNER' : null),
-          newClassification: groupName === 'CLIENTS' ? 'CLIENT' : 'PARTNER',
         },
       });
     }
@@ -125,9 +124,9 @@ export const handler: Schema["setUserGroupLambda"]["functionHandler"] = async (e
     return {
       statusCode: 200,
       body: JSON.stringify({ 
-        message: `User ${userId} added to ${group}`,
-        oldClassification: oldClassification === 'CLIENTS' ? 'CLIENT' : (oldClassification === 'PARTNERS' ? 'PARTNER' : null),
-        newClassification: groupName === 'CLIENTS' ? 'CLIENT' : 'PARTNER',
+        message: `User ${userId} added to ${groupName}`,
+        oldGroup: oldClassification,
+        newGroup: groupName,
       }),
     };
   } catch (error) {

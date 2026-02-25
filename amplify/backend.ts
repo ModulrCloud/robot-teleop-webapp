@@ -46,18 +46,20 @@ import { cleanupStaleConnections } from './functions/cleanup-stale-connections/r
 import { triggerConnectionCleanup } from './functions/trigger-connection-cleanup/resource';
 import { getActiveRobots } from './functions/get-active-robots/resource';
 import { manageCreditTier } from './functions/manage-credit-tier/resource';
-import { manageOrganisation } from './functions/manage-organisation/resource';
+import { manageOrganization } from './functions/manage-organization/resource';
 import { manageOrgMember } from './functions/manage-org-member/resource';
 import { getTermsStatus } from './functions/get-terms-status/resource';
 import { acceptTerms } from './functions/accept-terms/resource';
 import { cleanupAuditLogs } from './functions/cleanup-audit-logs/resource';
 import { websocketKeepalive } from './functions/websocket-keepalive/resource';
+import { regenerateEnrollmentToken } from './functions/regenerate-enrollment-token/resource';
+import { registerRobotKey } from './functions/register-robot-key/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
 import { WebSocketLambdaIntegration } from '@aws-cdk/aws-apigatewayv2-integrations-alpha';
 import { RemovalPolicy, Stack, Duration } from 'aws-cdk-lib';
-import { Function as CdkFunction } from 'aws-cdk-lib/aws-lambda';
+import { Function as CdkFunction, FunctionUrlAuthType, HttpMethod } from 'aws-cdk-lib/aws-lambda';
 import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
 import { LambdaFunction } from 'aws-cdk-lib/aws-events-targets';
 
@@ -112,12 +114,14 @@ const backend = defineBackend({
   triggerConnectionCleanup,
   getActiveRobots,
   manageCreditTier,
-  manageOrganisation,
+  manageOrganization,
   manageOrgMember,
   getTermsStatus,
   acceptTerms,
   cleanupAuditLogs,
   websocketKeepalive,
+  regenerateEnrollmentToken,
+  registerRobotKey,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -308,6 +312,9 @@ signalingFunction.addToRolePolicy(new PolicyStatement({
   resources: [
     `${connTable.tableArn}/index/monitoringRobotIdIndex`,
     `${tables.Session.tableArn}/index/connectionIdIndex`,
+    `${tables.Session.tableArn}/index/robotIdIndex`,
+    `${tables.UserCredits.tableArn}/index/userIdIndex`,
+    `${tables.Robot.tableArn}/index/robotIdIndex`,
   ],
 }));
 signalingCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
@@ -409,6 +416,49 @@ tables.Robot.grantReadWriteData(updateRobotLambdaFunction);
 userInvalidationTable.grantReadData(updateRobotLambdaFunction); // Read-only for checking session invalidation
 const updateRobotCdkFunction = updateRobotLambdaFunction as CdkFunction;
 updateRobotCdkFunction.addEnvironment('USER_INVALIDATION_TABLE', userInvalidationTable.tableName);
+
+// Regenerate enrollment token Lambda (authenticated: partner or admin regenerates token for their robot)
+backend.regenerateEnrollmentToken.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+backend.regenerateEnrollmentToken.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+const regenerateEnrollmentTokenFunction = backend.regenerateEnrollmentToken.resources.lambda;
+tables.Robot.grantReadWriteData(regenerateEnrollmentTokenFunction);
+tables.Partner.grantReadData(regenerateEnrollmentTokenFunction);
+regenerateEnrollmentTokenFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query'],
+  resources: [
+    `${tables.Partner.tableArn}/index/cognitoUsernameIndex`,
+  ],
+}));
+
+// Register robot key Lambda (unauthenticated: robot self-registers its Ed25519 public key using enrollment token)
+const registerRobotKeyFunction = backend.registerRobotKey.resources.lambda;
+const registerRobotKeyCdkFunction = registerRobotKeyFunction as CdkFunction;
+registerRobotKeyCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+registerRobotKeyCdkFunction.addEnvironment('ROBOT_ID_INDEX', 'robotIdIndex');
+tables.Robot.grantReadWriteData(registerRobotKeyFunction);
+registerRobotKeyFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query'],
+  resources: [
+    `${tables.Robot.tableArn}/index/robotIdIndex`,
+  ],
+}));
+
+// Expose register-robot-key as an unauthenticated HTTPS endpoint via Lambda Function URL
+const registerRobotKeyUrl = registerRobotKeyCdkFunction.addFunctionUrl({
+  authType: FunctionUrlAuthType.NONE,
+  cors: {
+    allowedOrigins: ['*'],
+    allowedMethods: [HttpMethod.POST],
+    allowedHeaders: ['Content-Type'],
+  },
+});
+backend.addOutput({
+  custom: {
+    robotEnrollment: {
+      registrationUrl: registerRobotKeyUrl.url,
+    },
+  },
+});
 
 // Grant DynamoDB permissions to delete robot function
 tables.Robot.grantReadWriteData(deleteRobotLambdaFunction);
@@ -881,7 +931,7 @@ listUsersCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 listUsersCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
 listUsersCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
 listUsersCdkFunction.addEnvironment('CLIENT_TABLE_NAME', tables.Client.tableName);
-userPool.grant(listUsersFunction, 'cognito-idp:ListUsers', 'cognito-idp:ListUsersInGroup', 'cognito-idp:AdminGetUser');
+userPool.grant(listUsersFunction, 'cognito-idp:ListUsers', 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
 tables.UserCredits.grantReadData(listUsersFunction);
 tables.Partner.grantReadData(listUsersFunction);
 tables.Client.grantReadData(listUsersFunction);
@@ -1102,26 +1152,26 @@ adminAuditTable.grantWriteData(manageCreditTierFunction);
 // Grant Cognito permission to get user email
 userPool.grant(manageCreditTierFunction, 'cognito-idp:AdminGetUser');
 
-// Manage Organisation Lambda
-const manageOrganisationFunction = backend.manageOrganisation.resources.lambda;
-const manageOrganisationCdkFunction = manageOrganisationFunction as CdkFunction;
-manageOrganisationCdkFunction.addEnvironment('ORG_TABLE', tables.Organisation.tableName);
-manageOrganisationCdkFunction.addEnvironment('ORG_ROLE_TABLE', tables.OrgRole.tableName);
-manageOrganisationCdkFunction.addEnvironment('ORG_MEMBER_TABLE', tables.OrgMember.tableName);
-manageOrganisationCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
-manageOrganisationCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
-manageOrganisationCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
-tables.Organisation.grantReadWriteData(manageOrganisationFunction);
-tables.OrgRole.grantReadWriteData(manageOrganisationFunction);
-tables.OrgMember.grantReadWriteData(manageOrganisationFunction);
-tables.UserCredits.grantReadWriteData(manageOrganisationFunction);
-tables.CreditTransaction.grantWriteData(manageOrganisationFunction);
-tables.PlatformSettings.grantReadData(manageOrganisationFunction);
-manageOrganisationFunction.addToRolePolicy(new PolicyStatement({
+// Manage Organization Lambda
+const manageOrganizationFunction = backend.manageOrganization.resources.lambda;
+const manageOrganizationCdkFunction = manageOrganizationFunction as CdkFunction;
+manageOrganizationCdkFunction.addEnvironment('ORG_TABLE', tables.Organization.tableName);
+manageOrganizationCdkFunction.addEnvironment('ORG_ROLE_TABLE', tables.OrgRole.tableName);
+manageOrganizationCdkFunction.addEnvironment('ORG_MEMBER_TABLE', tables.OrgMember.tableName);
+manageOrganizationCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+manageOrganizationCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
+manageOrganizationCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
+tables.Organization.grantReadWriteData(manageOrganizationFunction);
+tables.OrgRole.grantReadWriteData(manageOrganizationFunction);
+tables.OrgMember.grantReadWriteData(manageOrganizationFunction);
+tables.UserCredits.grantReadWriteData(manageOrganizationFunction);
+tables.CreditTransaction.grantWriteData(manageOrganizationFunction);
+tables.PlatformSettings.grantReadData(manageOrganizationFunction);
+manageOrganizationFunction.addToRolePolicy(new PolicyStatement({
   actions: ['dynamodb:Query'],
   resources: [
-    `${tables.Organisation.tableArn}/index/slugIndex`,
-    `${tables.Organisation.tableArn}/index/ownerIdIndex`,
+    `${tables.Organization.tableArn}/index/slugIndex`,
+    `${tables.Organization.tableArn}/index/ownerIdIndex`,
     `${tables.OrgRole.tableArn}/index/orgIdIndex`,
     `${tables.OrgMember.tableArn}/index/orgIdIndex`,
     `${tables.UserCredits.tableArn}/index/userIdIndex`,
@@ -1157,11 +1207,11 @@ acceptTermsFunction.addToRolePolicy(new PolicyStatement({
 // Manage Org Member Lambda
 const manageOrgMemberFunction = backend.manageOrgMember.resources.lambda;
 const manageOrgMemberCdkFunction = manageOrgMemberFunction as CdkFunction;
-manageOrgMemberCdkFunction.addEnvironment('ORG_TABLE', tables.Organisation.tableName);
+manageOrgMemberCdkFunction.addEnvironment('ORG_TABLE', tables.Organization.tableName);
 manageOrgMemberCdkFunction.addEnvironment('ORG_ROLE_TABLE', tables.OrgRole.tableName);
 manageOrgMemberCdkFunction.addEnvironment('ORG_MEMBER_TABLE', tables.OrgMember.tableName);
 manageOrgMemberCdkFunction.addEnvironment('ORG_INVITE_TABLE', tables.OrgInvite.tableName);
-tables.Organisation.grantReadData(manageOrgMemberFunction);
+tables.Organization.grantReadData(manageOrgMemberFunction);
 tables.OrgRole.grantReadData(manageOrgMemberFunction);
 tables.OrgMember.grantReadWriteData(manageOrgMemberFunction);
 tables.OrgInvite.grantReadWriteData(manageOrgMemberFunction);

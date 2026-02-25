@@ -32,8 +32,6 @@ const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 // PKI-pending connections that never complete auth are closed after this (ms). Env override: PKI_PENDING_TIMEOUT_MS.
 const PKI_PENDING_TIMEOUT_MS = Number(process.env.PKI_PENDING_TIMEOUT_MS) || 120_000; // 2 minutes
 
-// Challenge type for PKI challenge-response (Phase 4). Default 'xor'; 'plain' = sign raw challenge.
-const DEFAULT_CHALLENGE_TYPE = 'xor';
 const PKI_CHALLENGE_NONCE_BYTES = 32;
 
 // Default platform markup (30%) if not set
@@ -53,7 +51,7 @@ const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
 // Types
 // ---------------------------------
 
-type MessageType = 'register' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong' | 'agent.ping' | 'agent.pong' | 'signalling.capabilities';
+type MessageType = 'register' | 'pki-response' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong' | 'agent.ping' | 'agent.pong' | 'signalling.capabilities';
 type Target = 'robot' | 'client';
 
 // ---------------------------------
@@ -103,8 +101,6 @@ type InboundMessage = Partial<{
     payload: Record<string, unknown>;
     /** Phase 4: signature from robot (base64) after pki_challenge */
     signature?: string;
-    /** Phase 4: challenge type used when signing (xor | plain) */
-    challengeType?: string;
 }>;
 
 // Raw wire shape (browser or robot could send anything so we normalize here)
@@ -115,7 +111,7 @@ type RawMessage = Record<string, unknown>;
 // ---------------------------------
 
 /** Supported protocol versions for the new (domain.message) format. */
-const SUPPORTED_PROTOCOL_VERSIONS = ['0.0', '0.1'] as const;
+const SUPPORTED_PROTOCOL_VERSIONS = ['0.0', '0.3'] as const;
 
 /** Connection protocol: legacy (type: "register") or new (type: "signalling.register"). */
 export type ConnectionProtocol = 'legacy' | 'modulr-v0';
@@ -213,7 +209,8 @@ type InternalOutboundMessage =
   | { type: 'monitor-confirmed'; robotId: string; message: string }
   | { type: 'admin-takeover'; robotId: string; by: string }
   | { type: 'signalling.capabilities'; supportedVersions: readonly string[] }
-  | { type: 'pki_challenge'; challenge: string; challengeType: string }
+  | { type: 'pki_challenge'; challenge: string }
+  | { type: 'pki_verified'; agentId: string; correlationId?: string }
   | Record<string, unknown>;
 
 /**
@@ -278,9 +275,13 @@ export function formatOutboundForConnection(
     if (m.requiredCredits !== undefined) (envelope.payload as Record<string, unknown>).requiredCredits = m.requiredCredits;
   } else if (envelopeType === 'pki_challenge') {
     envelope.type = 'signalling.pki_challenge';
-    const m = msg as { challenge?: string; challengeType?: string };
+    const m = msg as { challenge?: string };
     (envelope.payload as Record<string, unknown>).challenge = m.challenge ?? '';
-    (envelope.payload as Record<string, unknown>).challengeType = m.challengeType ?? 'xor';
+  } else if (envelopeType === 'pki_verified') {
+    envelope.type = 'signalling.pki_verified';
+    const m = msg as { agentId?: string; correlationId?: string };
+    if (m.correlationId) envelope.correlationId = m.correlationId;
+    envelope.payload = { agentId: m.agentId ?? '' };
   } else {
     // Platform messages (welcome, session-locked, session-created, monitor-confirmed, admin-takeover)
     // Keep in legacy top-level format per plan; new-protocol clients receive same shape
@@ -634,16 +635,22 @@ export function normalizeNewProtocol(raw: RawMessage): InboundMessage | null {
   switch (typeStr) {
     case 'signalling.register': {
       const agentId = typeof p.agentId === 'string' ? p.agentId.trim() : undefined;
-      const signature = typeof p.signature === 'string' ? p.signature : undefined;
-      const challengeType = typeof p.challengeType === 'string' ? p.challengeType : undefined;
       return {
         type: 'register',
         robotId: agentId,
         target: undefined,
         clientConnectionId: undefined,
         payload: { capabilities: p.capabilities, metadata: p.metadata },
-        ...(signature !== undefined && { signature }),
-        ...(challengeType !== undefined && { challengeType }),
+      };
+    }
+
+    case 'signalling.pki_response': {
+      // robotId is NOT expected here — the server resolves it from the connection record
+      // (pkiChallengeRobotId stored during the initial signalling.register)
+      const signature = typeof p.signature === 'string' ? p.signature : undefined;
+      return {
+        type: 'pki-response',
+        signature,
       };
     }
 
@@ -746,7 +753,6 @@ function normalizeMessage(raw: RawMessage): InboundMessage {
   const clientConnectionId = extractClientConnectionId(raw, type, robotId);
 
   const signature = typeof raw.signature === 'string' ? raw.signature : undefined;
-  const challengeType = typeof raw.challengeType === 'string' ? raw.challengeType : undefined;
   return {
     type,
     robotId,
@@ -754,7 +760,6 @@ function normalizeMessage(raw: RawMessage): InboundMessage {
     clientConnectionId,
     payload,
     ...(signature !== undefined && { signature }),
-    ...(challengeType !== undefined && { challengeType }),
   };
 }
 
@@ -1464,8 +1469,9 @@ function createEd25519PublicKey(publicKeyPemOrBase64: string): import('crypto').
     }
     const raw = Buffer.from(trimmed, 'base64');
     if (raw.length === 32) {
-      // Node 18+ supports raw Ed25519; @types/node may not include format 'raw'
-      return createPublicKey({ key: raw, format: 'raw', type: 'ed25519' } as unknown as import('crypto').PublicKeyInput);
+      // Wrap raw 32-byte Ed25519 key in SPKI DER envelope (format:'raw' was removed in Node 22)
+      const spkiHeader = Buffer.from('302a300506032b6570032100', 'hex');
+      return createPublicKey({ key: Buffer.concat([spkiHeader, raw]), format: 'der', type: 'spki' });
     }
     return null;
   } catch {
@@ -1474,25 +1480,11 @@ function createEd25519PublicKey(publicKeyPemOrBase64: string): import('crypto').
 }
 
 /**
- * XOR two buffers byte-wise. If b is shorter, cycles through b.
- */
-function xorBuffers(a: Buffer, b: Buffer): Buffer {
-  const out = Buffer.alloc(a.length);
-  for (let i = 0; i < a.length; i++) {
-    out[i] = a[i] ^ b[i % b.length];
-  }
-  return out;
-}
-
-/**
- * Verify PKI challenge-response signature (Phase 4). Returns true if valid.
- * - plain: verify(signature, challengeBytes)
- * - xor: derive payload = xor(challengeBytes, first 32 bytes of SHA256(connectionId + challengeBase64)), then verify(signature, payload)
+ * Verify PKI challenge-response signature. Returns true if valid.
+ * The robot signs the raw challenge bytes with its Ed25519 private key.
  */
 function verifyPkiSignature(
-  connectionId: string,
   challengeBase64: string,
-  challengeType: string,
   publicKeyPemOrBase64: string,
   signatureBase64: string,
 ): boolean {
@@ -1510,20 +1502,8 @@ function verifyPkiSignature(
   } catch {
     return false;
   }
-  let dataToVerify: Buffer;
-  const ct = (challengeType || DEFAULT_CHALLENGE_TYPE).toLowerCase();
-  if (ct === 'plain') {
-    dataToVerify = challengeBytes;
-  } else if (ct === 'xor') {
-    const input = connectionId + challengeBase64;
-    const hash = createHash('sha256').update(input, 'utf8').digest();
-    const keyMaterial = hash.subarray(0, Math.min(32, challengeBytes.length));
-    dataToVerify = xorBuffers(challengeBytes, keyMaterial);
-  } else {
-    return false;
-  }
   try {
-    return cryptoVerify(null, dataToVerify, key, signature);
+    return cryptoVerify(null, challengeBytes, key, signature);
   } catch {
     return false;
   }
@@ -1771,6 +1751,132 @@ async function onDisconnect(event: APIGatewayProxyEvent): Promise<APIGatewayProx
 }
 
 // ---------------------------------
+// $pki-response  (signalling.pki_response)
+// ---------------------------------
+//
+// Server response on success: HTTP 200 + signalling.pki_verified WebSocket message.
+// Server response on failure: HTTP 4xx + signalling.error WebSocket message.
+async function handlePkiResponse(
+  event: APIGatewayProxyEvent,
+  msg: InboundMessage,
+): Promise<APIGatewayProxyResult> {
+  const connectionId = event.requestContext.connectionId!;
+  const signature = msg.signature?.trim();
+
+  const sendError = async (code: string, message: string) => {
+    try {
+      await postFormatted(connectionId, { type: 'error', error: code, message });
+    } catch (e) {
+      console.warn('[PKI_RESPONSE] Failed to send error to connection:', e);
+    }
+  };
+
+  if (!signature) {
+    await sendError('INVALID_PAYLOAD', 'signature required in payload');
+    return errorResponse(400, 'signature required in payload');
+  }
+
+  // Resolve robotId and challenge from the connection record written during signalling.register
+  let storedChallenge: string | undefined;
+  let robotId: string | undefined;
+  try {
+    const connItem = await db.send(new GetItemCommand({
+      TableName: CONN_TABLE,
+      Key: { connectionId: { S: connectionId } },
+      ProjectionExpression: 'pkiChallenge, pkiChallengeRobotId',
+    }));
+    storedChallenge = connItem.Item?.pkiChallenge?.S;
+    robotId = connItem.Item?.pkiChallengeRobotId?.S;
+  } catch (e) {
+    console.warn('[PKI_RESPONSE] Failed to read connection record:', e);
+    await sendError('INTERNAL_ERROR', 'Failed to read challenge');
+    return errorResponse(500, 'Failed to read challenge');
+  }
+
+  if (!storedChallenge?.trim() || !robotId?.trim()) {
+    console.warn('[PKI_RESPONSE] No pending challenge on connection', { connectionId });
+    await sendError('VALIDATION_FAILED', 'No pending PKI challenge — send signalling.register first');
+    return errorResponse(401, 'No pending PKI challenge — send signalling.register first');
+  }
+
+  console.log('[PKI_RESPONSE_RECEIVED]', {
+    connectionId,
+    robotId,
+    challenge: storedChallenge,   // base64 nonce sent to robot
+    signature,                    // base64 Ed25519 signature from robot
+  });
+
+  const robotItem = await getRobotByRobotId(robotId);
+  if (!robotItem) {
+    console.warn('[PKI_RESPONSE] Robot not found', { connectionId, robotId });
+    await sendError('UNAUTHORIZED', 'Robot not found');
+    return errorResponse(400, 'Robot not found');
+  }
+
+  const publicKey = robotItem.publicKey?.S?.trim();
+  if (!publicKey) {
+    await sendError('UNAUTHORIZED', 'Robot has no public key on file');
+    return errorResponse(401, 'Robot has no public key on file');
+  }
+
+  const valid = verifyPkiSignature(storedChallenge, publicKey, signature);
+  if (!valid) {
+    console.warn('[PKI_RESPONSE] Signature verification failed', { connectionId, robotId });
+    await sendError('UNAUTHORIZED', 'Invalid PKI signature');
+    return errorResponse(401, 'Invalid PKI signature');
+  }
+
+  // Upgrade presence from pending → online
+  try {
+    await db.send(new UpdateItemCommand({
+      TableName: ROBOT_PRESENCE_TABLE,
+      Key: { robotId: { S: robotId } },
+      UpdateExpression: 'SET #status = :online, updatedAt = :ts',
+      ConditionExpression: 'connectionId = :conn',
+      ExpressionAttributeNames: { '#status': 'status' },
+      ExpressionAttributeValues: {
+        ':online': { S: 'online' },
+        ':ts': { N: String(Date.now()) },
+        ':conn': { S: connectionId },
+      },
+    }));
+  } catch (e: unknown) {
+    const err = e as { name?: string; code?: string };
+    if (err?.name === 'ConditionalCheckFailedException' || err?.code === 'ConditionalCheckFailedException') {
+      await sendError('UNAUTHORIZED', 'Connection does not own this robot');
+      return errorResponse(401, 'Connection does not own this robot');
+    }
+    throw e;
+  }
+
+  // Persist robotId, clear PKI_PENDING kind so the auth middleware grants full access,
+  // and remove the one-time challenge fields
+  await db.send(new UpdateItemCommand({
+    TableName: CONN_TABLE,
+    Key: { connectionId: { S: connectionId } },
+    UpdateExpression: 'SET robotId = :rid, #kind = :robot REMOVE pkiChallenge, pkiChallengeRobotId, pkiChallengeTs',
+    ExpressionAttributeNames: { '#kind': 'kind' },
+    ExpressionAttributeValues: { ':rid': { S: robotId }, ':robot': { S: 'robot' } },
+  }));
+
+  console.log('[PKI_RESPONSE_VERIFIED]', { connectionId, robotId });
+
+  let incomingId: string | undefined;
+  try {
+    const rawBody = JSON.parse(event.body ?? '{}');
+    incomingId = typeof rawBody.id === 'string' ? rawBody.id : undefined;
+  } catch { /* ignore */ }
+
+  try {
+    await postFormatted(connectionId, { type: 'pki_verified', agentId: robotId, correlationId: incomingId });
+  } catch (e) {
+    console.warn('[PKI_RESPONSE] Failed to send signalling.pki_verified to connection:', e);
+  }
+
+  return { statusCode: 200, body: '' };
+}
+
+// ---------------------------------
 // $register
 // ---------------------------------
 
@@ -1810,62 +1916,6 @@ async function handleRegister(
       return errorResponse(500, 'Could not resolve robot owner');
     }
 
-    // Phase 4: register with signature (response to pki_challenge) → verify and upgrade to online
-    if (msg.signature?.trim()) {
-      const connItem = await db.send(
-        new GetItemCommand({
-          TableName: CONN_TABLE,
-          Key: { connectionId: { S: connectionId } },
-          ProjectionExpression: 'pkiChallenge, pkiChallengeRobotId, pkiChallengeType',
-        }),
-      );
-      const storedChallenge = connItem.Item?.pkiChallenge?.S;
-      const storedRobotId = connItem.Item?.pkiChallengeRobotId?.S;
-      const storedType = connItem.Item?.pkiChallengeType?.S ?? DEFAULT_CHALLENGE_TYPE;
-      if (!storedChallenge?.trim() || storedRobotId !== robotId) {
-        console.warn('[REGISTER_PKI] Missing or wrong challenge', { connectionId, robotId });
-        return errorResponse(401, 'Invalid or expired PKI challenge');
-      }
-      const publicKey = robotItem.publicKey?.S?.trim();
-      if (!publicKey) return errorResponse(401, 'Robot has no public key');
-      const valid = verifyPkiSignature(connectionId, storedChallenge, storedType, publicKey, msg.signature.trim());
-      if (!valid) {
-        console.warn('[REGISTER_PKI] Signature verification failed', { connectionId, robotId });
-        return errorResponse(401, 'Invalid PKI signature');
-      }
-      try {
-        await db.send(
-          new UpdateItemCommand({
-            TableName: ROBOT_PRESENCE_TABLE,
-            Key: { robotId: { S: robotId } },
-            UpdateExpression: 'SET #status = :online, updatedAt = :ts',
-            ConditionExpression: 'connectionId = :conn',
-            ExpressionAttributeNames: { '#status': 'status' },
-            ExpressionAttributeValues: {
-              ':online': { S: 'online' },
-              ':ts': { N: String(Date.now()) },
-              ':conn': { S: connectionId },
-            },
-          }),
-        );
-      } catch (e: unknown) {
-        const err = e as { name?: string; code?: string };
-        if (err?.name === 'ConditionalCheckFailedException' || err?.code === 'ConditionalCheckFailedException') {
-          return errorResponse(401, 'Connection does not own this robot');
-        }
-        throw e;
-      }
-      await db.send(
-        new UpdateItemCommand({
-          TableName: CONN_TABLE,
-          Key: { connectionId: { S: connectionId } },
-          UpdateExpression: 'REMOVE pkiChallenge, pkiChallengeRobotId, pkiChallengeType, pkiChallengeTs',
-        }),
-      );
-      console.log('[REGISTER_PKI_VERIFIED]', { connectionId, robotId });
-      return { statusCode: 200, body: '' };
-    }
-
     // First register: write presence as pending, store challenge on CONN, send pki_challenge
     try {
       await db.send(
@@ -1894,22 +1944,20 @@ async function handleRegister(
     }
     const nonce = randomBytes(PKI_CHALLENGE_NONCE_BYTES);
     const challengeBase64 = nonce.toString('base64');
-    const challengeType = DEFAULT_CHALLENGE_TYPE;
     await db.send(
       new UpdateItemCommand({
         TableName: CONN_TABLE,
         Key: { connectionId: { S: connectionId } },
-        UpdateExpression: 'SET pkiChallenge = :c, pkiChallengeRobotId = :r, pkiChallengeType = :t, pkiChallengeTs = :ts',
+        UpdateExpression: 'SET pkiChallenge = :c, pkiChallengeRobotId = :r, pkiChallengeTs = :ts',
         ExpressionAttributeValues: {
           ':c': { S: challengeBase64 },
           ':r': { S: robotId },
-          ':t': { S: challengeType },
           ':ts': { N: String(Date.now()) },
         },
       }),
     );
     try {
-      await postFormatted(connectionId, { type: 'pki_challenge', challenge: challengeBase64, challengeType });
+      await postFormatted(connectionId, { type: 'pki_challenge', challenge: challengeBase64 });
     } catch (e) {
       console.warn('[REGISTER_PENDING] Failed to send pki_challenge', e);
     }
@@ -1985,6 +2033,21 @@ async function handleRegister(
       });
       return errorResponse(500, 'DynamoDB error');
     }
+  }
+
+  // Persist robotId on the connection record so handleSignal can resolve it
+  // from connectionId alone (robot doesn't need to include robotId in every message)
+  try {
+    await db.send(
+      new UpdateItemCommand({
+        TableName: CONN_TABLE,
+        Key: { connectionId: { S: connectionId } },
+        UpdateExpression: 'SET robotId = :rid',
+        ExpressionAttributeValues: { ':rid': { S: robotId } },
+      }),
+    );
+  } catch (e) {
+    console.warn('[REGISTER] Failed to store robotId on connection record:', e);
   }
 
   console.log('[REGISTER_SUCCESS]', {
@@ -2229,9 +2292,30 @@ async function handleSignal(
   event: APIGatewayProxyEvent,
   msg: InboundMessage,
 ): Promise<APIGatewayProxyResult> {
-  const robotId = msg.robotId?.trim();
+  let robotId = msg.robotId?.trim();
   const type = msg.type;
-  
+  const sourceConnId = event.requestContext.connectionId!;
+
+  // If robotId is missing, resolve it from the connection record.
+  // Robots store their robotId on CONN_TABLE during registration, so answer/ice_candidate
+  // messages don't need to include robotId — the connection ID is proof of identity.
+  if (!robotId) {
+    try {
+      const connLookup = await db.send(new GetItemCommand({
+        TableName: CONN_TABLE,
+        Key: { connectionId: { S: sourceConnId } },
+        ProjectionExpression: 'robotId',
+      }));
+      const resolved = connLookup.Item?.robotId?.S?.trim();
+      if (resolved) {
+        robotId = resolved;
+        console.log('[HANDLE_SIGNAL_RESOLVED_ROBOT_ID]', { connectionId: sourceConnId, robotId });
+      }
+    } catch (e) {
+      console.warn('[HANDLE_SIGNAL] Failed to resolve robotId from connection:', e);
+    }
+  }
+
   // Log the incoming message for debugging
   console.log('[HANDLE_SIGNAL_INPUT]', {
     robotId,
@@ -2241,9 +2325,9 @@ async function handleSignal(
     clientConnectionId: msg.clientConnectionId,
     target: msg.target,
     payload: msg.payload,
-    sourceConnectionId: event.requestContext.connectionId,
+    sourceConnectionId: sourceConnId,
   });
-  
+
   if (!robotId || !type) {
     console.error('[HANDLE_SIGNAL_REJECTED]', {
       reason: !robotId ? 'Missing robotId' : 'Missing type',
@@ -2254,9 +2338,6 @@ async function handleSignal(
     return errorResponse(400, 'Invalid Signal');
   }
 
-  // Get source connection ID (needed for logging and ACL checks)
-  const sourceConnId = event.requestContext.connectionId!;
-  
   // Fetch robot presence once and reuse for: is-from-robot check, ACL (owner), and target connectionId.
   // This avoids 2 extra GetItem calls per message (saves DynamoDB read cost and latency).
   let robotPresenceItem: RobotPresenceItem = undefined;
@@ -2653,7 +2734,7 @@ export async function handler(
     connItem = await db.send(new GetItemCommand({
       TableName: CONN_TABLE,
       Key: { connectionId: { S: connectionId } },
-      ProjectionExpression: 'userId, username, email, groups, #protocol, #version, #kind, ts',
+      ProjectionExpression: 'userId, username, email, groups, #protocol, #version, #kind, ts, robotId',
       ExpressionAttributeNames: {
         '#protocol': 'protocol',
         '#version': 'version',
@@ -2683,6 +2764,11 @@ export async function handler(
           username,
           groups,
         });
+      } else if (kind === 'robot') {
+        // PKI-authenticated robot connection — use robotId as the identity
+        const robotId = connItem.Item.robotId?.S;
+        claims = { sub: robotId };
+        console.log('[AUTH_ROBOT]', { connectionId, robotId });
       } else if (kind === 'client_pki_pending') {
         // Close PKI-pending connections that have not completed auth within the timeout window
         const tsMs = connTs ? parseInt(connTs, 10) : NaN;
@@ -2754,7 +2840,6 @@ export async function handler(
 
   // Protocol detection and persistence (Stage 1: dual-protocol support)
   const connProtocol = connItem?.Item?.protocol?.S as ConnectionProtocol | undefined;
-  const connVersion = connItem?.Item?.version?.S;
   const messageIsNewProtocol = isNewProtocol(raw);
   const messageVersion = extractNewProtocolVersion(raw);
 
@@ -2775,13 +2860,14 @@ export async function handler(
       await updateConnectionProtocol(connectionId, 'legacy');
     }
   } else if (connProtocol === 'legacy' && messageIsNewProtocol) {
-    // Protocol mismatch: connection claimed legacy but sent new-format message
+    // Protocol mismatch: connection claimed legacy but sent new-format message — upgrade
     console.warn('[PROTOCOL_MISMATCH]', {
       connectionId,
       storedProtocol: connProtocol,
       messageType: raw.type,
-      message: 'Connection claims legacy but sent new-protocol message; treating as new',
+      message: 'Connection claims legacy but sent new-protocol message; upgrading to modulr-v0',
     });
+    await updateConnectionProtocol(connectionId, 'modulr-v0', messageVersion);
   }
 
   // Normalize to our canonical shape
@@ -2815,8 +2901,8 @@ export async function handler(
     userId: claims?.sub,
   });
 
-  // PKI-pending connections may only send ready, register, or agent.pong until auth completes
-  if (claims?.pkiPending && type !== 'ready' && type !== 'register' && type !== 'agent.pong') {
+  // PKI-pending connections may only send ready, register, pki-response, or agent.pong until auth completes
+  if (claims?.pkiPending && type !== 'ready' && type !== 'register' && type !== 'pki-response' && type !== 'agent.pong') {
     console.warn('[PKI_PENDING_RESTRICTION]', { connectionId, type });
     return errorResponse(401, 'Complete PKI authentication first');
   }
@@ -2844,6 +2930,10 @@ export async function handler(
       userId: claims?.sub,
     });
     return handleRegister(claims, event, msg);
+  }
+
+  if (type === 'pki-response') {
+    return handlePkiResponse(event, msg);
   }
 
   if (type === 'monitor') {

@@ -57,7 +57,7 @@ const DEFAULT_ROLES = [
   },
   {
     name: "Viewer",
-    description: "Read-only access to the organisation.",
+    description: "Read-only access to the organization.",
     permissions: ["members:view", "robots:view", "sessions:view", "logs:view"],
     isSystem: true,
     priority: 3,
@@ -142,7 +142,7 @@ async function batchDelete(tableName: string, items: Record<string, unknown>[]) 
   }
 }
 
-export const handler: Schema["manageOrganisationLambda"]["functionHandler"] = async (event) => {
+export const handler: Schema["manageOrganizationLambda"]["functionHandler"] = async (event) => {
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
     throw new Error("Unauthorized: must be logged in");
@@ -203,7 +203,7 @@ export const handler: Schema["manageOrganisationLambda"]["functionHandler"] = as
           userId: callerUsername,
           amount: -creationCost,
           transactionType: "deduction",
-          description: `Organisation created: ${name}`,
+          description: `Organization created: ${name}`,
           createdAt: new Date().toISOString(),
         },
       })
@@ -285,7 +285,7 @@ export const handler: Schema["manageOrganisationLambda"]["functionHandler"] = as
     if (!orgId) throw new Error("Missing required: orgId");
 
     const org = await getOrgById(orgId);
-    if (!org) throw new Error("Organisation not found");
+    if (!org) throw new Error("Organization not found");
 
     if (org.ownerId !== callerUsername && !isPlatformAdmin) {
       const perms = await getCallerPermissions(orgId, callerUsername);
@@ -331,7 +331,7 @@ export const handler: Schema["manageOrganisationLambda"]["functionHandler"] = as
     if (!orgId) throw new Error("Missing required: orgId");
 
     const org = await getOrgById(orgId);
-    if (!org) throw new Error("Organisation not found");
+    if (!org) throw new Error("Organization not found");
 
     if (org.ownerId !== callerUsername && !isPlatformAdmin) {
       throw new Error("Unauthorized: only the owner or a platform admin can delete");

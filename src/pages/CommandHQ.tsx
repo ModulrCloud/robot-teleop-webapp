@@ -57,7 +57,7 @@ import {
   faArrowsAlt,
 } from "@fortawesome/free-solid-svg-icons";
 import type {
-  Organisation,
+  Organization,
   OrgRole,
   OrgMember,
   OrgInvite,
@@ -72,12 +72,12 @@ import type {
   OrgNotification,
   NotificationType,
   CommandHQTab,
-  CustomisationSubTab,
+  CustomizationSubTab,
   ControllerConfig,
   LocationMapping,
   KeyboardMapping,
-} from "../types/organisation";
-import { PERMISSION_LABELS, ROS_COMMAND_CATEGORIES, DENY_SCOPES, DENY_REASONS, NOTIFICATION_EVENTS } from "../types/organisation";
+} from "../types/organization";
+import { PERMISSION_LABELS, ROS_COMMAND_CATEGORIES, DENY_SCOPES, DENY_REASONS, NOTIFICATION_EVENTS } from "../types/organization";
 import {
   getMockOrgById,
   getMockRolesForOrg,
@@ -93,8 +93,7 @@ import {
   getMockControllerConfigsForOrg,
   getMockLocationMappingsForOrg,
   getMockKeyboardMappingsForOrg,
-} from "../mocks/organisation";
-import type { SimulationNodeDatum, SimulationLinkDatum } from "d3-force";
+} from "../mocks/organization";
 import "./CommandHQ.css";
 
 /** Node shape used by d3-force in BubbleView (id required for forceLink; x, y set by simulation). */
@@ -118,7 +117,7 @@ const TABS: { id: CommandHQTab; label: string; icon: typeof faSatelliteDish }[] 
   { id: "members", label: "Members", icon: faUsers },
   { id: "robots", label: "Robots", icon: faRobot },
   { id: "sessions", label: "Sessions & Logs", icon: faHistory },
-  { id: "customisations", label: "Customisations", icon: faSlidersH },
+  { id: "customizations", label: "Customizations", icon: faSlidersH },
   { id: "denylist", label: "Deny List", icon: faBan },
   { id: "notifications", label: "Notifications", icon: faBell },
 ];
@@ -130,7 +129,7 @@ export const CommandHQ = () => {
   const { user } = useAuthStatus();
 
   const [activeTab, setActiveTab] = useState<CommandHQTab>("overview");
-  const [org, setOrg] = useState<Organisation | null>(null);
+  const [org, setOrg] = useState<Organization | null>(null);
   const [roles, setRoles] = useState<OrgRole[]>([]);
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [invites, setInvites] = useState<OrgInvite[]>([]);
@@ -190,8 +189,8 @@ export const CommandHQ = () => {
     return (
       <div className="chq-page">
         <div className="chq-center">
-          <h2>Organisation not found</h2>
-          <p className="chq-muted">This organisation doesn't exist or you don't have access.</p>
+          <h2>Organization not found</h2>
+          <p className="chq-muted">This organization doesn't exist or you don't have access.</p>
           <button onClick={() => navigate("/")} className="chq-btn chq-btn-outline">
             <FontAwesomeIcon icon={faArrowLeft} /> Back to Dashboard
           </button>
@@ -248,8 +247,8 @@ export const CommandHQ = () => {
             <RobotsTab robots={robots} members={members} canManage={hasPermission("robots:manage")} />
           )}
           {activeTab === "sessions" && <SessionsTab sessions={sessions} logs={logs} />}
-          {activeTab === "customisations" && (
-            <CustomisationsTab
+          {activeTab === "customizations" && (
+            <CustomizationsTab
               commands={commands} robots={robots} roles={roles}
               controllerConfigs={controllerConfigs} locationMappings={locationMappings} keyboardMappings={keyboardMappings}
               canManage={hasPermission("commands:manage")} canExecute={hasPermission("commands:execute")}
@@ -273,7 +272,7 @@ function OverviewTab({
   roles,
   invites,
 }: {
-  org: Organisation;
+  org: Organization;
   members: OrgMember[];
   roles: OrgRole[];
   invites: OrgInvite[];
@@ -360,7 +359,7 @@ function MembersTab({
   invites: OrgInvite[];
   roles: OrgRole[];
   robots: OrgRobot[];
-  org: Organisation;
+  org: Organization;
   canManage: boolean;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -1011,14 +1010,14 @@ function SessionsTab({ sessions, logs }: { sessions: OrgSession[]; logs: OrgLog[
   );
 }
 
-const CUSTOM_SUBTABS: { id: CustomisationSubTab; label: string; icon: typeof faTerminal }[] = [
+const CUSTOM_SUBTABS: { id: CustomizationSubTab; label: string; icon: typeof faTerminal }[] = [
   { id: 'ros-commands', label: 'ROS Commands', icon: faTerminal },
   { id: 'controller', label: 'Controller', icon: faGamepad },
   { id: 'locations', label: 'Locations', icon: faMapMarkedAlt },
   { id: 'keyboard', label: 'Keyboard', icon: faKeyboard },
 ];
 
-function CustomisationsTab({
+function CustomizationsTab({
   commands, robots, roles, controllerConfigs, locationMappings, keyboardMappings, canManage, canExecute,
 }: {
   commands: RosCommand[];
@@ -1030,13 +1029,13 @@ function CustomisationsTab({
   canManage: boolean;
   canExecute: boolean;
 }) {
-  const [subTab, setSubTab] = useState<CustomisationSubTab>('ros-commands');
+  const [subTab, setSubTab] = useState<CustomizationSubTab>('ros-commands');
 
   return (
     <section>
       <div className="chq-section-header">
         <div>
-          <h2>Customisations</h2>
+          <h2>Customizations</h2>
           <p className="chq-subtitle">Configure commands, controllers, locations, and keyboard bindings</p>
         </div>
       </div>

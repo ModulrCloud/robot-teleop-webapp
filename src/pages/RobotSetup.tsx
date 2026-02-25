@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { fetchAuthSession } from 'aws-amplify/auth';
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { 
+import {
   faRobot,
   faCopy,
   faCheckCircle,
   faArrowLeft,
-  faInfoCircle
+  faInfoCircle,
+  faKey,
+  faSyncAlt
 } from '@fortawesome/free-solid-svg-icons';
 import outputs from '../../amplify_outputs.json';
 import './RobotSetup.css';
@@ -18,13 +19,20 @@ import { logger } from '../utils/logger';
 
 const client = generateClient<Schema>();
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const registrationUrl: string | undefined = (outputs as any).custom?.robotEnrollment?.registrationUrl;
+
 export default function RobotSetup() {
   usePageTitle();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const robotUuid = searchParams.get('robotId'); // This is the Robot.id (UUID)
   const [robotId, setRobotId] = useState<string>(''); // This is the robotId field (robot-XXXXXXXX)
-  const [connectionUrl, setConnectionUrl] = useState<string>('');
+  const [wsUrl, setWsUrl] = useState<string>('');
+  const [enrollmentToken, setEnrollmentToken] = useState<string | null>(null);
+  const [enrollmentTokenExpiry, setEnrollmentTokenExpiry] = useState<number | null>(null);
+  const [robotPublicKey, setRobotPublicKey] = useState<string | null>(null);
+  const [isRegeneratingToken, setIsRegeneratingToken] = useState(false);
   const [copiedRosbridge, setCopiedRosbridge] = useState(false);
   const [copiedInitialSetup, setCopiedInitialSetup] = useState(false);
   const [copiedStartCommand, setCopiedStartCommand] = useState(false);
@@ -38,77 +46,73 @@ export default function RobotSetup() {
   }, []);
 
   useEffect(() => {
-    const loadRobotAndGenerateUrl = async () => {
+    const loadRobot = async () => {
       try {
         setLoading(true);
         setError(null);
-        
-        // First, load the robot data to get the correct robotId
-        if (robotUuid) {
-          try {
-            const robot = await client.models.Robot.get({ id: robotUuid });
-            if (robot.data?.robotId) {
-              setRobotId(robot.data.robotId);
-            } else {
-              setError('Robot ID not found. The robot may not be properly configured.');
-              setLoading(false);
-              return;
-            }
-          } catch (robotError) {
-            logger.error('Error loading robot:', robotError);
-            setError('Failed to load robot information. Please try again.');
-            setLoading(false);
-            return;
-          }
-        } else {
+
+        if (!robotUuid) {
           setError('No robot ID provided. Please go back and select a robot.');
           setLoading(false);
           return;
         }
-        
-        // Get WebSocket URL from amplify_outputs.json
-        const wsUrl = outputs?.custom?.signaling?.websocketUrl;
-        if (!wsUrl) {
+
+        try {
+          const robot = await client.models.Robot.get({ id: robotUuid });
+          if (!robot.data?.robotId) {
+            setError('Robot ID not found. The robot may not be properly configured.');
+            setLoading(false);
+            return;
+          }
+          setRobotId(robot.data.robotId);
+          setEnrollmentToken(robot.data.enrollmentToken ?? null);
+          setEnrollmentTokenExpiry(robot.data.enrollmentTokenExpiry ?? null);
+          setRobotPublicKey(robot.data.publicKey ?? null);
+        } catch (robotError) {
+          logger.error('Error loading robot:', robotError);
+          setError('Failed to load robot information. Please try again.');
+          setLoading(false);
+          return;
+        }
+
+        const signalingWsUrl = outputs?.custom?.signaling?.websocketUrl;
+        if (!signalingWsUrl) {
           setError('WebSocket URL not found. Make sure the Amplify sandbox is running.');
           setLoading(false);
           return;
         }
-
-        // Get Partner's current ID token
-        let token: string | undefined;
-        try {
-          const session = await fetchAuthSession();
-          token = session.tokens?.idToken?.toString();
-        } catch (authError) {
-          logger.warn('Failed to get auth token:', authError);
-          // For development/testing, allow URL without token
-          // In production, this should be required
-          if (import.meta.env.DEV) {
-            setConnectionUrl(wsUrl);
-            setLoading(false);
-            return;
-          }
-          setError('Authentication required. Please sign in again.');
-          setLoading(false);
-          return;
-        }
-
-        // Construct full connection URL with token
-        const fullUrl = token ? `${wsUrl}?token=${encodeURIComponent(token)}` : wsUrl;
-        setConnectionUrl(fullUrl);
+        setWsUrl(signalingWsUrl);
       } catch (err) {
-        logger.error('Error generating connection URL:', err);
-        setError('Failed to generate connection URL. Please try again.');
+        logger.error('Error loading robot setup:', err);
+        setError('Failed to load setup information. Please try again.');
       } finally {
         setLoading(false);
       }
     };
 
-    loadRobotAndGenerateUrl();
+    loadRobot();
   }, [robotUuid]);
 
-  const initialSetupCommand = robotId && connectionUrl
-    ? `cargo run -- initial-setup --robot-id ${robotId} --signaling-url "${connectionUrl}" --video-source ros --image-format jpeg`
+  const handleRegenerateToken = async () => {
+    if (!robotUuid) return;
+    setIsRegeneratingToken(true);
+    try {
+      const result = await client.mutations.regenerateEnrollmentToken({ robotId: robotUuid });
+      if (result.data) {
+        setEnrollmentToken(result.data.token);
+        setEnrollmentTokenExpiry(result.data.expiry);
+      }
+    } catch (err) {
+      logger.error('Failed to regenerate enrollment token:', err);
+    } finally {
+      setIsRegeneratingToken(false);
+    }
+  };
+
+  const tokenIsValid = enrollmentToken && enrollmentTokenExpiry && Date.now() < enrollmentTokenExpiry;
+
+  const initialSetupCommand = robotId && wsUrl && tokenIsValid && registrationUrl
+    ? `cargo run -- initial-setup --robot-id ${robotId} --signaling-url "${wsUrl}" --enrollment-url "${registrationUrl}" --enrollment-token ${enrollmentToken} --video-source ros --image-format jpeg`
     : '';
 
   if (!robotUuid) {
@@ -218,48 +222,75 @@ export default function RobotSetup() {
             <div className="setup-section">
               <h2>Step 2: Run initial setup on your robot</h2>
               <p className="section-description">
-                On your robot (in the Modulr agent project directory), run the command below. It saves your Robot ID and signaling URL into the agent config file (default: <code>~/.config/modulr_agent/config.json</code>). To use a specific file (e.g. <code>./local_config.json</code>), add <code>--config-override ./local_config.json</code> before <code>--video-source</code>.
+                On your robot (in the Modulr agent project directory), run the command below. It saves your Robot ID, signaling URL, and a one-time enrollment token into the agent config file (default: <code>~/.config/modulr_agent/config.json</code>). The agent will generate an Ed25519 keypair and register its public key automatically. To use a specific file (e.g. <code>./local_config.json</code>), add <code>--config-override ./local_config.json</code> before <code>--video-source</code>.
               </p>
-              <div className="codeblock-wrapper" style={{ marginTop: '0.75rem' }}>
-                <div className="codeblock-header">
-                  <span className="codeblock-lang">Terminal</span>
+
+              {robotPublicKey ? (
+                <div className="url-note" style={{ marginTop: '0.75rem' }}>
+                  <FontAwesomeIcon icon={faKey} />
+                  {' '}Robot is enrolled — PKI key registered. The robot will connect using keypair authentication.
+                </div>
+              ) : tokenIsValid ? (
+                <>
+                  <div className="codeblock-wrapper" style={{ marginTop: '0.75rem' }}>
+                    <div className="codeblock-header">
+                      <span className="codeblock-lang">Terminal</span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!initialSetupCommand) return;
+                          try {
+                            await navigator.clipboard.writeText(initialSetupCommand);
+                            setCopiedInitialSetup(true);
+                            setTimeout(() => setCopiedInitialSetup(false), 2000);
+                          } catch (err) {
+                            logger.error('Failed to copy:', err);
+                          }
+                        }}
+                        className={`codeblock-copy-btn ${copiedInitialSetup ? 'copied' : ''}`}
+                        title="Copy initial-setup command"
+                        disabled={!initialSetupCommand}
+                      >
+                        {copiedInitialSetup ? (
+                          <>
+                            <FontAwesomeIcon icon={faCheckCircle} />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <FontAwesomeIcon icon={faCopy} />
+                            <span>Copy code</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <div className="codeblock-body">
+                      <pre className="codeblock-pre">{initialSetupCommand}</pre>
+                    </div>
+                  </div>
+                  <p className="url-note" style={{ marginTop: '0.75rem' }}>
+                    <FontAwesomeIcon icon={faInfoCircle} />
+                    {' '}Enrollment token expires {enrollmentTokenExpiry ? new Date(enrollmentTokenExpiry).toLocaleString() : ''}. It is one-time use and will be consumed when the robot registers its key.
+                  </p>
+                </>
+              ) : (
+                <div style={{ marginTop: '0.75rem' }}>
+                  <p className="url-note">
+                    <FontAwesomeIcon icon={faInfoCircle} />
+                    {' '}Enrollment token has expired or been used.
+                  </p>
                   <button
                     type="button"
-                    onClick={async () => {
-                      if (!initialSetupCommand) return;
-                      try {
-                        await navigator.clipboard.writeText(initialSetupCommand);
-                        setCopiedInitialSetup(true);
-                        setTimeout(() => setCopiedInitialSetup(false), 2000);
-                      } catch (err) {
-                        logger.error('Failed to copy:', err);
-                      }
-                    }}
-                    className={`codeblock-copy-btn ${copiedInitialSetup ? 'copied' : ''}`}
-                    title="Copy initial-setup command"
-                    disabled={!initialSetupCommand}
+                    className="btn-secondary"
+                    onClick={handleRegenerateToken}
+                    disabled={isRegeneratingToken}
+                    style={{ marginTop: '0.5rem' }}
                   >
-                    {copiedInitialSetup ? (
-                      <>
-                        <FontAwesomeIcon icon={faCheckCircle} />
-                        <span>Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <FontAwesomeIcon icon={faCopy} />
-                        <span>Copy code</span>
-                      </>
-                    )}
+                    <FontAwesomeIcon icon={faSyncAlt} />
+                    {' '}{isRegeneratingToken ? 'Regenerating...' : 'Regenerate Enrollment Token'}
                   </button>
                 </div>
-                <div className="codeblock-body">
-                  <pre className="codeblock-pre">{initialSetupCommand || 'Loading...'}</pre>
-                </div>
-              </div>
-              <p className="url-note" style={{ marginTop: '0.75rem' }}>
-                <FontAwesomeIcon icon={faInfoCircle} />
-                The signaling URL includes your authentication token. Keep it secure and don&apos;t share it publicly.
-              </p>
+              )}
             </div>
 
             <div className="setup-section">
@@ -292,7 +323,7 @@ export default function RobotSetup() {
                         <button
                           type="button"
                           onClick={async () => {
-                            const startCommand = 'cargo run -- -vvv start --allow-skip-cert-check';
+                            const startCommand = 'cargo run -- -vvv start';
                             try {
                               await navigator.clipboard.writeText(startCommand);
                               setCopiedStartCommand(true);
@@ -318,12 +349,9 @@ export default function RobotSetup() {
                         </button>
                       </div>
                       <div className="codeblock-body">
-                        <pre className="codeblock-pre">cargo run -- -vvv start --allow-skip-cert-check</pre>
+                        <pre className="codeblock-pre">cargo run -- -vvv start</pre>
                       </div>
                     </div>
-                    <p className="step-note" style={{ marginTop: '0.75rem' }}>
-                      <strong>About <code>--allow-skip-cert-check</code>:</strong> Use this when the WebSocket server uses a self-signed or untrusted TLS certificate (e.g. local development or a custom server). For production Modulr cloud (<code>wss://*.execute-api.*.amazonaws.com</code>), the server certificate is CA-signed, so you can run <code>cargo run -- start</code> (with your config path if needed) without this flag if the connection succeeds. If you see TLS/certificate errors when connecting to Modulr cloud, contact support.
-                    </p>
                   </div>
                 </div>
 
@@ -359,7 +387,7 @@ import time
 import threading
 
 # Your connection URL (from above)
-WS_URL = "${connectionUrl}"
+WS_URL = "${wsUrl}"
 ROBOT_ID = "${robotId}"
 
 # Global flag to control connection lifetime
@@ -558,7 +586,7 @@ import time
 import threading
 
 # Your connection URL (from above)
-WS_URL = "${connectionUrl}"
+WS_URL = "${wsUrl}"
 ROBOT_ID = "${robotId}"
 
 # Global flag to control connection lifetime

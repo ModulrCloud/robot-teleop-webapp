@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuthStatus } from "../../../hooks/useAuthStatus";
 import { hasAdminAccess } from "../../../utils/admin";
 import { generateClient } from "aws-amplify/api";
@@ -12,10 +12,9 @@ import {
   faInfoCircle,
   faTimes,
   faEye,
-  faChevronLeft,
-  faChevronRight,
   faEdit,
   faTrash,
+  faSearch,
 } from "@fortawesome/free-solid-svg-icons";
 import { logger } from "../../../utils/logger";
 import "../../Admin.css";
@@ -35,9 +34,9 @@ export const UserManagement = () => {
   const { user } = useAuthStatus();
   
   // Users state
-  const [users, setUsers] = useState<User[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-  const [paginationToken, setPaginationToken] = useState<string | null>(null);
+  const [fullyLoaded, setFullyLoaded] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showUserDetail, setShowUserDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +52,9 @@ export const UserManagement = () => {
   const [userTransactions, setUserTransactions] = useState<CreditTransaction[]>([]);
   const [loadingUserDetail, setLoadingUserDetail] = useState(false);
   
+  // Search
+  const [searchQuery, setSearchQuery] = useState('');
+
   // Credit adjustment
   const [creditAdjustment, setCreditAdjustment] = useState<string>('');
   const [creditDescription, setCreditDescription] = useState<string>('');
@@ -114,89 +116,73 @@ export const UserManagement = () => {
     }
   };
 
-  const loadUsers = async (token?: string | null) => {
+  const parseLambdaResponse = (result: { data?: unknown }): UsersResponse | null => {
+    if (!result?.data) return null;
+    if (typeof result.data === 'string') {
+      try {
+        const firstParse = JSON.parse(result.data);
+        return typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+      } catch {
+        return null;
+      }
+    }
+    return result.data as UsersResponse | null;
+  };
+
+  // Fetch all pages of users on mount, accumulating results
+  const loadAllUsers = useCallback(async () => {
     if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       return;
     }
 
     setLoadingUsers(true);
+    setFullyLoaded(false);
+    setError(null);
+
     try {
-      // First, debug Client and Partner models
       await debugClientAndPartnerModels();
 
-      logger.log("🔍 Calling listUsersLambda...", { token });
-      const result = await client.queries.listUsersLambda({
-        limit: 50,
-        paginationToken: token || undefined,
-      });
-      logger.debug("🔍 [DEBUG] Raw listUsersLambda response:", JSON.stringify(result, null, 2));
-      logger.log("✅ listUsersLambda response:", result);
-      
-      // Parse the JSON response
-      let usersData: UsersResponse | null = null;
-      
-      if (!result || !result.data) {
-        logger.error("❌ [DEBUG] No data in response:", result);
-        setError("Failed to load users: No response from server");
-        return;
-      }
-      
-      if (typeof result.data === 'string') {
-        try {
-          const firstParse = JSON.parse(result.data);
-          if (typeof firstParse === 'string') {
-            usersData = JSON.parse(firstParse);
-          } else {
-            usersData = firstParse;
-          }
-        } catch (e) {
-          logger.error("❌ [DEBUG] Failed to parse JSON response:", e, "Raw data:", result.data);
-          setError("Failed to load users: Invalid JSON response");
-          return;
+      const accumulated: User[] = [];
+      let token: string | undefined;
+
+      do {
+        const result = await client.queries.listUsersLambda({
+          limit: 60,
+          paginationToken: token,
+        });
+
+        const usersData = parseLambdaResponse(result as { data?: unknown });
+        if (!usersData || usersData.success === false) {
+          setError("Failed to load users: Server returned error");
+          break;
         }
-      } else {
-        usersData = result.data as UsersResponse | null;
-      }
 
-      logger.debug("📊 [DEBUG] Parsed users data:", JSON.stringify(usersData, null, 2));
-      logger.log("📊 Parsed users data:", usersData);
+        accumulated.push(...(usersData.users || []));
+        setAllUsers([...accumulated]);
+        token = usersData.nextToken || undefined;
+      } while (token);
 
-      if (!usersData) {
-        logger.error("❌ [DEBUG] Users data is null or undefined");
-        setError("Failed to load users: No data returned from server");
-        return;
-      }
-
-      if (usersData.success !== false) {
-        // Success
-        logger.debug("✅ [DEBUG] Setting users:", usersData.users?.length || 0, "users");
-        logger.debug("✅ [DEBUG] Users array:", JSON.stringify(usersData.users, null, 2));
-        setUsers(usersData.users || []);
-        setPaginationToken(usersData.nextToken || null);
-        setError(null); // Clear any previous errors
-        logger.log("✅ [DEBUG] Set pagination token:", usersData.nextToken);
-        logger.log(`✅ Successfully loaded ${usersData.users?.length || 0} users`);
-      } else {
-        logger.error("❌ [DEBUG] Users data indicates failure:", usersData);
-        setError("Failed to load users: Server returned error");
-      }
+      setFullyLoaded(true);
     } catch (err) {
-      logger.error("❌ [DEBUG] Error loading users:", err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(`Failed to load users: ${errorMessage}`);
     } finally {
       setLoadingUsers(false);
     }
-  };
+  }, [user?.email, user?.group]);
+
+  // Reload a single page (used after classification changes)
+  const reloadCurrentPage = useCallback(async () => {
+    await loadAllUsers();
+  }, [loadAllUsers]);
 
   useEffect(() => {
     if (user?.email && hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
-      loadUsers().catch(err => {
+      loadAllUsers().catch(err => {
         logger.error("Failed to load users on mount:", err);
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.email]);
+  }, [user?.email, loadAllUsers]);
 
   const handleViewUser = async (user: User) => {
     setSelectedUser(user);
@@ -276,8 +262,8 @@ export const UserManagement = () => {
           });
         }
 
-        // Also update the user in the users array to keep table and modal in sync
-        setUsers(prevUsers => {
+        // Also update the user in the allUsers array to keep table and modal in sync
+        setAllUsers(prevUsers => {
           const updatedUsers = prevUsers.map(u => {
             // Match by username (userId is the username)
             if (u.username === userId) {
@@ -347,19 +333,6 @@ export const UserManagement = () => {
     }
   };
 
-  const handleNextPage = () => {
-    if (paginationToken) {
-      loadUsers(paginationToken);
-    }
-  };
-
-  const handlePrevPage = () => {
-    // Note: Cognito doesn't support backward pagination easily
-    // We'd need to maintain our own pagination state
-    // For now, just reload from the beginning
-    loadUsers(null);
-  };
-
   const handleClassificationChange = async (username: string, newClassification: string) => {
     if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       return;
@@ -377,31 +350,23 @@ export const UserManagement = () => {
     try {
       logger.log(`🔄 Changing classification for ${username} to ${newClassification}`);
       
-      // Check for robots BEFORE attempting conversion (only when converting Partner to Client)
-      if (newClassification === 'CLIENT') {
-        logger.debug(`🔍 Checking for robots before converting ${username} to CLIENT...`);
+      const rolesWithoutRobots = ['CLIENT', 'SERVICE_PROVIDER'];
+      if (rolesWithoutRobots.includes(newClassification)) {
+        logger.debug(`Checking for robots before converting ${username} to ${newClassification}...`);
         const { data: partners } = await client.models.Partner.list({
           filter: { cognitoUsername: { eq: username } },
         });
-        
-        logger.debug(`📊 Found ${partners?.length || 0} partner record(s) for ${username}`);
-        
+
         if (partners && partners.length > 0) {
           const partnerId = partners[0].id;
-          logger.debug(`🤖 Checking for robots with partnerId: ${partnerId}`);
-          
-          // Check if this partner has any robots
           const { data: robots } = await client.models.Robot.list({
             filter: { partnerId: { eq: partnerId || undefined } },
           });
-          
-          logger.debug(`📊 Found ${robots?.length || 0} robot(s) for partner ${partnerId}`);
-          
+
           if (robots && robots.length > 0) {
-            const errorMsg = `Cannot convert Partner to Client: This partner has ${robots.length} robot(s) listed. Please delete or transfer all robots before converting.`;
-            logger.error(`❌ ${errorMsg}`);
+            const errorMsg = `Cannot convert to ${newClassification.replace('_', ' ')}: This user has ${robots.length} robot(s) listed. Please delete or transfer all robots before converting.`;
+            logger.error(errorMsg);
             setError(errorMsg);
-            // Show toast notification
             setToast({ message: errorMsg, type: 'error', visible: true });
             setTimeout(() => {
               setToast(prev => ({ ...prev, visible: false }));
@@ -409,16 +374,23 @@ export const UserManagement = () => {
             }, 6000);
             return;
           }
-        } else {
-          logger.debug(`ℹ️ No partner record found for ${username}, skipping robot check`);
         }
       }
       
-      // Use setUserGroupLambda to change the Cognito group
-      const groupValue = newClassification.toLowerCase() === 'partner' ? 'partner' : 'client';
+      const classificationToGroupKey: Record<string, string> = {
+        CLIENT: 'client',
+        PARTNER: 'partner',
+        SERVICE_PROVIDER: 'service_provider',
+        ORGANIZATION: 'organization',
+      };
+      const groupValue = classificationToGroupKey[newClassification];
+      if (!groupValue) {
+        setError(`Unknown classification: ${newClassification}`);
+        return;
+      }
       const response = await client.mutations.setUserGroupLambda({
         group: groupValue,
-        targetUsername: username, // Admin can change other users' groups
+        targetUsername: username,
       });
 
       logger.log("✅ setUserGroupLambda response:", response);
@@ -463,38 +435,33 @@ export const UserManagement = () => {
         return;
       }
 
-      // Also update the Partner/Client models
-      if (newClassification === 'PARTNER') {
-        // Check if Partner record exists, create if not
+      const needsPartnerProfile = ['PARTNER', 'ORGANIZATION'].includes(newClassification);
+      const needsClientProfile = ['CLIENT', 'SERVICE_PROVIDER'].includes(newClassification);
+
+      if (needsPartnerProfile) {
         const { data: partners } = await client.models.Partner.list({
           filter: { cognitoUsername: { eq: username } },
         });
         if (!partners || partners.length === 0) {
           await client.models.Partner.create({
             cognitoUsername: username,
-            name: username, // Default name
-            description: 'Partner account',
+            name: username,
+            description: `${newClassification.replace('_', ' ').toLowerCase()} account`,
           });
         }
-        // Remove from Client if exists
         const { data: clients } = await client.models.Client.list({
           filter: { cognitoUsername: { eq: username } },
         });
         if (clients && clients.length > 0) {
           await client.models.Client.delete({ id: clients[0].id });
         }
-      } else if (newClassification === 'CLIENT') {
-        // Remove from Partner if exists (we already checked for robots above)
+      } else if (needsClientProfile) {
         const { data: partners } = await client.models.Partner.list({
           filter: { cognitoUsername: { eq: username } },
         });
-        
         if (partners && partners.length > 0) {
-          // Safe to delete Partner record (no robots - we checked above)
           await client.models.Partner.delete({ id: partners[0].id });
         }
-        
-        // Check if Client record exists, create if not
         const { data: clients } = await client.models.Client.list({
           filter: { cognitoUsername: { eq: username } },
         });
@@ -508,8 +475,7 @@ export const UserManagement = () => {
       setSuccess(`User classification updated to ${newClassification}`);
       setTimeout(() => setSuccess(null), 3000);
       
-      // Reload users to reflect the change
-      await loadUsers(paginationToken || null);
+      await reloadCurrentPage();
     } catch (err) {
       logger.error("❌ Error changing classification:", err);
       setError(`Failed to change classification: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -552,6 +518,18 @@ export const UserManagement = () => {
     }
   };
 
+  const filteredUsers = searchQuery.trim()
+    ? allUsers.filter((u) => {
+        const q = searchQuery.toLowerCase();
+        return (
+          (u.name || '').toLowerCase().includes(q) ||
+          (u.email || '').toLowerCase().includes(q) ||
+          (u.username || '').toLowerCase().includes(q) ||
+          (u.classification || '').toLowerCase().includes(q)
+        );
+      })
+    : allUsers;
+
   return (
     <>
       <div className="admin-section">
@@ -576,17 +554,73 @@ export const UserManagement = () => {
           <p className="section-description">
             View and manage all platform users. Click "View Details" to see full profile information and manage credits.
           </p>
-          
+
+          <div className="admin-search-bar" style={{ marginBottom: '1rem' }}>
+            <div style={{ position: 'relative', maxWidth: '400px' }}>
+              <FontAwesomeIcon
+                icon={faSearch}
+                style={{
+                  position: 'absolute',
+                  left: '0.85rem',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: 'rgba(255,255,255,0.3)',
+                  fontSize: '0.85rem',
+                }}
+              />
+              <input
+                type="text"
+                placeholder="Search by name, email, or username..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.6rem 0.85rem 0.6rem 2.4rem',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '0.5rem',
+                  color: '#fff',
+                  fontSize: '0.9rem',
+                  outline: 'none',
+                  transition: 'border-color 0.2s',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = 'rgba(245,197,24,0.5)'; }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  style={{
+                    position: 'absolute',
+                    right: '0.6rem',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(255,255,255,0.4)',
+                    cursor: 'pointer',
+                    padding: '0.2rem',
+                    fontSize: '0.8rem',
+                  }}
+                  title="Clear search"
+                >
+                  <FontAwesomeIcon icon={faTimes} />
+                </button>
+              )}
+            </div>
+          </div>
+
           {loadingUsers ? (
             <div className="loading-state">
               <p>Loading users...</p>
             </div>
           ) : (
             <div className="users-list">
-              {users.length === 0 ? (
+              {filteredUsers.length === 0 ? (
                 <div className="empty-state">
                   <FontAwesomeIcon icon={faInfoCircle} />
-                  <p>No users found.</p>
+                  <p>{searchQuery ? 'No users match your search.' : 'No users found.'}</p>
                 </div>
               ) : (
                 <>
@@ -602,7 +636,7 @@ export const UserManagement = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {users.map((user, index) => (
+                      {filteredUsers.map((user, index) => (
                         <tr key={index}>
                           <td>{user.name || 'N/A'}</td>
                           <td>{user.email || 'N/A'}</td>
@@ -616,6 +650,8 @@ export const UserManagement = () => {
                             >
                               <option value="CLIENT">Client</option>
                               <option value="PARTNER">Partner</option>
+                              <option value="SERVICE_PROVIDER">Services Provider</option>
+                              <option value="ORGANIZATION">Organization</option>
                               <option value="ADMIN" disabled>Admin (use Admin panel)</option>
                             </select>
                           </td>
@@ -646,28 +682,21 @@ export const UserManagement = () => {
                     </tbody>
                   </table>
                   
-                  {/* Pagination */}
-                  {users.length > 0 && (
+                  {allUsers.length > 0 && (
                     <div className="pagination-controls">
-                      <button
-                        className="admin-button admin-button-secondary"
-                        onClick={handlePrevPage}
-                        disabled={loadingUsers}
-                        title="Reload from beginning"
-                      >
-                        <FontAwesomeIcon icon={faChevronLeft} />
-                        <span>Previous</span>
-                      </button>
                       <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>
-                        Showing {users.length} user{users.length !== 1 ? 's' : ''}
+                        {searchQuery
+                          ? `Showing ${filteredUsers.length} of ${allUsers.length} users`
+                          : `${allUsers.length} user${allUsers.length !== 1 ? 's' : ''}`}
+                        {!fullyLoaded && ' (loading more...)'}
                       </span>
                       <button
                         className="admin-button admin-button-secondary"
-                        onClick={handleNextPage}
-                        disabled={!paginationToken || loadingUsers}
+                        onClick={() => loadAllUsers()}
+                        disabled={loadingUsers}
+                        title="Reload all users"
                       >
-                        <span>Next</span>
-                        <FontAwesomeIcon icon={faChevronRight} />
+                        <span>Refresh</span>
                       </button>
                     </div>
                   )}

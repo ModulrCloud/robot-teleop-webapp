@@ -5,8 +5,8 @@ import { generateClient } from "aws-amplify/api";
 import type { Schema } from "../../amplify/data/resource";
 import { logger } from "../utils/logger";
 
-type AuthGroup = "ADMINS" | "PARTNERS" | "CLIENTS";
-const VALID_GROUPS: string[] = ["ADMINS", "PARTNERS", "CLIENTS"];
+type AuthGroup = "ADMINS" | "PARTNERS" | "CLIENTS" | "SERVICE_PROVIDERS" | "ORGANIZATIONS";
+const VALID_GROUPS: string[] = ["ADMINS", "ORGANIZATIONS", "SERVICE_PROVIDERS", "PARTNERS", "CLIENTS"];
 
 interface AuthStatus {
   isLoggedIn: boolean;
