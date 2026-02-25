@@ -16,6 +16,7 @@ import {
   faChevronRight,
   faEdit,
   faTrash,
+  faSearch,
 } from "@fortawesome/free-solid-svg-icons";
 import { logger } from "../../../utils/logger";
 import "../../Admin.css";
@@ -53,6 +54,9 @@ export const UserManagement = () => {
   const [userTransactions, setUserTransactions] = useState<CreditTransaction[]>([]);
   const [loadingUserDetail, setLoadingUserDetail] = useState(false);
   
+  // Search
+  const [searchQuery, setSearchQuery] = useState('');
+
   // Credit adjustment
   const [creditAdjustment, setCreditAdjustment] = useState<string>('');
   const [creditDescription, setCreditDescription] = useState<string>('');
@@ -377,31 +381,23 @@ export const UserManagement = () => {
     try {
       logger.log(`🔄 Changing classification for ${username} to ${newClassification}`);
       
-      // Check for robots BEFORE attempting conversion (only when converting Partner to Client)
-      if (newClassification === 'CLIENT') {
-        logger.debug(`🔍 Checking for robots before converting ${username} to CLIENT...`);
+      const rolesWithoutRobots = ['CLIENT', 'SERVICE_PROVIDER'];
+      if (rolesWithoutRobots.includes(newClassification)) {
+        logger.debug(`Checking for robots before converting ${username} to ${newClassification}...`);
         const { data: partners } = await client.models.Partner.list({
           filter: { cognitoUsername: { eq: username } },
         });
-        
-        logger.debug(`📊 Found ${partners?.length || 0} partner record(s) for ${username}`);
-        
+
         if (partners && partners.length > 0) {
           const partnerId = partners[0].id;
-          logger.debug(`🤖 Checking for robots with partnerId: ${partnerId}`);
-          
-          // Check if this partner has any robots
           const { data: robots } = await client.models.Robot.list({
             filter: { partnerId: { eq: partnerId || undefined } },
           });
-          
-          logger.debug(`📊 Found ${robots?.length || 0} robot(s) for partner ${partnerId}`);
-          
+
           if (robots && robots.length > 0) {
-            const errorMsg = `Cannot convert Partner to Client: This partner has ${robots.length} robot(s) listed. Please delete or transfer all robots before converting.`;
-            logger.error(`❌ ${errorMsg}`);
+            const errorMsg = `Cannot convert to ${newClassification.replace('_', ' ')}: This user has ${robots.length} robot(s) listed. Please delete or transfer all robots before converting.`;
+            logger.error(errorMsg);
             setError(errorMsg);
-            // Show toast notification
             setToast({ message: errorMsg, type: 'error', visible: true });
             setTimeout(() => {
               setToast(prev => ({ ...prev, visible: false }));
@@ -409,16 +405,23 @@ export const UserManagement = () => {
             }, 6000);
             return;
           }
-        } else {
-          logger.debug(`ℹ️ No partner record found for ${username}, skipping robot check`);
         }
       }
       
-      // Use setUserGroupLambda to change the Cognito group
-      const groupValue = newClassification.toLowerCase() === 'partner' ? 'partner' : 'client';
+      const classificationToGroupKey: Record<string, string> = {
+        CLIENT: 'client',
+        PARTNER: 'partner',
+        SERVICE_PROVIDER: 'service_provider',
+        ORGANIZATION: 'organization',
+      };
+      const groupValue = classificationToGroupKey[newClassification];
+      if (!groupValue) {
+        setError(`Unknown classification: ${newClassification}`);
+        return;
+      }
       const response = await client.mutations.setUserGroupLambda({
         group: groupValue,
-        targetUsername: username, // Admin can change other users' groups
+        targetUsername: username,
       });
 
       logger.log("✅ setUserGroupLambda response:", response);
@@ -463,38 +466,33 @@ export const UserManagement = () => {
         return;
       }
 
-      // Also update the Partner/Client models
-      if (newClassification === 'PARTNER') {
-        // Check if Partner record exists, create if not
+      const needsPartnerProfile = ['PARTNER', 'ORGANIZATION'].includes(newClassification);
+      const needsClientProfile = ['CLIENT', 'SERVICE_PROVIDER'].includes(newClassification);
+
+      if (needsPartnerProfile) {
         const { data: partners } = await client.models.Partner.list({
           filter: { cognitoUsername: { eq: username } },
         });
         if (!partners || partners.length === 0) {
           await client.models.Partner.create({
             cognitoUsername: username,
-            name: username, // Default name
-            description: 'Partner account',
+            name: username,
+            description: `${newClassification.replace('_', ' ').toLowerCase()} account`,
           });
         }
-        // Remove from Client if exists
         const { data: clients } = await client.models.Client.list({
           filter: { cognitoUsername: { eq: username } },
         });
         if (clients && clients.length > 0) {
           await client.models.Client.delete({ id: clients[0].id });
         }
-      } else if (newClassification === 'CLIENT') {
-        // Remove from Partner if exists (we already checked for robots above)
+      } else if (needsClientProfile) {
         const { data: partners } = await client.models.Partner.list({
           filter: { cognitoUsername: { eq: username } },
         });
-        
         if (partners && partners.length > 0) {
-          // Safe to delete Partner record (no robots - we checked above)
           await client.models.Partner.delete({ id: partners[0].id });
         }
-        
-        // Check if Client record exists, create if not
         const { data: clients } = await client.models.Client.list({
           filter: { cognitoUsername: { eq: username } },
         });
@@ -552,6 +550,18 @@ export const UserManagement = () => {
     }
   };
 
+  const filteredUsers = searchQuery.trim()
+    ? users.filter((u) => {
+        const q = searchQuery.toLowerCase();
+        return (
+          (u.name || '').toLowerCase().includes(q) ||
+          (u.email || '').toLowerCase().includes(q) ||
+          (u.username || '').toLowerCase().includes(q) ||
+          (u.classification || '').toLowerCase().includes(q)
+        );
+      })
+    : users;
+
   return (
     <>
       <div className="admin-section">
@@ -576,17 +586,73 @@ export const UserManagement = () => {
           <p className="section-description">
             View and manage all platform users. Click "View Details" to see full profile information and manage credits.
           </p>
-          
+
+          <div className="admin-search-bar" style={{ marginBottom: '1rem' }}>
+            <div style={{ position: 'relative', maxWidth: '400px' }}>
+              <FontAwesomeIcon
+                icon={faSearch}
+                style={{
+                  position: 'absolute',
+                  left: '0.85rem',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: 'rgba(255,255,255,0.3)',
+                  fontSize: '0.85rem',
+                }}
+              />
+              <input
+                type="text"
+                placeholder="Search by name, email, or username..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.6rem 0.85rem 0.6rem 2.4rem',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '0.5rem',
+                  color: '#fff',
+                  fontSize: '0.9rem',
+                  outline: 'none',
+                  transition: 'border-color 0.2s',
+                  boxSizing: 'border-box',
+                }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = 'rgba(245,197,24,0.5)'; }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; }}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  style={{
+                    position: 'absolute',
+                    right: '0.6rem',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'rgba(255,255,255,0.4)',
+                    cursor: 'pointer',
+                    padding: '0.2rem',
+                    fontSize: '0.8rem',
+                  }}
+                  title="Clear search"
+                >
+                  <FontAwesomeIcon icon={faTimes} />
+                </button>
+              )}
+            </div>
+          </div>
+
           {loadingUsers ? (
             <div className="loading-state">
               <p>Loading users...</p>
             </div>
           ) : (
             <div className="users-list">
-              {users.length === 0 ? (
+              {filteredUsers.length === 0 ? (
                 <div className="empty-state">
                   <FontAwesomeIcon icon={faInfoCircle} />
-                  <p>No users found.</p>
+                  <p>{searchQuery ? 'No users match your search.' : 'No users found.'}</p>
                 </div>
               ) : (
                 <>
@@ -602,7 +668,7 @@ export const UserManagement = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {users.map((user, index) => (
+                      {filteredUsers.map((user, index) => (
                         <tr key={index}>
                           <td>{user.name || 'N/A'}</td>
                           <td>{user.email || 'N/A'}</td>
@@ -616,6 +682,8 @@ export const UserManagement = () => {
                             >
                               <option value="CLIENT">Client</option>
                               <option value="PARTNER">Partner</option>
+                              <option value="SERVICE_PROVIDER">Services Provider</option>
+                              <option value="ORGANIZATION">Organization</option>
                               <option value="ADMIN" disabled>Admin (use Admin panel)</option>
                             </select>
                           </td>
@@ -659,7 +727,7 @@ export const UserManagement = () => {
                         <span>Previous</span>
                       </button>
                       <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>
-                        Showing {users.length} user{users.length !== 1 ? 's' : ''}
+                        Showing {filteredUsers.length}{searchQuery ? ` of ${users.length}` : ''} user{filteredUsers.length !== 1 ? 's' : ''}
                       </span>
                       <button
                         className="admin-button admin-button-secondary"

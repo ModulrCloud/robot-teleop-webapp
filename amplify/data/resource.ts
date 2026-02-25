@@ -40,8 +40,14 @@ import { listSessionsByRobot } from "../functions/list-sessions-by-robot/resourc
 import { triggerConnectionCleanup } from "../functions/trigger-connection-cleanup/resource";
 import { getActiveRobots } from "../functions/get-active-robots/resource";
 import { manageCreditTier } from "../functions/manage-credit-tier/resource";
-import { manageOrganisation } from "../functions/manage-organisation/resource";
+import { manageOrganization } from "../functions/manage-organization/resource";
 import { manageOrgMember } from "../functions/manage-org-member/resource";
+import { regenerateEnrollmentToken } from "../functions/regenerate-enrollment-token/resource";
+
+const EnrollmentTokenResult = a.customType({
+  token: a.string().required(),
+  expiry: a.float().required(), // float to avoid 32-bit Int overflow for ms timestamps
+});
 
 const LambdaResult = a.customType({
   statusCode: a.integer(),
@@ -324,6 +330,8 @@ const schema = a.schema({
     latitude: a.float(),
     longitude: a.float(),
     publicKey: a.string(), // Optional: Ed25519 public key (base64 or hex) for PKI auth; 32-byte key
+    enrollmentToken: a.string(), // One-time token used by robot to self-register its public key; cleared after use
+    enrollmentTokenExpiry: a.float(), // Unix ms timestamp when enrollment token expires (7-day TTL); float to avoid 32-bit Int overflow
     ratings: a.hasMany('RobotRating', 'robotUuid'), // Relationship to ratings
     reservations: a.hasMany('RobotReservation', 'robotUuid'), // Relationship to reservations
     availability: a.hasMany('RobotAvailability', 'robotUuid'), // Relationship to availability blocks
@@ -510,9 +518,9 @@ const schema = a.schema({
       // This is handled via a Lambda function since we need to check robot ownership
     ]),
 
-  // Command HQ: Organisation Models
+  // Command HQ: Organization Models
 
-  Organisation: a.model({
+  Organization: a.model({
     id: a.id(),
     name: a.string().required(),
     slug: a.string().required(),
@@ -541,7 +549,7 @@ const schema = a.schema({
   OrgRole: a.model({
     id: a.id(),
     orgId: a.id().required(),
-    org: a.belongsTo('Organisation', 'orgId'),
+    org: a.belongsTo('Organization', 'orgId'),
     name: a.string().required(),
     description: a.string(),
     permissions: a.json().required(),
@@ -562,7 +570,7 @@ const schema = a.schema({
   OrgMember: a.model({
     id: a.id(),
     orgId: a.id().required(),
-    org: a.belongsTo('Organisation', 'orgId'),
+    org: a.belongsTo('Organization', 'orgId'),
     userId: a.string().required(),
     userEmail: a.string(),
     roleId: a.id().required(),
@@ -583,7 +591,7 @@ const schema = a.schema({
   OrgInvite: a.model({
     id: a.id(),
     orgId: a.id().required(),
-    org: a.belongsTo('Organisation', 'orgId'),
+    org: a.belongsTo('Organization', 'orgId'),
     email: a.string().required(),
     roleId: a.id().required(),
     invitedBy: a.string().required(),
@@ -603,7 +611,7 @@ const schema = a.schema({
       allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
     ]),
 
-  manageOrganisationLambda: a
+  manageOrganizationLambda: a
     .mutation()
     .arguments({
       action: a.string().required(),
@@ -615,7 +623,7 @@ const schema = a.schema({
     })
     .returns(a.json())
     .authorization(allow => [allow.authenticated()])
-    .handler(a.handler.function(manageOrganisation)),
+    .handler(a.handler.function(manageOrganization)),
 
   manageOrgMemberLambda: a
     .mutation()
@@ -686,6 +694,15 @@ const schema = a.schema({
     .returns(a.string())
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (owner/admin check)
     .handler(a.handler.function(updateRobotLambda)),
+
+  regenerateEnrollmentToken: a
+    .mutation()
+    .arguments({
+      robotId: a.string().required(), // Robot ID (UUID) - same convention as updateRobotLambda
+    })
+    .returns(EnrollmentTokenResult)
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(regenerateEnrollmentToken)),
 
   revokeTokenLambda: a
     .mutation()

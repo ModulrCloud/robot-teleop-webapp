@@ -16,13 +16,18 @@ import {
   faArrowRight,
   faDollarSign,
   faSlidersH,
-  faSync
+  faSync,
+  faBuilding,
+  faUsers,
+  faPlus,
 } from '@fortawesome/free-solid-svg-icons';
 import { generateClient } from 'aws-amplify/api';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
 import "./Dashboard.css";
 import { PayoutPreferencesModal, type PayoutType } from "../components/PayoutPreferencesModal";
+import { getMockOrgsForUser } from "../mocks/organization";
+import type { Organization } from "../types/organization";
 import { logger } from '../utils/logger';
 import outputs from '../../amplify_outputs.json';
 
@@ -78,6 +83,8 @@ export const Dashboard = () => {
   const [stripeConnectLoading, setStripeConnectLoading] = useState(false);
   const [stripeConnectError, setStripeConnectError] = useState<string | null>(null);
   const [payoutModalOpen, setPayoutModalOpen] = useState(false);
+
+  const [userOrgs] = useState<Organization[]>(getMockOrgsForUser());
 
   const [systemStatus, setSystemStatus] = useState<SystemStatus>({
     webrtc: false,
@@ -643,7 +650,51 @@ export const Dashboard = () => {
         )}
       </div>
 
-      {isPartner && (
+      {user?.group === 'ORGANIZATIONS' && (
+        <div className="dashboard-section">
+          <div className="section-header">
+            <h2 className="section-title">Your Teams</h2>
+            <button className="view-all-btn" onClick={() => {/* TODO: create org flow */}}>
+              <FontAwesomeIcon icon={faPlus} /> Create
+            </button>
+          </div>
+          {userOrgs.length > 0 ? (
+            <div className="org-cards-grid">
+              {userOrgs.map((org) => (
+                <button
+                  key={org.id}
+                  className="org-card"
+                  onClick={() => navigate(`/command-hq/${org.id}`)}
+                >
+                  <div className="org-card-avatar">
+                    <FontAwesomeIcon icon={faBuilding} />
+                  </div>
+                  <div className="org-card-content">
+                    <h3>{org.name}</h3>
+                    <span className="org-card-slug">/{org.slug}</span>
+                    <div className="org-card-stats">
+                      <span><FontAwesomeIcon icon={faUsers} /> {org.memberCount}</span>
+                      <span><FontAwesomeIcon icon={faRobot} /> {org.robotCount}</span>
+                    </div>
+                  </div>
+                  <FontAwesomeIcon icon={faArrowRight} className="org-card-arrow" />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <FontAwesomeIcon icon={faBuilding} className="empty-icon" />
+              <h3>No Teams Yet</h3>
+              <p>Create a team to manage your operators and robot fleet.</p>
+              <button className="empty-action-btn" onClick={() => {/* TODO: create org flow */}}>
+                <FontAwesomeIcon icon={faPlus} /> Create Team
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isPartner && user?.group === 'PARTNERS' && (
         <div className="dashboard-section">
           <h2 className="section-title">Partner Earnings</h2>
           <div className="stats-grid dashboard-partner-earnings-grid">

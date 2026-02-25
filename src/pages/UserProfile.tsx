@@ -62,7 +62,9 @@ export function UserProfile() {
   const [isEditingCurrency, setIsEditingCurrency] = useState(false);
 
   const isPartner = user?.group === "PARTNERS";
-  const isClient = user?.group === "CLIENTS";
+  const isOrganization = user?.group === "ORGANIZATIONS";
+  const hasPartnerProfile = isPartner || isOrganization;
+  const isClient = user?.group === "CLIENTS" || user?.group === "SERVICE_PROVIDERS";
 
   useEffect(() => {
     loadProfileData();
@@ -74,7 +76,7 @@ export function UserProfile() {
     
     setLoading(true);
     try {
-      if (isPartner) {
+      if (hasPartnerProfile) {
         const allPartners = await client.models.Partner.list({ limit: 100 });
         const emailPrefix = user.email?.split('@')[0] || '';
         const partner = allPartners.data?.find(p => 
@@ -142,7 +144,7 @@ export function UserProfile() {
   };
 
   const handleSave = async () => {
-    if (isPartner && partnerData) {
+    if (hasPartnerProfile && partnerData) {
       if (!editForm.name.trim()) {
         setError("Name is required");
         return;
@@ -210,7 +212,7 @@ export function UserProfile() {
     setSuccess("");
 
     try {
-      if (isPartner && partnerData) {
+      if (hasPartnerProfile && partnerData) {
         const { errors } = await client.models.Partner.update({
           id: partnerData.id,
           displayName: displayNameForm.displayName.trim() || null,
@@ -258,7 +260,7 @@ export function UserProfile() {
   };
 
   const handleCancelDisplayName = () => {
-    if (isPartner && partnerData) {
+    if (hasPartnerProfile && partnerData) {
       setDisplayNameForm({
         displayName: partnerData.displayName || "",
       });
@@ -391,7 +393,7 @@ export function UserProfile() {
                 </div>
               ) : (
                 <div className="display-name-display">
-                  <p>{isPartner ? (partnerData?.displayName || "Anonymous") : (clientData?.displayName || "Anonymous")}</p>
+                  <p>{hasPartnerProfile ? (partnerData?.displayName || "Anonymous") : (clientData?.displayName || "Anonymous")}</p>
                   <button 
                     onClick={() => setIsEditingDisplayName(true)} 
                     className="btn-edit-small"
@@ -452,19 +454,21 @@ export function UserProfile() {
           </div>
         </div>
 
-        {isPartner && partnerData && (
+        {hasPartnerProfile && partnerData && (
           <div className="profile-section">
             <div className="section-header">
-              <h2>Partner Profile</h2>
+              <h2>{isOrganization ? 'Organization Profile' : 'Partner Profile'}</h2>
               <div className="section-actions">
                 {!isEditing && (
                   <button onClick={() => setIsEditing(true)} className="btn-edit">
                     <FontAwesomeIcon icon={faEdit} /> Edit Profile
                   </button>
                 )}
-                <button onClick={() => navigate('/partner-profile/edit')} className="btn-edit-full">
-                  <FontAwesomeIcon icon={faExternalLinkAlt} /> Edit Full Profile
-                </button>
+                {isPartner && (
+                  <button onClick={() => navigate('/partner-profile/edit')} className="btn-edit-full">
+                    <FontAwesomeIcon icon={faExternalLinkAlt} /> Edit Full Profile
+                  </button>
+                )}
               </div>
             </div>
 
@@ -526,17 +530,17 @@ export function UserProfile() {
           </div>
         )}
 
-        {((isPartner && partnerData) || (isClient && clientData)) && (
+        {((hasPartnerProfile && partnerData) || (isClient && clientData)) && (
           <div className="profile-section">
             <h2>Statistics</h2>
             <div className="profile-info-grid">
               <div className="info-item">
                 <label>Average Rating</label>
-                <p>{isPartner ? partnerData?.averageRating?.toFixed(1) || "N/A" : clientData?.averageRating?.toFixed(1) || "N/A"}</p>
+                <p>{hasPartnerProfile ? partnerData?.averageRating?.toFixed(1) || "N/A" : clientData?.averageRating?.toFixed(1) || "N/A"}</p>
               </div>
               <div className="info-item">
                 <label>Reliability Score</label>
-                <p>{isPartner ? partnerData?.reliabilityScore?.toFixed(1) || "N/A" : clientData?.reliabilityScore?.toFixed(1) || "N/A"}</p>
+                <p>{hasPartnerProfile ? partnerData?.reliabilityScore?.toFixed(1) || "N/A" : clientData?.reliabilityScore?.toFixed(1) || "N/A"}</p>
               </div>
             </div>
           </div>

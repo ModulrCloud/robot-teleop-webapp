@@ -18,10 +18,12 @@ import {
   faWallet,
   faShieldAlt,
   faGaugeHigh,
-  faGlobe
+  faGlobe,
+  faSatelliteDish,
 } from '@fortawesome/free-solid-svg-icons';
 import "./Navbar.css";
 import { formatGroupName, capitalizeName } from "./utils/formatters";
+import { MOCK_ORGANIZATIONS } from "./mocks/organization";
 
 export default function Navbar() {
   const { isLoggedIn, signOut, user } = useAuthStatus();
@@ -75,44 +77,59 @@ export default function Navbar() {
               <FontAwesomeIcon icon={faGaugeHigh} />
               <span>Dashboard</span>
             </Link>
-            <Link
-              to="/robots"
-              className={`nav-link ${isActive('/robots') ? 'active' : ''}`}
-            >
-              <FontAwesomeIcon icon={faRobot} />
-              <span>Robots</span>
-            </Link>
-            <Link
-              to="/services"
-              className={`nav-link ${isActive('/services') ? 'active' : ''}`}
-            >
-              <FontAwesomeIcon icon={faHandshake} />
-              <span>Services</span>
-            </Link>
-            <Link
-              to="/social"
-              className={`nav-link ${isActive('/social') ? 'active' : ''}`}
-            >
-              <FontAwesomeIcon icon={faUsers} />
-              <span>Social</span>
-            </Link>
+            {user?.group === 'ORGANIZATIONS' ? (
+              MOCK_ORGANIZATIONS.length > 0 && (
+                <Link
+                  to={`/command-hq/${MOCK_ORGANIZATIONS[0].id}`}
+                  className={`nav-link ${location.pathname.startsWith('/command-hq') ? 'active' : ''}`}
+                >
+                  <FontAwesomeIcon icon={faSatelliteDish} />
+                  <span>Command HQ</span>
+                </Link>
+              )
+            ) : (
+              <>
+                <Link
+                  to="/robots"
+                  className={`nav-link ${isActive('/robots') ? 'active' : ''}`}
+                >
+                  <FontAwesomeIcon icon={faRobot} />
+                  <span>Robots</span>
+                </Link>
+                <Link
+                  to="/services"
+                  className={`nav-link ${isActive('/services') ? 'active' : ''}`}
+                >
+                  <FontAwesomeIcon icon={faHandshake} />
+                  <span>Services</span>
+                </Link>
+                <Link
+                  to="/social"
+                  className={`nav-link ${isActive('/social') ? 'active' : ''}`}
+                >
+                  <FontAwesomeIcon icon={faUsers} />
+                  <span>Social</span>
+                </Link>
+              </>
+            )}
           </div>
         )}
 
         <div className="navbar-actions">
           {isLoggedIn ? (
             <>
-              {/* Credits Balance Display - Clickable to open purchase modal */}
-              <button
-                className="credits-balance"
-                onClick={() => setShowPurchaseModal(true)}
-                title="Click to purchase credits"
-              >
-                <FontAwesomeIcon icon={faCoins} className="credits-icon" />
-                <span className="credits-amount">
-                  {creditsLoading ? '...' : formattedBalance}
-                </span>
-              </button>
+              {user?.group && user.group !== 'ORGANIZATIONS' && (
+                <button
+                  className="credits-balance"
+                  onClick={() => setShowPurchaseModal(true)}
+                  title="Click to purchase credits"
+                >
+                  <FontAwesomeIcon icon={faCoins} className="credits-icon" />
+                  <span className="credits-amount">
+                    {creditsLoading ? '...' : formattedBalance}
+                  </span>
+                </button>
+              )}
 
               <div className="user-menu-wrapper" ref={menuRef}>
                 <button
@@ -157,26 +174,36 @@ export default function Navbar() {
                       <FontAwesomeIcon icon={faCog} />
                       <span>Settings</span>
                     </Link>
-                    <Link to="/credits" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
-                      <FontAwesomeIcon icon={faCoins} />
-                      <span>Credits</span>
-                    </Link>
+                    {user?.group !== 'ORGANIZATIONS' && (
+                      <Link to="/credits" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
+                        <FontAwesomeIcon icon={faCoins} />
+                        <span>Credits</span>
+                      </Link>
+                    )}
+                    {user?.group === 'ORGANIZATIONS' && MOCK_ORGANIZATIONS.length > 0 && (
+                      <Link to={`/command-hq/${MOCK_ORGANIZATIONS[0].id}`} className="dropdown-item" onClick={() => setShowUserMenu(false)}>
+                        <FontAwesomeIcon icon={faSatelliteDish} />
+                        <span>Command HQ</span>
+                      </Link>
+                    )}
                     {hasAdminAccess(user?.email, user?.group ? [user.group] : undefined) && (
                       <Link to="/admin" className="dropdown-item" onClick={() => setShowUserMenu(false)}>
                         <FontAwesomeIcon icon={faShieldAlt} />
                         <span>Admin</span>
                       </Link>
                     )}
-                    <button
-                      className="dropdown-item"
-                      onClick={() => {
-                        setShowUserMenu(false);
-                        setShowPurchaseModal(true);
-                      }}
-                    >
-                      <FontAwesomeIcon icon={faWallet} />
-                      <span>Purchase Credits</span>
-                    </button>
+                    {user?.group !== 'ORGANIZATIONS' && (
+                      <button
+                        className="dropdown-item"
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          setShowPurchaseModal(true);
+                        }}
+                      >
+                        <FontAwesomeIcon icon={faWallet} />
+                        <span>Purchase Credits</span>
+                      </button>
+                    )}
                     <div className="dropdown-divider"></div>
                     <button className="dropdown-item danger" onClick={handleSignOut}>
                       <FontAwesomeIcon icon={faRightFromBracket} />
@@ -223,18 +250,29 @@ export default function Navbar() {
             <FontAwesomeIcon icon={faGaugeHigh} />
             <span>Dashboard</span>
           </Link>
-          <Link to="/robots" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
-            <FontAwesomeIcon icon={faRobot} />
-            <span>Robots</span>
-          </Link>
-          <Link to="/services" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
-            <FontAwesomeIcon icon={faHandshake} />
-            <span>Services</span>
-          </Link>
-          <Link to="/social" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
-            <FontAwesomeIcon icon={faUsers} />
-            <span>Social</span>
-          </Link>
+          {user?.group === 'ORGANIZATIONS' ? (
+            MOCK_ORGANIZATIONS.length > 0 && (
+              <Link to={`/command-hq/${MOCK_ORGANIZATIONS[0].id}`} className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
+                <FontAwesomeIcon icon={faSatelliteDish} />
+                <span>Command HQ</span>
+              </Link>
+            )
+          ) : (
+            <>
+              <Link to="/robots" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
+                <FontAwesomeIcon icon={faRobot} />
+                <span>Robots</span>
+              </Link>
+              <Link to="/services" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
+                <FontAwesomeIcon icon={faHandshake} />
+                <span>Services</span>
+              </Link>
+              <Link to="/social" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
+                <FontAwesomeIcon icon={faUsers} />
+                <span>Social</span>
+              </Link>
+            </>
+          )}
           <Link to="/profile" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
             <FontAwesomeIcon icon={faUser} />
             <span>Profile</span>

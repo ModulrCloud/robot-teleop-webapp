@@ -3,7 +3,7 @@
   justify-content: center;
   align-items: flex-start;
   min-height: 80vh;
-  padding: 2rem;
+  padding: 2.5rem 1.5rem;
 }
 
 .loading-wrapper {
@@ -13,60 +13,59 @@
 }
 
 .setup-container {
-  background: rgba(30, 30, 30, 0.95);
-  padding: 3rem 2.5rem;
-  border-radius: 1.5rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  max-width: 900px;
+  background: rgba(24, 24, 28, 0.97);
+  padding: 3rem 3.5rem 3.5rem;
+  border-radius: 1.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+  max-width: 1800px;
   width: 100%;
-  animation: fadeIn 0.5s ease-in;
+  animation: fadeIn 0.4s ease-out;
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
 }
+
+/* ─── Header ─── */
 
 .setup-header {
   text-align: center;
-  margin-bottom: 3rem;
+  margin-bottom: 2.5rem;
 }
 
 .setup-header h1 {
   color: #fff;
-  margin-bottom: 0.5rem;
+  margin: 0 0 0.5rem;
   font-size: 2.2rem;
   font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .setup-subtitle {
-  color: #aaa;
+  color: rgba(255, 255, 255, 0.45);
   font-size: 1.1rem;
-  margin-bottom: 2rem;
+  margin: 0 0 1.75rem;
 }
+
+/* ─── Steps ─── */
 
 .setup-steps {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 2rem;
-  margin-top: 2rem;
+  gap: 1.5rem;
 }
 
 .step {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
-  opacity: 0.4;
-  transition: opacity 0.3s;
-  width: 80px;
+  gap: 0.4rem;
+  opacity: 0.3;
+  transition: opacity 0.25s;
+  width: 100px;
 }
 
 .step.active {
@@ -74,234 +73,238 @@
 }
 
 .step-number {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.06);
+  border: 2px solid rgba(255, 255, 255, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.9rem;
   font-weight: 600;
-  transition: all 0.3s;
+  transition: all 0.25s;
 }
 
 .step.active .step-number {
-  background: #ffcc00;
-  border-color: #ffcc00;
+  background: #f5c518;
+  border-color: #f5c518;
   color: #000;
 }
 
 .step-label {
-  color: #aaa;
-  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.82rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
+
+/* ─── Form ─── */
 
 .setup-form {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 1.75rem;
 }
+
+/* ─── Account Type Cards ─── */
 
 .account-type-selector {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
+  gap: 1rem;
+}
+
+.account-type-selector--4col {
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .type-card {
-  background: rgba(255, 255, 255, 0.05);
-  padding: 2rem;
-  border-radius: 1rem;
-  border: 2px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.025);
+  padding: 2.5rem 2rem;
+  border-radius: 0.85rem;
+  border: 1.5px solid rgba(255, 255, 255, 0.07);
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all 0.2s ease;
   position: relative;
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .type-card:hover {
-  border-color: rgba(255, 204, 0, 0.5);
-  transform: translateY(-4px);
+  border-color: rgba(245, 197, 24, 0.35);
+  background: rgba(245, 197, 24, 0.03);
+  transform: translateY(-2px);
 }
 
 .type-card.selected {
-  border-color: #ffcc00;
-  background: rgba(255, 204, 0, 0.1);
+  border-color: #f5c518;
+  background: rgba(245, 197, 24, 0.06);
+  box-shadow: 0 0 0 1px rgba(245, 197, 24, 0.15), 0 4px 20px rgba(245, 197, 24, 0.08);
 }
 
 .type-icon {
-  font-size: 3rem;
-  color: #ffcc00;
-  margin-bottom: 1rem;
+  font-size: 3.2rem;
+  color: #f5c518;
+  margin-bottom: 1.1rem;
 }
 
 .type-card h3 {
   color: #fff;
-  margin: 0.5rem 0;
-  font-size: 1.4rem;
-}
-
-.type-card > p {
-  color: #bbb;
-  margin: 0.5rem 0 1rem 0;
-  font-size: 0.95rem;
-}
-
-.type-features {
-  list-style: none;
-  padding: 0;
-  margin: 1rem 0 0 0;
-  text-align: left;
-}
-
-.type-features li {
-  color: #ccc;
-  padding: 0.4rem 0;
-  font-size: 0.9rem;
-}
-
-.type-features li::before {
-  content: "✓ ";
-  color: #ffcc00;
-  font-weight: bold;
-  margin-right: 0.5rem;
-}
-
-.selection-indicator {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  background: #ffcc00;
-  color: #000;
-  padding: 0.25rem 0.75rem;
-  border-radius: 1rem;
-  font-size: 0.75rem;
+  margin: 0 0 0.6rem;
+  font-size: 1.7rem;
   font-weight: 600;
 }
 
+.type-card > p {
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0;
+  font-size: 1.15rem;
+  line-height: 1.5;
+}
+
+
+.selection-indicator {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  background: #f5c518;
+  color: #000;
+  padding: 0.2rem 0.6rem;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* ─── Details Section ─── */
+
 .partner-details-section {
-  background: rgba(255, 255, 255, 0.03);
-  padding: 2rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  animation: slideDown 0.3s ease-out;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 1.75rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  animation: slideDown 0.25s ease-out;
 }
 
 @keyframes slideDown {
-  from {
-    opacity: 0;
-    max-height: 0;
-    padding: 0;
-  }
-  to {
-    opacity: 1;
-    max-height: 500px;
-    padding: 2rem;
-  }
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .section-title {
   color: #fff;
-  margin: 0 0 1.5rem 0;
-  font-size: 1.3rem;
-  border-bottom: 2px solid rgba(255, 204, 0, 0.3);
-  padding-bottom: 0.5rem;
+  margin: 0 0 1.25rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .form-group {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
 }
 
 .form-group label {
   display: block;
-  color: #fff;
-  margin-bottom: 0.5rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 0.45rem;
   font-weight: 500;
-  font-size: 0.95rem;
+  font-size: 1rem;
 }
 
 .form-input,
 .form-textarea {
   width: 100%;
-  padding: 0.75rem 1rem;
-  border: 2px solid rgba(255, 255, 255, 0.1);
+  padding: 0.8rem 1rem;
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
   border-radius: 0.5rem;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.25);
   color: #fff;
   font-family: inherit;
   font-size: 1rem;
-  transition: border-color 0.3s;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
 }
 
 .form-input:focus,
 .form-textarea:focus {
   outline: none;
-  border-color: #ffcc00;
+  border-color: #f5c518;
+  box-shadow: 0 0 0 2px rgba(245, 197, 24, 0.1);
 }
 
 .form-input::placeholder,
 .form-textarea::placeholder {
-  color: #666;
+  color: rgba(255, 255, 255, 0.2);
 }
 
 .form-textarea {
   resize: vertical;
-  min-height: 100px;
+  min-height: 90px;
 }
 
 .char-count {
   display: block;
   text-align: right;
-  color: #888;
+  color: rgba(255, 255, 255, 0.25);
   font-size: 0.8rem;
-  margin-top: 0.25rem;
+  margin-top: 0.3rem;
 }
 
+/* ─── Error ─── */
+
 .error-message {
-  background-color: rgba(211, 47, 47, 0.2);
-  color: #ff6b6b;
-  padding: 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  padding: 0.9rem 1.1rem;
   border-radius: 0.5rem;
-  border-left: 4px solid #d32f2f;
+  border-left: 3px solid #ef4444;
+  font-size: 1rem;
   animation: shake 0.3s;
 }
 
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-10px); }
-  75% { transform: translateX(10px); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
 }
+
+/* ─── Actions ─── */
 
 .form-actions {
   display: flex;
   justify-content: center;
-  margin-top: 1rem;
+  margin-top: 0.5rem;
 }
 
 .btn-primary {
   padding: 1rem 3rem;
-  border-radius: 0.75rem;
+  border-radius: 0.6rem;
   color: #000;
-  background: #ffcc00;
+  background: #f5c518;
   border: none;
   cursor: pointer;
   font-family: var(--quantico);
   font-size: 1.1rem;
   font-weight: 600;
-  text-align: center;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.3s;
-  box-shadow: 0 4px 15px rgba(255, 204, 0, 0.4);
+  transition: all 0.2s;
+  box-shadow: 0 2px 12px rgba(245, 197, 24, 0.25);
 }
 
 .btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(255, 204, 0, 0.6);
-  background: #ffd700;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(245, 197, 24, 0.35);
+  background: #fad02c;
 }
 
 .btn-primary:active {
@@ -309,9 +312,11 @@
 }
 
 .btn-large {
-  padding: 1.2rem 4rem;
-  font-size: 1.2rem;
+  padding: 1.1rem 3.5rem;
+  font-size: 1.15rem;
 }
+
+/* ─── Success ─── */
 
 .success-state {
   text-align: center;
@@ -319,51 +324,49 @@
 }
 
 .success-icon {
-  font-size: 5rem;
-  color: #4caf50;
-  margin-bottom: 1.5rem;
-  animation: scaleIn 0.5s ease-out;
+  font-size: 4rem;
+  color: #34d399;
+  margin-bottom: 1.25rem;
+  animation: scaleIn 0.4s ease-out;
 }
 
 @keyframes scaleIn {
-  from {
-    transform: scale(0);
-  }
-  to {
-    transform: scale(1);
-  }
+  from { transform: scale(0); }
+  to { transform: scale(1); }
 }
 
 .success-state h2 {
   color: #fff;
-  margin-bottom: 1rem;
-  font-size: 2rem;
+  margin-bottom: 0.75rem;
+  font-size: 1.75rem;
 }
 
 .success-state p {
-  color: #aaa;
+  color: rgba(255, 255, 255, 0.5);
   font-size: 1.1rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1.75rem;
 }
 
 .success-state strong {
-  color: #ffcc00;
-  text-transform: uppercase;
+  color: #f5c518;
 }
 
+/* ─── Responsive ─── */
+
 @media (max-width: 768px) {
-  .account-type-selector {
+  .account-type-selector,
+  .account-type-selector--4col {
     grid-template-columns: 1fr;
   }
-  
+
   .setup-container {
-    padding: 2rem 1.5rem;
+    padding: 1.75rem 1.25rem;
   }
-  
+
   .setup-steps {
     gap: 1rem;
   }
-  
+
   .step-label {
     display: none;
   }

@@ -136,8 +136,9 @@ export const AuditLogs = () => {
           const robotName = log.metadata.robotName || 'Unknown Robot';
           actionDisplay = `Deleted robot "${robotName}"`;
         } else if (log.action === 'CHANGE_USER_CLASSIFICATION' && log.metadata) {
-          const oldClass = log.metadata.oldClassification || 'Unknown';
-          const newClass = log.metadata.newClassification || 'Unknown';
+          const normalize = (v: string) => v.replace('ORGANISATIONS', 'ORGANIZATIONS').replace('ROBOT_PROVIDERS', 'PARTNERS');
+          const oldClass = normalize(log.metadata.oldGroup || log.metadata.oldClassification || 'None');
+          const newClass = normalize(log.metadata.newGroup || log.metadata.newClassification || 'Unknown');
           actionDisplay = `Changed classification: ${oldClass} → ${newClass}`;
         } else if (log.action === 'CREATE_CREDIT_TIER' && log.metadata) {
           const tierName = log.metadata.tierName || 'Unknown Tier';
@@ -259,8 +260,9 @@ export const AuditLogs = () => {
                       const robotName = log.metadata.robotName || 'Unknown Robot';
                       actionDisplay = `Deleted robot "${robotName}"`;
                     } else if (log.action === 'CHANGE_USER_CLASSIFICATION' && log.metadata) {
-                      const oldClass = log.metadata.oldClassification || 'Unknown';
-                      const newClass = log.metadata.newClassification || 'Unknown';
+                      const normalize = (v: string) => v.replace('ORGANISATIONS', 'ORGANIZATIONS').replace('ROBOT_PROVIDERS', 'PARTNERS');
+                      const oldClass = normalize(log.metadata.oldGroup || log.metadata.oldClassification || 'None');
+                      const newClass = normalize(log.metadata.newGroup || log.metadata.newClassification || 'Unknown');
                       actionDisplay = `Changed classification: ${oldClass} → ${newClass}`;
                     } else if (log.action === 'CREATE_CREDIT_TIER' && log.metadata) {
                       const tierName = log.metadata.tierName || 'Unknown Tier';
@@ -295,7 +297,7 @@ export const AuditLogs = () => {
                         </td>
                         <td>{log.adminEmail || log.adminUserId || 'N/A'}</td>
                         <td>{log.targetEmail || log.targetUserId || 'N/A'}</td>
-                        <td>{log.reason || '-'}</td>
+                        <td>{(log.reason || '-').replace(/ORGANISATIONS/g, 'ORGANIZATIONS').replace(/ROBOT_PROVIDERS/g, 'PARTNERS')}</td>
                       </tr>
                     );
                   })}
