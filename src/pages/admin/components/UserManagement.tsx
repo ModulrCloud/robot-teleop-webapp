@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuthStatus } from "../../../hooks/useAuthStatus";
 import { hasAdminAccess } from "../../../utils/admin";
 import { generateClient } from "aws-amplify/api";
@@ -12,8 +12,6 @@ import {
   faInfoCircle,
   faTimes,
   faEye,
-  faChevronLeft,
-  faChevronRight,
   faEdit,
   faTrash,
   faSearch,
@@ -36,9 +34,9 @@ export const UserManagement = () => {
   const { user } = useAuthStatus();
   
   // Users state
-  const [users, setUsers] = useState<User[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-  const [paginationToken, setPaginationToken] = useState<string | null>(null);
+  const [fullyLoaded, setFullyLoaded] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showUserDetail, setShowUserDetail] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,89 +116,73 @@ export const UserManagement = () => {
     }
   };
 
-  const loadUsers = async (token?: string | null) => {
+  const parseLambdaResponse = (result: { data?: unknown }): UsersResponse | null => {
+    if (!result?.data) return null;
+    if (typeof result.data === 'string') {
+      try {
+        const firstParse = JSON.parse(result.data);
+        return typeof firstParse === 'string' ? JSON.parse(firstParse) : firstParse;
+      } catch {
+        return null;
+      }
+    }
+    return result.data as UsersResponse | null;
+  };
+
+  // Fetch all pages of users on mount, accumulating results
+  const loadAllUsers = useCallback(async () => {
     if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       return;
     }
 
     setLoadingUsers(true);
+    setFullyLoaded(false);
+    setError(null);
+
     try {
-      // First, debug Client and Partner models
       await debugClientAndPartnerModels();
 
-      logger.log("🔍 Calling listUsersLambda...", { token });
-      const result = await client.queries.listUsersLambda({
-        limit: 50,
-        paginationToken: token || undefined,
-      });
-      logger.debug("🔍 [DEBUG] Raw listUsersLambda response:", JSON.stringify(result, null, 2));
-      logger.log("✅ listUsersLambda response:", result);
-      
-      // Parse the JSON response
-      let usersData: UsersResponse | null = null;
-      
-      if (!result || !result.data) {
-        logger.error("❌ [DEBUG] No data in response:", result);
-        setError("Failed to load users: No response from server");
-        return;
-      }
-      
-      if (typeof result.data === 'string') {
-        try {
-          const firstParse = JSON.parse(result.data);
-          if (typeof firstParse === 'string') {
-            usersData = JSON.parse(firstParse);
-          } else {
-            usersData = firstParse;
-          }
-        } catch (e) {
-          logger.error("❌ [DEBUG] Failed to parse JSON response:", e, "Raw data:", result.data);
-          setError("Failed to load users: Invalid JSON response");
-          return;
+      const accumulated: User[] = [];
+      let token: string | undefined;
+
+      do {
+        const result = await client.queries.listUsersLambda({
+          limit: 60,
+          paginationToken: token,
+        });
+
+        const usersData = parseLambdaResponse(result as { data?: unknown });
+        if (!usersData || usersData.success === false) {
+          setError("Failed to load users: Server returned error");
+          break;
         }
-      } else {
-        usersData = result.data as UsersResponse | null;
-      }
 
-      logger.debug("📊 [DEBUG] Parsed users data:", JSON.stringify(usersData, null, 2));
-      logger.log("📊 Parsed users data:", usersData);
+        accumulated.push(...(usersData.users || []));
+        setAllUsers([...accumulated]);
+        token = usersData.nextToken || undefined;
+      } while (token);
 
-      if (!usersData) {
-        logger.error("❌ [DEBUG] Users data is null or undefined");
-        setError("Failed to load users: No data returned from server");
-        return;
-      }
-
-      if (usersData.success !== false) {
-        // Success
-        logger.debug("✅ [DEBUG] Setting users:", usersData.users?.length || 0, "users");
-        logger.debug("✅ [DEBUG] Users array:", JSON.stringify(usersData.users, null, 2));
-        setUsers(usersData.users || []);
-        setPaginationToken(usersData.nextToken || null);
-        setError(null); // Clear any previous errors
-        logger.log("✅ [DEBUG] Set pagination token:", usersData.nextToken);
-        logger.log(`✅ Successfully loaded ${usersData.users?.length || 0} users`);
-      } else {
-        logger.error("❌ [DEBUG] Users data indicates failure:", usersData);
-        setError("Failed to load users: Server returned error");
-      }
+      setFullyLoaded(true);
     } catch (err) {
-      logger.error("❌ [DEBUG] Error loading users:", err);
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(`Failed to load users: ${errorMessage}`);
     } finally {
       setLoadingUsers(false);
     }
-  };
+  }, [user?.email, user?.group]);
+
+  // Reload a single page (used after classification changes)
+  const reloadCurrentPage = useCallback(async () => {
+    await loadAllUsers();
+  }, [loadAllUsers]);
 
   useEffect(() => {
     if (user?.email && hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
-      loadUsers().catch(err => {
+      loadAllUsers().catch(err => {
         logger.error("Failed to load users on mount:", err);
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.email]);
+  }, [user?.email, loadAllUsers]);
 
   const handleViewUser = async (user: User) => {
     setSelectedUser(user);
@@ -280,8 +262,8 @@ export const UserManagement = () => {
           });
         }
 
-        // Also update the user in the users array to keep table and modal in sync
-        setUsers(prevUsers => {
+        // Also update the user in the allUsers array to keep table and modal in sync
+        setAllUsers(prevUsers => {
           const updatedUsers = prevUsers.map(u => {
             // Match by username (userId is the username)
             if (u.username === userId) {
@@ -349,19 +331,6 @@ export const UserManagement = () => {
     } finally {
       setAdjustingCredits(false);
     }
-  };
-
-  const handleNextPage = () => {
-    if (paginationToken) {
-      loadUsers(paginationToken);
-    }
-  };
-
-  const handlePrevPage = () => {
-    // Note: Cognito doesn't support backward pagination easily
-    // We'd need to maintain our own pagination state
-    // For now, just reload from the beginning
-    loadUsers(null);
   };
 
   const handleClassificationChange = async (username: string, newClassification: string) => {
@@ -506,8 +475,7 @@ export const UserManagement = () => {
       setSuccess(`User classification updated to ${newClassification}`);
       setTimeout(() => setSuccess(null), 3000);
       
-      // Reload users to reflect the change
-      await loadUsers(paginationToken || null);
+      await reloadCurrentPage();
     } catch (err) {
       logger.error("❌ Error changing classification:", err);
       setError(`Failed to change classification: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -551,7 +519,7 @@ export const UserManagement = () => {
   };
 
   const filteredUsers = searchQuery.trim()
-    ? users.filter((u) => {
+    ? allUsers.filter((u) => {
         const q = searchQuery.toLowerCase();
         return (
           (u.name || '').toLowerCase().includes(q) ||
@@ -560,7 +528,7 @@ export const UserManagement = () => {
           (u.classification || '').toLowerCase().includes(q)
         );
       })
-    : users;
+    : allUsers;
 
   return (
     <>
@@ -714,28 +682,21 @@ export const UserManagement = () => {
                     </tbody>
                   </table>
                   
-                  {/* Pagination */}
-                  {users.length > 0 && (
+                  {allUsers.length > 0 && (
                     <div className="pagination-controls">
-                      <button
-                        className="admin-button admin-button-secondary"
-                        onClick={handlePrevPage}
-                        disabled={loadingUsers}
-                        title="Reload from beginning"
-                      >
-                        <FontAwesomeIcon icon={faChevronLeft} />
-                        <span>Previous</span>
-                      </button>
                       <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>
-                        Showing {filteredUsers.length}{searchQuery ? ` of ${users.length}` : ''} user{filteredUsers.length !== 1 ? 's' : ''}
+                        {searchQuery
+                          ? `Showing ${filteredUsers.length} of ${allUsers.length} users`
+                          : `${allUsers.length} user${allUsers.length !== 1 ? 's' : ''}`}
+                        {!fullyLoaded && ' (loading more...)'}
                       </span>
                       <button
                         className="admin-button admin-button-secondary"
-                        onClick={handleNextPage}
-                        disabled={!paginationToken || loadingUsers}
+                        onClick={() => loadAllUsers()}
+                        disabled={loadingUsers}
+                        title="Reload all users"
                       >
-                        <span>Next</span>
-                        <FontAwesomeIcon icon={faChevronRight} />
+                        <span>Refresh</span>
                       </button>
                     </div>
                   )}

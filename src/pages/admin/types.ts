@@ -137,6 +137,7 @@ export interface PaginatedResponse<T> {
 // Specific Lambda Response Types
 export interface UsersResponse extends PaginatedResponse<User> {
   users?: User[];
+  count?: number;
 }
 
 export interface PayoutsResponse extends PaginatedResponse<Payout> {

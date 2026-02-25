@@ -1,5 +1,5 @@
 import type { Schema } from "../../data/resource";
-import { CognitoIdentityProviderClient, ListUsersCommand, AdminGetUserCommand, ListUsersInGroupCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoIdentityProviderClient, ListUsersCommand, AdminGetUserCommand, AdminListGroupsForUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 
@@ -11,198 +11,149 @@ const USER_POOL_ID = process.env.USER_POOL_ID!;
 const USER_CREDITS_TABLE = process.env.USER_CREDITS_TABLE!;
 
 export const handler: Schema["listUsersLambda"]["functionHandler"] = async (event) => {
-  console.log("=== LIST USERS LAMBDA START ===");
-  console.log("Full event:", JSON.stringify(event, null, 2));
-  console.log("Identity object:", JSON.stringify(event.identity, null, 2));
-
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
-    console.error("❌ No identity or username in identity");
     throw new Error("Unauthorized: must be logged in with Cognito");
   }
 
-  console.log("✅ Username found:", identity.username);
-  console.log("USER_POOL_ID:", USER_POOL_ID);
-
-  // Get user email for domain-based access check
-  // Always fetch from Cognito using the username to ensure we have the email
-  // (Same pattern as getSystemStatsLambda which works)
   let userEmail: string | undefined;
-  
   try {
-    console.log("🔍 Fetching user from Cognito using username:", identity.username);
-    console.log("🔍 USER_POOL_ID:", USER_POOL_ID);
     const userResponse = await cognito.send(
       new AdminGetUserCommand({
         UserPoolId: USER_POOL_ID,
         Username: identity.username,
       })
     );
-    console.log("✅ Cognito response received");
-    console.log("UserAttributes:", JSON.stringify(userResponse.UserAttributes, null, 2));
     userEmail = userResponse.UserAttributes?.find(attr => attr.Name === 'email')?.Value;
-    console.log("📧 Fetched email from Cognito:", userEmail, "for username:", identity.username);
-  } catch (error: any) {
-    console.error("❌ Could not fetch email from Cognito:", error);
-    console.error("Error details:", JSON.stringify(error, null, 2));
-    console.error("Error name:", error?.name, "Error code:", error?.code);
-    console.error("Error message:", error?.message);
-    // If we can't get the email, we can't verify domain access, so deny
+  } catch {
     throw new Error("Unauthorized: could not verify user email");
   }
-  
+
   if (!userEmail) {
-    console.error("❌ No email found for user:", identity.username);
     throw new Error("Unauthorized: user email not found");
   }
-  
+
   const adminGroups = "groups" in identity ? identity.groups : [];
   const isInAdminGroup = adminGroups?.includes("ADMINS") || adminGroups?.includes("ADMIN");
-  
-  // Check if user is a Modulr employee (@modulr.cloud domain)
-  const emailLower = userEmail.toLowerCase().trim();
-  const endsWithModulr = emailLower.endsWith('@modulr.cloud');
-  const isModulrEmployee = userEmail && 
-    typeof userEmail === 'string' && 
-    endsWithModulr;
-  
-  console.log("🔐 Access check:", {
-    username: identity.username,
-    userEmail,
-    userEmailType: typeof userEmail,
-    userEmailLower: emailLower,
-    endsWithModulr,
-    adminGroups: JSON.stringify(adminGroups),
-    isInAdminGroup,
-    isModulrEmployee,
-  });
-  
-  // SECURITY: Only admins (ADMINS group) or Modulr employees can list users
+  const isModulrEmployee = userEmail.toLowerCase().trim().endsWith('@modulr.cloud');
+
   if (!isInAdminGroup && !isModulrEmployee) {
-    console.error("❌ ACCESS DENIED:", {
-      username: identity.username,
-      userEmail,
-      userEmailLower: emailLower,
-      endsWithModulr,
-      isInAdminGroup,
-      isModulrEmployee,
-    });
     throw new Error("Unauthorized: only ADMINS or Modulr employees (@modulr.cloud) can list users");
   }
-  
-  console.log("✅ ACCESS GRANTED");
 
-  const { limit = 50, paginationToken } = event.arguments || {};
+  const { limit = 50, paginationToken, search } = event.arguments || {};
 
   try {
-    // List users from Cognito with pagination
     const listUsersParams: any = {
       UserPoolId: USER_POOL_ID,
-      Limit: Math.min(limit || 50, 60), // Cognito max is 60
+      Limit: Math.min(limit || 50, 60),
     };
 
     if (paginationToken) {
       listUsersParams.PaginationToken = paginationToken;
     }
 
+    // Cognito Filter supports: email, name, username, etc.
+    // We use a prefix match on email when a search term is provided.
+    if (search && search.trim()) {
+      const q = search.trim().replace(/"/g, '\\"');
+      listUsersParams.Filter = `email ^= "${q}"`;
+    }
+
     const cognitoUsers = await cognito.send(new ListUsersCommand(listUsersParams));
 
-    const CLASSIFICATION_GROUPS = [
-      'ADMINS', 'ORGANIZATIONS', 'SERVICE_PROVIDERS', 'PARTNERS', 'CLIENTS',
-    ] as const;
-    type ClassificationGroup = typeof CLASSIFICATION_GROUPS[number];
-
-    const groupToClassification: Record<ClassificationGroup, string> = {
+    const GROUP_PRIORITY: Record<string, string> = {
       ADMINS: 'ADMIN',
+      ORGANIZATIONS: 'ORGANIZATION',
+      SERVICE_PROVIDERS: 'SERVICE_PROVIDER',
       PARTNERS: 'PARTNER',
       CLIENTS: 'CLIENT',
-      SERVICE_PROVIDERS: 'SERVICE_PROVIDER',
-      ORGANIZATIONS: 'ORGANIZATION',
     };
+    const PRIORITY_ORDER = Object.keys(GROUP_PRIORITY);
 
-    const groupMembers = new Map<ClassificationGroup, Set<string>>();
+    const pageUsernames = (cognitoUsers.Users || [])
+      .map((u) => u.Username)
+      .filter(Boolean) as string[];
 
-    await Promise.all(
-      CLASSIFICATION_GROUPS.map(async (groupName) => {
-        const usernames = new Set<string>();
-        try {
-          let nextToken: string | undefined;
-          do {
+    // Classify only the users on this page via AdminListGroupsForUser
+    // Process in batches of 10 to avoid Cognito throttling (25 req/s limit)
+    const userGroups = new Map<string, string[]>();
+    for (let i = 0; i < pageUsernames.length; i += 10) {
+      const batch = pageUsernames.slice(i, i + 10);
+      await Promise.all(
+        batch.map(async (username) => {
+          try {
             const resp = await cognito.send(
-              new ListUsersInGroupCommand({
+              new AdminListGroupsForUserCommand({
                 UserPoolId: USER_POOL_ID,
-                GroupName: groupName,
-                Limit: 60,
-                NextToken: nextToken,
+                Username: username,
               })
             );
-            for (const u of resp.Users || []) {
-              if (u.Username) usernames.add(u.Username);
-            }
-            nextToken = resp.NextToken;
-          } while (nextToken);
-        } catch (error) {
-          console.warn(`Failed to list users in group ${groupName}:`, error);
-        }
-        groupMembers.set(groupName, usernames);
-      })
-    );
+            userGroups.set(
+              username,
+              (resp.Groups || []).map((g) => g.GroupName!).filter(Boolean)
+            );
+          } catch {
+            userGroups.set(username, []);
+          }
+        })
+      );
+    }
 
     const classifyUser = (username: string): string => {
-      for (const group of CLASSIFICATION_GROUPS) {
-        if (groupMembers.get(group)?.has(username)) {
-          return groupToClassification[group];
-        }
+      const groups = userGroups.get(username) || [];
+      for (const g of PRIORITY_ORDER) {
+        if (groups.includes(g)) return GROUP_PRIORITY[g];
       }
       return 'CLIENT';
     };
 
-    // Get credit balances and classification for all users
-    const usersWithCredits = await Promise.all(
-      (cognitoUsers.Users || []).map(async (cognitoUser) => {
-        const username = cognitoUser.Username || '';
-        const email = cognitoUser.Attributes?.find(attr => attr.Name === 'email')?.Value || '';
-        const name = cognitoUser.Attributes?.find(attr => attr.Name === 'name')?.Value || '';
-        
-        const classification = classifyUser(username);
-        
-        // Get credit balance from DynamoDB
-        let credits = 0;
-        try {
-          const creditsResult = await docClient.send(
-            new QueryCommand({
-              TableName: USER_CREDITS_TABLE,
-              IndexName: 'userIdIndex',
-              KeyConditionExpression: 'userId = :userId',
-              ExpressionAttributeValues: {
-                ':userId': username,
-              },
-              Limit: 1,
-            })
-          );
-          
-          if (creditsResult.Items && creditsResult.Items.length > 0) {
-            credits = creditsResult.Items[0].credits || 0;
+    // Fetch credit balances for page users via GSI queries (userId is not the PK)
+    const creditsByUserId = new Map<string, number>();
+    for (let i = 0; i < pageUsernames.length; i += 10) {
+      const batch = pageUsernames.slice(i, i + 10);
+      await Promise.all(
+        batch.map(async (uid) => {
+          try {
+            const resp = await docClient.send(
+              new QueryCommand({
+                TableName: USER_CREDITS_TABLE,
+                IndexName: 'userIdIndex',
+                KeyConditionExpression: 'userId = :uid',
+                ExpressionAttributeValues: { ':uid': uid },
+                ProjectionExpression: 'userId, credits',
+                Limit: 1,
+              })
+            );
+            const item = resp.Items?.[0];
+            if (item) {
+              creditsByUserId.set(uid, (item.credits as number) || 0);
+            }
+          } catch {
+            // skip — user may not have a credits record yet
           }
-        } catch (error) {
-          console.warn(`Failed to get credits for user ${username}:`, error);
-          // Continue with 0 credits if lookup fails
-        }
+        })
+      );
+    }
 
-        return {
-          username,
-          email,
-          name: name || email?.split('@')[0] || username,
-          credits,
-          classification,
-          status: cognitoUser.UserStatus,
-          enabled: cognitoUser.Enabled,
-          createdAt: cognitoUser.UserCreateDate?.toISOString(),
-          lastModified: cognitoUser.UserLastModifiedDate?.toISOString(),
-          groups: cognitoUser.Attributes?.find(attr => attr.Name === 'custom:groups')?.Value || '',
-        };
-      })
-    );
+    const usersWithCredits = (cognitoUsers.Users || []).map((cognitoUser) => {
+      const username = cognitoUser.Username || '';
+      const email = cognitoUser.Attributes?.find(attr => attr.Name === 'email')?.Value || '';
+      const name = cognitoUser.Attributes?.find(attr => attr.Name === 'name')?.Value || '';
+
+      return {
+        username,
+        email,
+        name: name || email?.split('@')[0] || username,
+        credits: creditsByUserId.get(username) || 0,
+        classification: classifyUser(username),
+        status: cognitoUser.UserStatus,
+        enabled: cognitoUser.Enabled,
+        createdAt: cognitoUser.UserCreateDate?.toISOString(),
+        lastModified: cognitoUser.UserLastModifiedDate?.toISOString(),
+        groups: cognitoUser.Attributes?.find(attr => attr.Name === 'custom:groups')?.Value || '',
+      };
+    });
 
     // Return pagination token if there are more users
     const nextToken = cognitoUsers.PaginationToken || null;
