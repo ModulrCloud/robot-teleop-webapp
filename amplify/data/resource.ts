@@ -896,6 +896,7 @@ const schema = a.schema({
     .arguments({
       limit: a.integer(),
       paginationToken: a.string(),
+      search: a.string(),
     })
     .returns(a.json())
     .authorization(allow => [allow.authenticated()]) // Auth check happens in Lambda (domain-based + group-based)

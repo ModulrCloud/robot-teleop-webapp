@@ -927,7 +927,7 @@ listUsersCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 listUsersCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
 listUsersCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
 listUsersCdkFunction.addEnvironment('CLIENT_TABLE_NAME', tables.Client.tableName);
-userPool.grant(listUsersFunction, 'cognito-idp:ListUsers', 'cognito-idp:ListUsersInGroup', 'cognito-idp:AdminGetUser');
+userPool.grant(listUsersFunction, 'cognito-idp:ListUsers', 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
 tables.UserCredits.grantReadData(listUsersFunction);
 tables.Partner.grantReadData(listUsersFunction);
 tables.Client.grantReadData(listUsersFunction);
