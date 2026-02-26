@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -9,34 +9,13 @@ import {
   faSave,
   faTimes,
 } from "@fortawesome/free-solid-svg-icons";
+import { generateClient } from "aws-amplify/api";
+import type { Schema } from "../../../../amplify/data/resource";
 import type { Announcement } from "../types";
+import { logger } from "../../../utils/logger";
 import "../../Admin.css";
 
-// Mockup: in-memory list. Replace with API in Phase 2.
-const MOCK_ANNOUNCEMENTS: Announcement[] = [
-  {
-    id: "whats-new-1",
-    title: "What's New",
-    summary:
-      "What's new is What's New. This is where we'll highlight new features and link to the User Guide.",
-    link: "/terms",
-    publishedAt: "2025-02-01",
-    sortOrder: 0,
-  },
-  {
-    id: "whats-new-2",
-    title: "Feature highlights",
-    summary:
-      "Each item will have a short summary and a Find Out More button linking to the User Guide.",
-    link: "#",
-    publishedAt: "2025-02-15",
-    sortOrder: 1,
-  },
-];
-
-function generateId(): string {
-  return `announcement-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
+const client = generateClient<Schema>();
 
 const emptyForm: Omit<Announcement, "id" | "createdAt" | "updatedAt"> = {
   title: "",
@@ -46,13 +25,79 @@ const emptyForm: Omit<Announcement, "id" | "createdAt" | "updatedAt"> = {
   sortOrder: 0,
 };
 
+function parseListResponse(data: unknown): { success: boolean; items?: Announcement[] } {
+  if (typeof data === "string") {
+    try {
+      const first = JSON.parse(data);
+      return typeof first === "string" ? JSON.parse(first) : first;
+    } catch {
+      return { success: false };
+    }
+  }
+  return (data as { success: boolean; items?: Announcement[] }) ?? { success: false };
+}
+
+function parseManageResponse(data: unknown): { success: boolean; data?: Announcement; message?: string } {
+  if (typeof data === "string") {
+    try {
+      const first = JSON.parse(data);
+      return typeof first === "string" ? JSON.parse(first) : first;
+    } catch {
+      return { success: false };
+    }
+  }
+  return (data as { success: boolean; data?: Announcement; message?: string }) ?? { success: false };
+}
+
 export const WhatsNewAdmin = () => {
-  const [items, setItems] = useState<Announcement[]>(() =>
-    [...MOCK_ANNOUNCEMENTS].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-  );
+  const [items, setItems] = useState<Announcement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+
+  const loadList = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      logger.log("🔍 [WHATS NEW] Loading list...");
+      const result = await client.queries.listWhatsNewLambda({});
+      logger.log("🔍 [WHATS NEW] listWhatsNewLambda raw result:", { hasData: !!result.data, hasErrors: !!result.errors, errors: result.errors });
+
+      if (result.errors && result.errors.length > 0) {
+        const errMsg = result.errors.map((e: { message?: string }) => e.message ?? String(e)).join(", ");
+        logger.error("🔴 [WHATS NEW] GraphQL errors:", errMsg);
+        setError(errMsg);
+        setItems([]);
+        return;
+      }
+
+      const parsed = parseListResponse(result.data);
+      logger.log("🔍 [WHATS NEW] Parsed list response:", { success: parsed.success, itemCount: parsed.items?.length ?? 0, items: parsed.items });
+
+      if (parsed.success && Array.isArray(parsed.items)) {
+        const sorted = [...parsed.items].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+        setItems(sorted);
+        logger.log("✅ [WHATS NEW] Loaded", sorted.length, "item(s)");
+      } else {
+        logger.warn("⚠️ [WHATS NEW] List response missing items or success=false:", parsed);
+        setItems([]);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error("🔴 [WHATS NEW] loadList failed:", message, err);
+      setError(message);
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadList();
+  }, [loadList]);
 
   const openCreate = useCallback(() => {
     setEditingId(null);
@@ -78,40 +123,111 @@ export const WhatsNewAdmin = () => {
     setForm(emptyForm);
   }, []);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (!form.title.trim()) return;
-    if (editingId) {
-      setItems((prev) =>
-        prev.map((it) =>
-          it.id === editingId
-            ? {
-                ...it,
-                ...form,
-                updatedAt: new Date().toISOString(),
-              }
-            : it
-        )
-      );
-    } else {
-      setItems((prev) => [
-        ...prev,
-        {
-          id: generateId(),
-          ...form,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ]);
-    }
-    closeModal();
-  }, [editingId, form, closeModal]);
+    setSaving(true);
+    setError(null);
+    try {
+      const itemData = {
+        title: form.title.trim(),
+        summary: form.summary.trim(),
+        link: form.link.trim(),
+        publishedAt: form.publishedAt || new Date().toISOString().slice(0, 10),
+        sortOrder: typeof form.sortOrder === "number" ? form.sortOrder : 0,
+      };
 
-  const handleDelete = useCallback((id: string) => {
-    if (window.confirm("Delete this announcement? (Mockup: only removes from this list.)")) {
-      setItems((prev) => prev.filter((it) => it.id !== id));
-      if (editingId === id) closeModal();
+      if (editingId) {
+        logger.log("🔍 [WHATS NEW] Updating item:", editingId, itemData);
+        const result = await client.mutations.manageWhatsNewLambda({
+          action: "update",
+          itemId: editingId,
+          itemData: JSON.stringify(itemData),
+        });
+        logger.log("🔍 [WHATS NEW] manageWhatsNewLambda (update) raw result:", { hasData: !!result.data, hasErrors: !!result.errors, errors: result.errors });
+
+        if (result.errors && result.errors.length > 0) {
+          const errMsg = result.errors.map((e: { message?: string }) => e.message ?? String(e)).join(", ");
+          logger.error("🔴 [WHATS NEW] Update GraphQL errors:", errMsg);
+          setError(errMsg);
+          return;
+        }
+
+        const parsed = parseManageResponse(result.data);
+        logger.log("🔍 [WHATS NEW] Update parsed:", parsed);
+        if (parsed.success) {
+          closeModal();
+          await loadList();
+        } else {
+          setError(parsed.message ?? "Update failed");
+        }
+      } else {
+        logger.log("🔍 [WHATS NEW] Creating item:", itemData);
+        const result = await client.mutations.manageWhatsNewLambda({
+          action: "create",
+          itemData: JSON.stringify(itemData),
+        });
+        logger.log("🔍 [WHATS NEW] manageWhatsNewLambda (create) raw result:", { hasData: !!result.data, hasErrors: !!result.errors, errors: result.errors });
+
+        if (result.errors && result.errors.length > 0) {
+          const errMsg = result.errors.map((e: { message?: string }) => e.message ?? String(e)).join(", ");
+          logger.error("🔴 [WHATS NEW] Create GraphQL errors:", errMsg);
+          setError(errMsg);
+          return;
+        }
+
+        const parsed = parseManageResponse(result.data);
+        logger.log("🔍 [WHATS NEW] Create parsed:", parsed);
+        if (parsed.success) {
+          closeModal();
+          await loadList();
+        } else {
+          setError(parsed.message ?? "Create failed");
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error("🔴 [WHATS NEW] handleSave failed:", message, err);
+      setError(message);
+    } finally {
+      setSaving(false);
     }
-  }, [editingId, closeModal]);
+  }, [editingId, form, closeModal, loadList]);
+
+  const handleDelete = useCallback(async (id: string) => {
+    if (!window.confirm("Delete this announcement?")) return;
+    setSaving(true);
+    setError(null);
+    try {
+      logger.log("🔍 [WHATS NEW] Deleting item:", id);
+      const result = await client.mutations.manageWhatsNewLambda({
+        action: "delete",
+        itemId: id,
+      });
+      logger.log("🔍 [WHATS NEW] manageWhatsNewLambda (delete) raw result:", { hasData: !!result.data, hasErrors: !!result.errors, errors: result.errors });
+
+      if (result.errors && result.errors.length > 0) {
+        const errMsg = result.errors.map((e: { message?: string }) => e.message ?? String(e)).join(", ");
+        logger.error("🔴 [WHATS NEW] Delete GraphQL errors:", errMsg);
+        setError(errMsg);
+        return;
+      }
+
+      const parsed = parseManageResponse(result.data);
+      logger.log("🔍 [WHATS NEW] Delete parsed:", parsed);
+      if (parsed.success) {
+        if (editingId === id) closeModal();
+        await loadList();
+      } else {
+        setError(parsed.message ?? "Delete failed");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error("🔴 [WHATS NEW] handleDelete failed:", message, err);
+      setError(message);
+    } finally {
+      setSaving(false);
+    }
+  }, [editingId, closeModal, loadList]);
 
   return (
     <>
@@ -124,13 +240,18 @@ export const WhatsNewAdmin = () => {
           <p className="section-description">
             Manage announcements shown in the navbar &quot;What&apos;s New&quot; panel. Each item has a title, summary, and link (e.g. User Guide). Read state is tracked per user by announcement ID so items don&apos;t keep showing as new after they&apos;ve been seen.
           </p>
-          <p className="admin-tos-modal-hint" style={{ marginBottom: "1rem" }}>
-            <strong>Mockup:</strong> Data is not saved. Add, edit, and delete only affect this session. Backend and persistence coming soon.
-          </p>
-          <button type="button" className="admin-button" onClick={openCreate}>
+          {error && (
+            <div className="admin-alert admin-alert-error" style={{ marginBottom: "1rem" }}>
+              {error}
+            </div>
+          )}
+          <button type="button" className="admin-button" onClick={openCreate} disabled={loading || saving}>
             <FontAwesomeIcon icon={faPlus} /> Add announcement
           </button>
 
+          {loading ? (
+            <p style={{ marginTop: "1rem" }}>Loading announcements...</p>
+          ) : (
           <table className="admin-table" style={{ marginTop: "1rem" }}>
             <thead>
               <tr>
@@ -175,6 +296,7 @@ export const WhatsNewAdmin = () => {
               ))}
             </tbody>
           </table>
+          )}
         </div>
       </div>
 
@@ -295,10 +417,10 @@ export const WhatsNewAdmin = () => {
                 <button
                   type="button"
                   className="admin-button"
-                  onClick={handleSave}
-                  disabled={!form.title.trim()}
+                  onClick={() => void handleSave()}
+                  disabled={!form.title.trim() || saving}
                 >
-                  <FontAwesomeIcon icon={faSave} /> {editingId ? "Save changes" : "Add announcement"}
+                  <FontAwesomeIcon icon={faSave} /> {saving ? "Saving…" : editingId ? "Save changes" : "Add announcement"}
                 </button>
               </div>
             </div>
