@@ -193,6 +193,27 @@
   letter-spacing: 0.5px;
 }
 
+.admin-table th.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s;
+}
+
+.admin-table th.sortable-th:hover {
+  color: #f5c518;
+}
+
+.admin-table th .sort-icon {
+  margin-left: 0.35rem;
+  font-size: 0.7rem;
+  opacity: 0.4;
+  vertical-align: middle;
+}
+
+.admin-table th.sortable-th:hover .sort-icon {
+  opacity: 0.7;
+}
+
 .admin-table td {
   padding: 1rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
