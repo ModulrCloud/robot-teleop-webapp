@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { UnderConstruction } from "./UnderConstruction";
 import "./AppLayout.css";
 
@@ -20,6 +21,9 @@ export const AppLayout = ({ children, showBanner = true }: AppLayoutProps) => {
       <div className="app-content">
         {children}
       </div>
+      <footer className="app-footer">
+        <Link to="/terms">Terms of Service</Link>
+      </footer>
     </div>
   );
 };

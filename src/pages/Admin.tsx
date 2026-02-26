@@ -13,6 +13,7 @@ import {
   faHistory,
   faSlidersH,
   faBroom,
+  faFileContract,
 } from "@fortawesome/free-solid-svg-icons";
 import { logger } from "../utils/logger";
 import "./Admin.css";
@@ -24,6 +25,7 @@ const ConnectionCleanup = lazy(() => import("./admin/components/ConnectionCleanu
 const PlatformSettings = lazy(() => import("./admin/components/PlatformSettings").then(module => ({ default: module.PlatformSettings })));
 const PayoutManagement = lazy(() => import("./admin/components/PayoutManagement").then(module => ({ default: module.PayoutManagement })));
 const UserManagement = lazy(() => import("./admin/components/UserManagement").then(module => ({ default: module.UserManagement })));
+const TermsOfServiceAdmin = lazy(() => import("./admin/components/TermsOfServiceAdmin").then(module => ({ default: module.TermsOfServiceAdmin })));
 
 export const Admin = () => {
   usePageTitle();
@@ -175,6 +177,20 @@ export const Admin = () => {
           </div>
         }>
           <PlatformSettings />
+        </Suspense>
+
+        <Suspense fallback={
+          <div className="admin-section">
+            <div className="section-header">
+              <FontAwesomeIcon icon={faFileContract} className="section-icon" />
+              <h2>Terms of Service</h2>
+            </div>
+            <div className="section-content">
+              <p>Loading...</p>
+            </div>
+          </div>
+        }>
+          <TermsOfServiceAdmin />
         </Suspense>
 
         <Suspense fallback={

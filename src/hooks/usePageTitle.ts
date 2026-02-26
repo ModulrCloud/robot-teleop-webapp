@@ -45,6 +45,9 @@ export function usePageTitle() {
       case "/sessions":
         title = "Session History";
         break;
+      case "/terms":
+        title = "Terms of Service";
+        break;
       case "/create-robot-listing":
         title = "List Robot";
         break;

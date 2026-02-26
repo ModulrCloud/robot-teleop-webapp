@@ -1,0 +1,67 @@
+.terms-page {
+  min-height: 100vh;
+  background: var(--bg-primary, #08090a);
+  padding: 2rem 1.5rem 4rem;
+}
+
+.terms-container {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.terms-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary, #f0f0f0);
+}
+
+.terms-meta {
+  font-size: 0.9rem;
+  color: var(--text-muted, #9ca3af);
+  margin-bottom: 1.5rem;
+}
+
+.terms-error {
+  color: #f87171;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.terms-loading {
+  color: var(--text-muted, #9ca3af);
+  font-size: 0.95rem;
+  margin-bottom: 1.5rem;
+}
+
+.terms-body {
+  color: var(--text-secondary, #d1d5db);
+  line-height: 1.6;
+  margin-bottom: 2rem;
+}
+
+.terms-body p {
+  margin-bottom: 1rem;
+}
+
+.terms-body strong {
+  color: var(--text-primary, #f0f0f0);
+}
+
+.terms-disclaimer {
+  font-size: 0.9rem;
+  color: var(--text-muted, #9ca3af);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.terms-back a {
+  color: #ffc107; /* Modulr yellow */
+  text-decoration: none;
+}
+
+.terms-back a:hover {
+  color: #ffca28;
+  text-decoration: underline;
+}

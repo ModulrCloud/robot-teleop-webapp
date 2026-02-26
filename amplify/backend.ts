@@ -48,6 +48,8 @@ import { getActiveRobots } from './functions/get-active-robots/resource';
 import { manageCreditTier } from './functions/manage-credit-tier/resource';
 import { manageOrganization } from './functions/manage-organization/resource';
 import { manageOrgMember } from './functions/manage-org-member/resource';
+import { getTermsStatus } from './functions/get-terms-status/resource';
+import { acceptTerms } from './functions/accept-terms/resource';
 import { cleanupAuditLogs } from './functions/cleanup-audit-logs/resource';
 import { websocketKeepalive } from './functions/websocket-keepalive/resource';
 import { regenerateEnrollmentToken } from './functions/regenerate-enrollment-token/resource';
@@ -114,6 +116,8 @@ const backend = defineBackend({
   manageCreditTier,
   manageOrganization,
   manageOrgMember,
+  getTermsStatus,
+  acceptTerms,
   cleanupAuditLogs,
   websocketKeepalive,
   regenerateEnrollmentToken,
@@ -1173,6 +1177,31 @@ manageOrganizationFunction.addToRolePolicy(new PolicyStatement({
     `${tables.UserCredits.tableArn}/index/userIdIndex`,
     `${tables.PlatformSettings.tableArn}/index/settingKeyIndex`,
   ],
+}));
+
+// Get Terms Status Lambda
+const getTermsStatusFunction = backend.getTermsStatus.resources.lambda;
+const getTermsStatusCdkFunction = getTermsStatusFunction as CdkFunction;
+getTermsStatusCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
+getTermsStatusCdkFunction.addEnvironment('USER_TERMS_ACCEPTANCE_TABLE', tables.UserTermsAcceptance.tableName);
+tables.PlatformSettings.grantReadData(getTermsStatusFunction);
+tables.UserTermsAcceptance.grantReadData(getTermsStatusFunction);
+getTermsStatusFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query'],
+  resources: [
+    `${tables.PlatformSettings.tableArn}/index/settingKeyIndex`,
+    `${tables.UserTermsAcceptance.tableArn}/index/userIdIndex`,
+  ],
+}));
+
+// Accept Terms Lambda
+const acceptTermsFunction = backend.acceptTerms.resources.lambda;
+const acceptTermsCdkFunction = acceptTermsFunction as CdkFunction;
+acceptTermsCdkFunction.addEnvironment('USER_TERMS_ACCEPTANCE_TABLE', tables.UserTermsAcceptance.tableName);
+tables.UserTermsAcceptance.grantReadWriteData(acceptTermsFunction);
+acceptTermsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query'],
+  resources: [`${tables.UserTermsAcceptance.tableArn}/index/userIdIndex`],
 }));
 
 // Manage Org Member Lambda
