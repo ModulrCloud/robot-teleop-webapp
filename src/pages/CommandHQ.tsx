@@ -94,7 +94,7 @@ import {
   getMockLocationMappingsForOrg,
   getMockKeyboardMappingsForOrg,
 } from "../mocks/organization";
-import type { SimulationNodeDatum, SimulationLinkDatum } from "d3-force";
+>>>>>>>>> Temporary merge branch 2
 import "./CommandHQ.css";
 
 /** Node shape used by d3-force in BubbleView (id required for forceLink; x, y set by simulation). */

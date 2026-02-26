@@ -149,34 +149,10 @@ export function UserSetup(_props: PrivateRouteProps) {
   }
 
   const ACCOUNT_TYPES = [
-    {
-      id: 'client',
-      icon: faGamepad,
-      title: 'Client',
-      subtitle: 'I want to teleoperate robots',
-      features: ['Browse & access available robots', 'Remote teleoperation sessions', 'Session history & receipts'],
-    },
-    {
-      id: 'partner',
-      icon: faRobot,
-      title: 'Partner',
-      subtitle: 'I have robot(s) I want to rent out',
-      features: ['List your robots on the marketplace', 'Earn credits from teleop sessions', 'Manage robot access & pricing'],
-    },
-    {
-      id: 'service_provider',
-      icon: faServer,
-      title: 'Services Provider',
-      subtitle: 'I have AI/data/compute services to sell',
-      features: ['List AI & compute services', 'Integrate into teleop sessions', 'Service analytics & earnings'],
-    },
-    {
-      id: 'organization',
-      icon: faSatelliteDish,
-      title: 'Organization',
-      subtitle: 'I want to manage my robot team & fleet',
-      features: ['Command HQ fleet management', 'Team roles & permissions', 'Custom ROS commands & configs'],
-    },
+    { id: 'client', icon: faGamepad, title: 'Client', subtitle: 'I want to teleoperate robots' },
+    { id: 'partner', icon: faRobot, title: 'Partner', subtitle: 'I have robot(s) I want to rent out' },
+    { id: 'service_provider', icon: faServer, title: 'Services Provider', subtitle: 'I have AI/data/compute services to sell' },
+    { id: 'organization', icon: faSatelliteDish, title: 'Organization', subtitle: 'I want to manage my robot team & fleet' },
   ];
 
   const selectedType = ACCOUNT_TYPES.find((t) => t.id === userGroup);
@@ -215,9 +191,6 @@ export function UserSetup(_props: PrivateRouteProps) {
                 <FontAwesomeIcon icon={acct.icon} className="type-icon" />
                 <h3>{acct.title}</h3>
                 <p>{acct.subtitle}</p>
-                <ul className="type-features">
-                  {acct.features.map((f) => <li key={f}>{f}</li>)}
-                </ul>
                 {userGroup === acct.id && <div className="selection-indicator">Selected</div>}
               </div>
             ))}
