@@ -12,9 +12,14 @@ import {
   faInfoCircle,
   faTimes,
   faEye,
+  faChevronLeft,
+  faChevronRight,
   faEdit,
   faTrash,
   faSearch,
+  faSortUp,
+  faSortDown,
+  faSort,
 } from "@fortawesome/free-solid-svg-icons";
 import { logger } from "../../../utils/logger";
 import "../../Admin.css";
@@ -52,8 +57,14 @@ export const UserManagement = () => {
   const [userTransactions, setUserTransactions] = useState<CreditTransaction[]>([]);
   const [loadingUserDetail, setLoadingUserDetail] = useState(false);
   
-  // Search
+  // Search, sort & client-side pagination
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(0);
+  const PAGE_SIZE = 50;
+  type SortKey = 'name' | 'email' | 'credits' | 'createdAt';
+  type SortDir = 'asc' | 'desc';
+  const [sortKey, setSortKey] = useState<SortKey>('createdAt');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   // Credit adjustment
   const [creditAdjustment, setCreditAdjustment] = useState<string>('');
@@ -518,7 +529,22 @@ export const UserManagement = () => {
     }
   };
 
-  const filteredUsers = searchQuery.trim()
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'credits' ? 'desc' : 'asc');
+    }
+    setCurrentPage(0);
+  };
+
+  const sortIcon = (key: SortKey) => {
+    if (sortKey !== key) return faSort;
+    return sortDir === 'asc' ? faSortUp : faSortDown;
+  };
+
+  const filtered = searchQuery.trim()
     ? allUsers.filter((u) => {
         const q = searchQuery.toLowerCase();
         return (
@@ -529,6 +555,25 @@ export const UserManagement = () => {
         );
       })
     : allUsers;
+
+  const filteredUsers = [...filtered].sort((a, b) => {
+    const dir = sortDir === 'asc' ? 1 : -1;
+    switch (sortKey) {
+      case 'name':
+        return dir * (a.name || '').localeCompare(b.name || '');
+      case 'email':
+        return dir * (a.email || '').localeCompare(b.email || '');
+      case 'credits':
+        return dir * ((a.credits || 0) - (b.credits || 0));
+      case 'createdAt':
+        return dir * ((a.createdAt || '').localeCompare(b.createdAt || ''));
+      default:
+        return 0;
+    }
+  });
+
+  const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
+  const pageUsers = filteredUsers.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
 
   return (
     <>
@@ -572,7 +617,7 @@ export const UserManagement = () => {
                 type="text"
                 placeholder="Search by name, email, or username..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(0); }}
                 style={{
                   width: '100%',
                   padding: '0.6rem 0.85rem 0.6rem 2.4rem',
@@ -590,7 +635,7 @@ export const UserManagement = () => {
               />
               {searchQuery && (
                 <button
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => { setSearchQuery(''); setCurrentPage(0); }}
                   style={{
                     position: 'absolute',
                     right: '0.6rem',
@@ -611,7 +656,7 @@ export const UserManagement = () => {
             </div>
           </div>
 
-          {loadingUsers ? (
+          {loadingUsers && allUsers.length === 0 ? (
             <div className="loading-state">
               <p>Loading users...</p>
             </div>
@@ -627,16 +672,25 @@ export const UserManagement = () => {
                   <table className="admin-table">
                     <thead>
                       <tr>
-                        <th>Name</th>
-                        <th>Email</th>
+                        <th className="sortable-th" onClick={() => toggleSort('name')}>
+                          Name <FontAwesomeIcon icon={sortIcon('name')} className="sort-icon" />
+                        </th>
+                        <th className="sortable-th" onClick={() => toggleSort('email')}>
+                          Email <FontAwesomeIcon icon={sortIcon('email')} className="sort-icon" />
+                        </th>
                         <th>Classification</th>
-                        <th>Credits</th>
+                        <th className="sortable-th" onClick={() => toggleSort('credits')}>
+                          Credits <FontAwesomeIcon icon={sortIcon('credits')} className="sort-icon" />
+                        </th>
                         <th>Status</th>
+                        <th className="sortable-th" onClick={() => toggleSort('createdAt')}>
+                          Created <FontAwesomeIcon icon={sortIcon('createdAt')} className="sort-icon" />
+                        </th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredUsers.map((user, index) => (
+                      {pageUsers.map((user, index) => (
                         <tr key={index}>
                           <td>{user.name || 'N/A'}</td>
                           <td>{user.email || 'N/A'}</td>
@@ -667,6 +721,9 @@ export const UserManagement = () => {
                               {user.enabled ? 'Active' : 'Disabled'}
                             </span>
                           </td>
+                          <td style={{ whiteSpace: 'nowrap', fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)' }}>
+                            {user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                          </td>
                           <td>
                             <button
                               className="admin-button admin-button-secondary"
@@ -682,21 +739,30 @@ export const UserManagement = () => {
                     </tbody>
                   </table>
                   
-                  {allUsers.length > 0 && (
+                  {filteredUsers.length > 0 && (
                     <div className="pagination-controls">
+                      <button
+                        className="admin-button admin-button-secondary"
+                        onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+                        disabled={currentPage === 0}
+                      >
+                        <FontAwesomeIcon icon={faChevronLeft} />
+                        <span>Previous</span>
+                      </button>
                       <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>
                         {searchQuery
-                          ? `Showing ${filteredUsers.length} of ${allUsers.length} users`
+                          ? `${filteredUsers.length} result${filteredUsers.length !== 1 ? 's' : ''} of ${allUsers.length} users`
                           : `${allUsers.length} user${allUsers.length !== 1 ? 's' : ''}`}
-                        {!fullyLoaded && ' (loading more...)'}
+                        {totalPages > 1 && ` · Page ${currentPage + 1} of ${totalPages}`}
+                        {!fullyLoaded && ' (loading...)'}
                       </span>
                       <button
                         className="admin-button admin-button-secondary"
-                        onClick={() => loadAllUsers()}
-                        disabled={loadingUsers}
-                        title="Reload all users"
+                        onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                        disabled={currentPage >= totalPages - 1}
                       >
-                        <span>Refresh</span>
+                        <span>Next</span>
+                        <FontAwesomeIcon icon={faChevronRight} />
                       </button>
                     </div>
                   )}
