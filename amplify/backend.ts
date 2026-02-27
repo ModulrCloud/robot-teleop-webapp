@@ -54,6 +54,8 @@ import { cleanupAuditLogs } from './functions/cleanup-audit-logs/resource';
 import { websocketKeepalive } from './functions/websocket-keepalive/resource';
 import { regenerateEnrollmentToken } from './functions/regenerate-enrollment-token/resource';
 import { registerRobotKey } from './functions/register-robot-key/resource';
+import { manageWhatsNew } from './functions/manage-whats-new/resource';
+import { listWhatsNew } from './functions/list-whats-new/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -122,6 +124,8 @@ const backend = defineBackend({
   websocketKeepalive,
   regenerateEnrollmentToken,
   registerRobotKey,
+  manageWhatsNew,
+  listWhatsNew,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -1151,6 +1155,22 @@ adminAuditTable.grantWriteData(manageCreditTierFunction);
 
 // Grant Cognito permission to get user email
 userPool.grant(manageCreditTierFunction, 'cognito-idp:AdminGetUser');
+
+// Manage What's New Lambda
+const manageWhatsNewFunction = backend.manageWhatsNew.resources.lambda;
+const manageWhatsNewCdkFunction = manageWhatsNewFunction as CdkFunction;
+manageWhatsNewCdkFunction.addEnvironment('WHATS_NEW_TABLE', tables.WhatsNewItem.tableName);
+manageWhatsNewCdkFunction.addEnvironment('ADMIN_AUDIT_TABLE', adminAuditTable.tableName);
+manageWhatsNewCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.WhatsNewItem.grantReadWriteData(manageWhatsNewFunction);
+adminAuditTable.grantWriteData(manageWhatsNewFunction);
+userPool.grant(manageWhatsNewFunction, 'cognito-idp:AdminGetUser');
+
+// List What's New Lambda
+const listWhatsNewFunction = backend.listWhatsNew.resources.lambda;
+const listWhatsNewCdkFunction = listWhatsNewFunction as CdkFunction;
+listWhatsNewCdkFunction.addEnvironment('WHATS_NEW_TABLE', tables.WhatsNewItem.tableName);
+tables.WhatsNewItem.grantReadData(listWhatsNewFunction);
 
 // Manage Organization Lambda
 const manageOrganizationFunction = backend.manageOrganization.resources.lambda;

@@ -45,6 +45,8 @@ import { manageOrgMember } from "../functions/manage-org-member/resource";
 import { getTermsStatus } from "../functions/get-terms-status/resource";
 import { acceptTerms } from "../functions/accept-terms/resource";
 import { regenerateEnrollmentToken } from "../functions/regenerate-enrollment-token/resource";
+import { manageWhatsNew } from "../functions/manage-whats-new/resource";
+import { listWhatsNew } from "../functions/list-whats-new/resource";
 
 const EnrollmentTokenResult = a.customType({
   token: a.string().required(),
@@ -279,6 +281,24 @@ const schema = a.schema({
       allow.authenticated().to(['read']),
       // Only ADMINS can create/update
       allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  // What's New / announcements (navbar panel). Mutations via manageWhatsNewLambda only (ADMINS or @modulr.cloud).
+  WhatsNewItem: a.model({
+    id: a.id(),
+    title: a.string().required(),
+    summary: a.string().required(),
+    link: a.string().required(), // "Find Out More" URL (e.g. /terms or User Guide path)
+    publishedAt: a.string(), // ISO date YYYY-MM-DD
+    sortOrder: a.integer().default(0),
+    createdAt: a.datetime(),
+    updatedAt: a.datetime(),
+  })
+    .secondaryIndexes(index => [
+      index("sortOrder").name("sortOrderIndex"), // For ordered list
+    ])
+    .authorization((allow) => [
+      allow.authenticated().to(['read']), // List readable by all; create/update/delete via Lambda only
     ]),
 
   // Per-user terms of service acceptance (version + timestamp)
@@ -1113,6 +1133,23 @@ const schema = a.schema({
     .returns(a.json())
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (admins only)
     .handler(a.handler.function(getActiveRobots)),
+
+  manageWhatsNewLambda: a
+    .mutation()
+    .arguments({
+      action: a.string().required(), // 'create', 'update', or 'delete'
+      itemId: a.string(), // Required for 'update' and 'delete'
+      itemData: a.json(), // Required for 'create' and 'update'
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth check in Lambda (ADMINS or @modulr.cloud)
+    .handler(a.handler.function(manageWhatsNew)),
+
+  listWhatsNewLambda: a
+    .query()
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Any authenticated user can list (for navbar)
+    .handler(a.handler.function(listWhatsNew)),
 });
 
 export type Schema = ClientSchema<typeof schema>;
