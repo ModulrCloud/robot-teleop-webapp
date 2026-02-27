@@ -25,8 +25,11 @@ export const handler: Schema["listWhatsNewLambda"]["functionHandler"] = async ()
     })
   );
   const items = (result.Items ?? []) as WhatsNewListItem[];
-  // Newest on top: sort by published date (then created date) descending so the newest is always first
+  // Sort by explicit sortOrder first (higher = first), then by date so manual reorder and tie-breaks work
   items.sort((a, b) => {
+    const orderA = typeof a.sortOrder === "number" ? a.sortOrder : 0;
+    const orderB = typeof b.sortOrder === "number" ? b.sortOrder : 0;
+    if (orderB !== orderA) return orderB - orderA;
     const dateA = a.publishedAt ?? a.createdAt ?? "";
     const dateB = b.publishedAt ?? b.createdAt ?? "";
     const byDate = dateB.localeCompare(dateA);

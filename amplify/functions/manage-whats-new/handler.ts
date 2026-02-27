@@ -86,15 +86,20 @@ export const handler: Schema["manageWhatsNewLambda"]["functionHandler"] = async 
         if (!itemData.title?.trim()) {
           throw new Error("Missing required field: title");
         }
-        // Auto-increment order: new announcement gets max(sortOrder) + 1 so it displays first
-        const scanResult = await docClient.send(
-          new ScanCommand({ TableName: WHATS_NEW_TABLE })
-        );
-        const existing = (scanResult.Items ?? []) as { sortOrder?: number }[];
-        const maxOrder = existing.length
-          ? Math.max(0, ...existing.map((i) => (typeof i.sortOrder === "number" ? i.sortOrder : 0)))
-          : -1;
-        const nextOrder = maxOrder + 1;
+        // Honor admin-provided sortOrder on create; otherwise auto-increment so new item displays first
+        let sortOrder: number;
+        if (typeof itemData.sortOrder === "number") {
+          sortOrder = itemData.sortOrder;
+        } else {
+          const scanResult = await docClient.send(
+            new ScanCommand({ TableName: WHATS_NEW_TABLE })
+          );
+          const existing = (scanResult.Items ?? []) as { sortOrder?: number }[];
+          const maxOrder = existing.length
+            ? Math.max(0, ...existing.map((i) => (typeof i.sortOrder === "number" ? i.sortOrder : 0)))
+            : -1;
+          sortOrder = maxOrder + 1;
+        }
 
         const id = randomUUID();
         const item = {
@@ -103,7 +108,7 @@ export const handler: Schema["manageWhatsNewLambda"]["functionHandler"] = async 
           summary: (itemData.summary ?? "").trim(),
           link: (itemData.link ?? "").trim(),
           publishedAt: itemData.publishedAt ?? dateOnly,
-          sortOrder: nextOrder,
+          sortOrder,
           createdAt: now,
           updatedAt: now,
         };
