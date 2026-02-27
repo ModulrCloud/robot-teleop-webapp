@@ -26,7 +26,10 @@ import {
   faMapMarkerAlt,
   faCog,
   faGaugeHigh,
-  faBolt
+  faBolt,
+  faSearch,
+  faCrosshairs,
+  faBoxOpen,
 } from '@fortawesome/free-solid-svg-icons';
 import { InputBindingsModal } from '../components/InputBindingsModal';
 import { useCustomCommandBindings } from '../hooks/useCustomCommandBindings';
@@ -38,6 +41,106 @@ import { PurchaseCreditsModal } from '../components/PurchaseCreditsModal';
 import { isFeatureEnabled } from '../utils/featureFlags';
 
 const client = generateClient<Schema>();
+
+interface ProductLocation {
+  productId: string;
+  productName: string;
+  zone: string;
+  coordinates: { x: number; y: number; z: number };
+}
+
+const MOCK_PRODUCTS: ProductLocation[] = [
+  { productId: '300082', productName: 'Lemon Dancong Oolong Tea', zone: 'Beverages', coordinates: { x: -1.85, y: 2.31, z: 0.92 } },
+  { productId: '300121', productName: 'Ariel Bio Science 4D', zone: 'Household', coordinates: { x: 3.42, y: -0.78, z: 1.15 } },
+  { productId: '4710036402667', productName: 'Huggies Chip n Dale Wet Wipes', zone: 'Baby Care', coordinates: { x: 5.10, y: 1.44, z: 0.68 } },
+  { productId: '4892218021016', productName: 'Comfort Softener 2L', zone: 'Household', coordinates: { x: 3.88, y: -0.52, z: 0.45 } },
+  { productId: '7394376616228', productName: 'Oat Milk Barista Edition', zone: 'Beverages', coordinates: { x: -0.92, y: 3.65, z: 1.08 } },
+  { productId: '4891133241189', productName: 'Del Monte Ketchup 340g', zone: 'Condiments', coordinates: { x: -2.20, y: 1.07, z: 0.76 } },
+  { productId: '4898828031025', productName: 'Kingsford Corn Starch', zone: 'Condiments', coordinates: { x: 2.05, y: 0.88, z: 1.32 } },
+  { productId: '4901033646080', productName: 'Marusan Almond Milk', zone: 'Beverages', coordinates: { x: -0.65, y: 3.12, z: 0.55 } },
+  { productId: '4898118831106', productName: 'BestBuy Garbage Bags Small', zone: 'Household', coordinates: { x: 4.22, y: -1.10, z: 0.30 } },
+  { productId: '8801062894864', productName: 'Quaker Granola Mixed Fruits', zone: 'Breakfast', coordinates: { x: -2.50, y: 4.10, z: 1.45 } },
+];
+
+function LocationPanel({ onNavigate, disabled }: { onNavigate: (coords: { x: number; y: number; z: number }) => void; disabled: boolean }) {
+  const [search, setSearch] = useState('');
+  const [navigatingId, setNavigatingId] = useState<string | null>(null);
+
+  const zones = [...new Set(MOCK_PRODUCTS.map(p => p.zone))];
+  const [activeZone, setActiveZone] = useState<string | null>(null);
+
+  const filtered = MOCK_PRODUCTS.filter(p => {
+    const matchesSearch = !search.trim() || p.productName.toLowerCase().includes(search.toLowerCase()) || p.productId.includes(search);
+    const matchesZone = !activeZone || p.zone === activeZone;
+    return matchesSearch && matchesZone;
+  });
+
+  const handleGo = (product: ProductLocation) => {
+    setNavigatingId(product.productId);
+    onNavigate(product.coordinates);
+    setTimeout(() => setNavigatingId(null), 3000);
+  };
+
+  return (
+    <div className="location-panel">
+      <div className="location-panel-header">
+        <FontAwesomeIcon icon={faMapMarkerAlt} className="location-panel-icon" />
+        <span>Product Locations</span>
+        <span className="location-panel-count">{filtered.length}</span>
+      </div>
+
+      <div className="location-search-row">
+        <div className="location-search-box">
+          <FontAwesomeIcon icon={faSearch} className="location-search-icon" />
+          <input
+            type="text"
+            placeholder="Search product..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="location-zone-chips">
+        <button className={`location-zone-chip ${!activeZone ? 'active' : ''}`} onClick={() => setActiveZone(null)}>All</button>
+        {zones.map(z => (
+          <button key={z} className={`location-zone-chip ${activeZone === z ? 'active' : ''}`} onClick={() => setActiveZone(activeZone === z ? null : z)}>{z}</button>
+        ))}
+      </div>
+
+      <div className="location-product-list">
+        {filtered.length === 0 ? (
+          <div className="location-empty">No products found</div>
+        ) : (
+          filtered.map(p => (
+            <div key={p.productId} className={`location-product-item ${navigatingId === p.productId ? 'navigating' : ''}`}>
+              <div className="location-product-info">
+                <div className="location-product-icon">
+                  <FontAwesomeIcon icon={faBoxOpen} />
+                </div>
+                <div className="location-product-text">
+                  <span className="location-product-name">{p.productName}</span>
+                  <span className="location-product-meta">
+                    {p.zone} · ({p.coordinates.x.toFixed(1)}, {p.coordinates.y.toFixed(1)}, {p.coordinates.z.toFixed(1)})
+                  </span>
+                </div>
+              </div>
+              <button
+                className={`location-go-btn ${navigatingId === p.productId ? 'navigating' : ''}`}
+                onClick={() => handleGo(p)}
+                disabled={disabled || navigatingId === p.productId}
+                title={disabled ? 'Connect to robot first' : `Navigate to ${p.productName}`}
+              >
+                <FontAwesomeIcon icon={faCrosshairs} />
+                <span>{navigatingId === p.productId ? 'Going...' : 'Go'}</span>
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function Teleop() {
   usePageTitle();
@@ -942,13 +1045,14 @@ export default function Teleop() {
                 </div>
               </div>
             ) : controlMode === 'location' ? (
-              <div className="location-controls-hint">
-                <div className="location-hint-content">
-                  <FontAwesomeIcon icon={faMapMarkerAlt} className="location-icon" size="3x" />
-                  <h3>Location Control</h3>
-                  <p className="coming-soon-message">Coming Soon</p>
-                </div>
-              </div>
+              <LocationPanel
+                onNavigate={(coords) => {
+                  // TODO: integrate with navigation goal API when available
+                  logger.log('Navigate to:', coords);
+                  showToast(`Navigating to (${coords.x.toFixed(2)}, ${coords.y.toFixed(2)}, ${coords.z.toFixed(2)})`, 'info', 3000);
+                }}
+                disabled={!status.connected}
+              />
             ) : (
               <div className="gamepad-wrapper">
                 {gamepadDetected ? (

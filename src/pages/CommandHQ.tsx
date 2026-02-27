@@ -55,6 +55,7 @@ import {
   faMapMarkedAlt,
   faCrosshairs,
   faArrowsAlt,
+  faBarcode,
 } from "@fortawesome/free-solid-svg-icons";
 import type {
   Organization,
@@ -1208,10 +1209,10 @@ function LocationMappingSubTab({ locations, robots, canManage }: { locations: Lo
         <table className="chq-table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Zone / Floor</th>
-              <th>Coordinates</th>
-              <th>Robots</th>
+              <th>Product</th>
+              <th>Zone</th>
+              <th>Pose (x, y, z)</th>
+              <th>Assigned Robots</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -1220,21 +1221,23 @@ function LocationMappingSubTab({ locations, robots, canManage }: { locations: Lo
               <tr key={loc.id} className="chq-tr">
                 <td>
                   <div className="chq-cell-user">
-                    <div className="chq-avatar-sm" style={{ background: loc.isActive ? 'rgba(52,211,153,0.2)' : 'rgba(255,255,255,0.05)', color: loc.isActive ? '#34d399' : 'rgba(255,255,255,0.3)' }}>
+                    <div className="chq-avatar-sm" style={{ background: loc.isActive ? 'rgba(255,193,7,0.15)' : 'rgba(255,255,255,0.05)', color: loc.isActive ? '#ffc107' : 'rgba(255,255,255,0.3)' }}>
                       <FontAwesomeIcon icon={faCrosshairs} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: 600 }}>{loc.label}</div>
-                      <div className="chq-dimmed" style={{ fontSize: '0.78rem' }}>{loc.name}</div>
+                      <div style={{ fontWeight: 600 }}>{loc.productName || loc.label}</div>
+                      <div className="chq-dimmed" style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <FontAwesomeIcon icon={faBarcode} style={{ fontSize: '0.65rem' }} />
+                        {loc.productId || loc.name}
+                      </div>
                     </div>
                   </div>
                 </td>
                 <td>
                   <span className="chq-dimmed">{loc.zone || '—'}</span>
-                  <span className="chq-micro-tag" style={{ marginLeft: '0.4rem' }}>F{loc.floorLevel}</span>
                 </td>
                 <td className="chq-cmd-mono" style={{ fontSize: '0.82rem' }}>
-                  ({loc.coordinates.x}, {loc.coordinates.y}, {loc.coordinates.z})
+                  ({loc.coordinates.x.toFixed(2)}, {loc.coordinates.y.toFixed(2)}, {loc.coordinates.z.toFixed(2)})
                 </td>
                 <td>
                   <div className="chq-cmd-tags" style={{ gap: '0.25rem' }}>
