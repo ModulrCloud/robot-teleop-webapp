@@ -70,24 +70,7 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
       throw new Error("Unauthorized: can only deduct credits for your own sessions");
     }
 
-    // Robot owner (userId === partnerId) is not charged – owner test sessions are free
-    const sessionPartnerCognito = session.partnerId;
-    if (sessionPartnerCognito && userId === sessionPartnerCognito) {
-      console.log("Owner test session – no credits deducted", { sessionId, robotId });
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          success: true,
-          message: "Owner test - no credits deducted",
-          sessionId,
-          creditsDeducted: 0,
-          totalDeductedSoFar: creditsDeductedSoFar,
-          remainingCredits: 0,
-        }),
-      };
-    }
-
-    // 2. Get the robot and its hourly rate
+    // 2. Get the robot (needed for owner check and hourly rate)
     const robotResult = await docClient.send(
       new QueryCommand({
         TableName: ROBOT_TABLE_NAME,
@@ -103,6 +86,62 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
     const robot = robotResult.Items?.[0];
     if (!robot) {
       throw new Error(`Robot not found: ${robotId}`);
+    }
+
+    // Robot owner is not charged – owner test sessions are free. Use multiple partner
+    // identifiers (cognitoUsername, contactEmail) so we don't miss owners when identity
+    // is stored as email or when session userId is sub/email.
+    const partnerTableName = process.env.PARTNER_TABLE_NAME;
+    if (partnerTableName && robot.partnerId) {
+      try {
+        const partnerResult = await docClient.send(
+          new GetCommand({
+            TableName: partnerTableName,
+            Key: { id: robot.partnerId },
+          })
+        );
+        const partner = partnerResult.Item;
+        if (partner) {
+          const partnerIdentifiers = [
+            partner.cognitoUsername,
+            partner.contactEmail,
+          ].filter(Boolean) as string[];
+          const normalizedPartner = new Set(
+            partnerIdentifiers.map((p) => p.toLowerCase().trim())
+          );
+          const sessionUserIdNorm = userId.toLowerCase().trim();
+          if (normalizedPartner.size > 0 && normalizedPartner.has(sessionUserIdNorm)) {
+            console.log("Owner test session – no credits deducted", { sessionId, robotId });
+            return {
+              statusCode: 200,
+              body: JSON.stringify({
+                success: true,
+                message: "Owner test - no credits deducted",
+                sessionId,
+                creditsDeducted: 0,
+                totalDeductedSoFar: creditsDeductedSoFar,
+                remainingCredits: 0,
+              }),
+            };
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to resolve partner for owner check, proceeding with billing:", err);
+      }
+    } else if (session.partnerId && userId === session.partnerId) {
+      // Fallback: session.partnerId is partner's cognitoUsername (set by signaling)
+      console.log("Owner test session – no credits deducted", { sessionId, robotId });
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          success: true,
+          message: "Owner test - no credits deducted",
+          sessionId,
+          creditsDeducted: 0,
+          totalDeductedSoFar: creditsDeductedSoFar,
+          remainingCredits: 0,
+        }),
+      };
     }
 
     const hourlyRateCredits = robot.hourlyRateCredits || 100; // Default 100 credits/hour

@@ -1244,6 +1244,7 @@ async function createSession(
   // Resolve robot name and partner Cognito username for Session record (and owner check)
   let robotName = robotId;
   let partnerIdCognito: string | undefined;
+  const partnerOwnerIdentifiers: string[] = [];
   if (ROBOT_TABLE_NAME) {
     try {
       const robotQuery = await db.send(new QueryCommand({
@@ -1263,8 +1264,13 @@ async function createSession(
             Key: { id: partnerTableId },
           }));
           const cognitoUsername = partnerResult.Item?.cognitoUsername;
+          const contactEmail = partnerResult.Item?.contactEmail;
           if (cognitoUsername) {
             partnerIdCognito = cognitoUsername;
+            partnerOwnerIdentifiers.push(cognitoUsername);
+          }
+          if (contactEmail && contactEmail !== cognitoUsername) {
+            partnerOwnerIdentifiers.push(contactEmail);
           }
         }
       }
@@ -1273,8 +1279,16 @@ async function createSession(
     }
   }
 
-  // Robot owner is not charged; skip balance check for owner so they can test with 0 credits
-  const isRobotOwner = partnerIdCognito !== undefined && userId === partnerIdCognito;
+  // Robot owner is not charged; skip balance check for owner so they can test with 0 credits.
+  // Match using multiple identifiers (username, sub, email) so we don't miss owners when
+  // partner identity is stored as email or when session userId is claims.sub.
+  const currentIdentifiers = [userId, userEmail].filter(Boolean) as string[];
+  const normalizedPartner = new Set(
+    partnerOwnerIdentifiers.map((p) => p.toLowerCase().trim())
+  );
+  const isRobotOwner =
+    normalizedPartner.size > 0 &&
+    currentIdentifiers.some((c) => normalizedPartner.has(c.toLowerCase().trim()));
   if (!isRobotOwner) {
     const balanceCheck = await checkUserBalance(userId, robotId);
     if (!balanceCheck.sufficient) {
