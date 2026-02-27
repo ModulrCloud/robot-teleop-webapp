@@ -19,8 +19,15 @@ import { logger } from '../utils/logger';
 
 const client = generateClient<Schema>();
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const registrationUrl: string | undefined = (outputs as any).custom?.robotEnrollment?.registrationUrl;
+interface AmplifyOutputsWithCustom {
+  custom?: {
+    robotEnrollment?: {
+      registrationUrl?: string;
+    };
+  };
+}
+
+const registrationUrl: string | undefined = (outputs as AmplifyOutputsWithCustom).custom?.robotEnrollment?.registrationUrl;
 
 export default function RobotSetup() {
   usePageTitle();

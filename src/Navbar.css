@@ -238,6 +238,17 @@
   color: #fff;
 }
 
+.whats-new-panel-message {
+  margin: 0;
+  padding: 1rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+}
+
+.whats-new-panel-message.whats-new-panel-error {
+  color: #e57373;
+}
+
 .whats-new-list {
   list-style: none;
   margin: 0;

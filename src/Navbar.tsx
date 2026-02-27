@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuthStatus } from "./hooks/useAuthStatus";
 import { useUserCredits } from "./hooks/useUserCredits";
+import { useWhatsNew } from "./hooks/useWhatsNew";
 import { hasAdminAccess } from "./utils/admin";
 import { PurchaseCreditsModal } from "./components/PurchaseCreditsModal";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -27,37 +28,17 @@ import "./Navbar.css";
 import { formatGroupName, capitalizeName } from "./utils/formatters";
 import { MOCK_ORGANIZATIONS } from "./mocks/organization";
 
-// Phase 1 mockup: dummy What's New items. Replace with API data in Phase 2+ when admin panel drives content.
-const WHATS_NEW_DUMMY_ITEMS = [
-  {
-    id: "whats-new-1",
-    title: "What's New",
-    summary: "What's new is What's New. This is where we'll highlight new features and link to the User Guide.",
-    link: "/terms",
-  },
-  {
-    id: "whats-new-2",
-    title: "Feature highlights",
-    summary: "Each item will have a short summary and a Find Out More button linking to the User Guide.",
-    link: "#",
-  },
-];
-
 export default function Navbar() {
   const { isLoggedIn, signOut, user } = useAuthStatus();
   const { formattedBalance, loading: creditsLoading } = useUserCredits();
+  const { items: whatsNewItems, readIds: whatsNewReadIds, unreadCount: whatsNewUnreadCount, loading: whatsNewLoading, error: whatsNewError, markRead: markWhatsNewItemRead, markAllRead: markAllWhatsNewRead } = useWhatsNew();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showWhatsNewPanel, setShowWhatsNewPanel] = useState(false);
-  const [whatsNewReadIds, setWhatsNewReadIds] = useState<Set<string>>(new Set());
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const whatsNewRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
-
-  const whatsNewUnreadCount = WHATS_NEW_DUMMY_ITEMS.filter((item) => !whatsNewReadIds.has(item.id)).length;
-  const markWhatsNewItemRead = (id: string) => setWhatsNewReadIds((prev) => new Set(prev).add(id));
-  const markAllWhatsNewRead = () => setWhatsNewReadIds(new Set(WHATS_NEW_DUMMY_ITEMS.map((i) => i.id)));
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -143,7 +124,6 @@ export default function Navbar() {
         <div className="navbar-actions">
           {isLoggedIn ? (
             <>
-              {/* What's New – Phase 1 mockup (dummy data; replace with API in Phase 2+) */}
               <div className="whats-new-wrapper" ref={whatsNewRef}>
                 <button
                   type="button"
@@ -174,42 +154,52 @@ export default function Navbar() {
                         </button>
                       )}
                     </div>
-                    <ul className="whats-new-list">
-                      {WHATS_NEW_DUMMY_ITEMS.map((item) => (
-                        <li key={item.id} className="whats-new-item">
-                          <div className="whats-new-item-header">
-                            <span className="whats-new-item-title">{item.title}</span>
-                            {!whatsNewReadIds.has(item.id) && (
-                              <span className="whats-new-item-dot" aria-hidden />
+                    {whatsNewLoading ? (
+                      <p className="whats-new-panel-message">Loading…</p>
+                    ) : whatsNewError ? (
+                      <p className="whats-new-panel-message whats-new-panel-error">{whatsNewError}</p>
+                    ) : whatsNewItems.length === 0 ? (
+                      <p className="whats-new-panel-message">No announcements right now.</p>
+                    ) : (
+                      <ul className="whats-new-list">
+                        {whatsNewItems.map((item) => (
+                          <li key={item.id} className="whats-new-item">
+                            <div className="whats-new-item-header">
+                              <span className="whats-new-item-title">{item.title}</span>
+                              {!whatsNewReadIds.has(item.id) && (
+                                <span className="whats-new-item-dot" aria-hidden />
+                              )}
+                            </div>
+                            <p className="whats-new-item-summary">{item.summary}</p>
+                            {item.link.startsWith("/") ? (
+                              <Link
+                                to={item.link}
+                                className="whats-new-item-link"
+                                onClick={() => {
+                                  markWhatsNewItemRead(item.id);
+                                  setShowWhatsNewPanel(false);
+                                }}
+                              >
+                                Find Out More <FontAwesomeIcon icon={faExternalLinkAlt} />
+                              </Link>
+                            ) : (
+                              <a
+                                href={item.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="whats-new-item-link"
+                                onClick={() => {
+                                  markWhatsNewItemRead(item.id);
+                                  setShowWhatsNewPanel(false);
+                                }}
+                              >
+                                Find Out More <FontAwesomeIcon icon={faExternalLinkAlt} />
+                              </a>
                             )}
-                          </div>
-                          <p className="whats-new-item-summary">{item.summary}</p>
-                          {item.link.startsWith("/") ? (
-                            <Link
-                              to={item.link}
-                              className="whats-new-item-link"
-                              onClick={() => {
-                                markWhatsNewItemRead(item.id);
-                                setShowWhatsNewPanel(false);
-                              }}
-                            >
-                              Find Out More <FontAwesomeIcon icon={faExternalLinkAlt} />
-                            </Link>
-                          ) : (
-                            <a
-                              href={item.link}
-                              className="whats-new-item-link"
-                              onClick={() => {
-                                markWhatsNewItemRead(item.id);
-                                setShowWhatsNewPanel(false);
-                              }}
-                            >
-                              Find Out More <FontAwesomeIcon icon={faExternalLinkAlt} />
-                            </a>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 )}
               </div>
