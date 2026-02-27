@@ -7,6 +7,7 @@ import { useGamepad } from "../hooks/useGamepad";
 import { useKeyboardMovement } from "../hooks/useKeyboardMovement";
 import { useUserCredits } from "../hooks/useUserCredits";
 import { useToast } from "../hooks/useToast";
+import { useAuthStatus } from "../hooks/useAuthStatus";
 import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../amplify/data/resource';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -87,6 +88,8 @@ export default function Teleop() {
   // Falls back to environment variable or default for development
   const [searchParams] = useSearchParams();
   const robotId = searchParams.get('robotId') || import.meta.env.VITE_ROBOT_ID || 'robot1';
+  const { user } = useAuthStatus();
+  const [isOwnerTest, setIsOwnerTest] = useState<boolean>(false);
 
   const { status, connect, disconnect, sendCommand, stopRobot } = useWebRTC({
     wsUrl,
@@ -116,6 +119,36 @@ export default function Teleop() {
     }
     prevRobotIdRef.current = robotId;
   }, [robotId, stopRobot]);
+
+  // Detect if current user is the robot owner (owner test = no charge, show "Test mode")
+  useEffect(() => {
+    if (!robotId || !user?.username) {
+      setIsOwnerTest(false);
+      return;
+    }
+    let cancelled = false;
+    const checkOwner = async () => {
+      try {
+        const { data: robots } = await client.models.Robot.list({
+          filter: { robotId: { eq: robotId } },
+          limit: 1,
+        });
+        const robot = robots?.[0];
+        if (cancelled || !robot?.partnerId) {
+          if (!cancelled) setIsOwnerTest(false);
+          return;
+        }
+        const { data: partner } = await client.models.Partner.get({ id: robot.partnerId });
+        if (cancelled) return;
+        setIsOwnerTest(partner?.cognitoUsername === user.username);
+      } catch (err) {
+        logger.error('Error checking robot owner:', err);
+        if (!cancelled) setIsOwnerTest(false);
+      }
+    };
+    checkOwner();
+    return () => { cancelled = true; };
+  }, [robotId, user?.username]);
 
   useEffect(() => {
     connect();
@@ -209,9 +242,9 @@ export default function Teleop() {
     }
   }, [status.connected, sessionId]);
 
-  // Per-minute credit deduction timer
+  // Per-minute credit deduction timer (skipped for owner test – backend also returns 0)
   useEffect(() => {
-    if (!status.connected || !sessionId || insufficientFunds) return;
+    if (!status.connected || !sessionId || insufficientFunds || isOwnerTest) return;
 
     const deductionInterval = setInterval(async () => {
       if (!sessionId || !status.connected) return;
@@ -306,7 +339,7 @@ export default function Teleop() {
     }, 60000); // Every 60 seconds (1 minute)
 
     return () => clearInterval(deductionInterval);
-  }, [status.connected, sessionId, insufficientFunds, refreshCredits, stopRobot, disconnect]);
+  }, [status.connected, sessionId, insufficientFunds, isOwnerTest, refreshCredits, stopRobot, disconnect]);
 
   useEffect(() => {
     const checkGamepad = () => {
@@ -695,7 +728,14 @@ export default function Teleop() {
                 <div className="viewport-stats-center">
                   <div className="live-indicator">
                     <span className="live-dot"></span>
-                    <span className="live-text">{formatTime(sessionTime)}</span>
+                    <span className="live-text">
+                      {isOwnerTest ? 'Test mode' : formatTime(sessionTime)}
+                    </span>
+                    {isOwnerTest && (
+                      <span className="live-text test-mode-sub" style={{ opacity: 0.9, fontSize: '0.75em', display: 'block', marginTop: '0.15rem' }}>
+                        No charge
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="viewport-stats-group">

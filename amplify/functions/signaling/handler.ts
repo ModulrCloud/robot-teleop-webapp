@@ -1241,24 +1241,7 @@ async function createSession(
     // Continue with creation attempt
   }
 
-  // Check user balance before creating session
-  const balanceCheck = await checkUserBalance(userId, robotId);
-  if (!balanceCheck.sufficient) {
-    console.warn('[SESSION_CREATE_BLOCKED]', {
-      userId,
-      robotId,
-      reason: 'insufficient_funds',
-      currentCredits: balanceCheck.currentCredits,
-      requiredCredits: balanceCheck.requiredCredits,
-      error: balanceCheck.error,
-    });
-    return null; // Return null to indicate session creation was blocked
-  }
-
-  const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-  const now = new Date().toISOString();
-
-  // Resolve robot name and partner Cognito username for Session record
+  // Resolve robot name and partner Cognito username for Session record (and owner check)
   let robotName = robotId;
   let partnerIdCognito: string | undefined;
   if (ROBOT_TABLE_NAME) {
@@ -1289,6 +1272,28 @@ async function createSession(
       console.warn('[SESSION] Failed to resolve robot/partner for session metadata:', err);
     }
   }
+
+  // Robot owner is not charged; skip balance check for owner so they can test with 0 credits
+  const isRobotOwner = partnerIdCognito !== undefined && userId === partnerIdCognito;
+  if (!isRobotOwner) {
+    const balanceCheck = await checkUserBalance(userId, robotId);
+    if (!balanceCheck.sufficient) {
+      console.warn('[SESSION_CREATE_BLOCKED]', {
+        userId,
+        robotId,
+        reason: 'insufficient_funds',
+        currentCredits: balanceCheck.currentCredits,
+        requiredCredits: balanceCheck.requiredCredits,
+        error: balanceCheck.error,
+      });
+      return null; // Return null to indicate session creation was blocked
+    }
+  } else {
+    console.log('[SESSION] Robot owner connecting – skipping balance check', { userId, robotId });
+  }
+
+  const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  const now = new Date().toISOString();
 
   try {
     // End any other active sessions for this user (allows only one session at a time)

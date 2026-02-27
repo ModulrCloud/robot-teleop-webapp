@@ -70,6 +70,23 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
       throw new Error("Unauthorized: can only deduct credits for your own sessions");
     }
 
+    // Robot owner (userId === partnerId) is not charged – owner test sessions are free
+    const sessionPartnerCognito = session.partnerId;
+    if (sessionPartnerCognito && userId === sessionPartnerCognito) {
+      console.log("Owner test session – no credits deducted", { sessionId, robotId });
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          success: true,
+          message: "Owner test - no credits deducted",
+          sessionId,
+          creditsDeducted: 0,
+          totalDeductedSoFar: creditsDeductedSoFar,
+          remainingCredits: 0,
+        }),
+      };
+    }
+
     // 2. Get the robot and its hourly rate
     const robotResult = await docClient.send(
       new QueryCommand({
