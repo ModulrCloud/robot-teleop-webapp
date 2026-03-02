@@ -645,10 +645,12 @@ deductSessionCreditsCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tabl
 deductSessionCreditsCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
 deductSessionCreditsCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 deductSessionCreditsCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
+deductSessionCreditsCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
 tables.UserCredits.grantReadWriteData(deductSessionCreditsFunction);
 tables.CreditTransaction.grantWriteData(deductSessionCreditsFunction);
 tables.Session.grantReadWriteData(deductSessionCreditsFunction);
 tables.Robot.grantReadData(deductSessionCreditsFunction);
+tables.Partner.grantReadData(deductSessionCreditsFunction);
 tables.PlatformSettings.grantReadData(deductSessionCreditsFunction);
 // Grant permission to query indexes
 deductSessionCreditsFunction.addToRolePolicy(new PolicyStatement({

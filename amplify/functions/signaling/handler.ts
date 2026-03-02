@@ -1241,26 +1241,10 @@ async function createSession(
     // Continue with creation attempt
   }
 
-  // Check user balance before creating session
-  const balanceCheck = await checkUserBalance(userId, robotId);
-  if (!balanceCheck.sufficient) {
-    console.warn('[SESSION_CREATE_BLOCKED]', {
-      userId,
-      robotId,
-      reason: 'insufficient_funds',
-      currentCredits: balanceCheck.currentCredits,
-      requiredCredits: balanceCheck.requiredCredits,
-      error: balanceCheck.error,
-    });
-    return null; // Return null to indicate session creation was blocked
-  }
-
-  const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-  const now = new Date().toISOString();
-
-  // Resolve robot name and partner Cognito username for Session record
+  // Resolve robot name and partner Cognito username for Session record (and owner check)
   let robotName = robotId;
   let partnerIdCognito: string | undefined;
+  const partnerOwnerIdentifiers: string[] = [];
   if (ROBOT_TABLE_NAME) {
     try {
       const robotQuery = await db.send(new QueryCommand({
@@ -1280,8 +1264,13 @@ async function createSession(
             Key: { id: partnerTableId },
           }));
           const cognitoUsername = partnerResult.Item?.cognitoUsername;
+          const contactEmail = partnerResult.Item?.contactEmail;
           if (cognitoUsername) {
             partnerIdCognito = cognitoUsername;
+            partnerOwnerIdentifiers.push(cognitoUsername);
+          }
+          if (contactEmail && contactEmail !== cognitoUsername) {
+            partnerOwnerIdentifiers.push(contactEmail);
           }
         }
       }
@@ -1289,6 +1278,36 @@ async function createSession(
       console.warn('[SESSION] Failed to resolve robot/partner for session metadata:', err);
     }
   }
+
+  // Robot owner is not charged; skip balance check for owner so they can test with 0 credits.
+  // Match using multiple identifiers (username, sub, email) so we don't miss owners when
+  // partner identity is stored as email or when session userId is claims.sub.
+  const currentIdentifiers = [userId, userEmail].filter(Boolean) as string[];
+  const normalizedPartner = new Set(
+    partnerOwnerIdentifiers.map((p) => p.toLowerCase().trim())
+  );
+  const isRobotOwner =
+    normalizedPartner.size > 0 &&
+    currentIdentifiers.some((c) => normalizedPartner.has(c.toLowerCase().trim()));
+  if (!isRobotOwner) {
+    const balanceCheck = await checkUserBalance(userId, robotId);
+    if (!balanceCheck.sufficient) {
+      console.warn('[SESSION_CREATE_BLOCKED]', {
+        userId,
+        robotId,
+        reason: 'insufficient_funds',
+        currentCredits: balanceCheck.currentCredits,
+        requiredCredits: balanceCheck.requiredCredits,
+        error: balanceCheck.error,
+      });
+      return null; // Return null to indicate session creation was blocked
+    }
+  } else {
+    console.log('[SESSION] Robot owner connecting – skipping balance check', { userId, robotId });
+  }
+
+  const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  const now = new Date().toISOString();
 
   try {
     // End any other active sessions for this user (allows only one session at a time)
