@@ -39,20 +39,32 @@ export interface WebRTCOptions {
   robotId?: string;
 }
 
+export type DataChannelListener = (msg: Record<string, unknown>) => void;
+
 class WebRTCRosBridge {
   private channel: RTCDataChannel;
   private callbacks: Record<string, (msg?: Record<string, unknown>) => void> = {};
+  private externalHandler?: DataChannelListener;
 
-  constructor(dc: RTCDataChannel) {
+  constructor(dc: RTCDataChannel, externalHandler?: DataChannelListener) {
     this.channel = dc;
+    this.externalHandler = externalHandler;
     dc.onmessage = (event) => {
       const msg = JSON.parse(event.data) as Record<string, unknown>;
+
+      if (this.externalHandler) this.externalHandler(msg);
+
+      const corrId = typeof msg.correlationId === 'string' ? msg.correlationId : undefined;
+      if (corrId && this.callbacks[corrId]) {
+        this.callbacks[corrId](msg);
+        delete this.callbacks[corrId];
+      }
+
       const msgId = typeof msg.id === 'string' ? msg.id : undefined;
       if (msgId && this.callbacks[msgId]) {
         this.callbacks[msgId](msg);
         delete this.callbacks[msgId];
       } else if (msg.op === 'publish') {
-        // Handle other ROS messages if needed
         logger.log('Topic ' + msg.topic + ': ' + JSON.stringify(msg.msg));
       }
     };
@@ -65,6 +77,10 @@ class WebRTCRosBridge {
       this.channel.send(JSON.stringify(msg));
       if (!msg.id) resolve();
     });
+  }
+
+  sendRaw(msg: Record<string, unknown>): void {
+    this.channel.send(JSON.stringify(msg));
   }
 }
 
@@ -108,21 +124,22 @@ function releaseConnectionLock(): void {
   }
 }
 
+const DEFAULT_STATS: ConnectionStats = {
+  latencyMs: null,
+  packetsLost: 0,
+  packetsReceived: 0,
+  bytesReceived: 0,
+  frameRate: null,
+  frameWidth: null,
+  frameHeight: null,
+  connectionState: 'new',
+  jitter: null,
+  bitrate: null,
+};
+
 export function useWebRTC(options: WebRTCOptions) {
   const { wsUrl, myId, robotId = 'robot1' } = options;
-  const { signOut } = useAuthStatus(); // Get signOut function for automatic sign-out on token expiration
-  const defaultStats: ConnectionStats = {
-    latencyMs: null,
-    packetsLost: 0,
-    packetsReceived: 0,
-    bytesReceived: 0,
-    frameRate: null,
-    frameWidth: null,
-    frameHeight: null,
-    connectionState: 'new',
-    jitter: null,
-    bitrate: null,
-  };
+  const { signOut } = useAuthStatus();
 
   const [status, setStatus] = useState<WebRTCStatus>({
     connecting: false,
@@ -133,7 +150,7 @@ export function useWebRTC(options: WebRTCOptions) {
     busyUser: null,
     sessionId: null,
     robotDataChannelProtocol: null,
-    stats: defaultStats,
+    stats: DEFAULT_STATS,
   });
 
   const lastBytesReceivedRef = useRef<number>(0);
@@ -143,6 +160,13 @@ export function useWebRTC(options: WebRTCOptions) {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const rosBridgeRef = useRef<WebRTCRosBridge | null>(null);
+  const dataChannelListenersRef = useRef<Set<DataChannelListener>>(new Set());
+
+  const dispatchDataChannelMessage = useCallback((msg: Record<string, unknown>) => {
+    dataChannelListenersRef.current.forEach(listener => {
+      try { listener(msg); } catch (e) { logger.error('[WEBRTC] Data channel listener error:', e); }
+    });
+  }, []);
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const webrtcTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const welcomeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -276,7 +300,7 @@ export function useWebRTC(options: WebRTCOptions) {
       cleanup();
     }
 
-    setStatus({ connecting: true, connected: false, error: null, videoStream: null, robotBusy: false, busyUser: null, sessionId: null, robotDataChannelProtocol: null, stats: defaultStats });
+    setStatus({ connecting: true, connected: false, error: null, videoStream: null, robotBusy: false, busyUser: null, sessionId: null, robotDataChannelProtocol: null, stats: DEFAULT_STATS });
 
     try {
       // Get JWT token for WebSocket authentication
@@ -573,7 +597,7 @@ export function useWebRTC(options: WebRTCOptions) {
           const channel = pc.createDataChannel('control');
           channel.onopen = async () => {
             logger.log('[WEBRTC] Data channel opened');
-            rosBridgeRef.current = new WebRTCRosBridge(channel);
+            rosBridgeRef.current = new WebRTCRosBridge(channel, dispatchDataChannelMessage);
           };
 
           pc.addTransceiver('video', { direction: 'recvonly' });
@@ -660,7 +684,7 @@ export function useWebRTC(options: WebRTCOptions) {
       }));
       cleanup();
     }
-  }, [wsUrl, myId, robotId, cleanup, collectStats]);
+  }, [wsUrl, myId, robotId, cleanup, collectStats, dispatchDataChannelMessage, signOut]);
 
   const sendCommand = useCallback((linearX: number, angularZ: number) => {
     if (!rosBridgeRef.current) return;
@@ -677,6 +701,16 @@ export function useWebRTC(options: WebRTCOptions) {
     sendCommand(0, 0);
   }, [sendCommand]);
 
+  const sendDataChannelMessage = useCallback((msg: Record<string, unknown>) => {
+    if (!rosBridgeRef.current) return;
+    rosBridgeRef.current.sendRaw(msg);
+  }, []);
+
+  const addDataChannelListener = useCallback((listener: DataChannelListener) => {
+    dataChannelListenersRef.current.add(listener);
+    return () => { dataChannelListenersRef.current.delete(listener); };
+  }, []);
+
   useEffect(() => {
     return () => {
       cleanup();
@@ -689,5 +723,7 @@ export function useWebRTC(options: WebRTCOptions) {
     disconnect: cleanup,
     sendCommand,
     stopRobot,
+    sendDataChannelMessage,
+    addDataChannelListener,
   };
 }

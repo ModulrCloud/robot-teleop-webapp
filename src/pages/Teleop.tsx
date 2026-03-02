@@ -2,11 +2,11 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import Joystick, { type JoystickChange } from "../components/Joystick";
 import { LoadingWheel } from "../components/LoadingWheel";
-import { useWebRTC } from "../hooks/useWebRTC";
+import { useWebRTC, type DataChannelListener } from "../hooks/useWebRTC";
 import { useGamepad } from "../hooks/useGamepad";
 import { useKeyboardMovement } from "../hooks/useKeyboardMovement";
 import { useUserCredits } from "../hooks/useUserCredits";
-import { useToast } from "../hooks/useToast";
+import { useToast, type ToastType } from "../hooks/useToast";
 import { useAuthStatus } from "../hooks/useAuthStatus";
 import { generateClient } from 'aws-amplify/api';
 import type { Schema } from '../../amplify/data/resource';
@@ -31,6 +31,7 @@ import {
   faSearch,
   faCrosshairs,
   faBoxOpen,
+  faStop,
 } from '@fortawesome/free-solid-svg-icons';
 import { InputBindingsModal } from '../components/InputBindingsModal';
 import { useCustomCommandBindings } from '../hooks/useCustomCommandBindings';
@@ -40,6 +41,12 @@ import outputs from '../../amplify_outputs.json';
 import { logger } from '../utils/logger';
 import { PurchaseCreditsModal } from '../components/PurchaseCreditsModal';
 import { isFeatureEnabled } from '../utils/featureFlags';
+import {
+  buildNavigationStartMessage,
+  buildNavigationCancelMessage,
+  type NavigationResponsePayload,
+  type AgentErrorPayload,
+} from '../utils/dataChannelMessageFormat';
 
 const client = generateClient<Schema>();
 
@@ -63,12 +70,89 @@ const MOCK_PRODUCTS: ProductLocation[] = [
   { productId: '8801062894864', productName: 'Quaker Granola Mixed Fruits', zone: 'Breakfast', coordinates: { x: -2.50, y: 4.10, z: 1.45 } },
 ];
 
-function LocationPanel({ onNavigate, disabled }: { onNavigate: (coords: { x: number; y: number; z: number }) => void; disabled: boolean }) {
+interface NavigationState {
+  correlationId: string;
+  productId: string;
+  productName: string;
+  status: 'pending' | 'started' | 'completed' | 'cancelled' | 'failed';
+}
+
+interface LocationPanelProps {
+  sendMessage: (msg: Record<string, unknown>) => void;
+  addListener: (cb: DataChannelListener) => () => void;
+  disabled: boolean;
+  showToast: (message: string, type: ToastType, duration?: number) => void;
+}
+
+const NAV_TIMEOUT_MS = 30_000;
+
+function LocationPanel({ sendMessage, addListener, disabled, showToast }: LocationPanelProps) {
   const [search, setSearch] = useState('');
-  const [navigatingId, setNavigatingId] = useState<string | null>(null);
+  const [activeNavigation, setActiveNavigation] = useState<NavigationState | null>(null);
+  const activeNavigationRef = useRef<NavigationState | null>(null);
+  const navTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const zones = [...new Set(MOCK_PRODUCTS.map(p => p.zone))];
   const [activeZone, setActiveZone] = useState<string | null>(null);
+
+  useEffect(() => { activeNavigationRef.current = activeNavigation; }, [activeNavigation]);
+
+  const clearNavTimeout = useCallback(() => {
+    if (navTimeoutRef.current) { clearTimeout(navTimeoutRef.current); navTimeoutRef.current = null; }
+  }, []);
+
+  // Clear navigation state on disconnect
+  useEffect(() => {
+    if (disabled && activeNavigation) { setActiveNavigation(null); clearNavTimeout(); }
+  }, [disabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clean up timeout on unmount
+  useEffect(() => clearNavTimeout, [clearNavTimeout]);
+
+  // Listen for navigation responses and agent errors on the data channel
+  useEffect(() => {
+    return addListener((msg) => {
+      const type = msg.type as string;
+      const correlationId = msg.correlationId as string | undefined;
+      const nav = activeNavigationRef.current;
+      if (!nav || !correlationId || nav.correlationId !== correlationId) return;
+
+      if (type === 'agent.navigation.response') {
+        const payload = msg.payload as NavigationResponsePayload | undefined;
+        if (!payload) return;
+
+        switch (payload.status) {
+          case 'started':
+            setActiveNavigation(prev => prev ? { ...prev, status: 'started' } : null);
+            showToast(`Navigating to ${payload.name}...`, 'info', 3000);
+            break;
+          case 'completed':
+            setActiveNavigation(null);
+            clearNavTimeout();
+            showToast(`Arrived at ${payload.name}`, 'success', 3000);
+            break;
+          case 'cancelled':
+            setActiveNavigation(null);
+            clearNavTimeout();
+            showToast('Navigation cancelled', 'info', 3000);
+            break;
+          case 'failed':
+            setActiveNavigation(null);
+            clearNavTimeout();
+            showToast(`Navigation failed: ${payload.message || 'Unknown error'}`, 'error', 5000);
+            break;
+        }
+      }
+
+      if (type === 'agent.error') {
+        const payload = msg.payload as AgentErrorPayload | undefined;
+        if (!payload) return;
+        setActiveNavigation(null);
+        clearNavTimeout();
+        showToast(`Navigation error: ${payload.message}`, 'error', 5000);
+      }
+    });
+  }, [addListener, showToast, clearNavTimeout]);
 
   const filtered = MOCK_PRODUCTS.filter(p => {
     const matchesSearch = !search.trim() || p.productName.toLowerCase().includes(search.toLowerCase()) || p.productId.includes(search);
@@ -76,11 +160,40 @@ function LocationPanel({ onNavigate, disabled }: { onNavigate: (coords: { x: num
     return matchesSearch && matchesZone;
   });
 
-  const handleGo = (product: ProductLocation) => {
-    setNavigatingId(product.productId);
-    onNavigate(product.coordinates);
-    setTimeout(() => setNavigatingId(null), 3000);
+  const handleNavigate = (product: ProductLocation) => {
+    const msg = buildNavigationStartMessage(product.productName);
+    const corrId = msg.id as string;
+    clearNavTimeout();
+    setActiveNavigation({
+      correlationId: corrId,
+      productId: product.productId,
+      productName: product.productName,
+      status: 'pending',
+    });
+    sendMessage(msg);
+    logger.log('[NAV] Sent agent.navigation.start:', product.productName);
+
+    // Auto-clear if the robot never responds
+    navTimeoutRef.current = setTimeout(() => {
+      if (activeNavigationRef.current?.correlationId === corrId) {
+        setActiveNavigation(null);
+        showToast('Navigation timed out — no response from robot', 'warning', 4000);
+      }
+    }, NAV_TIMEOUT_MS);
   };
+
+  const handleCancel = () => {
+    const cancelledProduct = activeNavigation?.productName;
+    const msg = buildNavigationCancelMessage();
+    sendMessage(msg);
+    logger.log('[NAV] Sent agent.navigation.cancel');
+    // Optimistically clear — the robot will acknowledge, but the UI shouldn't block on it
+    setActiveNavigation(null);
+    clearNavTimeout();
+    if (cancelledProduct) showToast(`Cancelled navigation to ${cancelledProduct}`, 'info', 2000);
+  };
+
+  const isNavigating = activeNavigation !== null;
 
   return (
     <div className="location-panel">
@@ -113,30 +226,44 @@ function LocationPanel({ onNavigate, disabled }: { onNavigate: (coords: { x: num
         {filtered.length === 0 ? (
           <div className="location-empty">No products found</div>
         ) : (
-          filtered.map(p => (
-            <div key={p.productId} className={`location-product-item ${navigatingId === p.productId ? 'navigating' : ''}`}>
-              <div className="location-product-info">
-                <div className="location-product-icon">
-                  <FontAwesomeIcon icon={faBoxOpen} />
+          filtered.map(p => {
+            const isThisNavigating = isNavigating && activeNavigation.productId === p.productId;
+            return (
+              <div key={p.productId} className={`location-product-item ${isThisNavigating ? 'navigating' : ''}`}>
+                <div className="location-product-info">
+                  <div className="location-product-icon">
+                    <FontAwesomeIcon icon={faBoxOpen} />
+                  </div>
+                  <div className="location-product-text">
+                    <span className="location-product-name">{p.productName}</span>
+                    <span className="location-product-meta">
+                      {p.zone} · ({p.coordinates.x.toFixed(1)}, {p.coordinates.y.toFixed(1)}, {p.coordinates.z.toFixed(1)})
+                    </span>
+                  </div>
                 </div>
-                <div className="location-product-text">
-                  <span className="location-product-name">{p.productName}</span>
-                  <span className="location-product-meta">
-                    {p.zone} · ({p.coordinates.x.toFixed(1)}, {p.coordinates.y.toFixed(1)}, {p.coordinates.z.toFixed(1)})
-                  </span>
-                </div>
+                {isThisNavigating ? (
+                  <button
+                    className="location-go-btn cancel"
+                    onClick={handleCancel}
+                    title="Cancel navigation"
+                  >
+                    <FontAwesomeIcon icon={faStop} />
+                    <span>Cancel</span>
+                  </button>
+                ) : (
+                  <button
+                    className="location-go-btn"
+                    onClick={() => handleNavigate(p)}
+                    disabled={disabled || isNavigating}
+                    title={disabled ? 'Connect to robot first' : isNavigating ? 'Navigation in progress' : `Navigate to ${p.productName}`}
+                  >
+                    <FontAwesomeIcon icon={faCrosshairs} />
+                    <span>Go</span>
+                  </button>
+                )}
               </div>
-              <button
-                className={`location-go-btn ${navigatingId === p.productId ? 'navigating' : ''}`}
-                onClick={() => handleGo(p)}
-                disabled={disabled || navigatingId === p.productId}
-                title={disabled ? 'Connect to robot first' : `Navigate to ${p.productName}`}
-              >
-                <FontAwesomeIcon icon={faCrosshairs} />
-                <span>{navigatingId === p.productId ? 'Going...' : 'Go'}</span>
-              </button>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
@@ -194,7 +321,7 @@ export default function Teleop() {
   const { user } = useAuthStatus();
   const [isOwnerTest, setIsOwnerTest] = useState<boolean>(false);
 
-  const { status, connect, disconnect, sendCommand, stopRobot } = useWebRTC({
+  const { status, connect, disconnect, sendCommand, stopRobot, sendDataChannelMessage, addDataChannelListener } = useWebRTC({
     wsUrl,
     robotId,
   });
@@ -1086,12 +1213,10 @@ export default function Teleop() {
               </div>
             ) : controlMode === 'location' ? (
               <LocationPanel
-                onNavigate={(coords) => {
-                  // TODO: integrate with navigation goal API when available
-                  logger.log('Navigate to:', coords);
-                  showToast(`Navigating to (${coords.x.toFixed(2)}, ${coords.y.toFixed(2)}, ${coords.z.toFixed(2)})`, 'info', 3000);
-                }}
+                sendMessage={sendDataChannelMessage}
+                addListener={addDataChannelListener}
                 disabled={!status.connected}
+                showToast={showToast}
               />
             ) : (
               <div className="gamepad-wrapper">
