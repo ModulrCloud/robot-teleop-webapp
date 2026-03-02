@@ -1157,6 +1157,18 @@ html {
   animation: location-pulse 1s ease-in-out infinite;
 }
 
+.location-go-btn.cancel {
+  background: rgba(220, 53, 69, 0.12);
+  border-color: rgba(220, 53, 69, 0.4);
+  color: #dc3545;
+  animation: none;
+}
+
+.location-go-btn.cancel:hover {
+  background: rgba(220, 53, 69, 0.25);
+  border-color: rgba(220, 53, 69, 0.6);
+}
+
 @keyframes location-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
