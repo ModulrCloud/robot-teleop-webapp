@@ -309,8 +309,24 @@ export default function RobotDetail() {
 
     setInsufficientFundsError(null);
 
+    const hourlyRateCredits = robot.hourlyRateCredits ?? 100;
+    const isFreeRobot = hourlyRateCredits === 0;
+    const emailPrefix = user?.email?.split('@')[0] || '';
+    const isOwner =
+      partner &&
+      (partner.cognitoUsername === user?.username ||
+        partner.cognitoUsername === user?.email ||
+        (emailPrefix && partner.cognitoUsername?.includes(emailPrefix)) ||
+        (typeof partner.contactEmail === 'string' &&
+          partner.contactEmail.trim().toLowerCase() === user?.email?.trim().toLowerCase()));
+
+    // Free robots and robot owners are not charged – skip credit check and do not show purchase modal
+    if (isFreeRobot || isOwner) {
+      navigate(`/teleop?robotId=${robot.robotId || robot.id}`);
+      return;
+    }
+
     // Calculate cost for 1 minute (minimum session time)
-    const hourlyRateCredits = robot.hourlyRateCredits || 100;
     const durationMinutes = 1;
     const durationHours = durationMinutes / 60;
     const baseCostCredits = hourlyRateCredits * durationHours;
