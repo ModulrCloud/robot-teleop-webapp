@@ -370,7 +370,15 @@ export default function Teleop() {
         }
         const { data: partner } = await client.models.Partner.get({ id: robot.partnerId });
         if (cancelled) return;
-        setIsOwnerTest(partner?.cognitoUsername === user.username);
+        const emailPrefix = user?.email?.split('@')[0] || '';
+        const owner =
+          partner &&
+          (partner.cognitoUsername === user?.username ||
+            partner.cognitoUsername === user?.email ||
+            (emailPrefix && partner.cognitoUsername?.includes(emailPrefix)) ||
+            (typeof partner.contactEmail === 'string' &&
+              partner.contactEmail.trim().toLowerCase() === user?.email?.trim().toLowerCase()));
+        setIsOwnerTest(!!owner);
       } catch (err) {
         logger.error('Error checking robot owner:', err);
         if (!cancelled) setIsOwnerTest(false);
@@ -378,7 +386,7 @@ export default function Teleop() {
     };
     checkOwner();
     return () => { cancelled = true; };
-  }, [robotId, user?.username]);
+  }, [robotId, user?.username, user?.email]);
 
   useEffect(() => {
     connect();

@@ -311,10 +311,14 @@ export default function RobotDetail() {
 
     const hourlyRateCredits = robot.hourlyRateCredits ?? 100;
     const isFreeRobot = hourlyRateCredits === 0;
+    const emailPrefix = user?.email?.split('@')[0] || '';
     const isOwner =
       partner &&
       (partner.cognitoUsername === user?.username ||
-        (typeof partner.contactEmail === 'string' && partner.contactEmail === user?.email));
+        partner.cognitoUsername === user?.email ||
+        (emailPrefix && partner.cognitoUsername?.includes(emailPrefix)) ||
+        (typeof partner.contactEmail === 'string' &&
+          partner.contactEmail.trim().toLowerCase() === user?.email?.trim().toLowerCase()));
 
     // Free robots and robot owners are not charged – skip credit check and do not show purchase modal
     if (isFreeRobot || isOwner) {
