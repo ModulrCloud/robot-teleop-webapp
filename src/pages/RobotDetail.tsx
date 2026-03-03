@@ -316,7 +316,7 @@ export default function RobotDetail() {
       partner &&
       (partner.cognitoUsername === user?.username ||
         partner.cognitoUsername === user?.email ||
-        (emailPrefix && partner.cognitoUsername?.includes(emailPrefix)) ||
+        (emailPrefix && typeof partner.cognitoUsername === 'string' && partner.cognitoUsername.includes(emailPrefix)) ||
         (typeof partner.contactEmail === 'string' &&
           partner.contactEmail.trim().toLowerCase() === user?.email?.trim().toLowerCase()));
 
