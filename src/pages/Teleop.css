@@ -971,6 +971,28 @@ html {
   border-radius: 10px;
 }
 
+.location-refresh-btn {
+  margin-left: 0.4rem;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.2rem 0.35rem;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.location-refresh-btn:hover:not(:disabled) {
+  color: #ffc107;
+  background: rgba(255, 193, 7, 0.1);
+}
+
+.location-refresh-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .location-search-row {
   padding: 0;
 }
@@ -1007,35 +1029,6 @@ html {
 
 .location-search-box input::placeholder {
   color: rgba(255, 255, 255, 0.3);
-}
-
-.location-zone-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-}
-
-.location-zone-chip {
-  padding: 0.2rem 0.55rem;
-  font-size: 0.7rem;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(255, 255, 255, 0.5);
-  cursor: pointer;
-  transition: all 0.15s;
-  white-space: nowrap;
-}
-
-.location-zone-chip:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.location-zone-chip.active {
-  background: rgba(255, 193, 7, 0.15);
-  border-color: rgba(255, 193, 7, 0.3);
-  color: #ffc107;
 }
 
 .location-product-list {
@@ -1180,6 +1173,42 @@ html {
   font-size: 0.82rem;
   padding: 2rem 0;
   margin-bottom: 1rem;
+}
+
+.location-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.82rem;
+  padding: 2rem 0;
+}
+
+.location-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  color: rgba(220, 53, 69, 0.8);
+  font-size: 0.82rem;
+  padding: 1.5rem 0;
+  text-align: center;
+}
+
+.location-retry-btn {
+  background: rgba(220, 53, 69, 0.12);
+  border: 1px solid rgba(220, 53, 69, 0.3);
+  color: #dc3545;
+  font-size: 0.75rem;
+  padding: 0.3rem 0.8rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.location-retry-btn:hover {
+  background: rgba(220, 53, 69, 0.22);
 }
 
 .coming-soon-message {
