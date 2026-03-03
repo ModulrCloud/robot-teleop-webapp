@@ -4,6 +4,7 @@
  */
 
 export const DATA_CHANNEL_PROTOCOL_VERSION = '0.0';
+export const LOCATION_PROTOCOL_VERSION = '0.1';
 export const NAVIGATION_PROTOCOL_VERSION = '0.4';
 
 export type RobotDataChannelProtocol = 'legacy' | 'modulr-v0';
@@ -44,6 +45,22 @@ export function getMovementMessage(
     return buildDataChannelEnvelope('agent.movement', { forward, turn });
   }
   return buildLegacyMovementMessage(forward, turn);
+}
+
+// ---------------------------------------------------------------------------
+// Location messages (v0.1)
+// ---------------------------------------------------------------------------
+
+export function buildLocationCreateMessage(
+  name: string,
+  position: { x: number; y: number; z?: number },
+  metadata?: Record<string, unknown>,
+): Record<string, unknown> {
+  return buildDataChannelEnvelope(
+    'agent.location.create',
+    { name, position, ...(metadata && { metadata }) },
+    LOCATION_PROTOCOL_VERSION,
+  );
 }
 
 // ---------------------------------------------------------------------------

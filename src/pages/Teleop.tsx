@@ -32,6 +32,8 @@ import {
   faCrosshairs,
   faBoxOpen,
   faStop,
+  faSync,
+  faSpinner,
 } from '@fortawesome/free-solid-svg-icons';
 import { InputBindingsModal } from '../components/InputBindingsModal';
 import { useCustomCommandBindings } from '../hooks/useCustomCommandBindings';
@@ -44,31 +46,19 @@ import { isFeatureEnabled } from '../utils/featureFlags';
 import {
   buildNavigationStartMessage,
   buildNavigationCancelMessage,
+  buildLocationCreateMessage,
   type NavigationResponsePayload,
   type AgentErrorPayload,
 } from '../utils/dataChannelMessageFormat';
+import { fetchProducts, fetchProductPoses, type CactusProduct } from '../utils/cactusApi';
 
 const client = generateClient<Schema>();
 
 interface ProductLocation {
   productId: string;
   productName: string;
-  zone: string;
-  coordinates: { x: number; y: number; z: number };
+  coordinates?: { x: number; y: number; z: number };
 }
-
-const MOCK_PRODUCTS: ProductLocation[] = [
-  { productId: '300082', productName: 'Lemon Dancong Oolong Tea', zone: 'Beverages', coordinates: { x: -1.85, y: 2.31, z: 0.92 } },
-  { productId: '300121', productName: 'Ariel Bio Science 4D', zone: 'Household', coordinates: { x: 3.42, y: -0.78, z: 1.15 } },
-  { productId: '4710036402667', productName: 'Huggies Chip n Dale Wet Wipes', zone: 'Baby Care', coordinates: { x: 5.10, y: 1.44, z: 0.68 } },
-  { productId: '4892218021016', productName: 'Comfort Softener 2L', zone: 'Household', coordinates: { x: 3.88, y: -0.52, z: 0.45 } },
-  { productId: '7394376616228', productName: 'Oat Milk Barista Edition', zone: 'Beverages', coordinates: { x: -0.92, y: 3.65, z: 1.08 } },
-  { productId: '4891133241189', productName: 'Del Monte Ketchup 340g', zone: 'Condiments', coordinates: { x: -2.20, y: 1.07, z: 0.76 } },
-  { productId: '4898828031025', productName: 'Kingsford Corn Starch', zone: 'Condiments', coordinates: { x: 2.05, y: 0.88, z: 1.32 } },
-  { productId: '4901033646080', productName: 'Marusan Almond Milk', zone: 'Beverages', coordinates: { x: -0.65, y: 3.12, z: 0.55 } },
-  { productId: '4898118831106', productName: 'BestBuy Garbage Bags Small', zone: 'Household', coordinates: { x: 4.22, y: -1.10, z: 0.30 } },
-  { productId: '8801062894864', productName: 'Quaker Granola Mixed Fruits', zone: 'Breakfast', coordinates: { x: -2.50, y: 4.10, z: 1.45 } },
-];
 
 interface NavigationState {
   correlationId: string;
@@ -81,19 +71,21 @@ interface LocationPanelProps {
   sendMessage: (msg: Record<string, unknown>) => void;
   addListener: (cb: DataChannelListener) => () => void;
   disabled: boolean;
+  connected: boolean;
   showToast: (message: string, type: ToastType, duration?: number) => void;
 }
 
 const NAV_TIMEOUT_MS = 30_000;
 
-function LocationPanel({ sendMessage, addListener, disabled, showToast }: LocationPanelProps) {
+function LocationPanel({ sendMessage, addListener, disabled, connected, showToast }: LocationPanelProps) {
+  const [products, setProducts] = useState<ProductLocation[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [activeNavigation, setActiveNavigation] = useState<NavigationState | null>(null);
   const activeNavigationRef = useRef<NavigationState | null>(null);
   const navTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const zones = [...new Set(MOCK_PRODUCTS.map(p => p.zone))];
-  const [activeZone, setActiveZone] = useState<string | null>(null);
+  const pushedLocationsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => { activeNavigationRef.current = activeNavigation; }, [activeNavigation]);
 
@@ -101,15 +93,57 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
     if (navTimeoutRef.current) { clearTimeout(navTimeoutRef.current); navTimeoutRef.current = null; }
   }, []);
 
+  const loadProducts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const raw: CactusProduct[] = await fetchProducts();
+      const skus = raw.map(p => p.productId);
+      const poses = await fetchProductPoses(skus);
+      const merged: ProductLocation[] = raw.map(p => ({
+        productId: p.productId,
+        productName: p.productName,
+        coordinates: poses[p.productId] ?? undefined,
+      }));
+      setProducts(merged);
+      pushedLocationsRef.current = new Set();
+      logger.log('[LOC] Loaded', merged.length, 'products from Cactus API');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setError(msg);
+      showToast(`Failed to load products: ${msg}`, 'error', 5000);
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => { loadProducts(); }, [loadProducts]);
+
+  // Push locations to robot simulator when connected and products are available
+  useEffect(() => {
+    if (!connected || products.length === 0) return;
+    let count = 0;
+    for (const p of products) {
+      if (pushedLocationsRef.current.has(p.productId)) continue;
+      if (!p.coordinates) continue;
+      const msg = buildLocationCreateMessage(p.productName, p.coordinates, { sku: p.productId });
+      sendMessage(msg);
+      pushedLocationsRef.current.add(p.productId);
+      count++;
+    }
+    if (count > 0) {
+      logger.log('[LOC] Pushed', count, 'locations to simulator via agent.location.create');
+      showToast(`Registered ${count} location(s) on robot`, 'success', 2000);
+    }
+  }, [connected, products, sendMessage, showToast]);
+
   // Clear navigation state on disconnect
   useEffect(() => {
     if (disabled && activeNavigation) { setActiveNavigation(null); clearNavTimeout(); }
   }, [disabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Clean up timeout on unmount
   useEffect(() => clearNavTimeout, [clearNavTimeout]);
 
-  // Listen for navigation responses and agent errors on the data channel
   useEffect(() => {
     return addListener((msg) => {
       const type = msg.type as string;
@@ -120,7 +154,6 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
       if (type === 'agent.navigation.response') {
         const payload = msg.payload as NavigationResponsePayload | undefined;
         if (!payload) return;
-
         switch (payload.status) {
           case 'started':
             setActiveNavigation(prev => prev ? { ...prev, status: 'started' } : null);
@@ -154,10 +187,10 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
     });
   }, [addListener, showToast, clearNavTimeout]);
 
-  const filtered = MOCK_PRODUCTS.filter(p => {
-    const matchesSearch = !search.trim() || p.productName.toLowerCase().includes(search.toLowerCase()) || p.productId.includes(search);
-    const matchesZone = !activeZone || p.zone === activeZone;
-    return matchesSearch && matchesZone;
+  const filtered = products.filter(p => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return p.productName.toLowerCase().includes(q) || p.productId.includes(search);
   });
 
   const handleNavigate = (product: ProductLocation) => {
@@ -173,7 +206,6 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
     sendMessage(msg);
     logger.log('[NAV] Sent agent.navigation.start:', product.productName);
 
-    // Auto-clear if the robot never responds
     navTimeoutRef.current = setTimeout(() => {
       if (activeNavigationRef.current?.correlationId === corrId) {
         setActiveNavigation(null);
@@ -187,7 +219,6 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
     const msg = buildNavigationCancelMessage();
     sendMessage(msg);
     logger.log('[NAV] Sent agent.navigation.cancel');
-    // Optimistically clear — the robot will acknowledge, but the UI shouldn't block on it
     setActiveNavigation(null);
     clearNavTimeout();
     if (cancelledProduct) showToast(`Cancelled navigation to ${cancelledProduct}`, 'info', 2000);
@@ -201,6 +232,14 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
         <FontAwesomeIcon icon={faMapMarkerAlt} className="location-panel-icon" />
         <span>Product Locations</span>
         <span className="location-panel-count">{filtered.length}</span>
+        <button
+          className="location-refresh-btn"
+          onClick={loadProducts}
+          disabled={loading}
+          title="Fetch new product set"
+        >
+          <FontAwesomeIcon icon={faSync} spin={loading} />
+        </button>
       </div>
 
       <div className="location-search-row">
@@ -215,15 +254,19 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
         </div>
       </div>
 
-      <div className="location-zone-chips">
-        <button className={`location-zone-chip ${!activeZone ? 'active' : ''}`} onClick={() => setActiveZone(null)}>All</button>
-        {zones.map(z => (
-          <button key={z} className={`location-zone-chip ${activeZone === z ? 'active' : ''}`} onClick={() => setActiveZone(activeZone === z ? null : z)}>{z}</button>
-        ))}
-      </div>
-
       <div className="location-product-list">
-        {filtered.length === 0 ? (
+        {loading && products.length === 0 ? (
+          <div className="location-loading">
+            <FontAwesomeIcon icon={faSpinner} spin />
+            <span>Loading products...</span>
+          </div>
+        ) : error && products.length === 0 ? (
+          <div className="location-error">
+            <FontAwesomeIcon icon={faCircleExclamation} />
+            <span>{error}</span>
+            <button className="location-retry-btn" onClick={loadProducts}>Retry</button>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="location-empty">No products found</div>
         ) : (
           filtered.map(p => {
@@ -237,7 +280,8 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
                   <div className="location-product-text">
                     <span className="location-product-name">{p.productName}</span>
                     <span className="location-product-meta">
-                      {p.zone} · ({p.coordinates.x.toFixed(1)}, {p.coordinates.y.toFixed(1)}, {p.coordinates.z.toFixed(1)})
+                      SKU: {p.productId}
+                      {p.coordinates && ` · (${p.coordinates.x.toFixed(1)}, ${p.coordinates.y.toFixed(1)}, ${p.coordinates.z.toFixed(1)})`}
                     </span>
                   </div>
                 </div>
@@ -1224,6 +1268,7 @@ export default function Teleop() {
                 sendMessage={sendDataChannelMessage}
                 addListener={addDataChannelListener}
                 disabled={!status.connected}
+                connected={status.connected}
                 showToast={showToast}
               />
             ) : (
