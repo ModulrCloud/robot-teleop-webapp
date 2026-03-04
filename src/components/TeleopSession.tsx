@@ -457,8 +457,9 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
   }, [robotId, user?.username, user?.email]);
 
   useEffect(() => {
-    if (deferConnect) return; // Embedded panel: connect only when user clicks "Start test session"
-    connect();
+    if (!deferConnect) {
+      connect(); // Full Teleop page: connect on mount
+    }
     return () => {
       stopRobot();
       disconnect();
