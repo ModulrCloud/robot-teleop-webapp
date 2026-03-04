@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
@@ -46,6 +46,10 @@ export default function RobotSetup() {
   const [copiedStartCommand, setCopiedStartCommand] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [robotOnlineStatus, setRobotOnlineStatus] = useState<{ isOnline: boolean; status?: string } | null>(null);
+  const [isLoadingStatus, setIsLoadingStatus] = useState(false);
+  const [secondsUntilNextCheck, setSecondsUntilNextCheck] = useState<number | null>(null);
+  const statusPollGenerationRef = useRef(0);
 
   // Scroll to top when navigating to this page (avoids ending up at bottom from restoration or layout)
   useEffect(() => {
@@ -99,6 +103,55 @@ export default function RobotSetup() {
 
     loadRobot();
   }, [robotUuid]);
+
+  // Load and poll robot online status for "Test your robot" section.
+  // Use a generation ref so a slow response cannot overwrite a fresher one (CodeX P2).
+  useEffect(() => {
+    if (!robotId) {
+      setRobotOnlineStatus(null);
+      setSecondsUntilNextCheck(null);
+      return;
+    }
+
+    const loadRobotStatus = async () => {
+      const generation = ++statusPollGenerationRef.current;
+      setIsLoadingStatus(true);
+      try {
+        const status = await client.queries.getRobotStatusLambda({ robotId });
+        if (generation !== statusPollGenerationRef.current) return; // stale response, ignore
+        if (status.data) {
+          setRobotOnlineStatus({
+            isOnline: status.data.isOnline || false,
+            status: status.data.status || undefined,
+          });
+        } else {
+          setRobotOnlineStatus({ isOnline: false });
+        }
+      } catch (err) {
+        if (generation !== statusPollGenerationRef.current) return;
+        logger.error('Error loading robot status:', err);
+        setRobotOnlineStatus({ isOnline: false });
+      } finally {
+        if (generation === statusPollGenerationRef.current) {
+          setIsLoadingStatus(false);
+          setSecondsUntilNextCheck(10);
+        }
+      }
+    };
+
+    loadRobotStatus();
+    const interval = setInterval(loadRobotStatus, 10000);
+    return () => clearInterval(interval);
+  }, [robotId]);
+
+  // Countdown for "next check in X seconds"
+  useEffect(() => {
+    if (secondsUntilNextCheck === null) return;
+    const id = setInterval(() => {
+      setSecondsUntilNextCheck((prev) => (prev === null ? null : Math.max(0, prev - 1)));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [robotId, secondsUntilNextCheck]);
 
   const handleRegenerateToken = async () => {
     if (!robotUuid) return;
@@ -382,11 +435,31 @@ export default function RobotSetup() {
               <p className="section-description">
                 Once your robot is connected and online, start a teleoperation session to verify video and controls. As the owner, testing your own robot is free.
               </p>
+              <p className="url-note" style={{ marginTop: '0.5rem' }}>
+                <span
+                  className="robot-status-dot"
+                  style={{
+                    backgroundColor:
+                      isLoadingStatus ? '#888' : robotOnlineStatus?.isOnline ? '#ffb700' : robotOnlineStatus?.status === 'pending' ? '#ff9800' : '#666',
+                  }}
+                  aria-hidden
+                />
+                {' '}
+                {isLoadingStatus
+                  ? 'Checking...'
+                  : robotOnlineStatus?.status === 'pending'
+                    ? `Pending. Checking again in ${secondsUntilNextCheck ?? 10} seconds...`
+                    : robotOnlineStatus?.isOnline
+                      ? secondsUntilNextCheck !== null
+                        ? `Robot online. Next check in ${secondsUntilNextCheck} seconds...`
+                        : 'Robot online'
+                      : `Offline. Checking again in ${secondsUntilNextCheck ?? 10} seconds...`}
+              </p>
               <button
                 type="button"
                 className="btn-primary"
                 onClick={() => robotId && navigate(`/teleop?robotId=${robotId}`)}
-                disabled={!robotId}
+                disabled={!robotId || !robotOnlineStatus?.isOnline}
                 style={{ marginTop: '0.75rem' }}
               >
                 <FontAwesomeIcon icon={faPlay} />

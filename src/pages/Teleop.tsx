@@ -395,14 +395,20 @@ export default function Teleop() {
   }, [robotId, stopRobot]);
 
   // Detect if current user is the robot owner (owner test = no charge, show "Test mode")
+  // Align with backend: match partner cognitoUsername/contactEmail to username, email, and Cognito sub (userId)
   useEffect(() => {
-    if (!robotId || !user?.username) {
+    if (!robotId) {
       setIsOwnerTest(false);
       return;
     }
     let cancelled = false;
     const checkOwner = async () => {
       try {
+        const { getCurrentUser } = await import('aws-amplify/auth');
+        const currentUser = await getCurrentUser();
+        const sub = currentUser?.userId;
+        if (cancelled) return;
+
         const { data: robots } = await client.models.Robot.list({
           filter: { robotId: { eq: robotId } },
           limit: 1,
@@ -419,10 +425,11 @@ export default function Teleop() {
           partner &&
           (partner.cognitoUsername === user?.username ||
             partner.cognitoUsername === user?.email ||
+            (sub && partner.cognitoUsername === sub) ||
             (emailPrefix && partner.cognitoUsername?.includes(emailPrefix)) ||
             (typeof partner.contactEmail === 'string' &&
               partner.contactEmail.trim().toLowerCase() === user?.email?.trim().toLowerCase()));
-        setIsOwnerTest(!!owner);
+        if (!cancelled) setIsOwnerTest(!!owner);
       } catch (err) {
         logger.error('Error checking robot owner:', err);
         if (!cancelled) setIsOwnerTest(false);
