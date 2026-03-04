@@ -3,12 +3,11 @@ import { randomUUID } from 'crypto';
 const PROTOCOL_VERSION = '0.0';
 
 /**
- * Builds an agent.ping message per Modulr Agent Interface Specification.
- * @see interface-spec/modulr-agent-interface-spec-main/schemas/agent/v0/ping.json
+ * Builds a signaling.ping message (signaling keepalive/liveness).
  */
-export function buildAgentPingMessage(): { type: string; version: string; id: string; timestamp: string } {
+export function buildSignalingPingMessage(): { type: string; version: string; id: string; timestamp: string } {
   return {
-    type: 'agent.ping',
+    type: 'signaling.ping',
     version: PROTOCOL_VERSION,
     id: randomUUID(),
     timestamp: new Date().toISOString(),
