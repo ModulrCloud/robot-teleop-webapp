@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
@@ -49,6 +49,7 @@ export default function RobotSetup() {
   const [robotOnlineStatus, setRobotOnlineStatus] = useState<{ isOnline: boolean; status?: string } | null>(null);
   const [isLoadingStatus, setIsLoadingStatus] = useState(false);
   const [secondsUntilNextCheck, setSecondsUntilNextCheck] = useState<number | null>(null);
+  const statusPollGenerationRef = useRef(0);
 
   // Scroll to top when navigating to this page (avoids ending up at bottom from restoration or layout)
   useEffect(() => {
@@ -103,17 +104,21 @@ export default function RobotSetup() {
     loadRobot();
   }, [robotUuid]);
 
-  // Load and poll robot online status for "Test your robot" section
+  // Load and poll robot online status for "Test your robot" section.
+  // Use a generation ref so a slow response cannot overwrite a fresher one (CodeX P2).
   useEffect(() => {
+    if (!robotId) {
+      setRobotOnlineStatus(null);
+      setSecondsUntilNextCheck(null);
+      return;
+    }
+
     const loadRobotStatus = async () => {
-      if (!robotId) {
-        setRobotOnlineStatus(null);
-        setSecondsUntilNextCheck(null);
-        return;
-      }
+      const generation = ++statusPollGenerationRef.current;
       setIsLoadingStatus(true);
       try {
         const status = await client.queries.getRobotStatusLambda({ robotId });
+        if (generation !== statusPollGenerationRef.current) return; // stale response, ignore
         if (status.data) {
           setRobotOnlineStatus({
             isOnline: status.data.isOnline || false,
@@ -123,11 +128,14 @@ export default function RobotSetup() {
           setRobotOnlineStatus({ isOnline: false });
         }
       } catch (err) {
+        if (generation !== statusPollGenerationRef.current) return;
         logger.error('Error loading robot status:', err);
         setRobotOnlineStatus({ isOnline: false });
       } finally {
-        setIsLoadingStatus(false);
-        setSecondsUntilNextCheck(10);
+        if (generation === statusPollGenerationRef.current) {
+          setIsLoadingStatus(false);
+          setSecondsUntilNextCheck(10);
+        }
       }
     };
 
