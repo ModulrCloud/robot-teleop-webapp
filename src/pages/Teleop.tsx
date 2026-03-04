@@ -71,13 +71,12 @@ interface LocationPanelProps {
   sendMessage: (msg: Record<string, unknown>) => void;
   addListener: (cb: DataChannelListener) => () => void;
   disabled: boolean;
-  connected: boolean;
   showToast: (message: string, type: ToastType, duration?: number) => void;
 }
 
 const NAV_TIMEOUT_MS = 30_000;
 
-function LocationPanel({ sendMessage, addListener, disabled, connected, showToast }: LocationPanelProps) {
+function LocationPanel({ sendMessage, addListener, disabled, showToast }: LocationPanelProps) {
   const [products, setProducts] = useState<ProductLocation[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +84,6 @@ function LocationPanel({ sendMessage, addListener, disabled, connected, showToas
   const [activeNavigation, setActiveNavigation] = useState<NavigationState | null>(null);
   const activeNavigationRef = useRef<NavigationState | null>(null);
   const navTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pushedLocationsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => { activeNavigationRef.current = activeNavigation; }, [activeNavigation]);
 
@@ -98,15 +96,11 @@ function LocationPanel({ sendMessage, addListener, disabled, connected, showToas
     setError(null);
     try {
       const raw: CactusProduct[] = await fetchProducts();
-      const skus = raw.map(p => p.productId);
-      const poses = await fetchProductPoses(skus);
       const merged: ProductLocation[] = raw.map(p => ({
         productId: p.productId,
         productName: p.productName,
-        coordinates: poses[p.productId] ?? undefined,
       }));
       setProducts(merged);
-      pushedLocationsRef.current = new Set();
       logger.log('[LOC] Loaded', merged.length, 'products from Cactus API');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -118,24 +112,6 @@ function LocationPanel({ sendMessage, addListener, disabled, connected, showToas
   }, [showToast]);
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
-
-  // Push locations to robot simulator when connected and products are available
-  useEffect(() => {
-    if (!connected || products.length === 0) return;
-    let count = 0;
-    for (const p of products) {
-      if (pushedLocationsRef.current.has(p.productId)) continue;
-      if (!p.coordinates) continue;
-      const msg = buildLocationCreateMessage(p.productName, p.coordinates, { sku: p.productId });
-      sendMessage(msg);
-      pushedLocationsRef.current.add(p.productId);
-      count++;
-    }
-    if (count > 0) {
-      logger.log('[LOC] Pushed', count, 'locations to simulator via agent.location.create');
-      showToast(`Registered ${count} location(s) on robot`, 'success', 2000);
-    }
-  }, [connected, products, sendMessage, showToast]);
 
   // Clear navigation state on disconnect
   useEffect(() => {
@@ -193,25 +169,49 @@ function LocationPanel({ sendMessage, addListener, disabled, connected, showToas
     return p.productName.toLowerCase().includes(q) || p.productId.includes(search);
   });
 
-  const handleNavigate = (product: ProductLocation) => {
-    const msg = buildNavigationStartMessage(product.productName);
-    const corrId = msg.id as string;
+  const handleNavigate = async (product: ProductLocation) => {
     clearNavTimeout();
     setActiveNavigation({
-      correlationId: corrId,
+      correlationId: '',
       productId: product.productId,
       productName: product.productName,
       status: 'pending',
     });
-    sendMessage(msg);
-    logger.log('[NAV] Sent agent.navigation.start:', product.productName);
 
-    navTimeoutRef.current = setTimeout(() => {
-      if (activeNavigationRef.current?.correlationId === corrId) {
+    try {
+      const poses = await fetchProductPoses([product.productId]);
+      const pose = poses[product.productId];
+      if (!pose) {
         setActiveNavigation(null);
-        showToast('Navigation timed out — no response from robot', 'warning', 4000);
+        showToast(`No pose available for ${product.productName}`, 'warning', 3000);
+        return;
       }
-    }, NAV_TIMEOUT_MS);
+
+      setProducts(prev => prev.map(p =>
+        p.productId === product.productId ? { ...p, coordinates: pose } : p
+      ));
+
+      const locMsg = buildLocationCreateMessage(product.productName, pose, { sku: product.productId });
+      sendMessage(locMsg);
+      logger.log('[LOC] Pushed fresh pose for', product.productName, pose);
+
+      const navMsg = buildNavigationStartMessage(product.productName);
+      const corrId = navMsg.id as string;
+      setActiveNavigation(prev => prev ? { ...prev, correlationId: corrId } : null);
+      sendMessage(navMsg);
+      logger.log('[NAV] Sent agent.navigation.start:', product.productName);
+
+      navTimeoutRef.current = setTimeout(() => {
+        if (activeNavigationRef.current?.correlationId === corrId) {
+          setActiveNavigation(null);
+          showToast('Navigation timed out — no response from robot', 'warning', 4000);
+        }
+      }, NAV_TIMEOUT_MS);
+    } catch (err) {
+      setActiveNavigation(null);
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      showToast(`Failed to fetch pose: ${msg}`, 'error', 4000);
+    }
   };
 
   const handleCancel = () => {
@@ -1268,7 +1268,6 @@ export default function Teleop() {
                 sendMessage={sendDataChannelMessage}
                 addListener={addDataChannelListener}
                 disabled={!status.connected}
-                connected={status.connected}
                 showToast={showToast}
               />
             ) : (
