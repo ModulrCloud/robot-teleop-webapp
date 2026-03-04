@@ -51,7 +51,7 @@ const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
 // Types
 // ---------------------------------
 
-type MessageType = 'register' | 'pki-response' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong' | 'agent.ping' | 'agent.pong' | 'signalling.capabilities';
+type MessageType = 'register' | 'pki-response' | 'offer' | 'answer' | 'ice-candidate' | 'takeover' | 'candidate' | 'monitor' | 'ping' | 'pong' | 'signaling.ping' | 'signaling.pong' | 'signalling.capabilities';
 type Target = 'robot' | 'client';
 
 // ---------------------------------
@@ -440,7 +440,7 @@ async function verifyCognitoJWT(token: string | null | undefined): Promise<Claim
 /**
  * Extracts and normalizes the message type from a raw message.
  * Maps legacy 'candidate' to 'ice-candidate' for backward compatibility.
- * Includes ping/pong and agent.ping/agent.pong for keepalive and liveness.
+ * Includes ping/pong and signaling.ping/signaling.pong for keepalive and liveness.
  */
 function extractMessageType(raw: RawMessage): MessageType | undefined {
   if (typeof raw.type !== 'string') return undefined;
@@ -457,8 +457,8 @@ function extractMessageType(raw: RawMessage): MessageType | undefined {
     t === 'monitor' ||
     t === 'ping' ||
     t === 'pong' ||
-    t === 'agent.ping' ||
-    t === 'agent.pong' ||
+    t === 'signaling.ping' ||
+    t === 'signaling.pong' ||
     t === 'signalling.capabilities'
   ) {
     return t as MessageType;
@@ -615,7 +615,7 @@ function extractClientConnectionId(
 /**
  * Maps new protocol (Modulr Interface Spec) messages to internal InboundMessage format.
  * Used for signalling.register, signalling.offer, signalling.answer, signalling.ice_candidate,
- * and agent.ping/agent.pong (pass-through for keepalive/liveness).
+ * and signaling.ping/signaling.pong (pass-through for keepalive/liveness).
  * Returns null for unknown new-protocol types.
  *
  * Field mappings per plan:
@@ -698,8 +698,8 @@ export function normalizeNewProtocol(raw: RawMessage): InboundMessage | null {
       };
     }
 
-    case 'agent.ping':
-    case 'agent.pong':
+    case 'signaling.ping':
+    case 'signaling.pong':
       // Pass-through: no field mapping needed; used for keepalive/liveness (websocket-keepalive Lambda)
       return { type: typeStr as MessageType };
 
@@ -2920,8 +2920,8 @@ export async function handler(
     userId: claims?.sub,
   });
 
-  // PKI-pending connections may only send ready, register, pki-response, or agent.pong until auth completes
-  if (claims?.pkiPending && type !== 'ready' && type !== 'register' && type !== 'pki-response' && type !== 'agent.pong') {
+  // PKI-pending connections may only send ready, register, pki-response, or signaling.pong until auth completes
+  if (claims?.pkiPending && type !== 'ready' && type !== 'register' && type !== 'pki-response' && type !== 'signaling.pong') {
     console.warn('[PKI_PENDING_RESTRICTION]', { connectionId, type });
     return errorResponse(401, 'Complete PKI authentication first');
   }
@@ -2978,8 +2978,8 @@ export async function handler(
     return handleSignal(claims, event, msg);
   }
 
-  // Handle agent.pong (Modulr interface spec) - record lastPongAt for liveness checks
-  if (type === 'agent.pong') {
+  // Handle signaling.pong - record lastPongAt for liveness checks
+  if (type === 'signaling.pong') {
     const rawBody = event.body ? JSON.parse(event.body) : {};
     const now = Date.now();
     try {
@@ -3002,7 +3002,7 @@ export async function handler(
         error: err instanceof Error ? err.message : String(err),
       });
     }
-    return successResponse({ type: 'agent.pong-acknowledged' });
+    return successResponse({ type: 'signaling.pong-acknowledged' });
   }
 
   // Handle legacy pong - also record lastPongAt for backward compatibility
@@ -3043,13 +3043,13 @@ export async function handler(
     }
   }
 
-  // Handle ping / agent.ping - respond with agent.pong (Modulr interface spec)
-  if (type === 'ping' || type === 'agent.ping') {
+  // Handle ping / signaling.ping - respond with signaling.pong
+  if (type === 'ping' || type === 'signaling.ping') {
     const rawBody = event.body ? JSON.parse(event.body) : {};
     const pingId = rawBody.id ?? rawBody.timestamp ?? String(Date.now());
     try {
       await postTo(connectionId, {
-        type: 'agent.pong',
+        type: 'signaling.pong',
         version: '0.0',
         id: `${pingId}-pong`,
         correlationId: pingId,

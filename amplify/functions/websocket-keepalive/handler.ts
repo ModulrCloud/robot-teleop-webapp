@@ -1,6 +1,6 @@
 import { DynamoDBClient, ScanCommand, type ScanCommandOutput, type AttributeValue } from '@aws-sdk/client-dynamodb';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
-import { buildAgentPingMessage } from '../shared/agent-protocol';
+import { buildSignalingPingMessage } from '../shared/agent-protocol';
 
 const CONN_TABLE = process.env.CONN_TABLE!;
 const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
@@ -48,13 +48,12 @@ async function getRobotConnectionIds(): Promise<Set<string>> {
 }
 
 /**
- * Sends an agent.ping message to a WebSocket connection to keep it alive.
- * Uses the Modulr Agent Interface Specification format (agent.ping).
+ * Sends a signaling.ping message to a WebSocket connection to keep it alive.
  * Returns true if ping was successful, false otherwise.
  */
 async function sendKeepalivePing(connectionId: string): Promise<boolean> {
   try {
-    const message = buildAgentPingMessage();
+    const message = buildSignalingPingMessage();
     await mgmt.send(
       new PostToConnectionCommand({
         ConnectionId: connectionId,
@@ -76,8 +75,7 @@ async function sendKeepalivePing(connectionId: string): Promise<boolean> {
 }
 
 /**
- * Keepalive Lambda that runs on schedule to send agent.ping messages to all active WebSocket connections.
- * Uses the Modulr Agent Interface Specification format for compatibility with the robot agent.
+ * Keepalive Lambda that runs on schedule to send signaling.ping messages to all active WebSocket connections.
  * This prevents AWS API Gateway from closing connections due to 10-minute idle timeout.
  *
  * Runs every 5 minutes to ensure connections stay alive before the 10-minute timeout.
