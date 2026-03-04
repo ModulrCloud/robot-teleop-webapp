@@ -12,11 +12,11 @@ import {
   faInfoCircle,
   faKey,
   faSyncAlt,
-  faPlay
 } from '@fortawesome/free-solid-svg-icons';
 import outputs from '../../amplify_outputs.json';
 import './RobotSetup.css';
 import { logger } from '../utils/logger';
+import { TeleopSession } from '../components/TeleopSession';
 
 const client = generateClient<Schema>();
 
@@ -435,36 +435,39 @@ export default function RobotSetup() {
               <p className="section-description">
                 Once your robot is connected and online, start a teleoperation session to verify video and controls. As the owner, testing your own robot is free.
               </p>
-              <p className="url-note" style={{ marginTop: '0.5rem' }}>
-                <span
-                  className="robot-status-dot"
-                  style={{
-                    backgroundColor:
-                      isLoadingStatus ? '#888' : robotOnlineStatus?.isOnline ? '#ffb700' : robotOnlineStatus?.status === 'pending' ? '#ff9800' : '#666',
-                  }}
-                  aria-hidden
+              {robotId && (
+              <div className="robot-setup-embedded-teleop">
+                <TeleopSession
+                  robotId={robotId}
+                  embedded
+                  deferConnect
+                  connectDisabled={!robotOnlineStatus?.isOnline}
+                  onEndSession={() => {}}
+                  overlayStatus={
+                    <>
+                      <span
+                        className="robot-status-dot"
+                        style={{
+                          backgroundColor:
+                            isLoadingStatus ? '#888' : robotOnlineStatus?.isOnline ? '#ffb700' : robotOnlineStatus?.status === 'pending' ? '#ff9800' : '#666',
+                        }}
+                        aria-hidden
+                      />
+                      {' '}
+                      {isLoadingStatus
+                        ? 'Checking...'
+                        : robotOnlineStatus?.status === 'pending'
+                          ? `Pending. Checking again in ${secondsUntilNextCheck ?? 10} seconds...`
+                          : robotOnlineStatus?.isOnline
+                            ? secondsUntilNextCheck !== null
+                              ? `Robot online. Next check in ${secondsUntilNextCheck} seconds...`
+                              : 'Robot online'
+                            : `Offline. Checking again in ${secondsUntilNextCheck ?? 10} seconds...`}
+                    </>
+                  }
                 />
-                {' '}
-                {isLoadingStatus
-                  ? 'Checking...'
-                  : robotOnlineStatus?.status === 'pending'
-                    ? `Pending. Checking again in ${secondsUntilNextCheck ?? 10} seconds...`
-                    : robotOnlineStatus?.isOnline
-                      ? secondsUntilNextCheck !== null
-                        ? `Robot online. Next check in ${secondsUntilNextCheck} seconds...`
-                        : 'Robot online'
-                      : `Offline. Checking again in ${secondsUntilNextCheck ?? 10} seconds...`}
-              </p>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => robotId && navigate(`/teleop?robotId=${robotId}`)}
-                disabled={!robotId || !robotOnlineStatus?.isOnline}
-                style={{ marginTop: '0.75rem' }}
-              >
-                <FontAwesomeIcon icon={faPlay} />
-                {' '}Start test session
-              </button>
+              </div>
+            )}
             </div>
 
             <div className="setup-actions">
