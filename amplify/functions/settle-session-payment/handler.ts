@@ -12,6 +12,7 @@ const ROBOT_TABLE_NAME = process.env.ROBOT_TABLE_NAME!;
 const PARTNER_TABLE_NAME = process.env.PARTNER_TABLE_NAME!;
 const PLATFORM_SETTINGS_TABLE = process.env.PLATFORM_SETTINGS_TABLE!;
 const PARTNER_PAYOUT_TABLE = process.env.PARTNER_PAYOUT_TABLE!;
+const PLATFORM_REVENUE_ENTRY_TABLE = process.env.PLATFORM_REVENUE_ENTRY_TABLE!;
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 
 const DEFAULT_PLATFORM_MARKUP_PERCENT = 30;
@@ -188,6 +189,23 @@ export const handler = async (event: { sessionId?: string; arguments?: { session
         Item: payoutItem,
       })
     );
+
+    // Platform revenue ledger (datetime, type, amount) for dashboards
+    if (PLATFORM_REVENUE_ENTRY_TABLE && Math.round(platformFeeCredits) > 0) {
+      await docClient.send(
+        new PutCommand({
+          TableName: PLATFORM_REVENUE_ENTRY_TABLE,
+          Item: {
+            id: randomUUID(),
+            createdAt: new Date().toISOString(),
+            transactionType: 'session_markup',
+            amountCredits: Math.round(platformFeeCredits),
+            referenceId: sessionId,
+            description: `Session ${sessionId} (${robotName || robotId})`,
+          },
+        })
+      );
+    }
 
     await docClient.send(
       new UpdateCommand({

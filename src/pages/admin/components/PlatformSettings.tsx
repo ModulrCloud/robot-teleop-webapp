@@ -39,6 +39,12 @@ export const PlatformSettings = () => {
   const [loadingWarningSetting, setLoadingWarningSetting] = useState(false);
   const [savingWarningSetting, setSavingWarningSetting] = useState(false);
   const [warningSettingId, setWarningSettingId] = useState<string | null>(null);
+
+  // Modulr certification fee (credits) – default 1000 to reduce spam
+  const [modulrCertificationFeeCredits, setModulrCertificationFeeCredits] = useState<number>(1000);
+  const [loadingCertificationFee, setLoadingCertificationFee] = useState(false);
+  const [savingCertificationFee, setSavingCertificationFee] = useState(false);
+  const [certificationFeeSettingId, setCertificationFeeSettingId] = useState<string | null>(null);
   
   // Credit Tiers
   const [creditTiers, setCreditTiers] = useState<CreditTier[]>([]);
@@ -209,6 +215,77 @@ export const PlatformSettings = () => {
       setError("An error occurred while saving low credits warning setting");
     } finally {
       setSavingWarningSetting(false);
+    }
+  };
+
+  const loadModulrCertificationFee = async () => {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
+      return;
+    }
+    setLoadingCertificationFee(true);
+    try {
+      const { data: settings } = await client.models.PlatformSettings.list({
+        filter: { settingKey: { eq: 'modulrCertificationFeeCredits' } },
+      });
+      if (settings && settings.length > 0) {
+        const val = parseInt(settings[0].settingValue || '1000', 10);
+        setModulrCertificationFeeCredits(Number.isNaN(val) ? 1000 : val);
+        setCertificationFeeSettingId(settings[0].id);
+      } else {
+        setModulrCertificationFeeCredits(1000);
+      }
+    } catch (err) {
+      logger.error("Error loading Modulr certification fee setting:", err);
+    } finally {
+      setLoadingCertificationFee(false);
+    }
+  };
+
+  const saveModulrCertificationFee = async () => {
+    if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
+      return;
+    }
+    setSavingCertificationFee(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const value = Math.max(0, Math.round(modulrCertificationFeeCredits));
+      const now = new Date().toISOString();
+      if (certificationFeeSettingId) {
+        const { errors } = await client.models.PlatformSettings.update({
+          id: certificationFeeSettingId,
+          settingValue: value.toString(),
+          updatedBy: user.username || user.email || 'admin',
+          updatedAt: now,
+        });
+        if (errors) {
+          setError("Failed to update Modulr certification fee");
+        } else {
+          setSuccess("Modulr certification fee updated.");
+          setTimeout(() => setSuccess(null), 3000);
+          loadModulrCertificationFee();
+        }
+      } else {
+        const { errors } = await client.models.PlatformSettings.create({
+          settingKey: 'modulrCertificationFeeCredits',
+          settingValue: value.toString(),
+          description: 'Fee in credits for partners to request Modulr Approved certification (default 1000 to reduce spam)',
+          updatedBy: user.username || user.email || 'admin',
+          updatedAt: now,
+        });
+        if (errors) {
+          setError("Failed to create Modulr certification fee setting");
+        } else {
+          setSuccess("Modulr certification fee saved.");
+          setTimeout(() => setSuccess(null), 3000);
+          loadModulrCertificationFee();
+        }
+      }
+    } catch (err) {
+      logger.error("Error saving Modulr certification fee:", err);
+      setError("An error occurred while saving the certification fee");
+    } finally {
+      setSavingCertificationFee(false);
     }
   };
 
@@ -590,6 +667,7 @@ export const PlatformSettings = () => {
     if (user?.email && hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       loadPlatformMarkup();
       loadLowCreditsWarningSetting();
+      loadModulrCertificationFee();
       loadCreditTiers();
     }
   }, [user?.email]);
@@ -733,6 +811,51 @@ export const PlatformSettings = () => {
                 <>
                   <FontAwesomeIcon icon={faSave} />
                   <span>Save Warning Threshold</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Modulr certification fee (credits) */}
+        <div className="platform-setting-card">
+          <div className="setting-header-row">
+            <div>
+              <h3>Modulr Certification Fee (credits)</h3>
+              <p className="setting-description">
+                Fee partners pay to request Modulr Approved certification. Default 1000 to reduce spam; can be increased.
+              </p>
+            </div>
+          </div>
+          <div className="setting-control-row">
+            <label className="setting-label">
+              <span>Certification fee (credits)</span>
+              <div className="input-with-spinner">
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={modulrCertificationFeeCredits}
+                  onChange={(e) => setModulrCertificationFeeCredits(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  disabled={loadingCertificationFee || savingCertificationFee}
+                  className="markup-input"
+                />
+              </div>
+            </label>
+            <button
+              className="admin-button"
+              onClick={saveModulrCertificationFee}
+              disabled={loadingCertificationFee || savingCertificationFee}
+            >
+              {savingCertificationFee ? (
+                <>
+                  <FontAwesomeIcon icon={faCog} spin />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <FontAwesomeIcon icon={faSave} />
+                  <span>Save Certification Fee</span>
                 </>
               )}
             </button>
