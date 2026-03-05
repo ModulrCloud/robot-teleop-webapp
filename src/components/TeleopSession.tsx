@@ -88,6 +88,8 @@ interface LocationPanelProps {
 }
 
 const NAV_TIMEOUT_MS = 30_000;
+const NAV_ACTIVE_TIMEOUT_MS = 120_000;
+const LOC_REGISTER_DELAY_MS = 200;
 
 function LocationPanel({ sendMessage, addListener, disabled, showToast }: LocationPanelProps) {
   const [products, setProducts] = useState<ProductLocation[]>([]);
@@ -144,10 +146,19 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
         const payload = msg.payload as NavigationResponsePayload | undefined;
         if (!payload) return;
         switch (payload.status) {
-          case 'started':
+          case 'started': {
             setActiveNavigation(prev => prev ? { ...prev, status: 'started' } : null);
+            clearNavTimeout();
+            const startedCorrId = correlationId;
+            navTimeoutRef.current = setTimeout(() => {
+              if (activeNavigationRef.current?.correlationId === startedCorrId) {
+                setActiveNavigation(null);
+                showToast('Navigation timed out — robot may still be moving', 'warning', 4000);
+              }
+            }, NAV_ACTIVE_TIMEOUT_MS);
             showToast(`Navigating to ${payload.name}...`, 'info', 3000);
             break;
+          }
           case 'completed':
             setActiveNavigation(null);
             clearNavTimeout();
@@ -207,6 +218,8 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
       const locMsg = buildLocationCreateMessage(product.productName, pose, { sku: product.productId });
       sendMessage(locMsg);
       logger.log('[LOC] Pushed fresh pose for', product.productName, pose);
+
+      await new Promise(resolve => setTimeout(resolve, LOC_REGISTER_DELAY_MS));
 
       const navMsg = buildNavigationStartMessage(product.productName);
       const corrId = navMsg.id as string;
