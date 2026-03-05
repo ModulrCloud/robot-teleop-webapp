@@ -4,17 +4,20 @@
  */
 
 export const DATA_CHANNEL_PROTOCOL_VERSION = '0.0';
+export const LOCATION_PROTOCOL_VERSION = '0.1';
+export const NAVIGATION_PROTOCOL_VERSION = '0.4';
 
 export type RobotDataChannelProtocol = 'legacy' | 'modulr-v0';
 
 /** Builds an envelope for data-channel messages (type, version, id, timestamp, payload). */
 export function buildDataChannelEnvelope(
   messageType: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  version: string = DATA_CHANNEL_PROTOCOL_VERSION
 ): Record<string, unknown> {
   return {
     type: messageType,
-    version: DATA_CHANNEL_PROTOCOL_VERSION,
+    version,
     id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
     payload,
@@ -42,4 +45,54 @@ export function getMovementMessage(
     return buildDataChannelEnvelope('agent.movement', { forward, turn });
   }
   return buildLegacyMovementMessage(forward, turn);
+}
+
+// ---------------------------------------------------------------------------
+// Location messages (v0.1)
+// ---------------------------------------------------------------------------
+
+export function buildLocationCreateMessage(
+  name: string,
+  position: { x: number; y: number; z?: number },
+  metadata?: Record<string, unknown>,
+): Record<string, unknown> {
+  return buildDataChannelEnvelope(
+    'agent.location.create',
+    { name, position, ...(metadata && { metadata }) },
+    LOCATION_PROTOCOL_VERSION,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Navigation messages (v0.4)
+// ---------------------------------------------------------------------------
+
+export function buildNavigationStartMessage(locationName: string): Record<string, unknown> {
+  return buildDataChannelEnvelope(
+    'agent.navigation.start',
+    { name: locationName },
+    NAVIGATION_PROTOCOL_VERSION,
+  );
+}
+
+export function buildNavigationCancelMessage(): Record<string, unknown> {
+  return buildDataChannelEnvelope(
+    'agent.navigation.cancel',
+    {},
+    NAVIGATION_PROTOCOL_VERSION,
+  );
+}
+
+export type NavigationStatus = 'started' | 'completed' | 'cancelled' | 'failed';
+
+export interface NavigationResponsePayload {
+  status: NavigationStatus;
+  name: string;
+  message?: string;
+}
+
+export interface AgentErrorPayload {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
 }

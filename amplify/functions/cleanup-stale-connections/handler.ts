@@ -8,13 +8,13 @@ import {
   GetItemCommand,
 } from '@aws-sdk/client-dynamodb';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand, DeleteConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
-import { buildAgentPingMessage } from '../shared/agent-protocol';
+import { buildSignalingPingMessage } from '../shared/agent-protocol';
 
 const CONN_TABLE = process.env.CONN_TABLE!;
 const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
 const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!;
-// Set PONG_CHECK_ENABLED=true to require agent.pong for robot liveness (agent must support it)
+// Set PONG_CHECK_ENABLED=true to require signaling.pong for robot liveness (agent must support it)
 const PONG_CHECK_ENABLED = process.env.PONG_CHECK_ENABLED === 'true';
 
 const db = new DynamoDBClient({});
@@ -223,11 +223,11 @@ async function collectStaleConnections(thresholdTimestamp: number): Promise<Stal
 }
 
 /**
- * Sends agent.ping to a connection. Returns true if sent successfully, false if connection is dead (GoneException).
+ * Sends signaling.ping to a connection. Returns true if sent successfully, false if connection is dead (GoneException).
  */
-async function sendAgentPing(connectionId: string): Promise<boolean> {
+async function sendSignalingPing(connectionId: string): Promise<boolean> {
   try {
-    const message = buildAgentPingMessage();
+    const message = buildSignalingPingMessage();
     await mgmt.send(
       new PostToConnectionCommand({
         ConnectionId: connectionId,
@@ -488,9 +488,9 @@ export const handler = async (): Promise<{ statusCode: number; body: string }> =
       const toCleanup: StaleConnection[] = [];
       let pingSentAt = Date.now();
 
-      // Send agent.ping to each connection in batch
+      // Send signaling.ping to each connection in batch
       const results = await Promise.allSettled(
-        batch.map((conn) => sendAgentPing(conn.connectionId))
+        batch.map((conn) => sendSignalingPing(conn.connectionId))
       );
 
       const successfulPings: StaleConnection[] = [];
@@ -527,7 +527,7 @@ export const handler = async (): Promise<{ statusCode: number; body: string }> =
       for (let retry = 0; retry < PONG_RETRY_COUNT && retryCandidates.length > 0; retry++) {
         pingSentAt = Date.now();
         const retryResults = await Promise.allSettled(
-          retryCandidates.map((c) => sendAgentPing(c.connectionId))
+          retryCandidates.map((c) => sendSignalingPing(c.connectionId))
         );
         const stillPingable: StaleConnection[] = [];
         for (let i = 0; i < retryCandidates.length; i++) {

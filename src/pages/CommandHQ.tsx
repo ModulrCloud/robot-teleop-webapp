@@ -55,6 +55,7 @@ import {
   faMapMarkedAlt,
   faCrosshairs,
   faArrowsAlt,
+  faBarcode,
 } from "@fortawesome/free-solid-svg-icons";
 import type {
   Organization,
@@ -94,7 +95,24 @@ import {
   getMockLocationMappingsForOrg,
   getMockKeyboardMappingsForOrg,
 } from "../mocks/organization";
+import type { SimulationNodeDatum, SimulationLinkDatum } from "d3-force";
 import "./CommandHQ.css";
+
+/** Node shape used by d3-force in BubbleView (id required for forceLink; x, y set by simulation). */
+interface CommandHQSimNode extends SimulationNodeDatum {
+  id: string;
+  type: string;
+  r: number;
+  label: string;
+  sub: string;
+  color: string;
+  glow: string;
+}
+
+/** Link shape for BubbleView; source/target may be string (before sim) or CommandHQSimNode (after). */
+interface CommandHQLink extends SimulationLinkDatum<CommandHQSimNode> {
+  status: string;
+}
 
 const TABS: { id: CommandHQTab; label: string; icon: typeof faSatelliteDish }[] = [
   { id: "overview", label: "Overview", icon: faSatelliteDish },
@@ -684,8 +702,8 @@ function BubbleView({ robots, members }: { robots: OrgRobot[]; members: OrgMembe
       const statusColors: Record<string, string> = { online: "#4ade80", offline: "rgba(255,255,255,0.25)", error: "#f87171" };
       const statusGlow: Record<string, string> = { online: "rgba(74,222,128,0.15)", offline: "rgba(255,255,255,0.04)", error: "rgba(248,113,113,0.12)" };
 
-      const simNodes: { id: string; type: string; r: number; label: string; sub: string; color: string; glow: string; x?: number; y?: number }[] = [];
-      const simLinks: { source: string; target: string; status: string }[] = [];
+      const simNodes: CommandHQSimNode[] = [];
+      const simLinks: CommandHQLink[] = [];
 
       members.forEach((m) => {
         const robotCount = robots.filter((r) => r.assignedOperators.includes(m.userId)).length;
@@ -719,20 +737,20 @@ function BubbleView({ robots, members }: { robots: OrgRobot[]; members: OrgMembe
         });
       });
 
-      const sim = forceSimulation(simNodes as any)
-        .force("link", forceLink(simLinks as any).id((d: any) => d.id).distance(80).strength(0.6))
-        .force("charge", forceManyBody().strength(-200))
-        .force("center", forceCenter(WIDTH / 2, HEIGHT / 2))
-        .force("collide", forceCollide().radius((d: any) => d.r + 6).strength(0.8));
+      const sim = forceSimulation<CommandHQSimNode>(simNodes)
+        .force("link", forceLink<CommandHQSimNode, CommandHQLink>(simLinks).id((d) => d.id).distance(80).strength(0.6))
+        .force("charge", forceManyBody<CommandHQSimNode>().strength(-200))
+        .force("center", forceCenter<CommandHQSimNode>(WIDTH / 2, HEIGHT / 2))
+        .force("collide", forceCollide<CommandHQSimNode>().radius((d) => d.r + 6).strength(0.8));
 
       sim.tick(200);
       sim.stop();
 
-      const finalNodes = (simNodes as any[]).map((n) => ({
+      const finalNodes = simNodes.map((n) => ({
         id: n.id,
         type: n.type,
-        x: n.x as number,
-        y: n.y as number,
+        x: n.x ?? 0,
+        y: n.y ?? 0,
         r: n.r,
         label: n.label,
         sub: n.sub,
@@ -741,9 +759,11 @@ function BubbleView({ robots, members }: { robots: OrgRobot[]; members: OrgMembe
       }));
 
       const nodeMap = new Map(finalNodes.map((n) => [n.id, n]));
+      const getNodeId = (src: CommandHQSimNode | string | number): string =>
+        typeof src === "object" ? src.id : String(src);
       const finalLinks = simLinks.map((l) => {
-        const s = nodeMap.get(typeof l.source === "object" ? (l.source as any).id : l.source);
-        const t = nodeMap.get(typeof l.target === "object" ? (l.target as any).id : l.target);
+        const s = nodeMap.get(getNodeId(l.source));
+        const t = nodeMap.get(getNodeId(l.target));
         return {
           x1: s?.x ?? 0, y1: s?.y ?? 0,
           x2: t?.x ?? 0, y2: t?.y ?? 0,
@@ -1189,10 +1209,10 @@ function LocationMappingSubTab({ locations, robots, canManage }: { locations: Lo
         <table className="chq-table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Zone / Floor</th>
-              <th>Coordinates</th>
-              <th>Robots</th>
+              <th>Product</th>
+              <th>Zone</th>
+              <th>Pose (x, y, z)</th>
+              <th>Assigned Robots</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -1201,21 +1221,23 @@ function LocationMappingSubTab({ locations, robots, canManage }: { locations: Lo
               <tr key={loc.id} className="chq-tr">
                 <td>
                   <div className="chq-cell-user">
-                    <div className="chq-avatar-sm" style={{ background: loc.isActive ? 'rgba(52,211,153,0.2)' : 'rgba(255,255,255,0.05)', color: loc.isActive ? '#34d399' : 'rgba(255,255,255,0.3)' }}>
+                    <div className="chq-avatar-sm" style={{ background: loc.isActive ? 'rgba(255,193,7,0.15)' : 'rgba(255,255,255,0.05)', color: loc.isActive ? '#ffc107' : 'rgba(255,255,255,0.3)' }}>
                       <FontAwesomeIcon icon={faCrosshairs} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: 600 }}>{loc.label}</div>
-                      <div className="chq-dimmed" style={{ fontSize: '0.78rem' }}>{loc.name}</div>
+                      <div style={{ fontWeight: 600 }}>{loc.productName || loc.label}</div>
+                      <div className="chq-dimmed" style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <FontAwesomeIcon icon={faBarcode} style={{ fontSize: '0.65rem' }} />
+                        {loc.productId || loc.name}
+                      </div>
                     </div>
                   </div>
                 </td>
                 <td>
                   <span className="chq-dimmed">{loc.zone || '—'}</span>
-                  <span className="chq-micro-tag" style={{ marginLeft: '0.4rem' }}>F{loc.floorLevel}</span>
                 </td>
                 <td className="chq-cmd-mono" style={{ fontSize: '0.82rem' }}>
-                  ({loc.coordinates.x}, {loc.coordinates.y}, {loc.coordinates.z})
+                  ({loc.coordinates.x.toFixed(2)}, {loc.coordinates.y.toFixed(2)}, {loc.coordinates.z.toFixed(2)})
                 </td>
                 <td>
                   <div className="chq-cmd-tags" style={{ gap: '0.25rem' }}>

@@ -2,7 +2,7 @@
   position: sticky;
   top: 0;
   z-index: 1000;
-  background: rgba(16, 19, 26, 0.95);
+  background: rgba(18, 18, 18, 0.95);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
@@ -141,6 +141,177 @@
   gap: 1rem;
 }
 
+/* What's New – Phase 1 mockup */
+.whats-new-wrapper {
+  position: relative;
+}
+
+.whats-new-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  transition: color 0.2s ease;
+  font-family: inherit;
+}
+
+.whats-new-button:hover {
+  color: #fff;
+}
+
+.whats-new-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.whats-new-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: #ffc107;
+  color: #000;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.whats-new-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 320px;
+  max-width: calc(100vw - 2rem);
+  max-height: 70vh;
+  overflow: auto;
+  background: rgba(22, 22, 22, 0.98);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  animation: dropdownFade 0.2s ease;
+}
+
+.whats-new-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.whats-new-panel-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.whats-new-mark-all {
+  padding: 0.35rem 0.6rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.whats-new-mark-all:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.whats-new-panel-message {
+  margin: 0;
+  padding: 1rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+}
+
+.whats-new-panel-message.whats-new-panel-error {
+  color: #e57373;
+}
+
+.whats-new-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.75rem 0;
+}
+
+.whats-new-item {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.whats-new-item:last-child {
+  border-bottom: none;
+}
+
+.whats-new-item-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.whats-new-item-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #fff;
+}
+
+.whats-new-item-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffc107;
+  flex-shrink: 0;
+}
+
+.whats-new-item-summary {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.4;
+}
+
+.whats-new-item-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: #ffc107;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.whats-new-item-link:hover {
+  color: #ffcd38;
+}
+
+.whats-new-item-link svg {
+  width: 12px;
+  height: 12px;
+}
+
 .user-menu-wrapper {
   position: relative;
 }
@@ -198,7 +369,7 @@
   top: calc(100% + 8px);
   right: 0;
   min-width: 240px;
-  background: rgba(20, 28, 46, 0.98);
+  background: rgba(22, 22, 22, 0.98);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;

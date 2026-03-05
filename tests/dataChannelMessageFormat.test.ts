@@ -19,7 +19,7 @@ describe('buildDataChannelEnvelope', () => {
   });
 
   it('produces valid UUID for id', () => {
-    const msg = buildDataChannelEnvelope('agent.ping', {});
+    const msg = buildDataChannelEnvelope('signaling.ping', {});
     const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     expect((msg.id as string).match(uuidRe)).toBeTruthy();
   });

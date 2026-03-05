@@ -42,7 +42,11 @@ import { getActiveRobots } from "../functions/get-active-robots/resource";
 import { manageCreditTier } from "../functions/manage-credit-tier/resource";
 import { manageOrganization } from "../functions/manage-organization/resource";
 import { manageOrgMember } from "../functions/manage-org-member/resource";
+import { getTermsStatus } from "../functions/get-terms-status/resource";
+import { acceptTerms } from "../functions/accept-terms/resource";
 import { regenerateEnrollmentToken } from "../functions/regenerate-enrollment-token/resource";
+import { manageWhatsNew } from "../functions/manage-whats-new/resource";
+import { listWhatsNew } from "../functions/list-whats-new/resource";
 
 const EnrollmentTokenResult = a.customType({
   token: a.string().required(),
@@ -263,7 +267,7 @@ const schema = a.schema({
   // Platform settings (markup percentage, etc.) - managed by ADMINS
   PlatformSettings: a.model({
     id: a.id(),
-    settingKey: a.string().required(), // 'platformMarkupPercent', 'minimumPayoutAmount', etc.
+    settingKey: a.string().required(), // 'platformMarkupPercent', 'minimumPayoutAmount', 'termsVersion', etc.
     settingValue: a.string().required(), // JSON string or simple value
     description: a.string(), // What this setting controls
     updatedBy: a.string(), // Admin user who last updated
@@ -277,6 +281,39 @@ const schema = a.schema({
       allow.authenticated().to(['read']),
       // Only ADMINS can create/update
       allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  // What's New / announcements (navbar panel). Mutations via manageWhatsNewLambda only (ADMINS or @modulr.cloud).
+  WhatsNewItem: a.model({
+    id: a.id(),
+    title: a.string().required(),
+    summary: a.string().required(),
+    link: a.string().required(), // "Find Out More" URL (e.g. /terms or User Guide path)
+    publishedAt: a.string(), // ISO date YYYY-MM-DD
+    sortOrder: a.integer().default(0),
+    createdAt: a.datetime(),
+    updatedAt: a.datetime(),
+  })
+    .secondaryIndexes(index => [
+      index("sortOrder").name("sortOrderIndex"), // For ordered list
+    ])
+    .authorization((allow) => [
+      allow.authenticated().to(['read']), // List readable by all; create/update/delete via Lambda only
+    ]),
+
+  // Per-user terms of service acceptance (version + timestamp)
+  UserTermsAcceptance: a.model({
+    id: a.id(),
+    userId: a.string().required(), // Cognito username
+    acceptedTermsVersion: a.string().required(),
+    acceptedTermsAt: a.string().required(), // ISO datetime
+  })
+    .secondaryIndexes(index => [
+      index("userId").name("userIdIndex"), // One record per user lookup
+    ])
+    .authorization((allow) => [
+      // Only Lambdas (and admins for support) manage this; users read own via Lambda
+      allow.groups(['ADMINS']).to(['read']),
     ]),
 
   // Partner payout tracking - tracks earnings and payouts for robot partners
@@ -638,6 +675,21 @@ const schema = a.schema({
     .returns(a.json())
     .authorization(allow => [allow.authenticated()])
     .handler(a.handler.function(manageOrgMember)),
+
+  getTermsStatusLambda: a
+    .query()
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(getTermsStatus)),
+
+  acceptTermsLambda: a
+    .mutation()
+    .arguments({
+      termsVersion: a.string().required(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(acceptTerms)),
 
   setUserGroupLambda: a
     .mutation()
@@ -1081,6 +1133,23 @@ const schema = a.schema({
     .returns(a.json())
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (admins only)
     .handler(a.handler.function(getActiveRobots)),
+
+  manageWhatsNewLambda: a
+    .mutation()
+    .arguments({
+      action: a.string().required(), // 'create', 'update', or 'delete'
+      itemId: a.string(), // Required for 'update' and 'delete'
+      itemData: a.json(), // Required for 'create' and 'update'
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth check in Lambda (ADMINS or @modulr.cloud)
+    .handler(a.handler.function(manageWhatsNew)),
+
+  listWhatsNewLambda: a
+    .query()
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Any authenticated user can list (for navbar)
+    .handler(a.handler.function(listWhatsNew)),
 });
 
 export type Schema = ClientSchema<typeof schema>;

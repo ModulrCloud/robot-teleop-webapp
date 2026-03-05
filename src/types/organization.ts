@@ -273,6 +273,8 @@ export interface LocationMapping {
   mapId: string | null;
   floorLevel: number;
   zone: string | null;
+  productId: string | null;
+  productName: string | null;
   targetRobotIds: string[];
   isActive: boolean;
   createdBy: string;

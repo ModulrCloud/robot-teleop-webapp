@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuthStatus } from "./hooks/useAuthStatus";
 import { useUserCredits } from "./hooks/useUserCredits";
+import { useWhatsNew } from "./hooks/useWhatsNew";
 import { hasAdminAccess } from "./utils/admin";
 import { PurchaseCreditsModal } from "./components/PurchaseCreditsModal";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -20,6 +21,8 @@ import {
   faGaugeHigh,
   faGlobe,
   faSatelliteDish,
+  faBullhorn,
+  faExternalLinkAlt,
 } from '@fortawesome/free-solid-svg-icons';
 import "./Navbar.css";
 import { formatGroupName, capitalizeName } from "./utils/formatters";
@@ -28,20 +31,23 @@ import { MOCK_ORGANIZATIONS } from "./mocks/organization";
 export default function Navbar() {
   const { isLoggedIn, signOut, user } = useAuthStatus();
   const { formattedBalance, loading: creditsLoading } = useUserCredits();
+  const { items: whatsNewItems, readIds: whatsNewReadIds, unreadCount: whatsNewUnreadCount, loading: whatsNewLoading, error: whatsNewError, markRead: markWhatsNewItemRead, markAllRead: markAllWhatsNewRead } = useWhatsNew();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showWhatsNewPanel, setShowWhatsNewPanel] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const whatsNewRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setShowUserMenu(false);
-      }
+      const target = event.target as Node;
+      if (menuRef.current && !menuRef.current.contains(target)) setShowUserMenu(false);
+      if (whatsNewRef.current && !whatsNewRef.current.contains(target)) setShowWhatsNewPanel(false);
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const handleSignOut = async () => {
@@ -118,6 +124,86 @@ export default function Navbar() {
         <div className="navbar-actions">
           {isLoggedIn ? (
             <>
+              <div className="whats-new-wrapper" ref={whatsNewRef}>
+                <button
+                  type="button"
+                  className="whats-new-button"
+                  onClick={() => setShowWhatsNewPanel(!showWhatsNewPanel)}
+                  title="What's New"
+                  aria-expanded={showWhatsNewPanel}
+                  aria-haspopup="true"
+                >
+                  <FontAwesomeIcon icon={faBullhorn} className="whats-new-icon" />
+                  {whatsNewUnreadCount > 0 && (
+                    <span className="whats-new-badge" aria-label={`${whatsNewUnreadCount} unread`}>
+                      {whatsNewUnreadCount}
+                    </span>
+                  )}
+                </button>
+                {showWhatsNewPanel && (
+                  <div className="whats-new-panel" role="dialog" aria-label="What's New">
+                    <div className="whats-new-panel-header">
+                      <h3 className="whats-new-panel-title">What&apos;s New</h3>
+                      {whatsNewUnreadCount > 0 && (
+                        <button
+                          type="button"
+                          className="whats-new-mark-all"
+                          onClick={markAllWhatsNewRead}
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+                    {whatsNewLoading ? (
+                      <p className="whats-new-panel-message">Loading…</p>
+                    ) : whatsNewError ? (
+                      <p className="whats-new-panel-message whats-new-panel-error">{whatsNewError}</p>
+                    ) : whatsNewItems.length === 0 ? (
+                      <p className="whats-new-panel-message">No announcements right now.</p>
+                    ) : (
+                      <ul className="whats-new-list">
+                        {whatsNewItems.map((item) => (
+                          <li key={item.id} className="whats-new-item">
+                            <div className="whats-new-item-header">
+                              <span className="whats-new-item-title">{item.title}</span>
+                              {!whatsNewReadIds.has(item.id) && (
+                                <span className="whats-new-item-dot" aria-hidden />
+                              )}
+                            </div>
+                            <p className="whats-new-item-summary">{item.summary}</p>
+                            {item.link.startsWith("/") ? (
+                              <Link
+                                to={item.link}
+                                className="whats-new-item-link"
+                                onClick={() => {
+                                  markWhatsNewItemRead(item.id);
+                                  setShowWhatsNewPanel(false);
+                                }}
+                              >
+                                Find Out More <FontAwesomeIcon icon={faExternalLinkAlt} />
+                              </Link>
+                            ) : (
+                              <a
+                                href={item.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="whats-new-item-link"
+                                onClick={() => {
+                                  markWhatsNewItemRead(item.id);
+                                  setShowWhatsNewPanel(false);
+                                }}
+                              >
+                                Find Out More <FontAwesomeIcon icon={faExternalLinkAlt} />
+                              </a>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {user?.group && user.group !== 'ORGANIZATIONS' && (
                 <button
                   className="credits-balance"
@@ -271,6 +357,17 @@ export default function Navbar() {
                 <FontAwesomeIcon icon={faUsers} />
                 <span>Social</span>
               </Link>
+              <button
+                type="button"
+                className="mobile-nav-link"
+                onClick={() => {
+                  setShowMobileMenu(false);
+                  setShowWhatsNewPanel(true);
+                }}
+              >
+                <FontAwesomeIcon icon={faBullhorn} />
+                <span>What&apos;s New</span>
+              </button>
             </>
           )}
           <Link to="/profile" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>

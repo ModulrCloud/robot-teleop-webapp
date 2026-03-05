@@ -173,6 +173,18 @@ export interface CreditTierResponse {
   };
 }
 
+// What's New / Announcements (admin mockup and future API)
+export interface Announcement {
+  id: string;
+  title: string;
+  summary: string;
+  link: string;
+  publishedAt?: string;
+  sortOrder?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // GraphQL Error Type (compatible with Amplify's GraphQLFormattedError)
 export type GraphQLError = {
   message?: string;
