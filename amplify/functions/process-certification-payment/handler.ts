@@ -4,8 +4,7 @@ import {
   DynamoDBDocumentClient,
   GetCommand,
   QueryCommand,
-  UpdateCommand,
-  PutCommand,
+  TransactWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { randomUUID } from "crypto";
 
@@ -92,62 +91,67 @@ export const handler: Schema["processCertificationPaymentLambda"]["functionHandl
   const newCredits = currentCredits - feeCredits;
   const now = new Date().toISOString();
   const transactionId = randomUUID();
-
-  // Deduct from user credits
-  await docClient.send(
-    new UpdateCommand({
-      TableName: USER_CREDITS_TABLE,
-      Key: { id: creditsRecord.id },
-      UpdateExpression: "SET credits = :credits, lastUpdated = :now",
-      ExpressionAttributeValues: {
-        ":credits": newCredits,
-        ":now": now,
-      },
-    })
-  );
-
-  // Record credit transaction (deduction)
-  await docClient.send(
-    new PutCommand({
-      TableName: CREDIT_TRANSACTIONS_TABLE,
-      Item: {
-        id: transactionId,
-        userId: username,
-        amount: -feeCredits,
-        transactionType: "certification_fee",
-        description: `Modulr certification fee for request ${certificationRequestId}`,
-        createdAt: now,
-      },
-    })
-  );
-
-  // Update certification request to paid
-  await docClient.send(
-    new UpdateCommand({
-      TableName: CERTIFICATION_REQUEST_TABLE,
-      Key: { id: certificationRequestId },
-      UpdateExpression: "SET #status = :status, paidAt = :paidAt",
-      ExpressionAttributeNames: { "#status": "status" },
-      ExpressionAttributeValues: {
-        ":status": "paid",
-        ":paidAt": now,
-      },
-    })
-  );
-
-  // Platform revenue ledger entry
   const entryId = randomUUID();
+
+  // Atomic transaction: deduct credits, record transaction, mark request paid, write revenue.
+  // Either all succeed or none do; conditions prevent double-spend and double-apply.
   await docClient.send(
-    new PutCommand({
-      TableName: PLATFORM_REVENUE_ENTRY_TABLE,
-      Item: {
-        id: entryId,
-        createdAt: now,
-        transactionType: "certification_fee",
-        amountCredits: feeCredits,
-        referenceId: certificationRequestId,
-        description: `Certification fee for request ${certificationRequestId}`,
-      },
+    new TransactWriteCommand({
+      TransactItems: [
+        {
+          Update: {
+            TableName: USER_CREDITS_TABLE,
+            Key: { id: creditsRecord.id },
+            UpdateExpression: "SET credits = :credits, lastUpdated = :now",
+            ConditionExpression: "credits >= :fee",
+            ExpressionAttributeValues: {
+              ":credits": newCredits,
+              ":now": now,
+              ":fee": feeCredits,
+            },
+          },
+        },
+        {
+          Put: {
+            TableName: CREDIT_TRANSACTIONS_TABLE,
+            Item: {
+              id: transactionId,
+              userId: username,
+              amount: -feeCredits,
+              transactionType: "certification_fee",
+              description: `Modulr certification fee for request ${certificationRequestId}`,
+              createdAt: now,
+            },
+          },
+        },
+        {
+          Update: {
+            TableName: CERTIFICATION_REQUEST_TABLE,
+            Key: { id: certificationRequestId },
+            UpdateExpression: "SET #status = :status, paidAt = :paidAt",
+            ConditionExpression: "#status = :requested",
+            ExpressionAttributeNames: { "#status": "status" },
+            ExpressionAttributeValues: {
+              ":status": "paid",
+              ":paidAt": now,
+              ":requested": "requested",
+            },
+          },
+        },
+        {
+          Put: {
+            TableName: PLATFORM_REVENUE_ENTRY_TABLE,
+            Item: {
+              id: entryId,
+              createdAt: now,
+              transactionType: "certification_fee",
+              amountCredits: feeCredits,
+              referenceId: certificationRequestId,
+              description: `Certification fee for request ${certificationRequestId}`,
+            },
+          },
+        },
+      ],
     })
   );
 

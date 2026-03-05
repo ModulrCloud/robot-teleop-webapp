@@ -9,8 +9,12 @@ vi.mock("@aws-sdk/lib-dynamodb", () => ({
   },
   GetCommand: class GetCommand {},
   QueryCommand: class QueryCommand {},
-  UpdateCommand: class UpdateCommand {},
-  PutCommand: class PutCommand {},
+  TransactWriteCommand: class TransactWriteCommand {
+    input: unknown;
+    constructor(input: unknown) {
+      this.input = input;
+    }
+  },
 }));
 
 import { handler } from "./handler";
@@ -135,7 +139,7 @@ describe("processCertificationPaymentLambda handler", () => {
     expect(mockSend).toHaveBeenCalledTimes(2);
   });
 
-  it("succeeds: deducts credits, updates request to paid, creates transaction and revenue entry", async () => {
+  it("succeeds: atomic transaction deducts credits, updates request to paid, creates transaction and revenue entry", async () => {
     mockSend
       .mockResolvedValueOnce({
         Item: {
@@ -148,10 +152,7 @@ describe("processCertificationPaymentLambda handler", () => {
       .mockResolvedValueOnce({
         Items: [{ id: "credits-record-id", credits: 5000 }],
       })
-      .mockResolvedValueOnce(undefined) // UpdateCommand UserCredits
-      .mockResolvedValueOnce(undefined) // PutCommand CreditTransaction
-      .mockResolvedValueOnce(undefined) // UpdateCommand CertificationRequest
-      .mockResolvedValueOnce(undefined); // PutCommand PlatformRevenueEntry
+      .mockResolvedValueOnce(undefined); // TransactWriteCommand (all four writes)
 
     const result = await handler(makeEvent(), noOpContext, noOpCallback);
     const body = JSON.parse(result as string);
@@ -162,6 +163,8 @@ describe("processCertificationPaymentLambda handler", () => {
     expect(body.amountCredits).toBe(FEE);
     expect(body.newBalance).toBe(4000);
 
-    expect(mockSend).toHaveBeenCalledTimes(6);
+    expect(mockSend).toHaveBeenCalledTimes(3);
+    const transactCommand = mockSend.mock.calls[2][0] as { input: { TransactItems?: unknown[] } };
+    expect(transactCommand.input.TransactItems).toHaveLength(4);
   });
 });

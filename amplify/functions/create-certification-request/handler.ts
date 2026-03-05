@@ -78,20 +78,26 @@ export const handler: Schema["createCertificationRequestLambda"]["functionHandle
     });
   }
 
-  // Check for existing open request (requested, paid, pending_review)
-  const existingByRobot = await docClient.send(
-    new QueryCommand({
-      TableName: CERTIFICATION_REQUEST_TABLE,
-      IndexName: "robotIdIndex",
-      KeyConditionExpression: "robotId = :robotId",
-      ExpressionAttributeValues: { ":robotId": robotId },
-      Limit: 10,
-    })
-  );
+  // Check for existing open request (requested, paid, pending_review); paginate to avoid missing one
   const openStatuses = ["requested", "paid", "pending_review"];
-  const hasOpen = (existingByRobot.Items ?? []).some((r) =>
-    openStatuses.includes(String(r.status ?? ""))
-  );
+  let hasOpen = false;
+  let lastKey: Record<string, unknown> | undefined;
+  do {
+    const existingByRobot = await docClient.send(
+      new QueryCommand({
+        TableName: CERTIFICATION_REQUEST_TABLE,
+        IndexName: "robotIdIndex",
+        KeyConditionExpression: "robotId = :robotId",
+        ExpressionAttributeValues: { ":robotId": robotId },
+        ExclusiveStartKey: lastKey,
+        Limit: 100,
+      })
+    );
+    const items = existingByRobot.Items ?? [];
+    hasOpen = items.some((r) => openStatuses.includes(String(r.status ?? "")));
+    if (hasOpen) break;
+    lastKey = existingByRobot.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (lastKey);
   if (hasOpen) {
     return JSON.stringify({
       success: false,
