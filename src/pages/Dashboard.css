@@ -640,3 +640,144 @@
     gap: 1rem;
   }
 }
+
+/* Create Organization Modal */
+.create-org-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.create-org-modal {
+  background: #1a1a2e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 2rem;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.create-org-modal h2 {
+  margin: 0 0 1.5rem;
+  font-size: 1.4rem;
+  color: #fff;
+}
+
+.create-org-field {
+  margin-bottom: 1.25rem;
+}
+
+.create-org-field label {
+  display: block;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 0.4rem;
+  font-weight: 500;
+}
+
+.create-org-field input,
+.create-org-field textarea {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  color: #fff;
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.create-org-field input:focus,
+.create-org-field textarea:focus {
+  outline: none;
+  border-color: rgba(255, 193, 7, 0.5);
+}
+
+.create-org-field textarea {
+  resize: vertical;
+}
+
+.create-org-slug-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.create-org-slug-prefix {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  padding: 0.65rem 0.6rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.95rem;
+  font-family: monospace;
+}
+
+.create-org-slug-row input {
+  border-radius: 0 8px 8px 0;
+  font-family: monospace;
+}
+
+.create-org-error {
+  color: #f87171;
+  font-size: 0.85rem;
+  margin: 0 0 1rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(248, 113, 113, 0.08);
+  border-radius: 6px;
+  border: 1px solid rgba(248, 113, 113, 0.2);
+}
+
+.create-org-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+.create-org-cancel {
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.create-org-cancel:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.create-org-submit {
+  padding: 0.6rem 1.4rem;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #ffc107, #ff9800);
+  color: #000;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.create-org-submit:hover:not(:disabled) {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.create-org-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

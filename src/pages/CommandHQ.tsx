@@ -80,10 +80,6 @@ import type {
 } from "../types/organization";
 import { PERMISSION_LABELS, ROS_COMMAND_CATEGORIES, DENY_SCOPES, DENY_REASONS, NOTIFICATION_EVENTS } from "../types/organization";
 import {
-  getMockOrgById,
-  getMockRolesForOrg,
-  getMockMembersForOrg,
-  getMockInvitesForOrg,
   getMockRobotsForOrg,
   getMockSessionsForOrg,
   getMockLogsForOrg,
@@ -95,6 +91,8 @@ import {
   getMockLocationMappingsForOrg,
   getMockKeyboardMappingsForOrg,
 } from "../mocks/organization";
+import { fetchOrgDetail, inviteMember } from "../hooks/useOrganizationData";
+import { logger } from "../utils/logger";
 import type { SimulationNodeDatum, SimulationLinkDatum } from "d3-force";
 import "./CommandHQ.css";
 
@@ -147,14 +145,18 @@ export const CommandHQ = () => {
   const [notifications, setNotifications] = useState<OrgNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadOrgData = useCallback(async (showLoader = true) => {
     if (!orgId) return;
-    const mockOrg = getMockOrgById(orgId);
-    if (mockOrg) {
-      setOrg(mockOrg);
-      setRoles(getMockRolesForOrg(orgId));
-      setMembers(getMockMembersForOrg(orgId));
-      setInvites(getMockInvitesForOrg(orgId));
+    if (showLoader) setLoading(true);
+    try {
+      const detail = await fetchOrgDetail(orgId);
+      if (detail) {
+        setOrg(detail.org);
+        setRoles(detail.roles);
+        setMembers(detail.members);
+        setInvites(detail.invites);
+      }
+
       setRobots(getMockRobotsForOrg(orgId));
       setSessions(getMockSessionsForOrg(orgId));
       setLogs(getMockLogsForOrg(orgId));
@@ -165,9 +167,16 @@ export const CommandHQ = () => {
       setDenyList(getMockDenyListForOrg(orgId));
       setNotifRules(getMockNotificationRulesForOrg(orgId));
       setNotifications(getMockNotificationsForOrg(orgId));
+    } catch (err) {
+      logger.error('CommandHQ: failed to load org data', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [orgId]);
+
+  useEffect(() => {
+    loadOrgData();
+  }, [loadOrgData]);
 
   const currentMember = members.find((m) => m.userId === user?.username) || members[0];
   const currentRole = roles.find((r) => r.id === currentMember?.roleId);
@@ -243,7 +252,11 @@ export const CommandHQ = () => {
         <main className="chq-main">
           {activeTab === "overview" && <OverviewTab org={org} members={members} roles={roles} invites={invites} />}
           {activeTab === "members" && (
-            <MembersTab members={members} invites={invites} roles={roles} robots={robots} org={org} canManage={hasPermission("members:manage")} />
+            <MembersTab
+              members={members} invites={invites} roles={roles} robots={robots} org={org}
+              canManage={hasPermission("members:manage")}
+              onRefresh={() => loadOrgData(false)}
+            />
           )}
           {activeTab === "robots" && (
             <RobotsTab robots={robots} members={members} canManage={hasPermission("robots:manage")} />
@@ -318,7 +331,7 @@ function OverviewTab({
             <div key={m.id} className="chq-row">
               <div className="chq-avatar-sm">{(m.userEmail || m.userId).charAt(0).toUpperCase()}</div>
               <div className="chq-row-text">
-                <span className="chq-row-primary">{m.userEmail || m.userId}</span>
+                <span className="chq-row-primary" title={m.userEmail || m.userId}>{m.userEmail || m.userId}</span>
                 <span className="chq-row-secondary">{m.roleName}</span>
               </div>
               <FontAwesomeIcon icon={faCircle} className={`chq-dot chq-dot--${m.status}`} />
@@ -356,6 +369,7 @@ function MembersTab({
   robots,
   org,
   canManage,
+  onRefresh,
 }: {
   members: OrgMember[];
   invites: OrgInvite[];
@@ -363,8 +377,10 @@ function MembersTab({
   robots: OrgRobot[];
   org: Organization;
   canManage: boolean;
+  onRefresh: () => void;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
 
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
@@ -378,11 +394,23 @@ function MembersTab({
           <p className="chq-subtitle">{members.length} of {org.maxMembers} members</p>
         </div>
         {canManage && (
-          <button className="chq-btn chq-btn-primary">
+          <button className="chq-btn chq-btn-primary" onClick={() => setShowInviteModal(true)}>
             <FontAwesomeIcon icon={faUserPlus} /> Invite Member
           </button>
         )}
       </div>
+
+      {showInviteModal && (
+        <InviteMemberModal
+          orgId={org.id}
+          roles={roles}
+          onClose={() => setShowInviteModal(false)}
+          onInvited={() => {
+            setShowInviteModal(false);
+            onRefresh();
+          }}
+        />
+      )}
 
       <div className="chq-panel">
         <table className="chq-table">
@@ -406,7 +434,7 @@ function MembersTab({
                     <td>
                       <div className="chq-cell-user">
                         <div className="chq-avatar-sm">{(m.userEmail || m.userId).charAt(0).toUpperCase()}</div>
-                        <span>{m.userEmail || m.userId}</span>
+                        <span title={m.userEmail || m.userId}>{m.userEmail || m.userId}</span>
                       </div>
                     </td>
                     <td><span className={`chq-role-badge chq-priority-${role?.priority ?? 3}`}>{m.roleName}</span></td>
@@ -500,6 +528,88 @@ function MembersTab({
         </>
       )}
     </section>
+  );
+}
+
+function InviteMemberModal({
+  orgId,
+  roles,
+  onClose,
+  onInvited,
+}: {
+  orgId: string;
+  roles: OrgRole[];
+  onClose: () => void;
+  onInvited: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [roleId, setRoleId] = useState(roles.find(r => r.priority === 3)?.id || roles[0]?.id || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !roleId) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await inviteMember(orgId, email.trim(), roleId);
+      if (result.success) {
+        onInvited();
+      } else {
+        setError(result.error || "Failed to send invite");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const sortedRoles = [...roles].sort((a, b) => a.priority - b.priority);
+
+  return (
+    <div className="chq-modal-overlay" onClick={onClose}>
+      <div className="chq-modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Invite Member</h2>
+        <form onSubmit={handleSubmit}>
+          <div className="chq-modal-field">
+            <label htmlFor="invite-email">Email Address</label>
+            <input
+              id="invite-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="colleague@company.com"
+              required
+              autoFocus
+            />
+          </div>
+          <div className="chq-modal-field">
+            <label htmlFor="invite-role">Role</label>
+            <select
+              id="invite-role"
+              value={roleId}
+              onChange={(e) => setRoleId(e.target.value)}
+              required
+            >
+              {sortedRoles.map((r) => (
+                <option key={r.id} value={r.id}>{r.name} — {r.description || "No description"}</option>
+              ))}
+            </select>
+          </div>
+          {error && <p className="chq-modal-error">{error}</p>}
+          <div className="chq-modal-actions">
+            <button type="button" className="chq-btn chq-btn-outline" onClick={onClose} disabled={saving}>
+              Cancel
+            </button>
+            <button type="submit" className="chq-btn chq-btn-primary" disabled={saving || !email.trim()}>
+              {saving ? "Sending..." : "Send Invite"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
