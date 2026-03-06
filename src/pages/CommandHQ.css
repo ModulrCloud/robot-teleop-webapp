@@ -367,6 +367,8 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chq-row-secondary {
@@ -429,6 +431,9 @@
   padding: 0.75rem 1.35rem;
   font-size: 0.95rem;
   color: rgba(255, 255, 255, 0.75);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
   vertical-align: middle;
 }
@@ -459,6 +464,14 @@
   align-items: center;
   gap: 0.65rem;
   font-weight: 500;
+  min-width: 0;
+}
+
+.chq-cell-user span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .chq-dimmed {
@@ -1891,4 +1904,86 @@
   .chq-table {
     table-layout: auto;
   }
+}
+
+/* Modal overlay and styles */
+.chq-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.chq-modal {
+  background: #1a1a2e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 2rem;
+  width: 100%;
+  max-width: 460px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.chq-modal h2 {
+  margin: 0 0 1.5rem;
+  font-size: 1.3rem;
+  color: #fff;
+}
+
+.chq-modal-field {
+  margin-bottom: 1.25rem;
+}
+
+.chq-modal-field label {
+  display: block;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 0.4rem;
+  font-weight: 500;
+}
+
+.chq-modal-field input,
+.chq-modal-field select {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  color: #fff;
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.chq-modal-field select option {
+  background: #1a1a2e;
+  color: #fff;
+}
+
+.chq-modal-field input:focus,
+.chq-modal-field select:focus {
+  outline: none;
+  border-color: rgba(255, 193, 7, 0.5);
+}
+
+.chq-modal-error {
+  color: #f87171;
+  font-size: 0.85rem;
+  margin: 0 0 1rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(248, 113, 113, 0.08);
+  border-radius: 6px;
+  border: 1px solid rgba(248, 113, 113, 0.2);
+}
+
+.chq-modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
 }
