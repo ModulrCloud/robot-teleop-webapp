@@ -87,7 +87,8 @@
   box-sizing: border-box;
 }
 
-@media (min-width: 1320px) {
+/* Only force 1280px when viewport fits it after .admin-page padding (2rem each side) */
+@media (min-width: 1344px) {
   .admin-content {
     width: 1280px;
     min-width: 1280px;
