@@ -47,6 +47,11 @@ import { acceptTerms } from "../functions/accept-terms/resource";
 import { regenerateEnrollmentToken } from "../functions/regenerate-enrollment-token/resource";
 import { manageWhatsNew } from "../functions/manage-whats-new/resource";
 import { listWhatsNew } from "../functions/list-whats-new/resource";
+import { createCertificationRequest } from "../functions/create-certification-request/resource";
+import { processCertificationPayment } from "../functions/process-certification-payment/resource";
+import { listCertificationRequests } from "../functions/list-certification-requests/resource";
+import { manageCertificationRequest } from "../functions/manage-certification-request/resource";
+import { listPlatformRevenueEntries } from "../functions/list-platform-revenue-entries/resource";
 
 const EnrollmentTokenResult = a.customType({
   token: a.string().required(),
@@ -369,6 +374,9 @@ const schema = a.schema({
     publicKey: a.string(), // Optional: Ed25519 public key (base64 or hex) for PKI auth; 32-byte key
     enrollmentToken: a.string(), // One-time token used by robot to self-register its public key; cleared after use
     enrollmentTokenExpiry: a.float(), // Unix ms timestamp when enrollment token expires (7-day TTL); float to avoid 32-bit Int overflow
+    // Modulr Approved certification (paid review by Modulr)
+    modulrApproved: a.boolean().default(false),
+    modulrApprovedAt: a.datetime(), // When certification was granted (for display and future expiry)
     ratings: a.hasMany('RobotRating', 'robotUuid'), // Relationship to ratings
     reservations: a.hasMany('RobotReservation', 'robotUuid'), // Relationship to reservations
     availability: a.hasMany('RobotAvailability', 'robotUuid'), // Relationship to availability blocks
@@ -379,6 +387,50 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.owner().to(["update", "delete"]),
       allow.authenticated().to(["read"]),
+    ]),
+
+  // Modulr Approved certification request – partner requests certification, pays, then admin approves/rejects
+  CertificationRequest: a.model({
+    id: a.id(),
+    robotId: a.string().required(), // Robot's robotId string (robot-XXXXXXXX)
+    robotUuid: a.id().required(), // Robot's UUID (id field) for relationship
+    partnerId: a.string().required(), // Partner's Cognito user ID (owner)
+    partnerUserId: a.string().required(), // Same as partnerId; for clarity in queries
+    owner: a.string(), // Cognito username for allow.owner() – set by Lambda when creating
+    status: a.string().required(), // 'requested' | 'paid' | 'pending_review' | 'approved' | 'rejected'
+    requestedAt: a.datetime().required(),
+    paidAt: a.datetime(),
+    reviewedAt: a.datetime(),
+    reviewedBy: a.string(), // Admin userId who reviewed
+    rejectionReason: a.string(),
+    amountCredits: a.integer().required(), // Fee paid (from platform setting)
+  })
+    .secondaryIndexes(index => [
+      index("status").name("statusIndex"),
+      index("partnerId").name("partnerIdIndex"),
+      index("robotId").name("robotIdIndex"),
+    ])
+    .authorization((allow) => [
+      allow.owner().to(['read']), // Partner can read own requests
+      allow.groups(['ADMINS']).to(['read', 'update']), // Admin approves/rejects
+    ]),
+
+  // Platform revenue ledger – every time platform earns revenue we record datetime, type, amount (for dashboards)
+  PlatformRevenueEntry: a.model({
+    id: a.id(),
+    createdAt: a.datetime().required(),
+    transactionType: a.string().required(), // 'session_markup' | 'certification_fee' (extensible)
+    amountCredits: a.integer().required(), // Positive = platform earned
+    referenceId: a.string(), // sessionId or certificationRequestId for traceability
+    description: a.string(), // Optional for dashboard display (e.g. robot name)
+  })
+    .secondaryIndexes(index => [
+      index("createdAt").name("createdAtIndex"),
+      index("transactionType").name("transactionTypeIndex"),
+    ])
+    .authorization((allow) => [
+      allow.groups(['ADMINS']).to(['read']), // Only admins read ledger
+      // Create/update only via Lambdas (no public create)
     ]),
 
   // Delegation table: Partners can assign operators to their robots
@@ -1150,6 +1202,62 @@ const schema = a.schema({
     .returns(a.json())
     .authorization(allow => [allow.authenticated()]) // Any authenticated user can list (for navbar)
     .handler(a.handler.function(listWhatsNew)),
+
+  // Modulr Approved certification
+  createCertificationRequestLambda: a
+    .mutation()
+    .arguments({
+      robotId: a.string().required(), // Robot's robotId string (robot-XXXXXXXX)
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth in Lambda: caller must be robot owner
+    .handler(a.handler.function(createCertificationRequest)),
+
+  processCertificationPaymentLambda: a
+    .mutation()
+    .arguments({
+      certificationRequestId: a.string().required(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth in Lambda: caller must be request owner
+    .handler(a.handler.function(processCertificationPayment)),
+
+  listCertificationRequestsLambda: a
+    .query()
+    .arguments({
+      status: a.string(), // Optional filter: requested, paid, pending_review, approved, rejected
+      partnerId: a.string(), // Optional filter for admin
+      robotId: a.string(), // Optional filter
+      limit: a.integer(),
+      nextToken: a.string(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth in Lambda: partners see own, admins see all
+    .handler(a.handler.function(listCertificationRequests)),
+
+  manageCertificationRequestLambda: a
+    .mutation()
+    .arguments({
+      certificationRequestId: a.string().required(),
+      action: a.string().required(), // 'approve' | 'reject'
+      rejectionReason: a.string(), // Optional, for reject
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth in Lambda: ADMINS only
+    .handler(a.handler.function(manageCertificationRequest)),
+
+  listPlatformRevenueEntriesLambda: a
+    .query()
+    .arguments({
+      transactionType: a.string(), // Optional filter: session_markup, certification_fee
+      startDate: a.string(), // Optional ISO date
+      endDate: a.string(), // Optional ISO date
+      limit: a.integer(),
+      nextToken: a.string(),
+    })
+    .returns(a.json())
+    .authorization(allow => [allow.authenticated()]) // Auth in Lambda: ADMINS / Modulr only
+    .handler(a.handler.function(listPlatformRevenueEntries)),
 });
 
 export type Schema = ClientSchema<typeof schema>;

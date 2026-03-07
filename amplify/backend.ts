@@ -56,6 +56,11 @@ import { regenerateEnrollmentToken } from './functions/regenerate-enrollment-tok
 import { registerRobotKey } from './functions/register-robot-key/resource';
 import { manageWhatsNew } from './functions/manage-whats-new/resource';
 import { listWhatsNew } from './functions/list-whats-new/resource';
+import { createCertificationRequest } from './functions/create-certification-request/resource';
+import { processCertificationPayment } from './functions/process-certification-payment/resource';
+import { listCertificationRequests } from './functions/list-certification-requests/resource';
+import { manageCertificationRequest } from './functions/manage-certification-request/resource';
+import { listPlatformRevenueEntries } from './functions/list-platform-revenue-entries/resource';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { WebSocketApi, WebSocketStage } from '@aws-cdk/aws-apigatewayv2-alpha';
@@ -126,6 +131,11 @@ const backend = defineBackend({
   registerRobotKey,
   manageWhatsNew,
   listWhatsNew,
+  createCertificationRequest,
+  processCertificationPayment,
+  listCertificationRequests,
+  manageCertificationRequest,
+  listPlatformRevenueEntries,
 });
 
 const userPool = backend.auth.resources.userPool;
@@ -619,6 +629,7 @@ settleSessionPaymentCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.
 settleSessionPaymentCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
 settleSessionPaymentCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
 settleSessionPaymentCdkFunction.addEnvironment('PARTNER_PAYOUT_TABLE', tables.PartnerPayout.tableName);
+settleSessionPaymentCdkFunction.addEnvironment('PLATFORM_REVENUE_ENTRY_TABLE', tables.PlatformRevenueEntry.tableName);
 settleSessionPaymentCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 userPool.grant(settleSessionPaymentFunction, 'cognito-idp:AdminGetUser');
 tables.Session.grantReadWriteData(settleSessionPaymentFunction);
@@ -626,6 +637,7 @@ tables.Robot.grantReadData(settleSessionPaymentFunction);
 tables.Partner.grantReadData(settleSessionPaymentFunction);
 tables.PlatformSettings.grantReadData(settleSessionPaymentFunction);
 tables.PartnerPayout.grantWriteData(settleSessionPaymentFunction);
+tables.PlatformRevenueEntry.grantWriteData(settleSessionPaymentFunction);
 settleSessionPaymentFunction.addToRolePolicy(new PolicyStatement({
   actions: ['dynamodb:Query'],
   resources: [
@@ -960,6 +972,7 @@ getSystemStatsCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.ta
 getSystemStatsCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
 getSystemStatsCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
 getSystemStatsCdkFunction.addEnvironment('PARTNER_PAYOUT_TABLE', tables.PartnerPayout.tableName);
+getSystemStatsCdkFunction.addEnvironment('PLATFORM_REVENUE_ENTRY_TABLE', tables.PlatformRevenueEntry.tableName);
 getSystemStatsCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
 userPool.grant(getSystemStatsFunction, 'cognito-idp:ListUsers', 'cognito-idp:AdminGetUser');
 tables.Robot.grantReadData(getSystemStatsFunction);
@@ -968,6 +981,7 @@ tables.Session.grantReadData(getSystemStatsFunction);
 tables.UserCredits.grantReadData(getSystemStatsFunction);
 tables.CreditTransaction.grantReadData(getSystemStatsFunction);
 tables.PartnerPayout.grantReadData(getSystemStatsFunction);
+tables.PlatformRevenueEntry.grantReadData(getSystemStatsFunction);
 tables.PlatformSettings.grantReadData(getSystemStatsFunction);
 getSystemStatsFunction.addToRolePolicy(new PolicyStatement({
   actions: ['dynamodb:Query'],
@@ -1030,6 +1044,82 @@ processPayoutCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 tables.PartnerPayout.grantReadWriteData(processPayoutFunction);
 adminAuditTable.grantWriteData(processPayoutFunction);
 userPool.grant(processPayoutFunction, 'cognito-idp:AdminGetUser');
+
+// ============================================
+// Modulr Approved certification Lambdas
+// ============================================
+
+const createCertificationRequestFunction = backend.createCertificationRequest.resources.lambda;
+const createCertificationRequestCdkFunction = createCertificationRequestFunction as CdkFunction;
+createCertificationRequestCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+createCertificationRequestCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
+createCertificationRequestCdkFunction.addEnvironment('CERTIFICATION_REQUEST_TABLE', tables.CertificationRequest.tableName);
+createCertificationRequestCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
+tables.Robot.grantReadData(createCertificationRequestFunction);
+tables.Partner.grantReadData(createCertificationRequestFunction);
+tables.CertificationRequest.grantWriteData(createCertificationRequestFunction);
+tables.PlatformSettings.grantReadData(createCertificationRequestFunction);
+createCertificationRequestFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query', 'dynamodb:GetItem'],
+  resources: [
+    `${tables.Robot.tableArn}/index/robotIdIndex`,
+    `${tables.Partner.tableArn}`,
+    `${tables.CertificationRequest.tableArn}/index/robotIdIndex`,
+    `${tables.PlatformSettings.tableArn}/index/settingKeyIndex`,
+  ],
+}));
+
+const processCertificationPaymentFunction = backend.processCertificationPayment.resources.lambda;
+const processCertificationPaymentCdkFunction = processCertificationPaymentFunction as CdkFunction;
+processCertificationPaymentCdkFunction.addEnvironment('CERTIFICATION_REQUEST_TABLE', tables.CertificationRequest.tableName);
+processCertificationPaymentCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
+processCertificationPaymentCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
+processCertificationPaymentCdkFunction.addEnvironment('PLATFORM_REVENUE_ENTRY_TABLE', tables.PlatformRevenueEntry.tableName);
+tables.CertificationRequest.grantReadWriteData(processCertificationPaymentFunction);
+tables.UserCredits.grantReadWriteData(processCertificationPaymentFunction);
+tables.CreditTransaction.grantWriteData(processCertificationPaymentFunction);
+tables.PlatformRevenueEntry.grantWriteData(processCertificationPaymentFunction);
+processCertificationPaymentFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query', 'dynamodb:GetItem'],
+  resources: [
+    `${tables.UserCredits.tableArn}/index/userIdIndex`,
+  ],
+}));
+
+const listCertificationRequestsFunction = backend.listCertificationRequests.resources.lambda;
+const listCertificationRequestsCdkFunction = listCertificationRequestsFunction as CdkFunction;
+listCertificationRequestsCdkFunction.addEnvironment('CERTIFICATION_REQUEST_TABLE', tables.CertificationRequest.tableName);
+listCertificationRequestsCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+listCertificationRequestsCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.CertificationRequest.grantReadData(listCertificationRequestsFunction);
+tables.Robot.grantReadData(listCertificationRequestsFunction);
+userPool.grant(listCertificationRequestsFunction, 'cognito-idp:AdminGetUser');
+listCertificationRequestsFunction.addToRolePolicy(new PolicyStatement({
+  actions: ['dynamodb:Query', 'dynamodb:Scan', 'dynamodb:GetItem'],
+  resources: [
+    tables.CertificationRequest.tableArn,
+    `${tables.CertificationRequest.tableArn}/index/statusIndex`,
+    `${tables.CertificationRequest.tableArn}/index/partnerIdIndex`,
+    `${tables.CertificationRequest.tableArn}/index/robotIdIndex`,
+    tables.Robot.tableArn,
+  ],
+}));
+
+const manageCertificationRequestFunction = backend.manageCertificationRequest.resources.lambda;
+const manageCertificationRequestCdkFunction = manageCertificationRequestFunction as CdkFunction;
+manageCertificationRequestCdkFunction.addEnvironment('CERTIFICATION_REQUEST_TABLE', tables.CertificationRequest.tableName);
+manageCertificationRequestCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
+manageCertificationRequestCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.CertificationRequest.grantReadWriteData(manageCertificationRequestFunction);
+tables.Robot.grantReadWriteData(manageCertificationRequestFunction);
+userPool.grant(manageCertificationRequestFunction, 'cognito-idp:AdminGetUser');
+
+const listPlatformRevenueEntriesFunction = backend.listPlatformRevenueEntries.resources.lambda;
+const listPlatformRevenueEntriesCdkFunction = listPlatformRevenueEntriesFunction as CdkFunction;
+listPlatformRevenueEntriesCdkFunction.addEnvironment('PLATFORM_REVENUE_ENTRY_TABLE', tables.PlatformRevenueEntry.tableName);
+listPlatformRevenueEntriesCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+tables.PlatformRevenueEntry.grantReadData(listPlatformRevenueEntriesFunction);
+userPool.grant(listPlatformRevenueEntriesFunction, 'cognito-idp:AdminGetUser');
 
 // ============================================
 // Connection Cleanup Lambda Function
