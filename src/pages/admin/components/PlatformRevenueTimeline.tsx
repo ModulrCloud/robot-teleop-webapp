@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faCoins,
@@ -6,6 +6,16 @@ import {
   faSortAmountUp,
   faChevronDown,
 } from "@fortawesome/free-solid-svg-icons";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 import { generateClient } from "aws-amplify/api";
 import type { Schema } from "../../../../amplify/data/resource";
 import { useAuthStatus } from "../../../hooks/useAuthStatus";
@@ -35,6 +45,19 @@ const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   certification_fee: "Certification fee",
 };
 
+/** Chart colors in order: Modulr yellow first, then palette for additional revenue types. */
+const REVENUE_CHART_PALETTE = [
+  "#ffc107", // Modulr yellow (Session markup)
+  "#A8A8B3",
+  "#1A8A7A",
+  "#E8850C",
+  "#3B9DD9",
+  "#2DB86A",
+];
+
+/** Revenue series shown on the chart, in display order (legend and lines). Add new types here. */
+const REVENUE_CHART_SERIES = ["Session markup", "Certification fee"] as const;
+
 function formatDateTime(iso?: string): string {
   if (!iso) return "—";
   try {
@@ -53,6 +76,69 @@ function formatType(type?: string): string {
   return TRANSACTION_TYPE_LABELS[type] ?? type;
 }
 
+/** First day of current month as YYYY-MM-DD. */
+function firstDayOfThisMonth(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}-01`;
+}
+
+/** Last day of current month as YYYY-MM-DD. */
+function lastDayOfThisMonth(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const last = new Date(y, m + 1, 0).getDate();
+  const mm = String(m + 1).padStart(2, "0");
+  const dd = String(last).padStart(2, "0");
+  return `${y}-${mm}-${dd}`;
+}
+
+type ChartDatum = { date: string; "Session markup": number; "Certification fee": number; total: number };
+
+/** Placeholder chart data (all zeros) for each day in [start, end] so the chart always shows the range. */
+function emptyChartDataForRange(start: string, end: string): ChartDatum[] {
+  if (!start || !end || start > end) return [];
+  const out: ChartDatum[] = [];
+  const cur = new Date(start + "Z");
+  const endD = new Date(end + "Z");
+  while (cur <= endD) {
+    const y = cur.getUTCFullYear();
+    const m = String(cur.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(cur.getUTCDate()).padStart(2, "0");
+    out.push({ date: `${y}-${m}-${d}`, "Session markup": 0, "Certification fee": 0, total: 0 });
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return out;
+}
+
+/** Aggregate entries by calendar day for the revenue-over-time chart. */
+function aggregateRevenueByDay(entries: PlatformRevenueEntry[]): { date: string; "Session markup": number; "Certification fee": number; total: number }[] {
+  const byDay = new Map<string, { session_markup: number; certification_fee: number }>();
+  for (const e of entries) {
+    const iso = e.createdAt ?? "";
+    const day = iso.slice(0, 10);
+    if (!day) continue;
+    const current = byDay.get(day) ?? { session_markup: 0, certification_fee: 0 };
+    const credits = e.amountCredits ?? 0;
+    if (e.transactionType === "session_markup") {
+      current.session_markup += credits;
+    } else if (e.transactionType === "certification_fee") {
+      current.certification_fee += credits;
+    }
+    byDay.set(day, current);
+  }
+  return Array.from(byDay.entries())
+    .map(([date, v]) => ({
+      date,
+      "Session markup": v.session_markup,
+      "Certification fee": v.certification_fee,
+      total: v.session_markup + v.certification_fee,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export const PlatformRevenueTimeline = () => {
   const { user } = useAuthStatus();
   const [entries, setEntries] = useState<PlatformRevenueEntry[]>([]);
@@ -60,8 +146,8 @@ export const PlatformRevenueTimeline = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [startDate, setStartDate] = useState<string>("");
-  const [endDate, setEndDate] = useState<string>("");
+  const [startDate, setStartDate] = useState<string>(() => firstDayOfThisMonth());
+  const [endDate, setEndDate] = useState<string>(() => lastDayOfThisMonth());
   const [sortNewestFirst, setSortNewestFirst] = useState(true);
 
   const loadEntries = useCallback(
@@ -124,6 +210,11 @@ export const PlatformRevenueTimeline = () => {
     displayEntries.reverse();
   }
 
+  const chartData = useMemo(() => aggregateRevenueByDay(entries), [entries]);
+  const displayChartData = useMemo(() => {
+    if (chartData.length > 0) return chartData;
+    return emptyChartDataForRange(startDate, endDate);
+  }, [chartData, startDate, endDate]);
   const canLoadMore = !!nextToken && !loading;
 
   if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
@@ -184,6 +275,92 @@ export const PlatformRevenueTimeline = () => {
             {sortNewestFirst ? "Newest first" : "Oldest first"}
           </button>
         </div>
+
+        {displayChartData.length > 0 && (
+          <div className="admin-revenue-chart">
+            <h3 className="admin-revenue-chart-title">Revenue over time (by day)</h3>
+            {chartData.length === 0 && (
+              <p className="admin-revenue-chart-empty">No revenue in this period.</p>
+            )}
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart
+                data={displayChartData}
+                margin={{ top: 12, right: 12, left: 0, bottom: 28 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  interval={0}
+                  tick={{
+                    fill: "rgba(255,255,255,0.7)",
+                    fontSize: 11,
+                    angle: -40,
+                    textAnchor: "end",
+                  }}
+                  tickFormatter={(v) => {
+                    try {
+                      return new Date(v + "Z").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                    } catch {
+                      return v;
+                    }
+                  }}
+                  axisLine={{ stroke: "rgba(255,255,255,0.15)" }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fill: "rgba(255,255,255,0.7)", fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : String(v))}
+                />
+                <Tooltip
+                  cursor={{ stroke: "rgba(255,193,7,0.4)", strokeWidth: 1 }}
+                  itemSorter={(item) => {
+                    const key = (item?.dataKey ?? item?.name ?? "") as string;
+                    const i = REVENUE_CHART_SERIES.indexOf(key as (typeof REVENUE_CHART_SERIES)[number]);
+                    return i === -1 ? 999 : i;
+                  }}
+                  contentStyle={{
+                    background: "rgba(26,26,26,0.98)",
+                    border: "1px solid rgba(255,193,7,0.3)",
+                    borderRadius: "8px",
+                    color: "#fff",
+                  }}
+                  labelFormatter={(label) => new Date(label + "Z").toLocaleDateString(undefined, { dateStyle: "medium" })}
+                  formatter={(value: unknown, name: unknown) => [(typeof value === "number" ? value : 0).toLocaleString() + " credits", String(name ?? "")]}
+                  labelStyle={{ color: "#ffc107" }}
+                />
+                <Legend
+                  wrapperStyle={{ paddingTop: "8px" }}
+                  itemSorter={(item: { dataKey?: unknown; value?: unknown }) => {
+                    if (item == null) return 999;
+                    const key = String(item.dataKey ?? item.value ?? "");
+                    const i = REVENUE_CHART_SERIES.indexOf(key as (typeof REVENUE_CHART_SERIES)[number]);
+                    return i === -1 ? 999 : i;
+                  }}
+                  formatter={(value) => <span style={{ color: "rgba(255,255,255,0.85)" }}>{value}</span>}
+                />
+                {/* Render lines in reverse order so first series (Session markup) is drawn on top */}
+                {[...REVENUE_CHART_SERIES].reverse().map((dataKey, reversedIndex) => {
+                  const i = REVENUE_CHART_SERIES.length - 1 - reversedIndex;
+                  const color = REVENUE_CHART_PALETTE[i] ?? REVENUE_CHART_PALETTE[0];
+                  return (
+                    <Line
+                      key={dataKey}
+                      type="monotone"
+                      dataKey={dataKey}
+                      name={dataKey}
+                      stroke={color}
+                      strokeWidth={2}
+                      dot={{ fill: color, strokeWidth: 0 }}
+                      activeDot={{ r: 4, fill: color, stroke: "rgba(255,255,255,0.5)" }}
+                    />
+                  );
+                })}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
 
         {error && (
           <div className="admin-alert admin-alert-error" style={{ marginTop: "1rem" }}>
