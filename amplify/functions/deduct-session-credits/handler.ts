@@ -144,7 +144,7 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
       };
     }
 
-    const hourlyRateCredits = robot.hourlyRateCredits || 100; // Default 100 credits/hour
+    const hourlyRateCredits = robot.hourlyRateCredits ?? 100;
 
     // If robot is free (0 hourly rate), skip credit deduction
     if (hourlyRateCredits === 0) {

@@ -394,7 +394,7 @@ export default function RobotDetail() {
 
   const statusDisplay = getStatusDisplay();
   // Calculate total hourly rate including platform markup (like Steam - show total price)
-  const baseRateCredits = robot.hourlyRateCredits || 100;
+  const baseRateCredits = robot.hourlyRateCredits ?? 100;
   const totalRateCredits = baseRateCredits * (1 + platformMarkup / 100);
   const hourlyRateFormatted = formatCreditsAsCurrencySync(
     totalRateCredits,
@@ -662,7 +662,7 @@ export default function RobotDetail() {
         onClose={() => setShowSchedulingModal(false)}
         robotId={robot?.robotId || ''}
         robotUuid={robot?.id}
-        hourlyRateCredits={robot?.hourlyRateCredits || 100}
+        hourlyRateCredits={robot?.hourlyRateCredits ?? 100}
         platformMarkup={platformMarkup}
         userCurrency={userCurrency}
         exchangeRates={exchangeRates || undefined}
