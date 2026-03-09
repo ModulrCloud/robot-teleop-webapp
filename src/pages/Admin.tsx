@@ -10,6 +10,7 @@ import {
   faExclamationTriangle,
   faDollarSign,
   faChartLine,
+  faCoins,
   faHistory,
   faSlidersH,
   faBroom,
@@ -24,6 +25,7 @@ import "./Admin.css";
 
 
 const SystemStats = lazy(() => import("./admin/components/SystemStats").then(module => ({ default: module.SystemStats })));
+const PlatformRevenueTimeline = lazy(() => import("./admin/components/PlatformRevenueTimeline").then(module => ({ default: module.PlatformRevenueTimeline })));
 const AuditLogs = lazy(() => import("./admin/components/AuditLogs").then(module => ({ default: module.AuditLogs })));
 const ConnectionCleanup = lazy(() => import("./admin/components/ConnectionCleanup").then(module => ({ default: module.ConnectionCleanup })));
 const PlatformSettings = lazy(() => import("./admin/components/PlatformSettings").then(module => ({ default: module.PlatformSettings })));
@@ -139,6 +141,7 @@ export const Admin = () => {
 
       <div className="admin-content">
         {activeTab === "dashboard" && (
+        <>
         <Suspense fallback={
           <div className="admin-section">
             <div className="section-header">
@@ -154,6 +157,22 @@ export const Admin = () => {
         }>
           <SystemStats />
         </Suspense>
+        <Suspense fallback={
+          <div className="admin-section">
+            <div className="section-header">
+              <FontAwesomeIcon icon={faCoins} className="section-icon" />
+              <h2>Platform revenue timeline</h2>
+            </div>
+            <div className="section-content">
+              <div className="loading-state">
+                <p>Loading revenue timeline...</p>
+              </div>
+            </div>
+          </div>
+        }>
+          <PlatformRevenueTimeline />
+        </Suspense>
+        </>
         )}
 
         {activeTab === "users" && (
