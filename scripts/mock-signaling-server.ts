@@ -123,8 +123,8 @@ function normalizeNewProtocol(msg: Record<string, unknown>): NormalizedMsg | nul
       const connectionId = typeof p.connectionId === 'string' ? p.connectionId.trim() : undefined;
       return { type: 'ice-candidate', robotId, clientConnectionId: connectionId, payload: { candidate: p.candidate, sdpMid: p.sdpMid, sdpMLineIndex: p.sdpMLineIndex } };
     }
-    case 'signaling.ping':
-    case 'signaling.pong':
+    case 'signalling.ping':
+    case 'signalling.pong':
       return { type: t };
     case 'signalling.capabilities':
       return { type: 'signalling.capabilities' };
@@ -198,16 +198,16 @@ function handleMessage(connectionId: string, msg: Record<string, unknown>, ws: W
     return;
   }
 
-  if (type === 'signaling.ping') {
+  if (type === 'signalling.ping') {
     const pingId = (msg.id ?? msg.timestamp ?? Date.now()) as string;
     const response = connectionProtocol.get(connectionId) === 'modulr-v0'
-      ? { type: 'signaling.pong', version: '0.0', id: `${pingId}-pong`, timestamp: new Date().toISOString(), correlationId: pingId }
-      : { type: 'signaling.pong', id: `${pingId}-pong`, correlationId: pingId };
+      ? { type: 'signalling.pong', version: '0.0', id: `${pingId}-pong`, timestamp: new Date().toISOString(), correlationId: pingId }
+      : { type: 'signalling.pong', id: `${pingId}-pong`, correlationId: pingId };
     sendTo(connectionId, response);
     return;
   }
 
-  if (type === 'signaling.pong') {
+  if (type === 'signalling.pong') {
     return; // ack only, no response needed
   }
 

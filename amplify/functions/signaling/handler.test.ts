@@ -199,7 +199,7 @@ describe('protocol detection (Stage 1)', () => {
     it('returns true for new protocol (type contains dot)', () => {
       expect(isNewProtocol({ type: 'signalling.register' })).toBe(true);
       expect(isNewProtocol({ type: 'signalling.offer' })).toBe(true);
-      expect(isNewProtocol({ type: 'signaling.ping' })).toBe(true);
+      expect(isNewProtocol({ type: 'signalling.ping' })).toBe(true);
     });
     it('returns false for legacy protocol (type without dot)', () => {
       expect(isNewProtocol({ type: 'register' })).toBe(false);
@@ -370,9 +370,9 @@ describe('normalizeNewProtocol (Stage 2)', () => {
     });
   });
 
-  it('signaling.ping responds with signaling.pong', async () => {
+  it('signalling.ping responds with signalling.pong', async () => {
     ddbSend.mockResolvedValueOnce({}); // UpdateItem protocol
-    ddbSend.mockResolvedValueOnce({}); // UpdateItem lastPongAt (signaling.pong handler does not run - signaling.ping triggers pong)
+    ddbSend.mockResolvedValueOnce({}); // UpdateItem lastPongAt (signalling.pong handler does not run - signalling.ping triggers pong)
     apigwSend.mockResolvedValueOnce({});
 
     const token = mkToken({ sub: 'user-1' });
@@ -380,7 +380,7 @@ describe('normalizeNewProtocol (Stage 2)', () => {
       requestContext: makeRequestContext('$default', 'C-1'),
       queryStringParameters: { token },
       body: JSON.stringify({
-        type: 'signaling.ping',
+        type: 'signalling.ping',
         version: '0.0',
         id: 'ping-123',
         timestamp: new Date().toISOString(),
@@ -390,11 +390,11 @@ describe('normalizeNewProtocol (Stage 2)', () => {
     expect(resp.statusCode).toBe(200);
     expect(apigwSend).toHaveBeenCalled();
     const sent = JSON.parse(Buffer.from(apigwSend.mock.calls[0][0].input.Data).toString('utf-8'));
-    expect(sent.type).toBe('signaling.pong');
+    expect(sent.type).toBe('signalling.pong');
     expect(sent.id).toBe('ping-123-pong');
   });
 
-  it('signaling.pong updates lastPongAt and returns 200', async () => {
+  it('signalling.pong updates lastPongAt and returns 200', async () => {
     ddbSend.mockResolvedValueOnce({
       Item: { userId: { S: 'user-1' }, username: { S: 'u' }, groups: { S: 'USERS' } },
     });
@@ -406,7 +406,7 @@ describe('normalizeNewProtocol (Stage 2)', () => {
       requestContext: makeRequestContext('$default', 'C-1'),
       queryStringParameters: { token },
       body: JSON.stringify({
-        type: 'signaling.pong',
+        type: 'signalling.pong',
         version: '0.0',
         correlationId: 'ping-123',
       }),
@@ -414,7 +414,7 @@ describe('normalizeNewProtocol (Stage 2)', () => {
 
     expect(resp.statusCode).toBe(200);
     const body = JSON.parse(resp.body);
-    expect(body.type).toBe('signaling.pong-acknowledged');
+    expect(body.type).toBe('signalling.pong-acknowledged');
   });
 
   it('unknown new-protocol type returns 400 with signalling.error', async () => {
@@ -506,16 +506,16 @@ describe('normalizeNewProtocol (Stage 2)', () => {
     });
   });
 
-  describe('signaling.ping and signaling.pong pass-through', () => {
-    it('normalizeNewProtocol passes through signaling.ping', () => {
-      const out = normalizeNewProtocol({ type: 'signaling.ping', version: '0.0', id: 'x', timestamp: '2024-01-01T00:00:00Z' });
+  describe('signalling.ping and signalling.pong pass-through', () => {
+    it('normalizeNewProtocol passes through signalling.ping', () => {
+      const out = normalizeNewProtocol({ type: 'signalling.ping', version: '0.0', id: 'x', timestamp: '2024-01-01T00:00:00Z' });
       expect(out).not.toBeNull();
-      expect(out!.type).toBe('signaling.ping');
+      expect(out!.type).toBe('signalling.ping');
     });
-    it('normalizeNewProtocol passes through signaling.pong', () => {
-      const out = normalizeNewProtocol({ type: 'signaling.pong', version: '0.0' });
+    it('normalizeNewProtocol passes through signalling.pong', () => {
+      const out = normalizeNewProtocol({ type: 'signalling.pong', version: '0.0' });
       expect(out).not.toBeNull();
-      expect(out!.type).toBe('signaling.pong');
+      expect(out!.type).toBe('signalling.pong');
     });
   });
 
@@ -658,12 +658,12 @@ describe('Stage 2: new-protocol integration', () => {
     expect(sent.payload).toEqual({ supportedVersions: ['0.0', '0.1'] });
   });
 
-  it('signaling.ping receives signaling.pong response (keepalive flow)', async () => {
+  it('signalling.ping receives signalling.pong response (keepalive flow)', async () => {
     ddbSend.mockResolvedValueOnce({
       Item: { userId: { S: 'user-1' }, username: { S: 'u' }, groups: { S: 'USERS' } },
     });
     ddbSend.mockResolvedValueOnce({}); // UpdateItem protocol
-    ddbSend.mockResolvedValueOnce({}); // UpdateItem lastPongAt (signaling.pong handler does not run - signaling.ping triggers pong)
+    ddbSend.mockResolvedValueOnce({}); // UpdateItem lastPongAt (signalling.pong handler does not run - signalling.ping triggers pong)
     apigwSend.mockResolvedValueOnce({});
 
     const token = mkToken({ sub: 'user-1' });
@@ -671,7 +671,7 @@ describe('Stage 2: new-protocol integration', () => {
       requestContext: makeRequestContext('$default', 'C-1'),
       queryStringParameters: { token },
       body: JSON.stringify({
-        type: 'signaling.ping',
+        type: 'signalling.ping',
         version: '0.0',
         id: 'ping-123',
         timestamp: new Date().toISOString(),
@@ -681,11 +681,11 @@ describe('Stage 2: new-protocol integration', () => {
     expect(resp.statusCode).toBe(200);
     expect(apigwSend).toHaveBeenCalled();
     const sent = JSON.parse(Buffer.from(apigwSend.mock.calls[0][0].input.Data).toString('utf-8'));
-    expect(sent.type).toBe('signaling.pong');
+    expect(sent.type).toBe('signalling.pong');
     expect(sent.id).toBe('ping-123-pong');
   });
 
-  it('signaling.pong updates lastPongAt and returns 200', async () => {
+  it('signalling.pong updates lastPongAt and returns 200', async () => {
     ddbSend.mockResolvedValueOnce({
       Item: { userId: { S: 'user-1' }, username: { S: 'u' }, groups: { S: 'USERS' } },
     });
@@ -697,7 +697,7 @@ describe('Stage 2: new-protocol integration', () => {
       requestContext: makeRequestContext('$default', 'C-1'),
       queryStringParameters: { token },
       body: JSON.stringify({
-        type: 'signaling.pong',
+        type: 'signalling.pong',
         version: '0.0',
         correlationId: 'ping-123',
       }),
@@ -705,7 +705,7 @@ describe('Stage 2: new-protocol integration', () => {
 
     expect(resp.statusCode).toBe(200);
     const body = JSON.parse(resp.body);
-    expect(body.type).toBe('signaling.pong-acknowledged');
+    expect(body.type).toBe('signalling.pong-acknowledged');
   });
 
   it('unknown new-protocol type returns 400 with signalling.error', async () => {
