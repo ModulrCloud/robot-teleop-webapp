@@ -15,7 +15,10 @@ import {
   faBroom,
   faFileContract,
   faBullhorn,
+  faClipboardCheck,
 } from "@fortawesome/free-solid-svg-icons";
+
+type AdminTab = "dashboard" | "users" | "approvals";
 import { logger } from "../utils/logger";
 import "./Admin.css";
 
@@ -35,6 +38,7 @@ export const Admin = () => {
   const { user, loading: authLoading } = useAuthStatus();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -103,8 +107,38 @@ export const Admin = () => {
         </div>
       )}
 
+      <nav className="admin-tabs" aria-label="Admin sections">
+        <button
+          type="button"
+          className={`admin-tab ${activeTab === "dashboard" ? "active" : ""}`}
+          onClick={() => setActiveTab("dashboard")}
+          aria-selected={activeTab === "dashboard"}
+        >
+          <FontAwesomeIcon icon={faChartLine} className="admin-tab-icon" />
+          Dashboard
+        </button>
+        <button
+          type="button"
+          className={`admin-tab ${activeTab === "users" ? "active" : ""}`}
+          onClick={() => setActiveTab("users")}
+          aria-selected={activeTab === "users"}
+        >
+          <FontAwesomeIcon icon={faUsers} className="admin-tab-icon" />
+          User Management
+        </button>
+        <button
+          type="button"
+          className={`admin-tab ${activeTab === "approvals" ? "active" : ""}`}
+          onClick={() => setActiveTab("approvals")}
+          aria-selected={activeTab === "approvals"}
+        >
+          <FontAwesomeIcon icon={faClipboardCheck} className="admin-tab-icon" />
+          Approvals
+        </button>
+      </nav>
 
       <div className="admin-content">
+        {activeTab === "dashboard" && (
         <Suspense fallback={
           <div className="admin-section">
             <div className="section-header">
@@ -119,6 +153,25 @@ export const Admin = () => {
           </div>
         }>
           <SystemStats />
+        </Suspense>
+        )}
+
+        {activeTab === "users" && (
+        <>
+        <Suspense fallback={
+          <div className="admin-section">
+            <div className="section-header">
+              <FontAwesomeIcon icon={faUsers} className="section-icon" />
+              <h2>User Management</h2>
+            </div>
+            <div className="section-content">
+              <div className="loading-state">
+                <p>Loading user management...</p>
+              </div>
+            </div>
+          </div>
+        }>
+          <UserManagement />
         </Suspense>
 
         <Suspense fallback={
@@ -208,22 +261,26 @@ export const Admin = () => {
         }>
           <WhatsNewAdmin />
         </Suspense>
+        </>
+        )}
 
-        <Suspense fallback={
-          <div className="admin-section">
-            <div className="section-header">
-              <FontAwesomeIcon icon={faUsers} className="section-icon" />
-              <h2>Users</h2>
-            </div>
-            <div className="section-content">
-              <div className="loading-state">
-                <p>Loading user management...</p>
-              </div>
-            </div>
+        {activeTab === "approvals" && (
+        <div className="admin-section">
+          <div className="section-header">
+            <FontAwesomeIcon icon={faClipboardCheck} className="section-icon" />
+            <h2>Certification requests</h2>
           </div>
-        }>
-          <UserManagement />
-        </Suspense>
+          <div className="section-content">
+            <p className="section-description">Certification queue and approve/reject actions will appear here.</p>
+          </div>
+          <div className="section-header" style={{ marginTop: "2rem" }}>
+            <h2>Image audit</h2>
+          </div>
+          <div className="section-content">
+            <p className="section-description">Placeholder for future image audit workflow.</p>
+          </div>
+        </div>
+        )}
 
       </div>
     </div>

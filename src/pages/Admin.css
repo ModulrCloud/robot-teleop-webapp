@@ -39,6 +39,69 @@
   margin: 0;
 }
 
+/* Tab bar */
+.admin-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 0;
+}
+
+.admin-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.65);
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+  margin-bottom: -1px;
+}
+
+.admin-tab:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.admin-tab.active {
+  color: #ffc107;
+  border-bottom-color: #ffc107;
+}
+
+.admin-tab-icon {
+  font-size: 1rem;
+  opacity: 0.9;
+}
+
+/* Consistent width for all tab content so switching tabs doesn't shift layout.
+   Use explicit width when viewport allows so Dashboard/Approvals don't shrink to content. */
+.admin-content {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* Only force 1280px when viewport fits it after .admin-page padding (2rem each side) */
+@media (min-width: 1344px) {
+  .admin-content {
+    width: 1280px;
+    min-width: 1280px;
+  }
+}
+
+/* Force tab content to fill the content area */
+.admin-content > * {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 .admin-loading,
 .admin-error {
   display: flex;
@@ -83,6 +146,8 @@
   padding: 2rem;
   margin-top: 1.5rem;
   margin-bottom: 1.5rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .admin-section:first-child {

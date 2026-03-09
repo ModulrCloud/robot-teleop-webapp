@@ -3,11 +3,11 @@ import { randomUUID } from 'crypto';
 const PROTOCOL_VERSION = '0.0';
 
 /**
- * Builds a signaling.ping message (signaling keepalive/liveness).
+ * Builds a signalling.ping message (signalling keepalive/liveness).
  */
-export function buildSignalingPingMessage(): { type: string; version: string; id: string; timestamp: string } {
+export function buildSignallingPingMessage(): { type: string; version: string; id: string; timestamp: string } {
   return {
-    type: 'signaling.ping',
+    type: 'signalling.ping',
     version: PROTOCOL_VERSION,
     id: randomUUID(),
     timestamp: new Date().toISOString(),

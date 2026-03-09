@@ -112,13 +112,13 @@ async function main() {
     clientWs.send(JSON.stringify(envelope('signalling.capabilities', {})));
     await sleep(400);
 
-    // 8. Test signaling.ping
-    clientWs.send(JSON.stringify({ type: 'signaling.ping', version: '0.0', id: 'ping-1', timestamp: new Date().toISOString() }));
+    // 8. Test signalling.ping
+    clientWs.send(JSON.stringify({ type: 'signalling.ping', version: '0.0', id: 'ping-1', timestamp: new Date().toISOString() }));
     await sleep(400);
 
     // Summary
     const gotCapabilities = clientMsgs.some(m => m.type === 'signalling.capabilities');
-    const gotPong = clientMsgs.some(m => m.type === 'signaling.pong');
+    const gotPong = clientMsgs.some(m => m.type === 'signalling.pong');
     const gotAnswer = clientMsgs.some(m => m.type === 'signalling.answer' || m.type === 'answer');
     const gotOffer = robotMsgs.some(m => m.type === 'signalling.offer' || m.type === 'offer');
     const gotRobotIce = robotMsgs.some(m => m.type === 'signalling.ice_candidate' || m.type === 'ice-candidate');
@@ -131,7 +131,7 @@ async function main() {
     console.log(`  Robot received ICE from client: ${gotRobotIce ? '✅' : '❌'}`);
     console.log(`  Client received ICE from robot: ${gotClientIce ? '✅' : '❌'}`);
     console.log(`  signalling.capabilities response: ${gotCapabilities ? '✅' : '❌'}`);
-    console.log(`  signaling.ping → signaling.pong: ${gotPong ? '✅' : '❌'}`);
+    console.log(`  signalling.ping → signalling.pong: ${gotPong ? '✅' : '❌'}`);
     const ok = gotOffer && gotAnswer && gotRobotIce && gotClientIce && gotCapabilities && gotPong;
     console.log(`\n${ok ? '✅ New-protocol test passed' : '⚠️  Some checks failed'}\n`);
 
