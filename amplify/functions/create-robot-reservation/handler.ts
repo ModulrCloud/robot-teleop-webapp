@@ -135,7 +135,7 @@ export const handler: Schema["createRobotReservationLambda"]["functionHandler"] 
 
     const robotUuid = robot.id;
     const partnerTableId = robot.partnerId;
-    const hourlyRateCredits = robot.hourlyRateCredits || 100;
+    const hourlyRateCredits = robot.hourlyRateCredits ?? 100;
 
     if (!partnerTableId) {
       return {

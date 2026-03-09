@@ -90,7 +90,7 @@ export const handler: Schema["processSessionPaymentLambda"]["functionHandler"] =
       throw new Error(`Robot not found: ${robotId}`);
     }
 
-    const hourlyRateCredits = robot.hourlyRateCredits || 100; // Default 100 credits/hour
+    const hourlyRateCredits = robot.hourlyRateCredits ?? 100;
 
     // If robot is free (0 hourly rate), skip all credit operations
     if (hourlyRateCredits === 0) {
