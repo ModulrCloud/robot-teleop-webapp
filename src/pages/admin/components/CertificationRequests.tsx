@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faClipboardCheck,
@@ -81,12 +81,16 @@ export const CertificationRequests = () => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [rejectModal, setRejectModal] = useState<{ id: string; robotName?: string } | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const fetchIdRef = useRef(0);
 
   const loadRequests = useCallback(
     async (token?: string | null) => {
       if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
         return;
       }
+
+      const thisFetchId = fetchIdRef.current + 1;
+      fetchIdRef.current = thisFetchId;
 
       setLoading(true);
       setError(null);
@@ -110,7 +114,7 @@ export const CertificationRequests = () => {
             data = JSON.parse(result.data) as ListResponse;
           } catch (e) {
             logger.error("Failed to parse certification requests response", e);
-            setError("Failed to load certification requests");
+            if (fetchIdRef.current === thisFetchId) setError("Failed to load certification requests");
             return;
           }
         } else {
@@ -124,6 +128,8 @@ export const CertificationRequests = () => {
           );
         }
 
+        if (fetchIdRef.current !== thisFetchId) return;
+
         if (token) {
           setRequests((prev) => [...prev, ...items]);
         } else {
@@ -132,10 +138,11 @@ export const CertificationRequests = () => {
         setNextToken(data.nextToken ?? null);
       } catch (err) {
         logger.error("Error loading certification requests", err);
+        if (fetchIdRef.current !== thisFetchId) return;
         setError(err instanceof Error ? err.message : "Failed to load certification requests");
         if (!token) setRequests([]);
       } finally {
-        setLoading(false);
+        if (fetchIdRef.current === thisFetchId) setLoading(false);
       }
     },
     [user?.email, user?.group, statusFilter]
@@ -256,9 +263,29 @@ export const CertificationRequests = () => {
             <p>Loading certification requests...</p>
           </div>
         ) : requests.length === 0 ? (
-          <p className="section-description">
-            No certification requests match the current filter.
-          </p>
+          <>
+            <p className="section-description">
+              No certification requests match the current filter.
+            </p>
+            {nextToken && (
+              <p className="section-description" style={{ marginTop: "0.5rem" }}>
+                More pages may be available.
+              </p>
+            )}
+            {canLoadMore && (
+              <div style={{ marginTop: "1rem", textAlign: "center" }}>
+                <button
+                  type="button"
+                  className="admin-button admin-button-secondary"
+                  onClick={handleLoadMore}
+                  disabled={loading}
+                >
+                  <FontAwesomeIcon icon={faChevronDown} />
+                  {loading ? "Loading…" : "Load more"}
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           <>
             <div className="admin-table-wrapper">
