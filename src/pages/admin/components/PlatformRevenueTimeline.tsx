@@ -295,6 +295,9 @@ export const PlatformRevenueTimeline = () => {
             {chartData.length === 0 && (
               <p className="admin-revenue-chart-empty">No revenue in this period.</p>
             )}
+            {chartData.length > 0 && nextToken && (
+              <p className="admin-revenue-chart-empty">Chart based on first {entries.length} entries. Use &quot;Load more&quot; below for the full list.</p>
+            )}
             <ResponsiveContainer width="100%" height={280}>
               <LineChart
                 data={displayChartData}
