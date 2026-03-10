@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faCoins,
@@ -149,6 +149,7 @@ export const PlatformRevenueTimeline = () => {
   const [startDate, setStartDate] = useState<string>(() => firstDayOfThisMonth());
   const [endDate, setEndDate] = useState<string>(() => lastDayOfThisMonth());
   const [sortNewestFirst, setSortNewestFirst] = useState(true);
+  const fetchIdRef = useRef(0);
 
   const loadEntries = useCallback(
     async (token?: string | null) => {
@@ -156,14 +157,22 @@ export const PlatformRevenueTimeline = () => {
         return;
       }
 
+      const thisFetchId = fetchIdRef.current + 1;
+      fetchIdRef.current = thisFetchId;
+
       setLoading(true);
       setError(null);
       try {
+        // P1: Normalize endDate to end-of-day so entries on the selected end date are included
+        const endDateParam = endDate
+          ? `${endDate}T23:59:59.999Z`
+          : undefined;
+
         const result = await client.queries.listPlatformRevenueEntriesLambda({
           limit: 100,
           transactionType: typeFilter === "all" ? undefined : typeFilter,
           startDate: startDate || undefined,
-          endDate: endDate || undefined,
+          endDate: endDateParam,
           nextToken: token || undefined,
         });
 
@@ -180,6 +189,9 @@ export const PlatformRevenueTimeline = () => {
           data = result.data as TimelineResponse;
         }
 
+        // P2: Ignore stale responses (e.g. user changed filters before this resolved)
+        if (fetchIdRef.current !== thisFetchId) return;
+
         if (token) {
           setEntries((prev) => [...prev, ...(data.entries ?? [])]);
         } else {
@@ -188,10 +200,11 @@ export const PlatformRevenueTimeline = () => {
         setNextToken(data.nextToken ?? null);
       } catch (err) {
         logger.error("Error loading platform revenue entries", err);
+        if (fetchIdRef.current !== thisFetchId) return;
         setError(err instanceof Error ? err.message : "Failed to load revenue entries");
         if (!token) setEntries([]);
       } finally {
-        setLoading(false);
+        if (fetchIdRef.current === thisFetchId) setLoading(false);
       }
     },
     [user?.email, user?.group, typeFilter, startDate, endDate]
