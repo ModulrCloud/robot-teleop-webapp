@@ -412,6 +412,29 @@
   color: #fff;
 }
 
+/* Revenue over time chart (Modulr theme) */
+.admin-revenue-chart {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 193, 7, 0.15);
+  border-radius: 10px;
+  min-height: 280px;
+}
+
+.admin-revenue-chart-title {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.admin-revenue-chart-empty {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
 /* DatePicker in revenue timeline: white calendar icon, Modulr-themed pop-up */
 .admin-revenue-filters .admin-revenue-date-picker .calendar-icon {
   color: #fff;

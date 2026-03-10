@@ -44,6 +44,7 @@
     "react-bootstrap": "^2.10.10",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.2",
+    "recharts": "^3.8.0",
     "stripe": "^20.1.0"
   },
   "devDependencies": {
