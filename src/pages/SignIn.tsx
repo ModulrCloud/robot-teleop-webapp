@@ -2,7 +2,7 @@ import './SignIn.css';
 import { Button } from "react-bootstrap";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faGoogle } from '@fortawesome/free-brands-svg-icons';
-import { faRobot, faGamepad } from '@fortawesome/free-solid-svg-icons';
+import { faGamepad, faChartLine, faMicrochip, faShieldHalved } from '@fortawesome/free-solid-svg-icons';
 // Import Amplify first to ensure config is accessible
 import { Amplify } from 'aws-amplify';
 // Import auth functions after Amplify to ensure they use the configured instance
@@ -128,25 +128,38 @@ export default function SignIn() {
     <div className="signin-wrapper">
       <div className="signin-container">
         <div className="signin-header">
+          <img src="/logo-large.png" alt="Modulr" className="signin-logo" />
           <h1>Welcome to Modulr</h1>
-          <p className="signin-tagline">Remote Robot Teleoperation Platform</p>
+          <p className="signin-tagline">Robot Operation, at Scale</p>
+          <p className="signin-subtitle">
+            The platform for remote robot teleoperation, fleet management, and AI-powered services.
+          </p>
         </div>
+
+        <div className="signin-divider" />
 
         <div className="signin-features">
-          <div className="feature-card">
+          <div className="signin-feature">
             <FontAwesomeIcon icon={faGamepad} className="feature-icon" />
-            <h3>Control Robots</h3>
-            <p>Access and operate robots remotely from anywhere</p>
+            <span>Teleoperate from anywhere</span>
           </div>
-          <div className="feature-card">
-            <FontAwesomeIcon icon={faRobot} className="feature-icon" />
-            <h3>Offer Your Robots</h3>
-            <p>List your robots and earn from remote operations</p>
+          <div className="signin-feature">
+            <FontAwesomeIcon icon={faChartLine} className="feature-icon" />
+            <span>Fleet management</span>
+          </div>
+          <div className="signin-feature">
+            <FontAwesomeIcon icon={faMicrochip} className="feature-icon" />
+            <span>AI service marketplace</span>
+          </div>
+          <div className="signin-feature">
+            <FontAwesomeIcon icon={faShieldHalved} className="feature-icon" />
+            <span>Enterprise security</span>
           </div>
         </div>
 
+        <div className="signin-divider" />
+
         <div className="signin-action">
-          <p className="signin-prompt">Get started in seconds</p>
           <Button onClick={signInWithGoogle} className="signin-google-btn">
             <FontAwesomeIcon icon={faGoogle} className="google-icon" />
             Sign in with Google
