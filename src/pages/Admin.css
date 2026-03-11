@@ -396,6 +396,17 @@
   min-width: 140px;
 }
 
+.admin-revenue-filters .admin-select {
+  padding-right: 2.25rem;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='rgba(255,255,255,0.85)' d='M8 11L3 5h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 0.85rem;
+}
+
 .admin-revenue-filters .admin-input {
   min-width: 10rem;
 }
@@ -648,6 +659,56 @@
 .admin-alert svg {
   font-size: 1.1rem;
   flex-shrink: 0;
+}
+
+.admin-actions-inline {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.admin-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.admin-modal {
+  background: rgba(26, 26, 26, 0.98);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 12px;
+  padding: 1.5rem;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.admin-modal h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.1rem;
+  color: #fff;
+}
+
+.admin-modal .admin-filter-group {
+  margin-bottom: 0;
+}
+
+.admin-modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.25rem;
+}
+
+.admin-modal textarea.admin-input {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
 }
 
 @keyframes slideDown {

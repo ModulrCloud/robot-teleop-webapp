@@ -33,6 +33,7 @@ const PayoutManagement = lazy(() => import("./admin/components/PayoutManagement"
 const UserManagement = lazy(() => import("./admin/components/UserManagement").then(module => ({ default: module.UserManagement })));
 const TermsOfServiceAdmin = lazy(() => import("./admin/components/TermsOfServiceAdmin").then(module => ({ default: module.TermsOfServiceAdmin })));
 const WhatsNewAdmin = lazy(() => import("./admin/components/WhatsNewAdmin").then(module => ({ default: module.WhatsNewAdmin })));
+const CertificationRequests = lazy(() => import("./admin/components/CertificationRequests").then(module => ({ default: module.CertificationRequests })));
 
 export const Admin = () => {
   usePageTitle();
@@ -284,21 +285,29 @@ export const Admin = () => {
         )}
 
         {activeTab === "approvals" && (
-        <div className="admin-section">
+        <>
+        <Suspense fallback={
+          <div className="admin-section">
+            <div className="section-header">
+              <FontAwesomeIcon icon={faClipboardCheck} className="section-icon" />
+              <h2>Certification requests</h2>
+            </div>
+            <div className="section-content">
+              <p className="loading-state">Loading certification requests...</p>
+            </div>
+          </div>
+        }>
+          <CertificationRequests />
+        </Suspense>
+        <div className="admin-section" style={{ marginTop: "2rem" }}>
           <div className="section-header">
-            <FontAwesomeIcon icon={faClipboardCheck} className="section-icon" />
-            <h2>Certification requests</h2>
-          </div>
-          <div className="section-content">
-            <p className="section-description">Certification queue and approve/reject actions will appear here.</p>
-          </div>
-          <div className="section-header" style={{ marginTop: "2rem" }}>
             <h2>Image audit</h2>
           </div>
           <div className="section-content">
             <p className="section-description">Placeholder for future image audit workflow.</p>
           </div>
         </div>
+        </>
         )}
 
       </div>
