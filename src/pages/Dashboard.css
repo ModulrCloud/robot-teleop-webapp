@@ -781,3 +781,78 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ---- Organization Welcome Screen ---- */
+
+.org-welcome-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 70vh;
+  padding: 2rem;
+}
+
+.org-welcome-loading {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 1rem;
+}
+
+.org-welcome-card {
+  text-align: center;
+  max-width: 520px;
+  width: 100%;
+  background: rgba(22, 24, 30, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 1.5rem;
+  padding: 3rem 2.5rem;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+}
+
+.org-welcome-icon {
+  font-size: 2.5rem;
+  color: #ffb700;
+  margin-bottom: 1.2rem;
+}
+
+.org-welcome-card h1 {
+  color: #fff;
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+}
+
+.org-welcome-tagline {
+  color: #ffb700;
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin: 0 0 0.75rem;
+}
+
+.org-welcome-desc {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 0 0 2rem;
+}
+
+.org-welcome-create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 2rem;
+  border: none;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, #ffb700, #ff9800);
+  color: #000;
+  font-size: 1.1rem;
+  font-weight: 600;
+  font-family: var(--quantico);
+  cursor: pointer;
+  transition: all 0.25s;
+  box-shadow: 0 4px 18px rgba(255, 183, 0, 0.3);
+}
+
+.org-welcome-create-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(255, 183, 0, 0.5);
+}
