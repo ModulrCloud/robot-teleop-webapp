@@ -91,33 +91,23 @@ export default function Navbar() {
 
         {isLoggedIn && (
           <div className="navbar-links">
-            <Link
-              to="/"
-              className={`nav-link ${isActive('/') ? 'active' : ''}`}
-            >
-              <FontAwesomeIcon icon={faGaugeHigh} />
-              <span>Dashboard</span>
-            </Link>
             {user?.group === 'ORGANIZATIONS' ? (
-              primaryOrgId ? (
-                <Link
-                  to={`/command-hq/${primaryOrgId}`}
-                  className={`nav-link ${location.pathname.startsWith('/command-hq') ? 'active' : ''}`}
-                >
-                  <FontAwesomeIcon icon={faSatelliteDish} />
-                  <span>Command HQ</span>
-                </Link>
-              ) : (
-                <Link
-                  to="/"
-                  className={`nav-link ${location.pathname.startsWith('/command-hq') ? 'active' : ''}`}
-                >
-                  <FontAwesomeIcon icon={faSatelliteDish} />
-                  <span>Command HQ</span>
-                </Link>
-              )
+              <Link
+                to={primaryOrgId ? `/command-hq/${primaryOrgId}` : '/'}
+                className={`nav-link ${isActive('/') || location.pathname.startsWith('/command-hq') ? 'active' : ''}`}
+              >
+                <FontAwesomeIcon icon={faSatelliteDish} />
+                <span>Command HQ</span>
+              </Link>
             ) : (
               <>
+                <Link
+                  to="/"
+                  className={`nav-link ${isActive('/') ? 'active' : ''}`}
+                >
+                  <FontAwesomeIcon icon={faGaugeHigh} />
+                  <span>Dashboard</span>
+                </Link>
                 <Link
                   to="/robots"
                   className={`nav-link ${isActive('/robots') ? 'active' : ''}`}
@@ -355,19 +345,21 @@ export default function Navbar() {
             <FontAwesomeIcon icon={faGlobe} />
             <span>Website ↗</span>
           </a>
-          <Link to="/" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
-            <FontAwesomeIcon icon={faGaugeHigh} />
-            <span>Dashboard</span>
-          </Link>
           {user?.group === 'ORGANIZATIONS' ? (
-            primaryOrgId && (
-              <Link to={`/command-hq/${primaryOrgId}`} className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
-                <FontAwesomeIcon icon={faSatelliteDish} />
-                <span>Command HQ</span>
-              </Link>
-            )
+            <Link
+              to={primaryOrgId ? `/command-hq/${primaryOrgId}` : '/'}
+              className="mobile-nav-link"
+              onClick={() => setShowMobileMenu(false)}
+            >
+              <FontAwesomeIcon icon={faSatelliteDish} />
+              <span>Command HQ</span>
+            </Link>
           ) : (
             <>
+              <Link to="/" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
+                <FontAwesomeIcon icon={faGaugeHigh} />
+                <span>Dashboard</span>
+              </Link>
               <Link to="/robots" className="mobile-nav-link" onClick={() => setShowMobileMenu(false)}>
                 <FontAwesomeIcon icon={faRobot} />
                 <span>Robots</span>

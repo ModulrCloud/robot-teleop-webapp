@@ -17,9 +17,8 @@ import {
   faDollarSign,
   faSlidersH,
   faSync,
-  faBuilding,
-  faUsers,
   faPlus,
+  faSatelliteDish,
 } from '@fortawesome/free-solid-svg-icons';
 import { generateClient } from 'aws-amplify/api';
 import { fetchAuthSession } from 'aws-amplify/auth';
@@ -466,6 +465,56 @@ export const Dashboard = () => {
 
   const allSystemsOperational = Object.values(systemStatus).every(status => status);
 
+  if (user?.group === 'ORGANIZATIONS') {
+    if (orgsLoading) {
+      return (
+        <div className="dashboard-container">
+          <div className="org-welcome-wrapper">
+            <div className="org-welcome-loading">Loading...</div>
+          </div>
+        </div>
+      );
+    }
+    if (userOrgs.length > 0) {
+      navigate(`/command-hq/${userOrgs[0].id}`, { replace: true });
+      return null;
+    }
+    return (
+      <div className="dashboard-container">
+        <div className="org-welcome-wrapper">
+          <div className="org-welcome-card">
+            <div className="org-welcome-icon">
+              <FontAwesomeIcon icon={faSatelliteDish} />
+            </div>
+            <h1>Welcome to Command HQ</h1>
+            <p className="org-welcome-tagline">
+              Manage your operators, robots, and fleet from one place.
+            </p>
+            <p className="org-welcome-desc">
+              Create a team to get started with role-based access, session logs, and real-time fleet monitoring.
+            </p>
+            <button className="org-welcome-create-btn" onClick={() => setShowCreateOrg(true)}>
+              <FontAwesomeIcon icon={faPlus} /> Create Your First Team
+            </button>
+          </div>
+        </div>
+        {showCreateOrg && (
+          <CreateOrgModal
+            onClose={() => setShowCreateOrg(false)}
+            onCreated={(newOrgId) => {
+              setShowCreateOrg(false);
+              if (newOrgId) {
+                navigate(`/command-hq/${newOrgId}`);
+              } else {
+                loadUserOrgs();
+              }
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="dashboard-container">
       <div className="dashboard-welcome">
@@ -669,54 +718,6 @@ export const Dashboard = () => {
         )}
       </div>
 
-      {user?.group === 'ORGANIZATIONS' && (
-        <div className="dashboard-section">
-          <div className="section-header">
-            <h2 className="section-title">Your Teams</h2>
-            <button className="view-all-btn" onClick={() => setShowCreateOrg(true)}>
-              <FontAwesomeIcon icon={faPlus} /> Create
-            </button>
-          </div>
-          {orgsLoading ? (
-            <div className="empty-state">
-              <p>Loading teams...</p>
-            </div>
-          ) : userOrgs.length > 0 ? (
-            <div className="org-cards-grid">
-              {userOrgs.map((org) => (
-                <button
-                  key={org.id}
-                  className="org-card"
-                  onClick={() => navigate(`/command-hq/${org.id}`)}
-                >
-                  <div className="org-card-avatar">
-                    <FontAwesomeIcon icon={faBuilding} />
-                  </div>
-                  <div className="org-card-content">
-                    <h3>{org.name}</h3>
-                    <span className="org-card-slug">/{org.slug}</span>
-                    <div className="org-card-stats">
-                      <span><FontAwesomeIcon icon={faUsers} /> {org.memberCount}</span>
-                      <span><FontAwesomeIcon icon={faRobot} /> {org.robotCount}</span>
-                    </div>
-                  </div>
-                  <FontAwesomeIcon icon={faArrowRight} className="org-card-arrow" />
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">
-              <FontAwesomeIcon icon={faBuilding} className="empty-icon" />
-              <h3>No Teams Yet</h3>
-              <p>Create a team to manage your operators and robot fleet.</p>
-              <button className="empty-action-btn" onClick={() => setShowCreateOrg(true)}>
-                <FontAwesomeIcon icon={faPlus} /> Create Team
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
       {showCreateOrg && (
         <CreateOrgModal
           onClose={() => setShowCreateOrg(false)}
@@ -815,7 +816,7 @@ export const Dashboard = () => {
   );
 };
 
-function CreateOrgModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function CreateOrgModal({ onClose, onCreated }: { onClose: () => void; onCreated: (orgId?: string) => void }) {
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [description, setDescription] = useState('');
@@ -839,7 +840,7 @@ function CreateOrgModal({ onClose, onCreated }: { onClose: () => void; onCreated
     try {
       const result = await createOrganization(name.trim(), slug.trim(), description.trim() || undefined);
       if (result.success) {
-        onCreated();
+        onCreated(result.orgId);
       } else {
         setError(result.error || 'Failed to create organization');
       }
