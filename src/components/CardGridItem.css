@@ -59,6 +59,20 @@
   flex: 1;
 }
 
+.card-grid-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.25rem;
+}
+
+.card-grid-title-row h3 {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .card-grid-content h3 {
   margin: 0 0 0.5rem 0;
   font-size: 1.15rem;
@@ -68,6 +82,11 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.card-grid-title-row + .card-grid-description ~ .card-grid-description,
+.card-grid-content .card-grid-title-row + .card-grid-description {
+  margin-top: 0.25rem;
 }
 
 .card-grid-description {

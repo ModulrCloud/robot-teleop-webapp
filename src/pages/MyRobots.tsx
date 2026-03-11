@@ -15,6 +15,7 @@ import {
   faClock,
   faDollarSign
 } from '@fortawesome/free-solid-svg-icons';
+import { ModulrApprovedBadge } from '../components/ModulrApprovedBadge';
 import outputs from '../../amplify_outputs.json';
 import './MyRobots.css';
 import { logger } from '../utils/logger';
@@ -32,6 +33,7 @@ interface Robot {
   city?: string;
   state?: string;
   country?: string;
+  modulrApproved?: boolean;
 }
 
 interface RobotStatus {
@@ -178,8 +180,11 @@ export default function MyRobots() {
             city: robot.city || undefined,
             state: robot.state || undefined,
             country: robot.country || undefined,
+            modulrApproved: robot.modulrApproved === true,
           }));
 
+        // Sort: Modulr Approved robots first
+        robotsList.sort((a, b) => (b.modulrApproved ? 1 : 0) - (a.modulrApproved ? 1 : 0));
         setRobots(robotsList);
 
         // Load statuses and revenues for all robots
@@ -570,6 +575,7 @@ export default function MyRobots() {
                   <div className="robot-card-title">
                     <FontAwesomeIcon icon={faRobot} />
                     <h3>{robot.name}</h3>
+                    {robot.modulrApproved && <ModulrApprovedBadge size="small" />}
                   </div>
                   <div className={`robot-status-badge ${status.isOnline ? 'online' : status.status === 'pending' ? 'pending' : 'offline'}`}>
                     <FontAwesomeIcon 

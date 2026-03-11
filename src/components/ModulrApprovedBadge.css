@@ -1,0 +1,42 @@
+.modulr-approved-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.2) 0%, rgba(255, 193, 7, 0.08) 100%);
+  color: #ffc107;
+  border: 1px solid rgba(255, 193, 7, 0.5);
+  border-radius: 9999px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.modulr-approved-badge--small {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
+}
+
+.modulr-approved-badge--small .modulr-approved-badge__img {
+  height: 14px;
+  width: auto;
+  max-width: 72px;
+}
+
+.modulr-approved-badge--medium {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.modulr-approved-badge--medium .modulr-approved-badge__img {
+  height: 20px;
+  width: auto;
+  max-width: 100px;
+}
+
+.modulr-approved-badge__img {
+  display: block;
+  object-fit: contain;
+}
+
+.modulr-approved-badge__text {
+  display: inline;
+}
