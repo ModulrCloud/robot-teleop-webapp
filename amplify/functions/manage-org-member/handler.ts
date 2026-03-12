@@ -133,6 +133,7 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
           inviteCode,
           expiresAt: expiresAt.toISOString(),
           createdAt: now.toISOString(),
+          updatedAt: now.toISOString(),
           owner: callerUsername,
         },
       })
@@ -195,6 +196,8 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
           roleId: invite.roleId,
           status: "active",
           joinedAt: now,
+          createdAt: now,
+          updatedAt: now,
           owner: callerUsername,
         },
       })

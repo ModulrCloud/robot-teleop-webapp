@@ -10,17 +10,22 @@ import {
   faExclamationTriangle,
   faDollarSign,
   faChartLine,
+  faCoins,
   faHistory,
   faSlidersH,
   faBroom,
   faFileContract,
   faBullhorn,
+  faClipboardCheck,
 } from "@fortawesome/free-solid-svg-icons";
+
+type AdminTab = "dashboard" | "users" | "approvals";
 import { logger } from "../utils/logger";
 import "./Admin.css";
 
 
 const SystemStats = lazy(() => import("./admin/components/SystemStats").then(module => ({ default: module.SystemStats })));
+const PlatformRevenueTimeline = lazy(() => import("./admin/components/PlatformRevenueTimeline").then(module => ({ default: module.PlatformRevenueTimeline })));
 const AuditLogs = lazy(() => import("./admin/components/AuditLogs").then(module => ({ default: module.AuditLogs })));
 const ConnectionCleanup = lazy(() => import("./admin/components/ConnectionCleanup").then(module => ({ default: module.ConnectionCleanup })));
 const PlatformSettings = lazy(() => import("./admin/components/PlatformSettings").then(module => ({ default: module.PlatformSettings })));
@@ -28,6 +33,7 @@ const PayoutManagement = lazy(() => import("./admin/components/PayoutManagement"
 const UserManagement = lazy(() => import("./admin/components/UserManagement").then(module => ({ default: module.UserManagement })));
 const TermsOfServiceAdmin = lazy(() => import("./admin/components/TermsOfServiceAdmin").then(module => ({ default: module.TermsOfServiceAdmin })));
 const WhatsNewAdmin = lazy(() => import("./admin/components/WhatsNewAdmin").then(module => ({ default: module.WhatsNewAdmin })));
+const CertificationRequests = lazy(() => import("./admin/components/CertificationRequests").then(module => ({ default: module.CertificationRequests })));
 
 export const Admin = () => {
   usePageTitle();
@@ -35,6 +41,7 @@ export const Admin = () => {
   const { user, loading: authLoading } = useAuthStatus();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -103,8 +110,39 @@ export const Admin = () => {
         </div>
       )}
 
+      <nav className="admin-tabs" aria-label="Admin sections">
+        <button
+          type="button"
+          className={`admin-tab ${activeTab === "dashboard" ? "active" : ""}`}
+          onClick={() => setActiveTab("dashboard")}
+          aria-selected={activeTab === "dashboard"}
+        >
+          <FontAwesomeIcon icon={faChartLine} className="admin-tab-icon" />
+          Dashboard
+        </button>
+        <button
+          type="button"
+          className={`admin-tab ${activeTab === "users" ? "active" : ""}`}
+          onClick={() => setActiveTab("users")}
+          aria-selected={activeTab === "users"}
+        >
+          <FontAwesomeIcon icon={faUsers} className="admin-tab-icon" />
+          User Management
+        </button>
+        <button
+          type="button"
+          className={`admin-tab ${activeTab === "approvals" ? "active" : ""}`}
+          onClick={() => setActiveTab("approvals")}
+          aria-selected={activeTab === "approvals"}
+        >
+          <FontAwesomeIcon icon={faClipboardCheck} className="admin-tab-icon" />
+          Approvals
+        </button>
+      </nav>
 
       <div className="admin-content">
+        {activeTab === "dashboard" && (
+        <>
         <Suspense fallback={
           <div className="admin-section">
             <div className="section-header">
@@ -119,6 +157,41 @@ export const Admin = () => {
           </div>
         }>
           <SystemStats />
+        </Suspense>
+        <Suspense fallback={
+          <div className="admin-section">
+            <div className="section-header">
+              <FontAwesomeIcon icon={faCoins} className="section-icon" />
+              <h2>Platform revenue timeline</h2>
+            </div>
+            <div className="section-content">
+              <div className="loading-state">
+                <p>Loading revenue timeline...</p>
+              </div>
+            </div>
+          </div>
+        }>
+          <PlatformRevenueTimeline />
+        </Suspense>
+        </>
+        )}
+
+        {activeTab === "users" && (
+        <>
+        <Suspense fallback={
+          <div className="admin-section">
+            <div className="section-header">
+              <FontAwesomeIcon icon={faUsers} className="section-icon" />
+              <h2>User Management</h2>
+            </div>
+            <div className="section-content">
+              <div className="loading-state">
+                <p>Loading user management...</p>
+              </div>
+            </div>
+          </div>
+        }>
+          <UserManagement />
         </Suspense>
 
         <Suspense fallback={
@@ -208,22 +281,34 @@ export const Admin = () => {
         }>
           <WhatsNewAdmin />
         </Suspense>
+        </>
+        )}
 
+        {activeTab === "approvals" && (
+        <>
         <Suspense fallback={
           <div className="admin-section">
             <div className="section-header">
-              <FontAwesomeIcon icon={faUsers} className="section-icon" />
-              <h2>Users</h2>
+              <FontAwesomeIcon icon={faClipboardCheck} className="section-icon" />
+              <h2>Certification requests</h2>
             </div>
             <div className="section-content">
-              <div className="loading-state">
-                <p>Loading user management...</p>
-              </div>
+              <p className="loading-state">Loading certification requests...</p>
             </div>
           </div>
         }>
-          <UserManagement />
+          <CertificationRequests />
         </Suspense>
+        <div className="admin-section" style={{ marginTop: "2rem" }}>
+          <div className="section-header">
+            <h2>Image audit</h2>
+          </div>
+          <div className="section-content">
+            <p className="section-description">Placeholder for future image audit workflow.</p>
+          </div>
+        </div>
+        </>
+        )}
 
       </div>
     </div>

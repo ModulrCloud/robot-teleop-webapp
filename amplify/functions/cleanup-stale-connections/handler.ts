@@ -8,13 +8,13 @@ import {
   GetItemCommand,
 } from '@aws-sdk/client-dynamodb';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand, DeleteConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
-import { buildSignalingPingMessage } from '../shared/agent-protocol';
+import { buildSignallingPingMessage } from '../shared/agent-protocol';
 
 const CONN_TABLE = process.env.CONN_TABLE!;
 const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
 const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!;
-// Set PONG_CHECK_ENABLED=true to require signaling.pong for robot liveness (agent must support it)
+// Set PONG_CHECK_ENABLED=true to require signalling.pong for robot liveness (agent must support it)
 const PONG_CHECK_ENABLED = process.env.PONG_CHECK_ENABLED === 'true';
 
 const db = new DynamoDBClient({});
@@ -223,11 +223,11 @@ async function collectStaleConnections(thresholdTimestamp: number): Promise<Stal
 }
 
 /**
- * Sends signaling.ping to a connection. Returns true if sent successfully, false if connection is dead (GoneException).
+ * Sends signalling.ping to a connection. Returns true if sent successfully, false if connection is dead (GoneException).
  */
 async function sendSignalingPing(connectionId: string): Promise<boolean> {
   try {
-    const message = buildSignalingPingMessage();
+    const message = buildSignallingPingMessage();
     await mgmt.send(
       new PostToConnectionCommand({
         ConnectionId: connectionId,
@@ -488,7 +488,7 @@ export const handler = async (): Promise<{ statusCode: number; body: string }> =
       const toCleanup: StaleConnection[] = [];
       let pingSentAt = Date.now();
 
-      // Send signaling.ping to each connection in batch
+      // Send signalling.ping to each connection in batch
       const results = await Promise.allSettled(
         batch.map((conn) => sendSignalingPing(conn.connectionId))
       );

@@ -17,16 +17,15 @@ import {
   faDollarSign,
   faSlidersH,
   faSync,
-  faBuilding,
-  faUsers,
   faPlus,
+  faSatelliteDish,
 } from '@fortawesome/free-solid-svg-icons';
 import { generateClient } from 'aws-amplify/api';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
 import "./Dashboard.css";
 import { PayoutPreferencesModal, type PayoutType } from "../components/PayoutPreferencesModal";
-import { getMockOrgsForUser } from "../mocks/organization";
+import { fetchUserOrganizations, createOrganization } from "../hooks/useOrganizationData";
 import type { Organization } from "../types/organization";
 import { logger } from '../utils/logger';
 import outputs from '../../amplify_outputs.json';
@@ -84,7 +83,9 @@ export const Dashboard = () => {
   const [stripeConnectError, setStripeConnectError] = useState<string | null>(null);
   const [payoutModalOpen, setPayoutModalOpen] = useState(false);
 
-  const [userOrgs] = useState<Organization[]>(getMockOrgsForUser());
+  const [userOrgs, setUserOrgs] = useState<Organization[]>([]);
+  const [orgsLoading, setOrgsLoading] = useState(false);
+  const [showCreateOrg, setShowCreateOrg] = useState(false);
 
   const [systemStatus, setSystemStatus] = useState<SystemStatus>({
     webrtc: false,
@@ -178,6 +179,23 @@ export const Dashboard = () => {
   useEffect(() => {
     loadPartnerPendingPayout();
   }, [user?.username]);
+
+  const loadUserOrgs = useCallback(async () => {
+    if (!user?.username || user?.group !== 'ORGANIZATIONS') return;
+    setOrgsLoading(true);
+    try {
+      const orgs = await fetchUserOrganizations(user.username);
+      setUserOrgs(orgs);
+    } catch (err) {
+      logger.error('Dashboard: failed to load organizations', err);
+    } finally {
+      setOrgsLoading(false);
+    }
+  }, [user?.username, user?.group]);
+
+  useEffect(() => {
+    loadUserOrgs();
+  }, [loadUserOrgs]);
 
   // Handle Stripe Connect return/refresh redirects
   useEffect(() => {
@@ -447,6 +465,56 @@ export const Dashboard = () => {
 
   const allSystemsOperational = Object.values(systemStatus).every(status => status);
 
+  if (user?.group === 'ORGANIZATIONS') {
+    if (orgsLoading) {
+      return (
+        <div className="dashboard-container">
+          <div className="org-welcome-wrapper">
+            <div className="org-welcome-loading">Loading...</div>
+          </div>
+        </div>
+      );
+    }
+    if (userOrgs.length > 0) {
+      navigate(`/command-hq/${userOrgs[0].id}`, { replace: true });
+      return null;
+    }
+    return (
+      <div className="dashboard-container">
+        <div className="org-welcome-wrapper">
+          <div className="org-welcome-card">
+            <div className="org-welcome-icon">
+              <FontAwesomeIcon icon={faSatelliteDish} />
+            </div>
+            <h1>Welcome to Command HQ</h1>
+            <p className="org-welcome-tagline">
+              Manage your operators, robots, and fleet from one place.
+            </p>
+            <p className="org-welcome-desc">
+              Create a team to get started with role-based access, session logs, and real-time fleet monitoring.
+            </p>
+            <button className="org-welcome-create-btn" onClick={() => setShowCreateOrg(true)}>
+              <FontAwesomeIcon icon={faPlus} /> Create Your First Team
+            </button>
+          </div>
+        </div>
+        {showCreateOrg && (
+          <CreateOrgModal
+            onClose={() => setShowCreateOrg(false)}
+            onCreated={(newOrgId) => {
+              setShowCreateOrg(false);
+              if (newOrgId) {
+                navigate(`/command-hq/${newOrgId}`);
+              } else {
+                loadUserOrgs();
+              }
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="dashboard-container">
       <div className="dashboard-welcome">
@@ -650,48 +718,14 @@ export const Dashboard = () => {
         )}
       </div>
 
-      {user?.group === 'ORGANIZATIONS' && (
-        <div className="dashboard-section">
-          <div className="section-header">
-            <h2 className="section-title">Your Teams</h2>
-            <button className="view-all-btn" onClick={() => {/* TODO: create org flow */}}>
-              <FontAwesomeIcon icon={faPlus} /> Create
-            </button>
-          </div>
-          {userOrgs.length > 0 ? (
-            <div className="org-cards-grid">
-              {userOrgs.map((org) => (
-                <button
-                  key={org.id}
-                  className="org-card"
-                  onClick={() => navigate(`/command-hq/${org.id}`)}
-                >
-                  <div className="org-card-avatar">
-                    <FontAwesomeIcon icon={faBuilding} />
-                  </div>
-                  <div className="org-card-content">
-                    <h3>{org.name}</h3>
-                    <span className="org-card-slug">/{org.slug}</span>
-                    <div className="org-card-stats">
-                      <span><FontAwesomeIcon icon={faUsers} /> {org.memberCount}</span>
-                      <span><FontAwesomeIcon icon={faRobot} /> {org.robotCount}</span>
-                    </div>
-                  </div>
-                  <FontAwesomeIcon icon={faArrowRight} className="org-card-arrow" />
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">
-              <FontAwesomeIcon icon={faBuilding} className="empty-icon" />
-              <h3>No Teams Yet</h3>
-              <p>Create a team to manage your operators and robot fleet.</p>
-              <button className="empty-action-btn" onClick={() => {/* TODO: create org flow */}}>
-                <FontAwesomeIcon icon={faPlus} /> Create Team
-              </button>
-            </div>
-          )}
-        </div>
+      {showCreateOrg && (
+        <CreateOrgModal
+          onClose={() => setShowCreateOrg(false)}
+          onCreated={() => {
+            setShowCreateOrg(false);
+            loadUserOrgs();
+          }}
+        />
       )}
 
       {isPartner && user?.group === 'PARTNERS' && (
@@ -781,3 +815,96 @@ export const Dashboard = () => {
     </div>
   );
 };
+
+function CreateOrgModal({ onClose, onCreated }: { onClose: () => void; onCreated: (orgId?: string) => void }) {
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [slugTouched, setSlugTouched] = useState(false);
+
+  const autoSlug = (val: string) =>
+    val.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
+
+  const handleNameChange = (val: string) => {
+    setName(val);
+    if (!slugTouched) setSlug(autoSlug(val));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !slug.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await createOrganization(name.trim(), slug.trim(), description.trim() || undefined);
+      if (result.success) {
+        onCreated(result.orgId);
+      } else {
+        setError(result.error || 'Failed to create organization');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="create-org-overlay" onClick={onClose}>
+      <div className="create-org-modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Create Team</h2>
+        <form onSubmit={handleSubmit}>
+          <div className="create-org-field">
+            <label htmlFor="org-name">Team Name</label>
+            <input
+              id="org-name"
+              type="text"
+              value={name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              placeholder="e.g. Modulr Robotics"
+              required
+              autoFocus
+            />
+          </div>
+          <div className="create-org-field">
+            <label htmlFor="org-slug">Slug</label>
+            <div className="create-org-slug-row">
+              <span className="create-org-slug-prefix">/</span>
+              <input
+                id="org-slug"
+                type="text"
+                value={slug}
+                onChange={(e) => { setSlugTouched(true); setSlug(autoSlug(e.target.value)); }}
+                placeholder="modulr-robotics"
+                required
+                pattern="[a-z0-9][a-z0-9-]{1,48}[a-z0-9]"
+                title="3-50 chars, lowercase alphanumeric and hyphens"
+              />
+            </div>
+          </div>
+          <div className="create-org-field">
+            <label htmlFor="org-desc">Description (optional)</label>
+            <textarea
+              id="org-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What does your team do?"
+              rows={2}
+            />
+          </div>
+          {error && <p className="create-org-error">{error}</p>}
+          <div className="create-org-actions">
+            <button type="button" className="create-org-cancel" onClick={onClose} disabled={saving}>
+              Cancel
+            </button>
+            <button type="submit" className="create-org-submit" disabled={saving || !name.trim() || !slug.trim()}>
+              {saving ? 'Creating...' : 'Create Team'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

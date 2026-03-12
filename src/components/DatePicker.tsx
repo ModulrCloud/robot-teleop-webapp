@@ -11,6 +11,8 @@ interface DatePickerProps {
   disabled?: boolean;
   min?: string;
   max?: string;
+  /** When true, renders a smaller calendar (e.g. for admin filters). */
+  compact?: boolean;
 }
 
 export function DatePicker({
@@ -21,6 +23,7 @@ export function DatePicker({
   disabled = false,
   min,
   max,
+  compact = false,
 }: DatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -157,7 +160,10 @@ export function DatePicker({
       {isOpen && (
         <div className={`datetime-picker-modal ${openUpward ? 'open-upward' : ''}`}>
           <div className="picker-content" style={{ minHeight: 'auto' }}>
-            <div className="date-picker-section" style={{ flex: '1', minWidth: '320px' }}>
+            <div
+              className={`date-picker-section ${compact ? 'date-picker-compact' : ''}`}
+              style={{ flex: '1', minWidth: compact ? '180px' : '320px' }}
+            >
               <div className="date-picker-header">
                 <button type="button" className="nav-button" onClick={() => navigateMonth('prev')}>
                   ‹

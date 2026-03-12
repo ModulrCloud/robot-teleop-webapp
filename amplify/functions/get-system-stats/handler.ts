@@ -14,6 +14,7 @@ const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME!;
 const USER_CREDITS_TABLE = process.env.USER_CREDITS_TABLE!;
 const CREDIT_TRANSACTIONS_TABLE = process.env.CREDIT_TRANSACTIONS_TABLE!;
 const PARTNER_PAYOUT_TABLE = process.env.PARTNER_PAYOUT_TABLE!;
+const PLATFORM_REVENUE_ENTRY_TABLE = process.env.PLATFORM_REVENUE_ENTRY_TABLE!;
 const PLATFORM_SETTINGS_TABLE = process.env.PLATFORM_SETTINGS_TABLE!;
 
 export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async (event) => {
@@ -180,21 +181,51 @@ export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async 
     // Total Revenue = dollar value of credits in the system (1 credit = $0.01)
     const totalRevenue = totalCredits / 100;
 
-    // Platform Revenue = sum of platform fees from PartnerPayout (earned platform cut)
+    // Platform Revenue = from ledger (PlatformRevenueEntry) when available; else fallback to PartnerPayout sum
     let platformRevenue = 0;
+    let platformRevenueFromSessions = 0;
+    let platformRevenueFromCertification = 0;
     try {
-      const payoutsScan = await docClient.send(
-        new ScanCommand({
-          TableName: PARTNER_PAYOUT_TABLE,
-        })
-      );
-      const platformFeesCredits = (payoutsScan.Items || []).reduce((sum, item) => {
-        return sum + (item.platformFee || 0);
-      }, 0);
-      platformRevenue = platformFeesCredits / 100; // credits to dollars
-      console.log(`✅ Platform revenue: $${platformRevenue.toFixed(2)}`);
+      if (PLATFORM_REVENUE_ENTRY_TABLE) {
+        const ledgerScan = await docClient.send(
+          new ScanCommand({
+            TableName: PLATFORM_REVENUE_ENTRY_TABLE,
+          })
+        );
+        const ledgerCredits = (ledgerScan.Items || []).reduce((sum, item) => sum + (item.amountCredits || 0), 0);
+        const byType = (ledgerScan.Items || []).reduce(
+          (acc, item) => {
+            const t = String(item.transactionType || "");
+            const amt = item.amountCredits || 0;
+            if (t === "session_markup") acc.sessions += amt;
+            else if (t === "certification_fee") acc.certification += amt;
+            return acc;
+          },
+          { sessions: 0, certification: 0 }
+        );
+        platformRevenueFromSessions = byType.sessions / 100;
+        platformRevenueFromCertification = byType.certification / 100;
+        platformRevenue = ledgerCredits / 100; // credits to dollars
+        console.log(`✅ Platform revenue (ledger): $${platformRevenue.toFixed(2)} (sessions: $${platformRevenueFromSessions.toFixed(2)}, certification: $${platformRevenueFromCertification.toFixed(2)})`);
+      }
     } catch (error) {
-      console.warn("Could not calculate platform revenue from payouts:", error);
+      console.warn("Could not calculate platform revenue from ledger:", error);
+    }
+    if (platformRevenue === 0) {
+      try {
+        const payoutsScan = await docClient.send(
+          new ScanCommand({
+            TableName: PARTNER_PAYOUT_TABLE,
+          })
+        );
+        const platformFeesCredits = (payoutsScan.Items || []).reduce((sum, item) => {
+          return sum + (item.platformFee || 0);
+        }, 0);
+        platformRevenue = platformFeesCredits / 100;
+        console.log(`✅ Platform revenue (payouts fallback): $${platformRevenue.toFixed(2)}`);
+      } catch (error) {
+        console.warn("Could not calculate platform revenue from payouts:", error);
+      }
     }
 
     // Platform Cut = current markup percentage from PlatformSettings
@@ -225,6 +256,8 @@ export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async 
       robotsOnline,
       totalRevenue: Math.round(totalRevenue * 100) / 100,
       platformRevenue: Math.round(platformRevenue * 100) / 100,
+      platformRevenueFromSessions: Math.round(platformRevenueFromSessions * 100) / 100,
+      platformRevenueFromCertification: Math.round(platformRevenueFromCertification * 100) / 100,
       platformMarkupPercent: platformMarkupPercent ?? 30,
       activeSessions,
       totalCredits,

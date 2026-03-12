@@ -1,7 +1,16 @@
-import { DynamoDBClient, ScanCommand, QueryCommand, GetItemCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, ScanCommand, QueryCommand, GetItemCommand, type AttributeValue } from '@aws-sdk/client-dynamodb';
 import { Schema } from '../../data/resource';
 
 const ddbClient = new DynamoDBClient({});
+
+/** AppSync/Cognito identity shape for ACL and partner lookup */
+interface AppSyncIdentity {
+  username: string;
+  email?: string;
+  sub?: string;
+  claims?: { email?: string; sub?: string };
+  groups?: string[];
+}
 
 /**
  * Lists robots that the current user can access based on ACL rules.
@@ -14,10 +23,11 @@ export const handler: Schema["listAccessibleRobotsLambda"]["functionHandler"] = 
   console.log('Received event:', JSON.stringify(event, null, 2));
 
   const { limit = 50, nextToken } = event.arguments || {};
-  const identity = event.identity;
-  if (!identity || !("username" in identity)) {
+  const rawIdentity = event.identity;
+  if (!rawIdentity || !("username" in rawIdentity)) {
     throw new Error("Unauthorised: must be logged in with Cognito");
   }
+  const identity = rawIdentity as AppSyncIdentity;
 
   const robotTableName = process.env.ROBOT_TABLE_NAME!;
   const partnerTableName = process.env.PARTNER_TABLE_NAME!;
@@ -28,10 +38,10 @@ export const handler: Schema["listAccessibleRobotsLambda"]["functionHandler"] = 
   }
 
   // Get user's email, username, and sub for ACL matching
-  const userEmail = (identity as any).email || (identity as any).claims?.email;
+  const userEmail = identity.email ?? identity.claims?.email;
   const userUsername = identity.username;
-  const userSub = (identity as any).sub || (identity as any).claims?.sub;
-  const userGroups = (identity as any).groups || [];
+  const userSub = identity.sub ?? identity.claims?.sub;
+  const userGroups = identity.groups ?? [];
   const isAdmin = userGroups.some((g: string) => g.toUpperCase() === 'ADMINS' || g.toUpperCase() === 'ADMIN');
 
   // Normalize email to lowercase for comparison
@@ -72,7 +82,7 @@ export const handler: Schema["listAccessibleRobotsLambda"]["functionHandler"] = 
 
   // Scan all robots (we'll filter client-side based on ACL)
   // Support pagination with limit and nextToken
-  let allRobots: any[] = [];
+  let allRobots: Record<string, AttributeValue>[] = [];
   let lastEvaluatedKey = nextToken ? JSON.parse(Buffer.from(nextToken, 'base64').toString()) : undefined;
   let itemsScanned = 0;
   const maxItems = limit || 50; // Default to 50 if not specified
@@ -155,6 +165,9 @@ export const handler: Schema["listAccessibleRobotsLambda"]["functionHandler"] = 
         country: robotItem.country?.S,
         latitude: robotItem.latitude?.N ? parseFloat(robotItem.latitude.N) : undefined,
         longitude: robotItem.longitude?.N ? parseFloat(robotItem.longitude.N) : undefined,
+        // Modulr Approved certification
+        modulrApproved: robotItem.modulrApproved?.BOOL ?? false,
+        modulrApprovedAt: robotItem.modulrApprovedAt?.S ?? undefined,
       };
     });
 

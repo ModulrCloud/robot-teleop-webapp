@@ -39,6 +39,69 @@
   margin: 0;
 }
 
+/* Tab bar */
+.admin-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 0;
+}
+
+.admin-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.65);
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+  margin-bottom: -1px;
+}
+
+.admin-tab:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.admin-tab.active {
+  color: #ffc107;
+  border-bottom-color: #ffc107;
+}
+
+.admin-tab-icon {
+  font-size: 1rem;
+  opacity: 0.9;
+}
+
+/* Consistent width for all tab content so switching tabs doesn't shift layout.
+   Use explicit width when viewport allows so Dashboard/Approvals don't shrink to content. */
+.admin-content {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* Only force 1280px when viewport fits it after .admin-page padding (2rem each side) */
+@media (min-width: 1344px) {
+  .admin-content {
+    width: 1280px;
+    min-width: 1280px;
+  }
+}
+
+/* Force tab content to fill the content area */
+.admin-content > * {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 .admin-loading,
 .admin-error {
   display: flex;
@@ -83,6 +146,8 @@
   padding: 2rem;
   margin-top: 1.5rem;
   margin-bottom: 1.5rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .admin-section:first-child {
@@ -300,6 +365,180 @@
   color: #ffc107 !important;
 }
 
+/* Platform revenue timeline filters */
+.admin-revenue-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.admin-revenue-filters .admin-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-revenue-filters .admin-filter-label {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.admin-revenue-filters .admin-select,
+.admin-revenue-filters .admin-input {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #fff;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.95rem;
+  min-width: 140px;
+}
+
+.admin-revenue-filters .admin-select {
+  padding-right: 2.25rem;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='rgba(255,255,255,0.85)' d='M8 11L3 5h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 0.85rem;
+}
+
+.admin-revenue-filters .admin-input {
+  min-width: 10rem;
+}
+
+.admin-revenue-filters .admin-select:focus,
+.admin-revenue-filters .admin-input:focus {
+  outline: none;
+  border-color: #ffc107;
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.2);
+}
+
+.admin-revenue-filters .admin-select option {
+  background: #1a1a1a;
+  color: #fff;
+}
+
+/* Revenue over time chart (Modulr theme) */
+.admin-revenue-chart {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 193, 7, 0.15);
+  border-radius: 10px;
+  min-height: 280px;
+}
+
+.admin-revenue-chart-title {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.admin-revenue-chart-empty {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* DatePicker in revenue timeline: white calendar icon, Modulr-themed pop-up */
+.admin-revenue-filters .admin-revenue-date-picker .calendar-icon {
+  color: #fff;
+}
+
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-wrapper label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal {
+  background: rgba(26, 26, 26, 0.98);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .month-year {
+  color: #ffc107;
+}
+
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .nav-button:hover {
+  background: rgba(255, 193, 7, 0.2);
+  border-color: rgba(255, 193, 7, 0.4);
+  color: #ffc107;
+}
+
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .calendar-day.selected {
+  background: #ffc107;
+  color: #000;
+}
+
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .calendar-day:hover:not(.empty):not(.selected) {
+  background: rgba(255, 193, 7, 0.15);
+  color: #ffc107;
+}
+
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .calendar-day.today {
+  border-color: rgba(255, 193, 7, 0.5);
+  background: rgba(255, 193, 7, 0.1);
+}
+
+.admin-revenue-filters .admin-revenue-date-picker .action-link {
+  color: rgba(255, 193, 7, 0.9);
+}
+
+.admin-revenue-filters .admin-revenue-date-picker .action-link:hover {
+  color: #ffc107;
+}
+
+/* Compact calendar: ~half size when date-picker-compact is used */
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .picker-content {
+  padding: 0.5rem;
+}
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .date-picker-compact .date-picker-header {
+  margin-bottom: 0.4rem;
+}
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .date-picker-compact .month-year {
+  font-size: 0.8rem;
+}
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .date-picker-compact .nav-button {
+  padding: 0.25rem 0.5rem;
+  font-size: 1rem;
+}
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .date-picker-compact .calendar-grid {
+  margin-bottom: 0.4rem;
+}
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .date-picker-compact .calendar-weekdays {
+  gap: 0.15rem;
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.25rem;
+}
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .date-picker-compact .weekday {
+  font-size: 0.65rem;
+  padding: 0.2rem 0;
+}
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .date-picker-compact .calendar-days {
+  gap: 0.15rem;
+  margin-top: 0.4rem;
+}
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .date-picker-compact .calendar-day {
+  height: 20px;
+  font-size: 0.75rem;
+}
+.admin-revenue-filters .admin-revenue-date-picker .datetime-picker-modal .date-picker-compact .picker-actions {
+  padding-top: 0.25rem;
+}
+
+.admin-table-wrapper {
+  overflow-x: auto;
+  margin-top: 0.5rem;
+}
+
 .admin-table tr:hover {
   background: rgba(255, 255, 255, 0.03);
 }
@@ -422,6 +661,84 @@
   flex-shrink: 0;
 }
 
+.admin-actions-inline {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.admin-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.admin-modal {
+  background: rgba(26, 26, 26, 0.98);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 12px;
+  padding: 1.5rem;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.admin-modal h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.1rem;
+  color: #fff;
+}
+
+.admin-modal .admin-filter-group {
+  margin-bottom: 0;
+}
+
+.admin-modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.25rem;
+}
+
+.admin-modal textarea.admin-input {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+}
+
+/* Reject certification modal – textarea matches Modulr dark theme */
+.admin-reject-textarea {
+  display: block;
+  width: 100%;
+  min-height: 80px;
+  padding: 0.75rem 1rem;
+  margin-top: 0.5rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.admin-reject-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.admin-reject-textarea:focus {
+  outline: none;
+  border-color: rgba(255, 193, 7, 0.5);
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.15);
+}
+
 @keyframes slideDown {
   from {
     transform: translateY(-10px);
@@ -455,6 +772,11 @@
   max-width: 500px;
 }
 
+.toast-notification.success {
+  border-left-color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
 .toast-notification.error {
   border-left-color: #f44336;
   border-color: rgba(244, 67, 54, 0.5);
@@ -466,6 +788,10 @@
   color: #ffb700;
   font-size: 1.1rem;
   flex-shrink: 0;
+}
+
+.toast-notification.success svg {
+  color: #22c55e;
 }
 
 .toast-notification.error svg {
