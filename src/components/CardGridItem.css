@@ -1,4 +1,5 @@
 .card-grid-card {
+  position: relative;
   background-color: #10131a;
   border-radius: 1rem;
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.3);
@@ -13,6 +14,20 @@
   min-width: 280px;
   overflow: hidden;
   height: 100%;
+}
+
+/* Modulr Approved badge: upper right corner, twice default size */
+.card-grid-badge-wrap {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 1;
+}
+
+.card-grid-badge-wrap .modulr-approved-badge__img {
+  height: 28px;
+  width: auto;
+  max-width: 144px;
 }
 
 .card-grid-card:hover {
@@ -65,6 +80,11 @@
   gap: 0.5rem;
   flex-wrap: wrap;
   margin-bottom: 0.25rem;
+}
+
+.card-grid-title-row:only-child,
+.card-grid-title-row:first-child {
+  margin-top: 0;
 }
 
 .card-grid-title-row h3 {

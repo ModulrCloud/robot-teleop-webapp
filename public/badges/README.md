@@ -1,7 +1,7 @@
 # Badge assets
 
-Place the **Modulr Approved** badge here when ready.
+**Modulr Approved** badge used on robot cards and detail pages.
 
-- **Filename:** `modulr-approved.svg` (or `.png`)
-- **Usage:** The app will use `/badges/modulr-approved.svg` for the badge on robot cards and detail pages.
-- **Recommendation:** SVG, ~120–160px wide, horizontal pill shape, transparent or dark background to match Modulr theme.
+- **Current file:** `resize 2.svg` — the app loads it at `/badges/resize%202.svg`.
+- To use a different file, update the default `badgeUrl` in `src/components/ModulrApprovedBadge.tsx` (or pass the path as a prop).
+- Optional: rename to `modulr-approved.svg` for a cleaner URL and set the component default to `/badges/modulr-approved.svg`.

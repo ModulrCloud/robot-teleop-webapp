@@ -47,6 +47,11 @@ const CardGridItem = forwardRef<CardGridItemHandle, CardGridItemProps>(function 
       aria-disabled={disabled}
       title={disabled ? 'You do not have access to this robot' : undefined}
     >
+      {modulrApproved && (
+        <div className="card-grid-badge-wrap">
+          <ModulrApprovedBadge size="small" />
+        </div>
+      )}
       {imageUrl && (
         <div className="card-grid-image">
           <img src={imageUrl} alt={title} />
@@ -55,7 +60,6 @@ const CardGridItem = forwardRef<CardGridItemHandle, CardGridItemProps>(function 
       <div className="card-grid-content">
         <div className="card-grid-title-row">
           <h3>{title}</h3>
-          {modulrApproved && <ModulrApprovedBadge size="small" />}
         </div>
         {description && <p className="card-grid-description">{description}</p>}
         {hourlyRate && <p className="card-grid-price">{hourlyRate}</p>}

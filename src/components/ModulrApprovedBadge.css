@@ -10,6 +10,13 @@
   white-space: nowrap;
 }
 
+/* When the badge image has loaded, show only the image (no pill background) */
+.modulr-approved-badge--image-only {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
 .modulr-approved-badge--small {
   padding: 0.2rem 0.5rem;
   font-size: 0.7rem;

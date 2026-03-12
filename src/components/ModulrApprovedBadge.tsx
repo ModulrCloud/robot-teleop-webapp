@@ -1,44 +1,47 @@
+import { useState } from "react";
 import "./ModulrApprovedBadge.css";
 
 export type ModulrApprovedBadgeSize = "small" | "medium";
 
 interface ModulrApprovedBadgeProps {
   size?: ModulrApprovedBadgeSize;
-  /** Optional: path to custom badge image (e.g. /badges/modulr-approved.svg). Falls back to text if missing. */
+  /** Path to badge image (e.g. /badges/resize%202.svg). Falls back to text pill if image fails. */
   badgeUrl?: string;
   className?: string;
 }
 
 /**
  * Badge shown when a robot is Modulr Approved (certified).
- * Renders text "Modulr Approved" in a pill; if badgeUrl is set and the image loads, shows the image instead.
+ * Uses the badge image when available; falls back to "Modulr Approved" text pill if the image fails to load.
  */
 export function ModulrApprovedBadge({
   size = "small",
-  badgeUrl = "/badges/modulr-approved.svg",
+  badgeUrl = "/badges/resize%202.svg",
   className = "",
 }: ModulrApprovedBadgeProps) {
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const showImage = badgeUrl && imageLoaded && !imageError;
+  const showText = !badgeUrl || imageError;
+
   return (
     <span
-      className={`modulr-approved-badge modulr-approved-badge--${size} ${className}`.trim()}
+      className={`modulr-approved-badge modulr-approved-badge--${size} ${showImage ? "modulr-approved-badge--image-only" : ""} ${className}`.trim()}
       role="img"
       aria-label="Modulr Approved"
     >
-      {badgeUrl ? (
+      {badgeUrl && !imageError && (
         <img
           src={badgeUrl}
           alt="Modulr Approved"
           className="modulr-approved-badge__img"
-          onError={(e) => {
-            e.currentTarget.style.display = "none";
-            const fallback = e.currentTarget.nextElementSibling;
-            if (fallback) (fallback as HTMLElement).style.display = "inline";
-          }}
+          onLoad={() => setImageLoaded(true)}
+          onError={() => setImageError(true)}
         />
-      ) : null}
-      <span className="modulr-approved-badge__text" style={badgeUrl ? { display: "none" } : undefined}>
-        Modulr Approved
-      </span>
+      )}
+      {showText && (
+        <span className="modulr-approved-badge__text">Modulr Approved</span>
+      )}
     </span>
   );
 }
