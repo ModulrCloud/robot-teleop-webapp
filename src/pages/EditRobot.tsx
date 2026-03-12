@@ -11,6 +11,7 @@ import { getCurrencyInfo, creditsToCurrencySync, currencyToCreditsSync, fetchExc
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
 import { RobotAvailabilityManager } from '../components/RobotAvailabilityManager';
+import { ModulrCertificationSection } from '../components/ModulrCertificationSection';
 import { CustomCommandsManager } from '../components/partner/CustomCommandsManager';
 import { isFeatureEnabled } from '../utils/featureFlags';
 import {
@@ -116,6 +117,8 @@ export const EditRobot = () => {
   const [robotStatus, setRobotStatus] = useState<{ isOnline: boolean; lastSeen?: number; status?: string } | null>(null);
   const [isLoadingStatus, setIsLoadingStatus] = useState(false);
   const [robotIdForStatus, setRobotIdForStatus] = useState<string>(''); // robotId field (robot-XXXXXXXX)
+  const [modulrApproved, setModulrApproved] = useState(false);
+  const [modulrApprovedAt, setModulrApprovedAt] = useState<string | null>(null);
 
   const [robotListing, setRobotListing] = useState<RobotListing>({
     robotName: "",
@@ -257,6 +260,8 @@ export const EditRobot = () => {
         const name = robotData.name || "";
         setRobotName(name);
         setRobotIdForStatus(robotData.robotId || ''); // Store robotId for status check
+        setModulrApproved(robotData.modulrApproved === true);
+        setModulrApprovedAt(robotData.modulrApprovedAt ?? null);
 
         // Type-safe access to extended robot fields
         const extendedData = robotData as typeof robotData & { isVerified?: boolean; robotType?: string };
@@ -772,6 +777,16 @@ export const EditRobot = () => {
                   </span>
                 </div>
               </div>
+
+              {robotIdForStatus && (
+                <ModulrCertificationSection
+                  robotId={robotIdForStatus}
+                  robotUuid={robotId || undefined}
+                  modulrApproved={modulrApproved}
+                  modulrApprovedAt={modulrApprovedAt}
+                  isViewMode={true}
+                />
+              )}
             </div>
 
             <div className="form-actions">
@@ -1155,6 +1170,18 @@ export const EditRobot = () => {
                     robotUuid={robotId || undefined}
                   />
                 </div>
+              )}
+
+              {robotIdForStatus && (
+                <ModulrCertificationSection
+                  robotId={robotIdForStatus}
+                  robotUuid={robotId || undefined}
+                  modulrApproved={modulrApproved}
+                  modulrApprovedAt={modulrApprovedAt}
+                  isViewMode={isViewMode}
+                  onError={(msg) => showToast(msg, 'error')}
+                  onSuccess={(msg) => showToast(msg, 'success')}
+                />
               )}
 
               {!isViewMode && robotIdForStatus && (

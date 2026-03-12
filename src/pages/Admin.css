@@ -711,6 +711,34 @@
   resize: vertical;
 }
 
+/* Reject certification modal – textarea matches Modulr dark theme */
+.admin-reject-textarea {
+  display: block;
+  width: 100%;
+  min-height: 80px;
+  padding: 0.75rem 1rem;
+  margin-top: 0.5rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.admin-reject-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.admin-reject-textarea:focus {
+  outline: none;
+  border-color: rgba(255, 193, 7, 0.5);
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.15);
+}
+
 @keyframes slideDown {
   from {
     transform: translateY(-10px);
@@ -744,6 +772,11 @@
   max-width: 500px;
 }
 
+.toast-notification.success {
+  border-left-color: #22c55e;
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
 .toast-notification.error {
   border-left-color: #f44336;
   border-color: rgba(244, 67, 54, 0.5);
@@ -755,6 +788,10 @@
   color: #ffb700;
   font-size: 1.1rem;
   flex-shrink: 0;
+}
+
+.toast-notification.success svg {
+  color: #22c55e;
 }
 
 .toast-notification.error svg {

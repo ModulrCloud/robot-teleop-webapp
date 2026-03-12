@@ -3,12 +3,15 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faClipboardCheck,
   faCheck,
+  faCheckCircle,
   faTimes,
+  faExclamationCircle,
   faChevronDown,
 } from "@fortawesome/free-solid-svg-icons";
 import { generateClient } from "aws-amplify/api";
 import type { Schema } from "../../../../amplify/data/resource";
 import { useAuthStatus } from "../../../hooks/useAuthStatus";
+import { useToast } from "../../../hooks/useToast";
 import { hasAdminAccess } from "../../../utils/admin";
 import { logger } from "../../../utils/logger";
 import "../../Admin.css";
@@ -70,16 +73,90 @@ function formatStatus(status?: string): string {
   return STATUS_LABELS[status] ?? status;
 }
 
+/** Parse Lambda list response (handles wrapped { statusCode, body } or double-encoded string). */
+function parseListResponse(raw: string | ListResponse | null | undefined): ListResponse {
+  if (raw == null) return { requests: [], nextToken: null };
+  let parsed: unknown;
+  try {
+    parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch {
+    return { requests: [], nextToken: null };
+  }
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed) as unknown;
+    } catch {
+      return { requests: [], nextToken: null };
+    }
+  }
+  if (parsed != null && typeof parsed === "object") {
+    const obj = parsed as Record<string, unknown>;
+    const bodyRaw = obj.body ?? obj.Body;
+    if (bodyRaw !== undefined) {
+      const payload: ListResponse | null =
+        typeof bodyRaw === "string"
+          ? (() => {
+              try {
+                return JSON.parse(bodyRaw) as unknown as ListResponse;
+              } catch {
+                return null;
+              }
+            })()
+          : (bodyRaw as unknown as ListResponse);
+      if (payload && Array.isArray(payload.requests)) return payload;
+    }
+    if (Array.isArray((obj as unknown as ListResponse).requests)) return obj as unknown as ListResponse;
+  }
+  return { requests: [], nextToken: null };
+}
+
+/** Parse manageCertificationRequest Lambda response (wrapped body or double-encoded). */
+function parseManageResponse(raw: string | Record<string, unknown> | null | undefined): { success?: boolean; error?: string } | null {
+  if (raw == null) return null;
+  let parsed: unknown;
+  try {
+    parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch {
+    return null;
+  }
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  if (parsed == null || typeof parsed !== "object") return null;
+  const obj = parsed as Record<string, unknown>;
+  const bodyRaw = obj.body ?? obj.Body;
+  if (bodyRaw !== undefined) {
+    const payload =
+      typeof bodyRaw === "string"
+        ? (() => {
+            try {
+              return JSON.parse(bodyRaw) as Record<string, unknown>;
+            } catch {
+              return null;
+            }
+          })()
+        : bodyRaw && typeof bodyRaw === "object"
+          ? (bodyRaw as Record<string, unknown>)
+          : null;
+    if (payload && ("success" in payload || "error" in payload)) return payload as { success?: boolean; error?: string };
+  }
+  if (obj.success !== undefined || obj.error !== undefined) return obj as { success?: boolean; error?: string };
+  return obj as { success?: boolean; error?: string };
+}
+
 export const CertificationRequests = () => {
   const { user } = useAuthStatus();
   const [requests, setRequests] = useState<CertificationRequestItem[]>([]);
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("pending_review");
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [rejectModal, setRejectModal] = useState<{ id: string; robotName?: string } | null>(null);
+  const { toast, showToast } = useToast();
   const [rejectReason, setRejectReason] = useState("");
   const fetchIdRef = useRef(0);
 
@@ -93,7 +170,6 @@ export const CertificationRequests = () => {
       fetchIdRef.current = thisFetchId;
 
       setLoading(true);
-      setError(null);
       try {
         const statusParam =
           statusFilter === "all"
@@ -108,18 +184,8 @@ export const CertificationRequests = () => {
           nextToken: token || undefined,
         });
 
-        let data: ListResponse;
-        if (typeof result.data === "string") {
-          try {
-            data = JSON.parse(result.data) as ListResponse;
-          } catch (e) {
-            logger.error("Failed to parse certification requests response", e);
-            if (fetchIdRef.current === thisFetchId) setError("Failed to load certification requests");
-            return;
-          }
-        } else {
-          data = result.data as ListResponse;
-        }
+        const raw = typeof result.data === "string" ? result.data : result.data != null ? JSON.stringify(result.data) : undefined;
+        const data = parseListResponse(raw);
 
         let items = data.requests ?? [];
         if (statusFilter === "pending_review") {
@@ -139,13 +205,15 @@ export const CertificationRequests = () => {
       } catch (err) {
         logger.error("Error loading certification requests", err);
         if (fetchIdRef.current !== thisFetchId) return;
-        setError(err instanceof Error ? err.message : "Failed to load certification requests");
-        if (!token) setRequests([]);
+        if (!token) {
+          setRequests([]);
+          showToast(err instanceof Error ? err.message : "Failed to load certification requests", "error");
+        }
       } finally {
         if (fetchIdRef.current === thisFetchId) setLoading(false);
       }
     },
-    [user?.email, user?.group, statusFilter]
+    [user?.email, user?.group, statusFilter, showToast]
   );
 
   useEffect(() => {
@@ -159,23 +227,28 @@ export const CertificationRequests = () => {
   const handleApprove = async (id: string) => {
     if (!id) return;
     setActionLoadingId(id);
-    setError(null);
-    setSuccessMessage(null);
     try {
       const result = await client.mutations.manageCertificationRequestLambda({
         certificationRequestId: id,
         action: "approve",
       });
-      const data = typeof result.data === "string" ? JSON.parse(result.data) : result.data;
+      const resultWithErrors = result as { data?: unknown; errors?: Array<{ message?: string }> };
+      if (resultWithErrors.errors?.length) {
+        const msg = resultWithErrors.errors.map((e) => e.message ?? JSON.stringify(e)).join(", ");
+        showToast(msg, "error");
+        return;
+      }
+      const raw = typeof resultWithErrors.data === "string" ? resultWithErrors.data : resultWithErrors.data != null ? JSON.stringify(resultWithErrors.data) : undefined;
+      const data = parseManageResponse(raw);
       if (data?.success) {
-        setSuccessMessage("Request approved. Robot is now Modulr Approved.");
+        showToast("Request approved. Robot is now Modulr Approved.", "success");
         loadRequests(null);
       } else {
-        setError(data?.error ?? "Approve failed");
+        showToast(typeof data?.error === "string" ? data.error : "Approve failed", "error");
       }
     } catch (err) {
       logger.error("Error approving request", err);
-      setError(err instanceof Error ? err.message : "Approve failed");
+      showToast(err instanceof Error ? err.message : "Approve failed", "error");
     } finally {
       setActionLoadingId(null);
     }
@@ -184,8 +257,6 @@ export const CertificationRequests = () => {
   const handleReject = async (id: string, reason: string) => {
     if (!id) return;
     setActionLoadingId(id);
-    setError(null);
-    setSuccessMessage(null);
     setRejectModal(null);
     setRejectReason("");
     try {
@@ -194,16 +265,23 @@ export const CertificationRequests = () => {
         action: "reject",
         rejectionReason: reason || undefined,
       });
-      const data = typeof result.data === "string" ? JSON.parse(result.data) : result.data;
+      const resultWithErrors = result as { data?: unknown; errors?: Array<{ message?: string }> };
+      if (resultWithErrors.errors?.length) {
+        const msg = resultWithErrors.errors.map((e) => e.message ?? JSON.stringify(e)).join(", ");
+        showToast(msg, "error");
+        return;
+      }
+      const raw = typeof resultWithErrors.data === "string" ? resultWithErrors.data : resultWithErrors.data != null ? JSON.stringify(resultWithErrors.data) : undefined;
+      const data = parseManageResponse(raw);
       if (data?.success) {
-        setSuccessMessage("Request rejected.");
+        showToast("Request rejected.", "error");
         loadRequests(null);
       } else {
-        setError(data?.error ?? "Reject failed");
+        showToast(typeof data?.error === "string" ? data.error : "Reject failed", "error");
       }
     } catch (err) {
       logger.error("Error rejecting request", err);
-      setError(err instanceof Error ? err.message : "Reject failed");
+      showToast(err instanceof Error ? err.message : "Reject failed", "error");
     } finally {
       setActionLoadingId(null);
     }
@@ -234,6 +312,7 @@ export const CertificationRequests = () => {
             <select
               className="admin-select"
               value={statusFilter}
+              onClick={() => loadRequests(null)}
               onChange={(e) => setStatusFilter(e.target.value)}
               aria-label="Filter by status"
             >
@@ -245,18 +324,6 @@ export const CertificationRequests = () => {
             </select>
           </label>
         </div>
-
-        {successMessage && (
-          <div className="admin-alert admin-alert-success" style={{ marginBottom: "1rem" }}>
-            {successMessage}
-          </div>
-        )}
-
-        {error && (
-          <div className="admin-alert admin-alert-error" style={{ marginBottom: "1rem" }}>
-            {error}
-          </div>
-        )}
 
         {loading && requests.length === 0 ? (
           <div className="loading-state">
@@ -324,7 +391,7 @@ export const CertificationRequests = () => {
                             </button>
                             <button
                               type="button"
-                              className="admin-button admin-button-secondary"
+                              className="admin-button admin-button-danger"
                               onClick={() =>
                                 setRejectModal({ id: req.id!, robotName: req.robotName })
                               }
@@ -374,7 +441,7 @@ export const CertificationRequests = () => {
             <label className="admin-filter-group" style={{ marginTop: "0.75rem" }}>
               <span className="admin-filter-label">Rejection reason (optional)</span>
               <textarea
-                className="admin-input"
+                className="admin-input admin-reject-textarea"
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
                 rows={3}
@@ -402,6 +469,13 @@ export const CertificationRequests = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {toast.visible && (
+        <div className={`toast-notification ${toast.type}`}>
+          <FontAwesomeIcon icon={toast.type === "error" ? faExclamationCircle : faCheckCircle} />
+          <span>{toast.message}</span>
         </div>
       )}
     </div>
