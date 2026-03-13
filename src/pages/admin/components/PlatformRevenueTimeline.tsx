@@ -195,19 +195,25 @@ function aggregateRevenueByDay(entries: PlatformRevenueEntry[]): { date: string;
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-/** Merge aggregated-by-day data with full date range so the chart shows every day in [start, end]. */
+/** Merge aggregated-by-day data with full date range. Includes shifted local-day buckets outside [start, end] so boundary entries are not dropped. */
 function chartDataWithFullRange(
   chartData: ChartDatum[],
   startDate: string,
   endDate: string
 ): ChartDatum[] {
   const fullRange = emptyChartDataForRange(startDate, endDate);
-  if (fullRange.length === 0) return chartData;
   const byDay = new Map(chartData.map((d) => [d.date, d]));
-  return fullRange.map((row) => {
-    const found = byDay.get(row.date);
-    return found ? { ...row, ...found } : row;
-  });
+  const rangeSet = new Set(fullRange.map((r) => r.date));
+  const mergedRange =
+    fullRange.length === 0
+      ? []
+      : fullRange.map((row) => {
+          const found = byDay.get(row.date);
+          return found ? { ...row, ...found } : row;
+        });
+  const shiftedBuckets = chartData.filter((d) => !rangeSet.has(d.date));
+  const combined = [...shiftedBuckets, ...mergedRange].sort((a, b) => a.date.localeCompare(b.date));
+  return combined;
 }
 
 export const PlatformRevenueTimeline = () => {
@@ -248,15 +254,23 @@ export const PlatformRevenueTimeline = () => {
           nextToken: token || undefined,
         });
 
+        // P2: Treat null payload or GraphQL errors as fetch failure so we don't show empty as success
+        if (result.data == null || (result.errors && result.errors.length > 0)) {
+          if (fetchIdRef.current !== thisFetchId) return;
+          const errMsg =
+            result.errors?.[0]?.message ?? (result.data == null ? "No data returned" : "Request failed");
+          setError(errMsg);
+          if (!token) setEntries([]);
+          setNextToken(null);
+          return;
+        }
+
         const raw =
           typeof result.data === "string"
             ? result.data
-            : result.data != null
-              ? JSON.stringify(result.data)
-              : undefined;
+            : JSON.stringify(result.data);
         const data = parseTimelineResponse(raw);
 
-        // P2: Ignore stale responses (e.g. user changed filters before this resolved)
         if (fetchIdRef.current !== thisFetchId) return;
 
         if (token) {
