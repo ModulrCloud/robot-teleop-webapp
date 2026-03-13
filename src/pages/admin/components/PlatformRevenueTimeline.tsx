@@ -19,8 +19,10 @@ import {
 import { generateClient } from "aws-amplify/api";
 import type { Schema } from "../../../../amplify/data/resource";
 import { useAuthStatus } from "../../../hooks/useAuthStatus";
+import { useUserCredits } from "../../../hooks/useUserCredits";
 import { hasAdminAccess } from "../../../utils/admin";
 import { logger } from "../../../utils/logger";
+import { formatCreditsAsCurrencySync, type CurrencyCode } from "../../../utils/credits";
 import { DatePicker } from "../../../components/DatePicker";
 import "../../Admin.css";
 
@@ -38,6 +40,45 @@ export interface PlatformRevenueEntry {
 interface TimelineResponse {
   entries: PlatformRevenueEntry[];
   nextToken: string | null;
+}
+
+/** Parse Lambda response (handles wrapped { statusCode, body } or double-encoded string). */
+function parseTimelineResponse(raw: string | TimelineResponse | Record<string, unknown> | null | undefined): TimelineResponse {
+  if (raw == null) return { entries: [], nextToken: null };
+  let parsed: unknown;
+  try {
+    parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch {
+    return { entries: [], nextToken: null };
+  }
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed) as unknown;
+    } catch {
+      return { entries: [], nextToken: null };
+    }
+  }
+  if (parsed != null && typeof parsed === "object") {
+    const obj = parsed as Record<string, unknown>;
+    const bodyRaw = obj.body ?? obj.Body;
+    if (bodyRaw !== undefined) {
+      const payload: TimelineResponse | null =
+        typeof bodyRaw === "string"
+          ? (() => {
+              try {
+                return JSON.parse(bodyRaw) as unknown as TimelineResponse;
+              } catch {
+                return null;
+              }
+            })()
+          : (bodyRaw as unknown as TimelineResponse);
+      if (payload && Array.isArray(payload.entries)) return payload;
+    }
+    if (Array.isArray(obj.entries)) {
+      return obj as unknown as TimelineResponse;
+    }
+  }
+  return { entries: [], nextToken: null };
 }
 
 const TRANSACTION_TYPE_LABELS: Record<string, string> = {
@@ -113,12 +154,27 @@ function emptyChartDataForRange(start: string, end: string): ChartDatum[] {
   return out;
 }
 
-/** Aggregate entries by calendar day for the revenue-over-time chart. */
+/** Get YYYY-MM-DD in the user's local timezone so chart matches table (table uses toLocaleString). */
+function toLocalDateString(iso: string | number | null | undefined): string {
+  const raw = iso != null ? String(iso) : "";
+  if (!raw || raw === "undefined") return "";
+  try {
+    const d = new Date(iso as string | number);
+    if (Number.isNaN(d.getTime())) return raw.length >= 10 ? raw.slice(0, 10) : "";
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  } catch {
+    return raw.length >= 10 ? raw.slice(0, 10) : "";
+  }
+}
+
+/** Aggregate entries by calendar day (local date) for the revenue-over-time chart. */
 function aggregateRevenueByDay(entries: PlatformRevenueEntry[]): { date: string; "Session markup": number; "Certification fee": number; total: number }[] {
   const byDay = new Map<string, { session_markup: number; certification_fee: number }>();
   for (const e of entries) {
-    const iso = e.createdAt ?? "";
-    const day = iso.slice(0, 10);
+    const day = toLocalDateString(e.createdAt);
     if (!day) continue;
     const current = byDay.get(day) ?? { session_markup: 0, certification_fee: 0 };
     const credits = e.amountCredits ?? 0;
@@ -139,8 +195,30 @@ function aggregateRevenueByDay(entries: PlatformRevenueEntry[]): { date: string;
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/** Merge aggregated-by-day data with full date range. Includes shifted local-day buckets outside [start, end] so boundary entries are not dropped. */
+function chartDataWithFullRange(
+  chartData: ChartDatum[],
+  startDate: string,
+  endDate: string
+): ChartDatum[] {
+  const fullRange = emptyChartDataForRange(startDate, endDate);
+  const byDay = new Map(chartData.map((d) => [d.date, d]));
+  const rangeSet = new Set(fullRange.map((r) => r.date));
+  const mergedRange =
+    fullRange.length === 0
+      ? []
+      : fullRange.map((row) => {
+          const found = byDay.get(row.date);
+          return found ? { ...row, ...found } : row;
+        });
+  const shiftedBuckets = chartData.filter((d) => !rangeSet.has(d.date));
+  const combined = [...shiftedBuckets, ...mergedRange].sort((a, b) => a.date.localeCompare(b.date));
+  return combined;
+}
+
 export const PlatformRevenueTimeline = () => {
   const { user } = useAuthStatus();
+  const { currency: userCurrency, exchangeRates } = useUserCredits();
   const [entries, setEntries] = useState<PlatformRevenueEntry[]>([]);
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -176,20 +254,23 @@ export const PlatformRevenueTimeline = () => {
           nextToken: token || undefined,
         });
 
-        let data: TimelineResponse;
-        if (typeof result.data === "string") {
-          try {
-            data = JSON.parse(result.data) as TimelineResponse;
-          } catch (e) {
-            logger.error("Failed to parse platform revenue response", e);
-            setError("Failed to load revenue entries");
-            return;
-          }
-        } else {
-          data = result.data as TimelineResponse;
+        // P2: Treat null payload or GraphQL errors as fetch failure so we don't show empty as success
+        if (result.data == null || (result.errors && result.errors.length > 0)) {
+          if (fetchIdRef.current !== thisFetchId) return;
+          const errMsg =
+            result.errors?.[0]?.message ?? (result.data == null ? "No data returned" : "Request failed");
+          setError(errMsg);
+          if (!token) setEntries([]);
+          setNextToken(null);
+          return;
         }
 
-        // P2: Ignore stale responses (e.g. user changed filters before this resolved)
+        const raw =
+          typeof result.data === "string"
+            ? result.data
+            : JSON.stringify(result.data);
+        const data = parseTimelineResponse(raw);
+
         if (fetchIdRef.current !== thisFetchId) return;
 
         if (token) {
@@ -224,11 +305,12 @@ export const PlatformRevenueTimeline = () => {
   }
 
   const chartData = useMemo(() => aggregateRevenueByDay(entries), [entries]);
-  const displayChartData = useMemo(() => {
-    if (chartData.length > 0) return chartData;
-    return emptyChartDataForRange(startDate, endDate);
-  }, [chartData, startDate, endDate]);
+  const displayChartData = useMemo(
+    () => chartDataWithFullRange(chartData, startDate, endDate),
+    [chartData, startDate, endDate]
+  );
   const canLoadMore = !!nextToken && !loading;
+  const currency = (userCurrency ?? "USD") as CurrencyCode;
 
   if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
     return null;
@@ -291,7 +373,7 @@ export const PlatformRevenueTimeline = () => {
 
         {displayChartData.length > 0 && (
           <div className="admin-revenue-chart">
-            <h3 className="admin-revenue-chart-title">Revenue over time (by day)</h3>
+            <h3 className="admin-revenue-chart-title">Revenue over time (by day, local date)</h3>
             {chartData.length === 0 && (
               <p className="admin-revenue-chart-empty">No revenue in this period.</p>
             )}
@@ -306,7 +388,7 @@ export const PlatformRevenueTimeline = () => {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
                 <XAxis
                   dataKey="date"
-                  interval={0}
+                  interval={displayChartData.length > 14 ? 2 : 0}
                   tick={{
                     fill: "rgba(255,255,255,0.7)",
                     fontSize: 11,
@@ -315,9 +397,15 @@ export const PlatformRevenueTimeline = () => {
                   }}
                   tickFormatter={(v) => {
                     try {
-                      return new Date(v + "Z").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                      // Treat YYYY-MM-DD as local date so label matches table (no UTC shift)
+                      const [y, m, d] = String(v).split("-");
+                      if (y && m && d) {
+                        const local = new Date(Number(y), Number(m) - 1, Number(d));
+                        return local.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                      }
+                      return String(v);
                     } catch {
-                      return v;
+                      return String(v);
                     }
                   }}
                   axisLine={{ stroke: "rgba(255,255,255,0.15)" }}
@@ -327,7 +415,7 @@ export const PlatformRevenueTimeline = () => {
                   tick={{ fill: "rgba(255,255,255,0.7)", fontSize: 11 }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : String(v))}
+                  tickFormatter={(v) => formatCreditsAsCurrencySync(v, currency, exchangeRates)}
                 />
                 <Tooltip
                   cursor={{ stroke: "rgba(255,193,7,0.4)", strokeWidth: 1 }}
@@ -342,8 +430,15 @@ export const PlatformRevenueTimeline = () => {
                     borderRadius: "8px",
                     color: "#fff",
                   }}
-                  labelFormatter={(label) => new Date(label + "Z").toLocaleDateString(undefined, { dateStyle: "medium" })}
-                  formatter={(value: unknown, name: unknown) => [(typeof value === "number" ? value : 0).toLocaleString() + " credits", String(name ?? "")]}
+                  labelFormatter={(label) => {
+                    const [y, m, d] = String(label).split("-");
+                    if (y && m && d) {
+                      const local = new Date(Number(y), Number(m) - 1, Number(d));
+                      return local.toLocaleDateString(undefined, { dateStyle: "medium" });
+                    }
+                    return String(label);
+                  }}
+                  formatter={(value: unknown, name: unknown) => [formatCreditsAsCurrencySync(typeof value === "number" ? value : 0, currency, exchangeRates), String(name ?? "")]}
                   labelStyle={{ color: "#ffc107" }}
                 />
                 <Legend
@@ -400,7 +495,7 @@ export const PlatformRevenueTimeline = () => {
                   <tr>
                     <th>Date / time</th>
                     <th>Type</th>
-                    <th>Amount (credits)</th>
+                    <th>Amount</th>
                     <th>Reference</th>
                   </tr>
                 </thead>
@@ -409,7 +504,7 @@ export const PlatformRevenueTimeline = () => {
                     <tr key={entry.id ?? entry.createdAt ?? String(Math.random())}>
                       <td>{formatDateTime(entry.createdAt)}</td>
                       <td>{formatType(entry.transactionType)}</td>
-                      <td>{(entry.amountCredits ?? 0).toLocaleString()}</td>
+                      <td>{formatCreditsAsCurrencySync(entry.amountCredits ?? 0, currency, exchangeRates)}</td>
                       <td>{entry.referenceId ?? "—"}</td>
                     </tr>
                   ))}
