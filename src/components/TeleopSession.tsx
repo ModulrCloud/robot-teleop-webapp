@@ -211,13 +211,16 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
         return;
       }
 
+      // Convert Auki Y-up to ROS Z-up: nav_x = auki_x, nav_y = -auki_z, nav_z = auki_y
+      const rosPose = { x: pose.x, y: -(pose.z ?? 0), z: pose.y };
+
       setProducts(prev => prev.map(p =>
-        p.productId === product.productId ? { ...p, coordinates: pose } : p
+        p.productId === product.productId ? { ...p, coordinates: rosPose } : p
       ));
 
-      const locMsg = buildLocationCreateMessage(product.productName, pose, { sku: product.productId });
+      const locMsg = buildLocationCreateMessage(product.productName, rosPose, { sku: product.productId });
       sendMessage(locMsg);
-      logger.log('[LOC] Pushed fresh pose for', product.productName, pose);
+      logger.log('[LOC] Pushed fresh pose for', product.productName, rosPose);
 
       await new Promise(resolve => setTimeout(resolve, LOC_REGISTER_DELAY_MS));
 
