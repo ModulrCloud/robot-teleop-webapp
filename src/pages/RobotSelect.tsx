@@ -55,6 +55,7 @@ interface ListAccessibleRobotItem {
   imageUrl?: string;
   hourlyRateCredits?: number | null;
   allowedUsers?: string[];
+  modulrApproved?: boolean;
 }
 
 export default function RobotSelect() {
@@ -448,8 +449,12 @@ export default function RobotSelect() {
                 robotType: robot.robotType || robot.model,
                 disabled: !canAccess,
                 hourlyRate: hourlyRateDisplay,
+                modulrApproved: robot.modulrApproved === true,
               };
             });
+
+          // Sort: Modulr Approved robots first, then the rest
+          robotItems.sort((a, b) => (b.modulrApproved ? 1 : 0) - (a.modulrApproved ? 1 : 0));
 
           logger.log(`✅ Successfully loaded ${robotItems.length} valid robot(s) from database`);
           logger.log('📋 Robot items details:', robotItems.map(r => ({ id: r.id, title: r.title, disabled: r.disabled })));

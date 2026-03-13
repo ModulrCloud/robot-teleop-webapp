@@ -17,6 +17,7 @@ import { InputBindingsModal } from '../components/InputBindingsModal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar, faCalendarAlt, faKeyboard, faCog, faTools, faLock } from '@fortawesome/free-solid-svg-icons';
+import { ModulrApprovedBadge } from '../components/ModulrApprovedBadge';
 import { isFeatureEnabled } from '../utils/featureFlags';
 import "./RobotDetail.css";
 
@@ -36,6 +37,7 @@ interface RobotDetailData {
   robotType?: string;
   model?: string;
   averageRating?: number;
+  modulrApproved?: boolean;
 }
 
 const getRobotImage = (model: string, imageUrl?: string): string => {
@@ -446,7 +448,10 @@ export default function RobotDetail() {
           </div>
 
           <div className="robot-info-section">
-            <h1 className="robot-detail-name">{robot.name || 'Unnamed Robot'}</h1>
+            <div className="robot-detail-name-row">
+              <h1 className="robot-detail-name">{robot.name || 'Unnamed Robot'}</h1>
+              {robot.modulrApproved && <ModulrApprovedBadge size="medium" />}
+            </div>
 
             {robot.description && (
               <p className="robot-detail-description">{robot.description}</p>
