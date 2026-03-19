@@ -159,6 +159,9 @@ export const handler: Schema["listAccessibleRobotsLambda"]["functionHandler"] = 
         updatedAt: robotItem.updatedAt?.S,
         // Pricing field
         hourlyRateCredits: robotItem.hourlyRateCredits?.N ? parseFloat(robotItem.hourlyRateCredits.N) : undefined,
+        maxFreeSessionSeconds: robotItem.maxFreeSessionSeconds?.N
+          ? parseInt(robotItem.maxFreeSessionSeconds.N, 10)
+          : undefined,
         // Location fields
         city: robotItem.city?.S,
         state: robotItem.state?.S,

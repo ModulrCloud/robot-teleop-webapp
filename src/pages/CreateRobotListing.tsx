@@ -6,7 +6,17 @@ import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useAuthStatus } from "../hooks/useAuthStatus";
-import { getCurrencyInfo, creditsToCurrencySync, currencyToCreditsSync, fetchExchangeRates, type CurrencyCode } from '../utils/credits';
+import { getCurrencyInfo, creditsToCurrencySync, fetchExchangeRates, type CurrencyCode } from '../utils/credits';
+import {
+  freeMinutesInputToSeconds,
+  MAX_FREE_SESSION_MINUTES,
+} from '../utils/freeSessionLimit';
+import {
+  hourlyCurrencyToCredits,
+  sanitizeHourlyCurrencyTyping,
+  HOURLY_CURRENCY_FORMAT_ERROR,
+  formatHourlyDisplayAmount,
+} from '../utils/hourlyRateInput';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
 import {
@@ -67,6 +77,8 @@ export const CreateRobotListing = () => {
 
   // Raw input value as string to allow free typing
   const [hourlyRateInput, setHourlyRateInput] = useState<string>('1.00');
+  /** When hourly rate is $0; empty = unlimited free session length. */
+  const [freeSessionMaxMinutes, setFreeSessionMaxMinutes] = useState('');
   const { user } = useAuthStatus();
   const [currencyDisplay, setCurrencyDisplay] = useState<string>('USD');
   const [currencyCode, setCurrencyCode] = useState<CurrencyCode>('USD');
@@ -90,7 +102,7 @@ export const CreateRobotListing = () => {
         setCurrencyCode('USD');
         // Convert default credits to USD for display
         const usdValue = creditsToCurrencySync(robotListing.hourlyRateCredits, 'USD', exchangeRates);
-        setHourlyRateInput(usdValue.toFixed(2));
+        setHourlyRateInput(formatHourlyDisplayAmount(usdValue));
         return;
       }
 
@@ -122,7 +134,7 @@ export const CreateRobotListing = () => {
 
         // Convert current credits value to new currency for display
         const currencyValue = creditsToCurrencySync(robotListing.hourlyRateCredits, preferredCurrency, exchangeRates);
-        setHourlyRateInput(currencyValue.toFixed(2));
+        setHourlyRateInput(formatHourlyDisplayAmount(currencyValue));
       } catch (err) {
         logger.error("Error loading currency preference:", err);
         // Fallback to USD on error
@@ -143,12 +155,15 @@ export const CreateRobotListing = () => {
     const { name, value, type } = event.target;
     const checked = (event.target as HTMLInputElement).checked;
 
-    // Handle hourly rate input - just let user type freely, no validation while typing
-    if (type === 'number' && name === 'hourlyRateCredits') {
-      // Clear any previous error
+    if (name === 'hourlyRateInput') {
       setHourlyRateError(null);
-      // Allow free typing - store as string
-      setHourlyRateInput(value);
+      const s = sanitizeHourlyCurrencyTyping(value);
+      setHourlyRateInput(s);
+      const n = parseFloat(s);
+      if (!Number.isNaN(n) && n > 0) {
+        setFreeSessionMaxMinutes('');
+      }
+      return;
     } else {
       setRobotListing(prev => ({
         ...prev,
@@ -163,20 +178,21 @@ export const CreateRobotListing = () => {
     setSuccess(undefined);
     setHourlyRateError(null);
 
-    // Validate hourly rate before proceeding
-    const hourlyRateValue = parseFloat(hourlyRateInput);
-    if (isNaN(hourlyRateValue) || hourlyRateValue < 0) {
-      setHourlyRateError('Enter a valid number');
+    const rateResult = hourlyCurrencyToCredits(hourlyRateInput, currencyCode, exchangeRates);
+    if (!rateResult.ok) {
+      setHourlyRateError(rateResult.message);
       setIsLoading(false);
       return;
     }
+    const creditsValue = rateResult.credits;
 
-    // Convert currency value to credits for storage
-    const creditsValue = currencyToCreditsSync(hourlyRateValue, currencyCode, exchangeRates);
-    if (isNaN(creditsValue) || creditsValue < 0) {
-      setHourlyRateError('Enter a valid number');
-      setIsLoading(false);
-      return;
+    if (creditsValue === 0 && freeSessionMaxMinutes.trim() !== '') {
+      const capSec = freeMinutesInputToSeconds(freeSessionMaxMinutes);
+      if (capSec === null) {
+        setHourlyRateError('Enter a valid max session length in minutes (1–' + MAX_FREE_SESSION_MINUTES + '), or leave empty for no limit');
+        setIsLoading(false);
+        return;
+      }
     }
 
     const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
@@ -186,12 +202,16 @@ export const CreateRobotListing = () => {
         .filter(email => email.length > 0 && email.includes('@'))
       : [];
 
+    const maxFreeSeconds =
+      creditsValue === 0 ? freeMinutesInputToSeconds(freeSessionMaxMinutes) : undefined;
+
     const robotData = {
       robotName: robotListing.robotName,
       description: robotListing.description,
       model: robotListing.robotType, // Use robotType as model for backwards compatibility
       robotType: robotListing.robotType, // New field for default image selection
       hourlyRateCredits: creditsValue,
+      ...(maxFreeSeconds != null ? { maxFreeSessionSeconds: maxFreeSeconds } : {}),
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
       city: robotListing.city || undefined,
@@ -243,6 +263,8 @@ export const CreateRobotListing = () => {
       latitude: "",
       longitude: "",
     });
+    setFreeSessionMaxMinutes('');
+    setHourlyRateInput('1.00');
   };
 
   return (
@@ -350,27 +372,55 @@ export const CreateRobotListing = () => {
               </label>
               <input
                 id="hourly-rate"
-                type="number"
-                name="hourlyRateCredits"
+                type="text"
+                inputMode="decimal"
+                name="hourlyRateInput"
+                autoComplete="off"
                 value={hourlyRateInput}
                 onChange={handleInputChange}
                 placeholder="1.00"
-                min="0"
-                step="0.01"
                 required
                 disabled={isLoading}
                 className={hourlyRateError ? 'error' : ''}
+                aria-invalid={hourlyRateError ? true : undefined}
               />
               {hourlyRateError && (
-                <div className="form-error" style={{ color: '#f44336', marginTop: '0.5rem', fontSize: '0.875rem' }}>
+                <div className="form-error" style={{ color: '#f44336', marginTop: '0.5rem', fontSize: '0.875rem' }} role="alert">
                   {hourlyRateError}
                 </div>
               )}
               <small className="form-help-text">
-                Set the hourly rate in your preferred currency that clients will pay to use this robot.
-                The platform will add a markup on top of this rate.
+                {HOURLY_CURRENCY_FORMAT_ERROR} The platform adds a markup on top of this rate.
               </small>
             </div>
+
+            {(() => {
+              const parsed = hourlyCurrencyToCredits(hourlyRateInput, currencyCode, exchangeRates);
+              const showFreeCap = parsed.ok && parsed.credits === 0;
+              if (!showFreeCap) return null;
+              return (
+                <div className="form-group">
+                  <label htmlFor="create-free-session-max">
+                    Max free session length <span className="optional">(optional)</span>
+                  </label>
+                  <input
+                    id="create-free-session-max"
+                    type="number"
+                    min={1}
+                    max={MAX_FREE_SESSION_MINUTES}
+                    step={1}
+                    value={freeSessionMaxMinutes}
+                    onChange={(e) => setFreeSessionMaxMinutes(e.target.value)}
+                    placeholder="No limit"
+                    disabled={isLoading}
+                  />
+                  <small className="form-help-text">
+                    Minutes per session at $0/hour. Leave empty for no limit (anyone can connect without credits).
+                    Stored on the robot; live enforcement comes in a follow-up.
+                  </small>
+                </div>
+              );
+            })()}
 
           </div>
 
