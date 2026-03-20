@@ -358,7 +358,10 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
   const { credits, refreshCredits } = useUserCredits();
   const { toast, showToast } = useToast();
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [insufficientFunds, setInsufficientFunds] = useState(false);
+  /** Set when billing ends the session: insufficient credits vs free time cap (distinct UI). */
+  const [billingTermination, setBillingTermination] = useState<
+    null | 'insufficient_funds' | 'free_cap_exceeded'
+  >(null);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [showInputBindingsModal, setShowInputBindingsModal] = useState(false);
   const [clientBindings, setClientBindings] = useState<{
@@ -567,7 +570,7 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
 
   // Per-minute credit deduction timer (skipped for owner test – backend also returns 0)
   useEffect(() => {
-    if (!status.connected || !sessionId || insufficientFunds || isOwnerTest) return;
+    if (!status.connected || !sessionId || billingTermination !== null || isOwnerTest) return;
 
     const deductionInterval = setInterval(async () => {
       if (!sessionId || !status.connected) return;
@@ -651,7 +654,7 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
 
             warningShownRef.current = false;
 
-            setInsufficientFunds(true);
+            setBillingTermination(isFreeCap ? 'free_cap_exceeded' : 'insufficient_funds');
             stopRobot();
             disconnect();
             if (!isFreeCap) {
@@ -665,7 +668,7 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
     }, 60000); // Every 60 seconds (1 minute)
 
     return () => clearInterval(deductionInterval);
-  }, [status.connected, sessionId, insufficientFunds, isOwnerTest, refreshCredits, stopRobot, disconnect]);
+  }, [status.connected, sessionId, billingTermination, isOwnerTest, refreshCredits, stopRobot, disconnect]);
 
   useEffect(() => {
     const checkGamepad = () => {
@@ -912,7 +915,41 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
     );
   }
 
-  if (insufficientFunds) {
+  if (billingTermination === 'free_cap_exceeded') {
+    return (
+      <div className="teleop-container">
+        <div className="robot-busy-modal">
+          <div className="busy-content">
+            <FontAwesomeIcon icon={faExclamationTriangle} className="busy-icon" style={{ color: '#ff9800' }} />
+            <h2>Free session time ended</h2>
+            <p className="busy-message">
+              You have used the maximum free time allowed for this robot. Start a new session later or choose another robot.
+            </p>
+            <div className="busy-actions">
+              <button className="back-btn" onClick={handleBackOrEndSession}>
+                Return to Robots
+              </button>
+            </div>
+          </div>
+        </div>
+        {toast.visible && (
+          <div className={`toast-notification ${toast.type}`}>
+            <FontAwesomeIcon
+              icon={
+                toast.type === 'error' ? faExclamationTriangle :
+                  toast.type === 'success' ? faCheckCircle :
+                    toast.type === 'warning' ? faCircleExclamation :
+                      faCheckCircle
+              }
+            />
+            <span>{toast.message}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (billingTermination === 'insufficient_funds') {
     return (
       <div className="teleop-container">
         <div className="robot-busy-modal">
@@ -949,7 +986,7 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
             // If user has enough credits now, allow them to continue
             // Otherwise they'll need to start a new session
             if (credits > 0) {
-              setInsufficientFunds(false);
+              setBillingTermination(null);
             }
           }}
         />
@@ -1443,7 +1480,7 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
           // If user has enough credits now, allow them to continue
           // Otherwise they'll need to start a new session
           if (credits > 0) {
-            setInsufficientFunds(false);
+            setBillingTermination(null);
           }
         }}
       />

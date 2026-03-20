@@ -1,5 +1,5 @@
 import type { Schema } from "../../data/resource";
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
 
@@ -155,34 +155,60 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
     const elapsedSeconds =
       Number.isFinite(startedMs) ? Math.floor((Date.now() - startedMs) / 1000) : 0;
 
-    // If robot is free (0 hourly rate), enforce optional capped session length (snapshot on Session, fallback Robot)
+    // If robot is free (0 hourly rate), enforce optional capped session length.
+    // Session snapshot: if maxFreeSessionSeconds is set (including 0 = unlimited), do not fall back to live robot.
     if (hourlyRateCredits === 0) {
       const capFromSession = session.maxFreeSessionSeconds;
-      const capFromRobot = robot.maxFreeSessionSeconds;
-      const maxCapRaw =
-        capFromSession !== undefined && capFromSession !== null && String(capFromSession) !== ""
-          ? Number(capFromSession)
-          : capFromRobot !== undefined && capFromRobot !== null && String(capFromRobot) !== ""
+      const sessionCapDefined =
+        capFromSession !== undefined && capFromSession !== null && String(capFromSession) !== "";
+
+      let maxCapSeconds = 0;
+      if (sessionCapDefined) {
+        const n = Number(capFromSession);
+        maxCapSeconds = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+      } else {
+        const capFromRobot = robot.maxFreeSessionSeconds;
+        const maxCapRaw =
+          capFromRobot !== undefined && capFromRobot !== null && String(capFromRobot) !== ""
             ? Number(capFromRobot)
             : 0;
-      const maxCapSeconds = Number.isFinite(maxCapRaw) && maxCapRaw > 0 ? Math.floor(maxCapRaw) : 0;
+        maxCapSeconds = Number.isFinite(maxCapRaw) && maxCapRaw > 0 ? Math.floor(maxCapRaw) : 0;
+      }
 
       if (maxCapSeconds > 0 && elapsedSeconds >= maxCapSeconds) {
-        await docClient.send(
-          new UpdateCommand({
-            TableName: SESSION_TABLE_NAME,
-            Key: { id: sessionId },
-            UpdateExpression:
-              "SET #status = :status, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now",
-            ExpressionAttributeNames: { "#status": "status" },
-            ExpressionAttributeValues: {
-              ":status": "free_cap_exceeded",
-              ":endedAt": nowIso,
-              ":duration": elapsedSeconds,
-              ":now": nowIso,
-            },
-          })
-        );
+        try {
+          await docClient.send(
+            new UpdateCommand({
+              TableName: SESSION_TABLE_NAME,
+              Key: { id: sessionId },
+              UpdateExpression:
+                "SET #status = :status, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now",
+              ConditionExpression: "#status = :active",
+              ExpressionAttributeNames: { "#status": "status" },
+              ExpressionAttributeValues: {
+                ":status": "free_cap_exceeded",
+                ":endedAt": nowIso,
+                ":duration": elapsedSeconds,
+                ":now": nowIso,
+                ":active": "active",
+              },
+            })
+          );
+        } catch (err) {
+          if (err instanceof ConditionalCheckFailedException) {
+            console.log("Free cap skip — session already terminal", { sessionId });
+            return {
+              statusCode: 200,
+              body: JSON.stringify({
+                success: true,
+                message: "Session already ended",
+                sessionId,
+                skipped: true,
+              }),
+            };
+          }
+          throw err;
+        }
         return {
           statusCode: 402,
           body: JSON.stringify({

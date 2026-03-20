@@ -1348,8 +1348,13 @@ async function createSession(
     const effectiveHourly =
       snapshotHourlyCredits !== undefined && Number.isFinite(snapshotHourlyCredits) ? snapshotHourlyCredits : 100;
     sessionItem.hourlyRateCredits = { N: String(effectiveHourly) };
-    if (snapshotMaxFreeSessionSeconds != null && snapshotMaxFreeSessionSeconds > 0) {
-      sessionItem.maxFreeSessionSeconds = { N: String(snapshotMaxFreeSessionSeconds) };
+    // Free robots: always snapshot cap (seconds > 0) or explicit 0 = unlimited at session start — do not rely on omit.
+    if (effectiveHourly === 0) {
+      const cap =
+        snapshotMaxFreeSessionSeconds != null && snapshotMaxFreeSessionSeconds > 0
+          ? snapshotMaxFreeSessionSeconds
+          : 0;
+      sessionItem.maxFreeSessionSeconds = { N: String(cap) };
     }
 
     await db.send(new PutItemCommand({

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Context } from "aws-lambda";
+import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 
 const { mockSend } = vi.hoisted(() => ({ mockSend: vi.fn() }));
 
@@ -318,5 +319,75 @@ describe("deductSessionCreditsLambda handler", () => {
     const res = result as { statusCode: number; body: string };
     expect(res.statusCode).toBe(200);
     expect(mockSend).toHaveBeenCalledTimes(3);
+  });
+
+  it("explicit session maxFreeSessionSeconds 0 (unlimited snapshot) ignores robot cap", async () => {
+    const partnerTableId = "partner-uuid-123";
+    const started = new Date(Date.now() - 125_000).toISOString();
+    const session = {
+      ...makeNonOwnerSession(),
+      startedAt: started,
+      hourlyRateCredits: 0,
+      maxFreeSessionSeconds: 0,
+    };
+    mockSend
+      .mockResolvedValueOnce({ Item: session })
+      .mockResolvedValueOnce({
+        Items: [
+          {
+            robotId: ROBOT_ID,
+            partnerId: partnerTableId,
+            hourlyRateCredits: 0,
+            maxFreeSessionSeconds: 120,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        Item: { id: partnerTableId, cognitoUsername: OWNER_USERNAME, contactEmail: "owner@example.com" },
+      });
+
+    const result = await handler(
+      makeEvent({ username: "other-user" }),
+      noOpContext,
+      noOpCallback
+    );
+    const res = result as { statusCode: number; body: string };
+    expect(res.statusCode).toBe(200);
+    expect(mockSend).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns 200 skipped when free-cap update races terminal session", async () => {
+    const partnerTableId = "partner-uuid-123";
+    const started = new Date(Date.now() - 125_000).toISOString();
+    const session = {
+      ...makeNonOwnerSession(),
+      startedAt: started,
+      hourlyRateCredits: 0,
+      maxFreeSessionSeconds: 120,
+    };
+    mockSend
+      .mockResolvedValueOnce({ Item: session })
+      .mockResolvedValueOnce({
+        Items: [{ robotId: ROBOT_ID, partnerId: partnerTableId, hourlyRateCredits: 0 }],
+      })
+      .mockResolvedValueOnce({
+        Item: { id: partnerTableId, cognitoUsername: OWNER_USERNAME, contactEmail: "owner@example.com" },
+      })
+      .mockRejectedValueOnce(
+        new ConditionalCheckFailedException({
+          message: "The conditional request failed",
+          $metadata: {},
+        })
+      );
+
+    const result = await handler(
+      makeEvent({ username: "other-user" }),
+      noOpContext,
+      noOpCallback
+    );
+    const res = result as { statusCode: number; body: string };
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.skipped).toBe(true);
   });
 });
