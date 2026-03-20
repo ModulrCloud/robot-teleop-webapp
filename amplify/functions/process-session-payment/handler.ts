@@ -91,11 +91,16 @@ export const handler: Schema["processSessionPaymentLambda"]["functionHandler"] =
       throw new Error(`Robot not found: ${robotId}`);
     }
 
-    const hourlyRateCredits = robot.hourlyRateCredits ?? 100;
+    // Prefer session snapshot (same as deduct-session-credits) so pricing changes after session start do not mis-route legacy free close / billing.
+    const sessionHourlyRaw = session.hourlyRateCredits;
+    const hourlyRateCredits =
+      sessionHourlyRaw !== undefined && sessionHourlyRaw !== null && String(sessionHourlyRaw) !== ""
+        ? Number(sessionHourlyRaw)
+        : Number(robot.hourlyRateCredits ?? 100);
 
-    // If robot is free (0 hourly rate), skip all credit operations
+    // If session was free at start (0 rate), skip all credit operations
     if (hourlyRateCredits === 0) {
-      console.log("Robot is free (0 hourly rate), skipping credit deduction and payment processing", {
+      console.log("Session is free (0 hourly rate snapshot), skipping credit deduction and payment processing", {
         sessionId,
         robotId,
         durationSeconds,
@@ -127,7 +132,7 @@ export const handler: Schema["processSessionPaymentLambda"]["functionHandler"] =
         statusCode: 200,
         body: JSON.stringify({
           success: true,
-          message: "Robot is free - no credits charged",
+          message: "Free session (0 rate snapshot) - no credits charged",
           sessionId,
           creditsCharged: 0,
           partnerEarnings: 0,

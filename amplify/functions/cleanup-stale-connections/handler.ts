@@ -6,6 +6,7 @@ import {
   QueryCommand,
   UpdateItemCommand,
   GetItemCommand,
+  ConditionalCheckFailedException,
 } from '@aws-sdk/client-dynamodb';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand, DeleteConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 import { buildSignallingPingMessage } from '../shared/agent-protocol';
@@ -313,23 +314,36 @@ async function cleanupConnectionSessions(connectionId: string): Promise<void> {
         durationSeconds = Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000);
       }
 
-      await db.send(
-        new UpdateItemCommand({
-          TableName: SESSION_TABLE_NAME,
-          Key: { id: { S: sessionId } },
-          UpdateExpression:
-            'SET #status = :completed, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now, #endReason = :endReason',
-          ExpressionAttributeNames: { '#status': 'status', '#endReason': 'endReason' },
-          ExpressionAttributeValues: {
-            ':completed': { S: 'completed' },
-            ':endedAt': { S: now },
-            ':duration': { N: String(durationSeconds) },
-            ':now': { S: now },
-            ':endReason': { S: SESSION_END_REASON.STALE_CONNECTION_CLEANUP },
-          },
-        })
-      );
-      console.log(`[CLEANUP] Ended session ${sessionId} for stale connection ${connectionId}`);
+      try {
+        await db.send(
+          new UpdateItemCommand({
+            TableName: SESSION_TABLE_NAME,
+            Key: { id: { S: sessionId } },
+            UpdateExpression:
+              'SET #status = :completed, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now, #endReason = :endReason',
+            ExpressionAttributeNames: { '#status': 'status', '#endReason': 'endReason' },
+            ExpressionAttributeValues: {
+              ':completed': { S: 'completed' },
+              ':endedAt': { S: now },
+              ':duration': { N: String(durationSeconds) },
+              ':now': { S: now },
+              ':endReason': { S: SESSION_END_REASON.STALE_CONNECTION_CLEANUP },
+              ':active': { S: 'active' },
+            },
+            ConditionExpression: '#status = :active',
+          })
+        );
+        console.log(`[CLEANUP] Ended session ${sessionId} for stale connection ${connectionId}`);
+      } catch (updateErr) {
+        if (updateErr instanceof ConditionalCheckFailedException) {
+          console.log(`[CLEANUP] Skip session end — no longer active (avoid clobbering endReason):`, {
+            sessionId,
+            connectionId,
+          });
+        } else {
+          throw updateErr;
+        }
+      }
     } catch (error) {
       console.error(`[CLEANUP] Failed to end session ${sessionId}:`, error);
     }
