@@ -16,6 +16,7 @@ import { createHash, randomUUID, randomBytes, verify as cryptoVerify, createPubl
 import { ApiGatewayManagementApiClient, PostToConnectionCommand, DeleteConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
+import { SESSION_END_REASON } from "../shared/session-end-reasons";
 
 const CONN_TABLE = process.env.CONN_TABLE!;
 const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
@@ -1428,7 +1429,7 @@ async function createSession(
   }
 }
 
-async function endSession(sessionId: string): Promise<void> {
+async function endSession(sessionId: string, endReason: string): Promise<void> {
   if (!SESSION_TABLE_NAME) return;
 
   const now = new Date().toISOString();
@@ -1457,9 +1458,10 @@ async function endSession(sessionId: string): Promise<void> {
     await db.send(new UpdateItemCommand({
       TableName: SESSION_TABLE_NAME,
       Key: { id: { S: sessionId } },
-      UpdateExpression: 'SET #status = :completed, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now',
+      UpdateExpression: 'SET #status = :completed, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now, #endReason = :endReason',
       ExpressionAttributeNames: {
         '#status': 'status',
+        '#endReason': 'endReason',
       },
       ExpressionAttributeValues: {
         ':completed': { S: 'completed' },
@@ -1467,11 +1469,12 @@ async function endSession(sessionId: string): Promise<void> {
         ':duration': { N: String(durationSeconds) },
         ':now': { S: now },
         ':active': { S: 'active' },
+        ':endReason': { S: endReason },
       },
       ConditionExpression: '#status = :active',
     }));
 
-    console.log('[SESSION] Ended session:', { sessionId, durationSeconds });
+    console.log('[SESSION] Ended session:', { sessionId, durationSeconds, endReason });
   } catch (err) {
     if (err instanceof ConditionalCheckFailedException) {
       console.log('[SESSION] Skip endSession — already terminal:', sessionId);
@@ -1505,7 +1508,7 @@ async function endUserSessions(userId: string): Promise<void> {
     for (const item of result.Items || []) {
       const sessionId = item.id?.S;
       if (sessionId) {
-        await endSession(sessionId);
+        await endSession(sessionId, SESSION_END_REASON.USER_SESSIONS_CLEARED);
         if (SETTLE_SESSION_PAYMENT_FUNCTION_NAME) {
           try {
             await lambdaClient.send(new InvokeCommand({
@@ -1680,7 +1683,7 @@ async function endConnectionSessions(connectionId: string): Promise<void> {
       const sessionId = item.id?.S;
       if (sessionId) {
         console.log('[SESSION] Ending session on disconnect:', { sessionId, connectionId });
-        await endSession(sessionId);
+        await endSession(sessionId, SESSION_END_REASON.WEBSOCKET_DISCONNECT);
         if (SETTLE_SESSION_PAYMENT_FUNCTION_NAME) {
           try {
             await lambdaClient.send(new InvokeCommand({

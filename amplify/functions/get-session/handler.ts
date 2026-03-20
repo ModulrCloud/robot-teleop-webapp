@@ -18,6 +18,7 @@ interface SessionResult {
   endedAt: string | null;
   durationSeconds: number | null;
   status: string | null;
+  endReason: string | null;
   hourlyRateCredits: number | null;
   maxFreeSessionSeconds: number | null;
   trialSeconds: number | null;
@@ -35,6 +36,7 @@ const buildSessionResult = (session: Record<string, { S?: string; N?: string }> 
     endedAt: session.endedAt?.S || null,
     durationSeconds: session.durationSeconds?.N ? parseInt(session.durationSeconds.N, 10) : null,
     status: session.status?.S || null,
+    endReason: session.endReason?.S || null,
     hourlyRateCredits: session.hourlyRateCredits?.N ? parseFloat(session.hourlyRateCredits.N) : null,
     maxFreeSessionSeconds: session.maxFreeSessionSeconds?.N
       ? parseInt(session.maxFreeSessionSeconds.N, 10)

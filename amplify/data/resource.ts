@@ -84,6 +84,7 @@ const SessionResult = a.customType({
   endedAt: a.string(),
   durationSeconds: a.integer(),
   status: a.string(),
+  endReason: a.string(),
   hourlyRateCredits: a.float(),
   maxFreeSessionSeconds: a.integer(),
   trialSeconds: a.integer(),
@@ -488,6 +489,8 @@ const schema = a.schema({
     endedAt: a.datetime(),                // When session ended
     durationSeconds: a.integer(),         // Total duration in seconds
     status: a.string(),                   // 'active', 'completed', 'disconnected', 'insufficient_funds', 'free_cap_exceeded'
+    /** Terminal cause: user_sessions_cleared | websocket_disconnect | stale_connection_cleanup | free_cap_exceeded | insufficient_funds | legacy_free_payment_close */
+    endReason: a.string(),
     // Cost tracking
     creditsCharged: a.float(),            // Total credits charged to user (includes markup) - final total when session ends
     creditsDeductedSoFar: a.float(),     // Cumulative credits deducted during active session (real-time billing)
