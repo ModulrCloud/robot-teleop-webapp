@@ -9,6 +9,7 @@ import {
     UpdateItemCommand,
     ScanCommand,
     ConditionalCheckFailedException,
+    type AttributeValue,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand as DocQueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { createHash, randomUUID, randomBytes, verify as cryptoVerify, createPublicKey } from 'crypto';
@@ -1326,7 +1327,7 @@ async function createSession(
     // End any other active sessions for this user (allows only one session at a time)
     await endUserSessions(userId);
 
-    const sessionItem: Record<string, { S: string }> = {
+    const sessionItem: Record<string, AttributeValue> = {
       id: { S: sessionId },
       owner: { S: userId },
       userId: { S: userId },
