@@ -8,6 +8,8 @@ import {
     QueryCommand,
     UpdateItemCommand,
     ScanCommand,
+    ConditionalCheckFailedException,
+    type AttributeValue,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand as DocQueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { createHash, randomUUID, randomBytes, verify as cryptoVerify, createPublicKey } from 'crypto';
@@ -1245,6 +1247,8 @@ async function createSession(
   let robotName = robotId;
   let partnerIdCognito: string | undefined;
   const partnerOwnerIdentifiers: string[] = [];
+  let snapshotHourlyCredits: number | undefined;
+  let snapshotMaxFreeSessionSeconds: number | undefined;
   if (ROBOT_TABLE_NAME) {
     try {
       const robotQuery = await db.send(new QueryCommand({
@@ -1257,6 +1261,16 @@ async function createSession(
       const robotItem = robotQuery.Items?.[0];
       if (robotItem) {
         robotName = robotItem.name?.S ?? robotId;
+        const hrN = robotItem.hourlyRateCredits?.N;
+        if (hrN !== undefined && hrN !== '') {
+          const hr = parseFloat(hrN);
+          if (Number.isFinite(hr)) snapshotHourlyCredits = hr;
+        }
+        const capN = robotItem.maxFreeSessionSeconds?.N;
+        if (capN !== undefined && capN !== '') {
+          const cap = parseInt(capN, 10);
+          if (Number.isFinite(cap) && cap > 0) snapshotMaxFreeSessionSeconds = cap;
+        }
         const partnerTableId = robotItem.partnerId?.S;
         if (partnerTableId && PARTNER_TABLE_NAME) {
           const partnerResult = await docClient.send(new GetCommand({
@@ -1313,7 +1327,7 @@ async function createSession(
     // End any other active sessions for this user (allows only one session at a time)
     await endUserSessions(userId);
 
-    const sessionItem: Record<string, { S: string }> = {
+    const sessionItem: Record<string, AttributeValue> = {
       id: { S: sessionId },
       owner: { S: userId },
       userId: { S: userId },
@@ -1329,6 +1343,18 @@ async function createSession(
     };
     if (partnerIdCognito) {
       sessionItem.partnerId = { S: partnerIdCognito };
+    }
+
+    const effectiveHourly =
+      snapshotHourlyCredits !== undefined && Number.isFinite(snapshotHourlyCredits) ? snapshotHourlyCredits : 100;
+    sessionItem.hourlyRateCredits = { N: String(effectiveHourly) };
+    // Free robots: always snapshot cap (seconds > 0) or explicit 0 = unlimited at session start — do not rely on omit.
+    if (effectiveHourly === 0) {
+      const cap =
+        snapshotMaxFreeSessionSeconds != null && snapshotMaxFreeSessionSeconds > 0
+          ? snapshotMaxFreeSessionSeconds
+          : 0;
+      sessionItem.maxFreeSessionSeconds = { N: String(cap) };
     }
 
     await db.send(new PutItemCommand({
@@ -1386,11 +1412,17 @@ async function endSession(sessionId: string): Promise<void> {
         ':endedAt': { S: now },
         ':duration': { N: String(durationSeconds) },
         ':now': { S: now },
+        ':active': { S: 'active' },
       },
+      ConditionExpression: '#status = :active',
     }));
 
     console.log('[SESSION] Ended session:', { sessionId, durationSeconds });
   } catch (err) {
+    if (err instanceof ConditionalCheckFailedException) {
+      console.log('[SESSION] Skip endSession — already terminal:', sessionId);
+      return;
+    }
     console.error('[SESSION] Failed to end session:', {
       sessionId,
       error: err instanceof Error ? err.message : String(err),

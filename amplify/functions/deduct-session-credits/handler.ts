@@ -1,5 +1,5 @@
 import type { Schema } from "../../data/resource";
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
 
@@ -144,10 +144,84 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
       };
     }
 
-    const hourlyRateCredits = robot.hourlyRateCredits ?? 100;
+    const sessionHourlyRaw = session.hourlyRateCredits;
+    const hourlyRateCredits =
+      sessionHourlyRaw !== undefined && sessionHourlyRaw !== null && String(sessionHourlyRaw) !== ""
+        ? Number(sessionHourlyRaw)
+        : Number(robot.hourlyRateCredits ?? 100);
 
-    // If robot is free (0 hourly rate), skip credit deduction
+    const nowIso = new Date().toISOString();
+    const startedMs = startedAt ? new Date(String(startedAt)).getTime() : NaN;
+    const elapsedSeconds =
+      Number.isFinite(startedMs) ? Math.floor((Date.now() - startedMs) / 1000) : 0;
+
+    // If robot is free (0 hourly rate), enforce optional capped session length.
+    // Session snapshot: if maxFreeSessionSeconds is set (including 0 = unlimited), do not fall back to live robot.
     if (hourlyRateCredits === 0) {
+      const capFromSession = session.maxFreeSessionSeconds;
+      const sessionCapDefined =
+        capFromSession !== undefined && capFromSession !== null && String(capFromSession) !== "";
+
+      let maxCapSeconds = 0;
+      if (sessionCapDefined) {
+        const n = Number(capFromSession);
+        maxCapSeconds = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+      } else {
+        const capFromRobot = robot.maxFreeSessionSeconds;
+        const maxCapRaw =
+          capFromRobot !== undefined && capFromRobot !== null && String(capFromRobot) !== ""
+            ? Number(capFromRobot)
+            : 0;
+        maxCapSeconds = Number.isFinite(maxCapRaw) && maxCapRaw > 0 ? Math.floor(maxCapRaw) : 0;
+      }
+
+      if (maxCapSeconds > 0 && elapsedSeconds >= maxCapSeconds) {
+        try {
+          await docClient.send(
+            new UpdateCommand({
+              TableName: SESSION_TABLE_NAME,
+              Key: { id: sessionId },
+              UpdateExpression:
+                "SET #status = :status, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now",
+              ConditionExpression: "#status = :active",
+              ExpressionAttributeNames: { "#status": "status" },
+              ExpressionAttributeValues: {
+                ":status": "free_cap_exceeded",
+                ":endedAt": nowIso,
+                ":duration": elapsedSeconds,
+                ":now": nowIso,
+                ":active": "active",
+              },
+            })
+          );
+        } catch (err) {
+          if (err instanceof ConditionalCheckFailedException) {
+            console.log("Free cap skip — session already terminal", { sessionId });
+            return {
+              statusCode: 200,
+              body: JSON.stringify({
+                success: true,
+                message: "Session already ended",
+                sessionId,
+                skipped: true,
+              }),
+            };
+          }
+          throw err;
+        }
+        return {
+          statusCode: 402,
+          body: JSON.stringify({
+            success: false,
+            terminationReason: "free_cap_exceeded",
+            message: "Free session time limit reached for this robot.",
+            sessionId,
+            maxFreeSessionSeconds: maxCapSeconds,
+            elapsedSeconds,
+          }),
+        };
+      }
+
       console.log("Robot is free (0 hourly rate), skipping credit deduction", { sessionId, robotId });
       return {
         statusCode: 200,
@@ -157,7 +231,7 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
           sessionId,
           creditsDeducted: 0,
           totalDeductedSoFar: creditsDeductedSoFar,
-          remainingCredits: 0, // We don't need to check user credits for free robots
+          remainingCredits: 0,
         }),
       };
     }
