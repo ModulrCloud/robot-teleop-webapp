@@ -481,7 +481,7 @@ export default function RobotDetail() {
                     <div className="robot-meta-item">
                       <span className="robot-meta-label">Free trial:</span>
                       <span className="robot-meta-value">
-                        First {Math.max(1, Math.round(robot.trialSeconds / 60))} minutes free, then billed hourly
+                        First {Math.max(1, Math.round(robot.trialSeconds / 60))} minutes free, then billed
                       </span>
                     </div>
                   )}

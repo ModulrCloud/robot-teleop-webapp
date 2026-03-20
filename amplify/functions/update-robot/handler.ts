@@ -35,7 +35,7 @@ export function decodeAndValidateEd25519PublicKey(input: string): Buffer {
 }
 
 export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (event) => {
-  const { robotId, robotName, description, model, robotType, hourlyRateCredits, maxFreeSessionSeconds, trialSeconds, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude, publicKey } = event.arguments;
+  const { robotId, robotName, description, model, robotType, hourlyRateCredits, maxFreeSessionSeconds, trialSeconds, trialOnePerCustomer, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude, publicKey } = event.arguments;
 
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
@@ -164,6 +164,8 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     if (validatedRate === 0) {
       updateExpressions.push('REMOVE #trialSeconds');
       expressionAttributeNames['#trialSeconds'] = 'trialSeconds';
+      updateExpressions.push('REMOVE #trialOnePerCustomer');
+      expressionAttributeNames['#trialOnePerCustomer'] = 'trialOnePerCustomer';
     }
   }
 
@@ -194,6 +196,12 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
       updateExpressions.push("REMOVE #trialSeconds");
       expressionAttributeNames["#trialSeconds"] = "trialSeconds";
     }
+  }
+
+  if (trialOnePerCustomer !== undefined && nextHourly > 0) {
+    updateExpressions.push('#trialOnePerCustomer = :trialOnePerCustomer');
+    expressionAttributeNames['#trialOnePerCustomer'] = 'trialOnePerCustomer';
+    expressionAttributeValues[':trialOnePerCustomer'] = { BOOL: trialOnePerCustomer === true };
   }
 
   // Update imageUrl if provided

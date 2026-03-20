@@ -372,6 +372,8 @@ const schema = a.schema({
     maxFreeSessionSeconds: a.integer(),
     // When hourlyRateCredits > 0: optional trial length in seconds at session start. Omit/null = no trial (must stay in sync with Lambdas / updateRobotLambda).
     trialSeconds: a.integer(),
+    // Paid + trial: when true (default), each customer gets one trial per robot (recorded on first paid minute). When false, trial applies every session.
+    trialOnePerCustomer: a.boolean().default(true),
     // Location fields
     city: a.string(),
     state: a.string(),
@@ -395,6 +397,16 @@ const schema = a.schema({
       allow.owner().to(["update", "delete"]),
       allow.authenticated().to(["read"]),
     ]),
+
+  /** Trial already used for this user on this robot (when Robot.trialOnePerCustomer). Lambda-only writes; no client GraphQL access. */
+  UserRobotTrialConsumption: a
+    .model({
+      userId: a.string().required(),
+      robotId: a.string().required(),
+      consumedAt: a.datetime().required(),
+    })
+    .identifier(["userId", "robotId"])
+    .authorization((allow) => [allow.groups(["ADMINS"]).to(["read", "delete"])]),
 
   // Modulr Approved certification request – partner requests certification, pays, then admin approves/rejects
   CertificationRequest: a.model({
@@ -772,6 +784,7 @@ const schema = a.schema({
       hourlyRateCredits: a.float(), // Optional: hourly rate in credits (defaults to 100)
       maxFreeSessionSeconds: a.integer(), // Optional: when free (0 rate), max session length in seconds
       trialSeconds: a.integer(), // Optional: when paid (>0 rate), trial length in seconds (0 = none)
+      trialOnePerCustomer: a.boolean(), // Optional: default true when paid; false = trial every session
       enableAccessControl: a.boolean(), // Optional: if true, creates ACL with default users
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL
       imageUrl: a.string(),
@@ -797,6 +810,7 @@ const schema = a.schema({
       hourlyRateCredits: a.float(), // Optional: update hourly rate in credits
       maxFreeSessionSeconds: a.integer(), // Optional: cap free sessions (seconds); null removes cap
       trialSeconds: a.integer(), // Optional: paid robots only; seconds of free trial (null removes)
+      trialOnePerCustomer: a.boolean(), // Optional: one trial per customer per robot (false = trial every session)
       enableAccessControl: a.boolean(), // Optional: update ACL (true = enable/update, false = disable/remove)
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL (only used if enableAccessControl is true)
       imageUrl: a.string(), // Optional: update imageUrl (only for verified robots)

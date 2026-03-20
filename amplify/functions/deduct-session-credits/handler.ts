@@ -16,6 +16,12 @@ const PLATFORM_SETTINGS_TABLE = process.env.PLATFORM_SETTINGS_TABLE!;
 // Default platform markup (30%) if not set
 const DEFAULT_PLATFORM_MARKUP_PERCENT = 30;
 
+function robotTrialOnePerCustomerFromRecord(robot: Record<string, unknown>): boolean {
+  const v = robot.trialOnePerCustomer;
+  if (v === false) return false;
+  return true;
+}
+
 export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = async (event) => {
   console.log("Deduct Session Credits request:", JSON.stringify(event, null, 2));
   
@@ -409,6 +415,37 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
         },
       })
     );
+
+    const trialConsumptionTable = process.env.USER_ROBOT_TRIAL_CONSUMPTION_TABLE_NAME;
+    if (
+      trialConsumptionTable &&
+      robotTrialOnePerCustomerFromRecord(robot as Record<string, unknown>) &&
+      trialSecondsSnapshot > 0
+    ) {
+      const consumedAt = new Date().toISOString();
+      try {
+        await docClient.send(
+          new PutCommand({
+            TableName: trialConsumptionTable,
+            Item: {
+              userId,
+              robotId,
+              consumedAt,
+              createdAt: consumedAt,
+              updatedAt: consumedAt,
+              __typename: 'UserRobotTrialConsumption',
+            },
+          })
+        );
+      } catch (trialErr) {
+        console.warn("Record trial consumption failed (non-fatal)", {
+          sessionId,
+          userId,
+          robotId,
+          error: trialErr instanceof Error ? trialErr.message : String(trialErr),
+        });
+      }
+    }
 
     console.log("Successfully deducted credits for session:", {
       sessionId,

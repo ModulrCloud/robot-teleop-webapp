@@ -84,6 +84,8 @@ export const CreateRobotListing = () => {
   const [freeSessionMaxMinutes, setFreeSessionMaxMinutes] = useState('');
   /** When hourly rate is paid; empty = no trial. */
   const [trialSessionMinutes, setTrialSessionMinutes] = useState('');
+  /** Paid robots: when true, each customer gets one trial per robot (default). */
+  const [trialOnePerCustomer, setTrialOnePerCustomer] = useState(true);
   const { user } = useAuthStatus();
   const [currencyDisplay, setCurrencyDisplay] = useState<string>('USD');
   const [currencyCode, setCurrencyCode] = useState<CurrencyCode>('USD');
@@ -170,6 +172,7 @@ export const CreateRobotListing = () => {
       }
       if (!Number.isNaN(n) && n === 0) {
         setTrialSessionMinutes('');
+        setTrialOnePerCustomer(true);
       }
       return;
     } else {
@@ -229,6 +232,7 @@ export const CreateRobotListing = () => {
       hourlyRateCredits: creditsValue,
       ...(maxFreeSeconds != null ? { maxFreeSessionSeconds: maxFreeSeconds } : {}),
       ...(trialSecondsArg != null ? { trialSeconds: trialSecondsArg } : {}),
+      ...(creditsValue > 0 ? { trialOnePerCustomer } : {}),
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
       city: robotListing.city || undefined,
@@ -282,6 +286,7 @@ export const CreateRobotListing = () => {
     });
     setFreeSessionMaxMinutes('');
     setTrialSessionMinutes('');
+    setTrialOnePerCustomer(true);
     setHourlyRateInput('1.00');
   };
 
@@ -462,6 +467,18 @@ export const CreateRobotListing = () => {
                   />
                   <small className="form-help-text">
                     Whole minutes free before billing (1–{MAX_TRIAL_MINUTES}). Users need credits for at least one paid minute to connect. Leave empty for no trial.
+                  </small>
+                  <label className="checkbox-label" style={{ marginTop: '0.75rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={trialOnePerCustomer}
+                      onChange={(e) => setTrialOnePerCustomer(e.target.checked)}
+                      disabled={isLoading}
+                    />
+                    <span>Limit free trial to once per customer (for this robot)</span>
+                  </label>
+                  <small className="form-help-text">
+                    When unchecked, every session gets the trial period again. When checked, after a customer&apos;s first paid minute on this robot, later sessions have no trial.
                   </small>
                 </div>
               );
