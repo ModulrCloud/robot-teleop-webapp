@@ -56,6 +56,8 @@ import {
   faCrosshairs,
   faArrowsAlt,
   faBarcode,
+  faChevronDown,
+  faExchangeAlt,
 } from "@fortawesome/free-solid-svg-icons";
 import type {
   Organization,
@@ -80,10 +82,6 @@ import type {
 } from "../types/organization";
 import { PERMISSION_LABELS, ROS_COMMAND_CATEGORIES, DENY_SCOPES, DENY_REASONS, NOTIFICATION_EVENTS } from "../types/organization";
 import {
-  getMockOrgById,
-  getMockRolesForOrg,
-  getMockMembersForOrg,
-  getMockInvitesForOrg,
   getMockRobotsForOrg,
   getMockSessionsForOrg,
   getMockLogsForOrg,
@@ -95,6 +93,8 @@ import {
   getMockLocationMappingsForOrg,
   getMockKeyboardMappingsForOrg,
 } from "../mocks/organization";
+import { fetchOrgDetail, fetchUserOrganizations, inviteMember, createOrganization } from "../hooks/useOrganizationData";
+import { logger } from "../utils/logger";
 import type { SimulationNodeDatum, SimulationLinkDatum } from "d3-force";
 import "./CommandHQ.css";
 
@@ -147,27 +147,58 @@ export const CommandHQ = () => {
   const [notifications, setNotifications] = useState<OrgNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [allUserOrgs, setAllUserOrgs] = useState<Organization[]>([]);
+  const [showTeamSwitcher, setShowTeamSwitcher] = useState(false);
+  const [showCreateTeam, setShowCreateTeam] = useState(false);
+  const teamSwitcherRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
+    if (!user?.username) return;
+    fetchUserOrganizations(user.username).then(setAllUserOrgs).catch(() => {});
+  }, [user?.username]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (teamSwitcherRef.current && !teamSwitcherRef.current.contains(e.target as Node)) {
+        setShowTeamSwitcher(false);
+      }
+    };
+    if (showTeamSwitcher) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showTeamSwitcher]);
+
+  const loadOrgData = useCallback(async (showLoader = true) => {
     if (!orgId) return;
-    const mockOrg = getMockOrgById(orgId);
-    if (mockOrg) {
-      setOrg(mockOrg);
-      setRoles(getMockRolesForOrg(orgId));
-      setMembers(getMockMembersForOrg(orgId));
-      setInvites(getMockInvitesForOrg(orgId));
-      setRobots(getMockRobotsForOrg(orgId));
-      setSessions(getMockSessionsForOrg(orgId));
-      setLogs(getMockLogsForOrg(orgId));
-      setCommands(getMockRosCommandsForOrg(orgId));
-      setControllerConfigs(getMockControllerConfigsForOrg(orgId));
-      setLocationMappings(getMockLocationMappingsForOrg(orgId));
-      setKeyboardMappings(getMockKeyboardMappingsForOrg(orgId));
-      setDenyList(getMockDenyListForOrg(orgId));
-      setNotifRules(getMockNotificationRulesForOrg(orgId));
-      setNotifications(getMockNotificationsForOrg(orgId));
+    if (showLoader) setLoading(true);
+    try {
+      const detail = await fetchOrgDetail(orgId);
+      if (detail) {
+        setOrg(detail.org);
+        setRoles(detail.roles);
+        setMembers(detail.members);
+        setInvites(detail.invites);
+      }
+    } catch (err) {
+      logger.error('CommandHQ: failed to load org data', err);
     }
+
+    setRobots(getMockRobotsForOrg());
+    setSessions(getMockSessionsForOrg());
+    setLogs(getMockLogsForOrg());
+    setCommands(getMockRosCommandsForOrg());
+    setControllerConfigs(getMockControllerConfigsForOrg());
+    setLocationMappings(getMockLocationMappingsForOrg());
+    setKeyboardMappings(getMockKeyboardMappingsForOrg());
+    setDenyList(getMockDenyListForOrg());
+    setNotifRules(getMockNotificationRulesForOrg());
+    setNotifications(getMockNotificationsForOrg());
+
     setLoading(false);
   }, [orgId]);
+
+  useEffect(() => {
+    loadOrgData();
+  }, [loadOrgData]);
 
   const currentMember = members.find((m) => m.userId === user?.username) || members[0];
   const currentRole = roles.find((r) => r.id === currentMember?.roleId);
@@ -223,7 +254,53 @@ export const CommandHQ = () => {
             )}
           </div>
         </div>
+        <div className="chq-team-switcher" ref={teamSwitcherRef}>
+          <button
+            className="chq-team-switcher-btn"
+            onClick={() => setShowTeamSwitcher((v) => !v)}
+          >
+            <FontAwesomeIcon icon={faExchangeAlt} />
+            <span>{allUserOrgs.length > 1 ? 'Switch Team' : 'Teams'}</span>
+            <FontAwesomeIcon icon={faChevronDown} className={`chq-chevron ${showTeamSwitcher ? 'open' : ''}`} />
+          </button>
+          {showTeamSwitcher && (
+            <div className="chq-team-dropdown">
+              {allUserOrgs.map((o) => (
+                <button
+                  key={o.id}
+                  className={`chq-team-option ${o.id === orgId ? 'active' : ''}`}
+                  onClick={() => {
+                    if (o.id !== orgId) navigate(`/command-hq/${o.id}`);
+                    setShowTeamSwitcher(false);
+                  }}
+                >
+                  <span className="chq-team-option-avatar">{o.name.charAt(0).toUpperCase()}</span>
+                  <span className="chq-team-option-name">{o.name}</span>
+                  {o.id === orgId && <FontAwesomeIcon icon={faCheck} className="chq-team-check" />}
+                </button>
+              ))}
+              <div className="chq-team-divider" />
+              <button
+                className="chq-team-option chq-team-create"
+                onClick={() => { setShowTeamSwitcher(false); setShowCreateTeam(true); }}
+              >
+                <FontAwesomeIcon icon={faPlus} />
+                <span>Create Team</span>
+              </button>
+            </div>
+          )}
+        </div>
       </header>
+
+      {showCreateTeam && (
+        <CreateTeamModal
+          onClose={() => setShowCreateTeam(false)}
+          onCreated={(newOrgId) => {
+            setShowCreateTeam(false);
+            if (newOrgId) navigate(`/command-hq/${newOrgId}`);
+          }}
+        />
+      )}
 
       <div className="chq-layout">
         <nav className="chq-sidebar">
@@ -243,7 +320,11 @@ export const CommandHQ = () => {
         <main className="chq-main">
           {activeTab === "overview" && <OverviewTab org={org} members={members} roles={roles} invites={invites} />}
           {activeTab === "members" && (
-            <MembersTab members={members} invites={invites} roles={roles} robots={robots} org={org} canManage={hasPermission("members:manage")} />
+            <MembersTab
+              members={members} invites={invites} roles={roles} robots={robots} org={org}
+              canManage={hasPermission("members:manage")}
+              onRefresh={() => loadOrgData(false)}
+            />
           )}
           {activeTab === "robots" && (
             <RobotsTab robots={robots} members={members} canManage={hasPermission("robots:manage")} />
@@ -318,7 +399,7 @@ function OverviewTab({
             <div key={m.id} className="chq-row">
               <div className="chq-avatar-sm">{(m.userEmail || m.userId).charAt(0).toUpperCase()}</div>
               <div className="chq-row-text">
-                <span className="chq-row-primary">{m.userEmail || m.userId}</span>
+                <span className="chq-row-primary" title={m.userEmail || m.userId}>{m.userEmail || m.userId}</span>
                 <span className="chq-row-secondary">{m.roleName}</span>
               </div>
               <FontAwesomeIcon icon={faCircle} className={`chq-dot chq-dot--${m.status}`} />
@@ -356,6 +437,7 @@ function MembersTab({
   robots,
   org,
   canManage,
+  onRefresh,
 }: {
   members: OrgMember[];
   invites: OrgInvite[];
@@ -363,8 +445,10 @@ function MembersTab({
   robots: OrgRobot[];
   org: Organization;
   canManage: boolean;
+  onRefresh: () => void;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
 
   const toggleExpand = (id: string) => {
     setExpandedId(expandedId === id ? null : id);
@@ -378,11 +462,23 @@ function MembersTab({
           <p className="chq-subtitle">{members.length} of {org.maxMembers} members</p>
         </div>
         {canManage && (
-          <button className="chq-btn chq-btn-primary">
+          <button className="chq-btn chq-btn-primary" onClick={() => setShowInviteModal(true)}>
             <FontAwesomeIcon icon={faUserPlus} /> Invite Member
           </button>
         )}
       </div>
+
+      {showInviteModal && (
+        <InviteMemberModal
+          orgId={org.id}
+          roles={roles}
+          onClose={() => setShowInviteModal(false)}
+          onInvited={() => {
+            setShowInviteModal(false);
+            onRefresh();
+          }}
+        />
+      )}
 
       <div className="chq-panel">
         <table className="chq-table">
@@ -406,7 +502,7 @@ function MembersTab({
                     <td>
                       <div className="chq-cell-user">
                         <div className="chq-avatar-sm">{(m.userEmail || m.userId).charAt(0).toUpperCase()}</div>
-                        <span>{m.userEmail || m.userId}</span>
+                        <span title={m.userEmail || m.userId}>{m.userEmail || m.userId}</span>
                       </div>
                     </td>
                     <td><span className={`chq-role-badge chq-priority-${role?.priority ?? 3}`}>{m.roleName}</span></td>
@@ -500,6 +596,88 @@ function MembersTab({
         </>
       )}
     </section>
+  );
+}
+
+function InviteMemberModal({
+  orgId,
+  roles,
+  onClose,
+  onInvited,
+}: {
+  orgId: string;
+  roles: OrgRole[];
+  onClose: () => void;
+  onInvited: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [roleId, setRoleId] = useState(roles.find(r => r.priority === 3)?.id || roles[0]?.id || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !roleId) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await inviteMember(orgId, email.trim(), roleId);
+      if (result.success) {
+        onInvited();
+      } else {
+        setError(result.error || "Failed to send invite");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const sortedRoles = [...roles].sort((a, b) => a.priority - b.priority);
+
+  return (
+    <div className="chq-modal-overlay" onClick={onClose}>
+      <div className="chq-modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Invite Member</h2>
+        <form onSubmit={handleSubmit}>
+          <div className="chq-modal-field">
+            <label htmlFor="invite-email">Email Address</label>
+            <input
+              id="invite-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="colleague@company.com"
+              required
+              autoFocus
+            />
+          </div>
+          <div className="chq-modal-field">
+            <label htmlFor="invite-role">Role</label>
+            <select
+              id="invite-role"
+              value={roleId}
+              onChange={(e) => setRoleId(e.target.value)}
+              required
+            >
+              {sortedRoles.map((r) => (
+                <option key={r.id} value={r.id}>{r.name} — {r.description || "No description"}</option>
+              ))}
+            </select>
+          </div>
+          {error && <p className="chq-modal-error">{error}</p>}
+          <div className="chq-modal-actions">
+            <button type="button" className="chq-btn chq-btn-outline" onClick={onClose} disabled={saving}>
+              Cancel
+            </button>
+            <button type="submit" className="chq-btn chq-btn-primary" disabled={saving || !email.trim()}>
+              {saving ? "Sending..." : "Send Invite"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -1925,3 +2103,95 @@ function NotificationsTab({
   );
 }
 
+function CreateTeamModal({ onClose, onCreated }: { onClose: () => void; onCreated: (orgId?: string) => void }) {
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [slugTouched, setSlugTouched] = useState(false);
+
+  const autoSlug = (val: string) =>
+    val.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
+
+  const handleNameChange = (val: string) => {
+    setName(val);
+    if (!slugTouched) setSlug(autoSlug(val));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !slug.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await createOrganization(name.trim(), slug.trim(), description.trim() || undefined);
+      if (result.success) {
+        onCreated(result.orgId);
+      } else {
+        setError(result.error || 'Failed to create team');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="chq-modal-overlay" onClick={onClose}>
+      <div className="chq-modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Create Team</h2>
+        <form onSubmit={handleSubmit}>
+          <div className="chq-modal-field">
+            <label htmlFor="ct-name">Team Name</label>
+            <input
+              id="ct-name"
+              type="text"
+              value={name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              placeholder="e.g. Modulr Robotics"
+              required
+              autoFocus
+            />
+          </div>
+          <div className="chq-modal-field">
+            <label htmlFor="ct-slug">Slug</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+              <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.95rem', marginRight: '0.25rem' }}>/</span>
+              <input
+                id="ct-slug"
+                type="text"
+                value={slug}
+                onChange={(e) => { setSlugTouched(true); setSlug(autoSlug(e.target.value)); }}
+                placeholder="modulr-robotics"
+                required
+                pattern="[a-z0-9][a-z0-9-]{1,48}[a-z0-9]"
+                title="3-50 chars, lowercase alphanumeric and hyphens"
+              />
+            </div>
+          </div>
+          <div className="chq-modal-field">
+            <label htmlFor="ct-desc">Description (optional)</label>
+            <textarea
+              id="ct-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What does your team do?"
+              rows={2}
+            />
+          </div>
+          {error && <p style={{ color: '#ff6b6b', fontSize: '0.85rem', margin: '0 0 0.75rem' }}>{error}</p>}
+          <div className="chq-modal-actions">
+            <button type="button" className="chq-btn chq-btn-outline" onClick={onClose} disabled={saving}>
+              Cancel
+            </button>
+            <button type="submit" className="chq-btn chq-btn-primary" disabled={saving || !name.trim() || !slug.trim()}>
+              {saving ? 'Creating...' : 'Create Team'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

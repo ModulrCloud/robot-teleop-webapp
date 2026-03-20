@@ -1133,7 +1133,7 @@ async function checkUserBalance(
       };
     }
 
-    const hourlyRateCredits = parseFloat(robot.hourlyRateCredits?.N || '100'); // Default 100 credits/hour
+    const hourlyRateCredits = parseFloat(robot.hourlyRateCredits?.N ?? '100');
 
     // If robot is free (0 hourly rate), skip credit check
     if (hourlyRateCredits === 0) {

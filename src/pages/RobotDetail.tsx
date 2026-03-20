@@ -397,7 +397,7 @@ export default function RobotDetail() {
   }
 
   const statusDisplay = getStatusDisplay();
-  // Paid: total hourly rate including platform markup. Free (0 credits): do not use || 100 — 0 is valid.
+  // Paid: total hourly rate including platform markup. Free (0 credits): show label, not default 100.
   const hourlyRateCreditsResolved = robot.hourlyRateCredits ?? 100;
   const hourlyRateDisplayText =
     robot.hourlyRateCredits === 0

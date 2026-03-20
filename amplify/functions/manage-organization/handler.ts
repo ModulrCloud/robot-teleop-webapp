@@ -149,6 +149,8 @@ export const handler: Schema["manageOrganizationLambda"]["functionHandler"] = as
   }
 
   const callerUsername = identity.username;
+  const identityExt = identity as unknown as { email?: string; claims?: { email?: string } };
+  const callerEmail = identityExt.email || identityExt.claims?.email || null;
   const callerGroups = "groups" in identity ? (identity.groups as string[]) : [];
   const isPlatformAdmin = callerGroups?.includes("ADMINS") || callerGroups?.includes("ADMIN");
   const { action } = event.arguments;
@@ -173,41 +175,46 @@ export const handler: Schema["manageOrganizationLambda"]["functionHandler"] = as
     );
     if (existingSlug.Items?.length) throw new Error(`Slug "${slug}" is already taken`);
 
-    const costSetting = await getPlatformSetting("orgCreationCostCredits");
-    const creationCost = costSetting ? parseFloat(costSetting) : 500;
+    const isOrgAccount = callerGroups?.includes("ORGANIZATIONS");
+    let creationCost = 0;
 
-    const creditsRecord = await getUserCreditsRecord(callerUsername);
-    if (!creditsRecord || creditsRecord.credits < creationCost) {
-      throw new Error(`Insufficient credits. Need ${creationCost}, have ${creditsRecord?.credits ?? 0}`);
+    if (!isOrgAccount && !isPlatformAdmin) {
+      const costSetting = await getPlatformSetting("orgCreationCostCredits");
+      creationCost = costSetting ? parseFloat(costSetting) : 500;
+
+      const creditsRecord = await getUserCreditsRecord(callerUsername);
+      if (!creditsRecord || creditsRecord.credits < creationCost) {
+        throw new Error(`Insufficient credits. Need ${creationCost}, have ${creditsRecord?.credits ?? 0}`);
+      }
+
+      await docClient.send(
+        new UpdateCommand({
+          TableName: USER_CREDITS_TABLE,
+          Key: { id: creditsRecord.id },
+          UpdateExpression: "SET credits = :new, lastUpdated = :now",
+          ConditionExpression: "credits >= :cost",
+          ExpressionAttributeValues: {
+            ":new": creditsRecord.credits - creationCost,
+            ":cost": creationCost,
+            ":now": new Date().toISOString(),
+          },
+        })
+      );
+
+      await docClient.send(
+        new PutCommand({
+          TableName: CREDIT_TRANSACTIONS_TABLE,
+          Item: {
+            id: randomUUID(),
+            userId: callerUsername,
+            amount: -creationCost,
+            transactionType: "deduction",
+            description: `Organization created: ${name}`,
+            createdAt: new Date().toISOString(),
+          },
+        })
+      );
     }
-
-    await docClient.send(
-      new UpdateCommand({
-        TableName: USER_CREDITS_TABLE,
-        Key: { id: creditsRecord.id },
-        UpdateExpression: "SET credits = :new, lastUpdated = :now",
-        ConditionExpression: "credits >= :cost",
-        ExpressionAttributeValues: {
-          ":new": creditsRecord.credits - creationCost,
-          ":cost": creationCost,
-          ":now": new Date().toISOString(),
-        },
-      })
-    );
-
-    await docClient.send(
-      new PutCommand({
-        TableName: CREDIT_TRANSACTIONS_TABLE,
-        Item: {
-          id: randomUUID(),
-          userId: callerUsername,
-          amount: -creationCost,
-          transactionType: "deduction",
-          description: `Organization created: ${name}`,
-          createdAt: new Date().toISOString(),
-        },
-      })
-    );
 
     const now = new Date().toISOString();
     const orgId = randomUUID();
@@ -248,6 +255,7 @@ export const handler: Schema["manageOrganizationLambda"]["functionHandler"] = as
             isSystem: role.isSystem,
             priority: role.priority,
             createdAt: now,
+            updatedAt: now,
             owner: callerUsername,
           },
         })
@@ -261,10 +269,12 @@ export const handler: Schema["manageOrganizationLambda"]["functionHandler"] = as
           id: randomUUID(),
           orgId,
           userId: callerUsername,
-          userEmail: null,
+          userEmail: callerEmail,
           roleId: roleIds["Owner"],
           status: "active",
           joinedAt: now,
+          createdAt: now,
+          updatedAt: now,
           owner: callerUsername,
         },
       })
