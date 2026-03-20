@@ -9,6 +9,7 @@ import { deleteRobotLambda } from "../functions/delete-robot/resource";
 import { manageRobotACL } from "../functions/manage-robot-acl/resource";
 import { listAccessibleRobots } from "../functions/list-accessible-robots/resource";
 import { getRobotStatus } from "../functions/get-robot-status/resource";
+import { checkUserRobotTrialConsumed } from "../functions/check-user-robot-trial-consumed/resource";
 import { createStripeCheckout } from "../functions/create-stripe-checkout/resource";
 import { createStripeConnectOnboardingLink } from "../functions/create-stripe-connect-onboarding-link/resource";
 import { stripeConnectOnboardingReturn } from "../functions/stripe-connect-onboarding-return/resource";
@@ -67,6 +68,10 @@ const RobotStatus = a.customType({
   isOnline: a.boolean(),
   lastSeen: a.integer(),
   status: a.string(),
+});
+
+const UserRobotTrialConsumedResult = a.customType({
+  consumed: a.boolean().required(),
 });
 
 const SessionResult = a.customType({
@@ -900,6 +905,15 @@ const schema = a.schema({
     .returns(RobotStatus)
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (checks ACL)
     .handler(a.handler.function(getRobotStatus)),
+
+  checkUserRobotTrialConsumedLambda: a
+    .query()
+    .arguments({
+      robotId: a.string().required(),
+    })
+    .returns(UserRobotTrialConsumedResult)
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(checkUserRobotTrialConsumed)),
 
   createStripeCheckoutLambda: a
     .mutation()

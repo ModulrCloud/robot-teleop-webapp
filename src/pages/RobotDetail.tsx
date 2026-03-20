@@ -33,6 +33,8 @@ interface RobotDetailData {
   hourlyRateCredits?: number;
   maxFreeSessionSeconds?: number | null;
   trialSeconds?: number | null;
+  /** When false, trial repeats every session; when true/undefined, one trial per customer. */
+  trialOnePerCustomer?: boolean | null;
   city?: string;
   state?: string;
   country?: string;
@@ -88,6 +90,8 @@ export default function RobotDetail() {
   const [showInputBindingsModal, setShowInputBindingsModal] = useState(false);
   const [showPricingDetails, setShowPricingDetails] = useState(false);
   const servicesSubtotalCredits = 0;
+  /** True when this user already used one-time trial on this robot (one-per-customer robots only). */
+  const [viewerTrialConsumed, setViewerTrialConsumed] = useState<boolean | null>(null);
 
   // Load platform settings and user currency
   useEffect(() => {
@@ -213,6 +217,48 @@ export default function RobotDetail() {
 
     loadRobot();
   }, [robotId]);
+
+  // One-trial-per-customer: accurate copy for returning users (does not apply to anonymous or partner owner view)
+  useEffect(() => {
+    setViewerTrialConsumed(null);
+    if (!robot?.robotId || !user?.username) {
+      return;
+    }
+    if (isPartnerOwner) {
+      return;
+    }
+    if (robot.trialOnePerCustomer === false) {
+      return;
+    }
+    if (robot.trialSeconds == null || robot.trialSeconds <= 0 || !robot.hourlyRateCredits || robot.hourlyRateCredits <= 0) {
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await client.queries.checkUserRobotTrialConsumedLambda({
+          robotId: robot.robotId!,
+        });
+        if (cancelled) return;
+        setViewerTrialConsumed(res.data?.consumed === true);
+      } catch (err) {
+        logger.warn("checkUserRobotTrialConsumedLambda failed:", err);
+        if (!cancelled) setViewerTrialConsumed(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    robot?.robotId,
+    robot?.trialSeconds,
+    robot?.trialOnePerCustomer,
+    robot?.hourlyRateCredits,
+    user?.username,
+    isPartnerOwner,
+  ]);
 
   // Load robot status
   useEffect(() => {
@@ -481,7 +527,19 @@ export default function RobotDetail() {
                     <div className="robot-meta-item">
                       <span className="robot-meta-label">Free trial:</span>
                       <span className="robot-meta-value">
-                        First {Math.max(1, Math.round(robot.trialSeconds / 60))} minutes free, then billed
+                        {user &&
+                        !isPartnerOwner &&
+                        robot.trialOnePerCustomer !== false &&
+                        viewerTrialConsumed === true ? (
+                          <>
+                            For your account, new sessions are billed from the start (you&apos;ve already used the
+                            free trial on this robot).
+                          </>
+                        ) : (
+                          <>
+                            First {Math.max(1, Math.round(robot.trialSeconds / 60))} minutes free, then billed
+                          </>
+                        )}
                       </span>
                     </div>
                   )}
