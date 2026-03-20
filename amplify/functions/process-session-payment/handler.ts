@@ -1,4 +1,5 @@
 import type { Schema } from "../../data/resource";
+import { SESSION_END_REASON } from "../shared/session-end-reasons";
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand, PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
@@ -105,9 +106,11 @@ export const handler: Schema["processSessionPaymentLambda"]["functionHandler"] =
         new UpdateCommand({
           TableName: SESSION_TABLE_NAME,
           Key: { id: sessionId },
-          UpdateExpression: 'SET #status = :status, creditsCharged = :credits, partnerEarnings = :earnings, platformFee = :fee, updatedAt = :now',
+          UpdateExpression:
+            'SET #status = :status, creditsCharged = :credits, partnerEarnings = :earnings, platformFee = :fee, updatedAt = :now, #endReason = if_not_exists(#endReason, :legacyEndReason)',
           ExpressionAttributeNames: {
             '#status': 'status',
+            '#endReason': 'endReason',
           },
           ExpressionAttributeValues: {
             ':status': 'completed',
@@ -115,6 +118,7 @@ export const handler: Schema["processSessionPaymentLambda"]["functionHandler"] =
             ':earnings': 0,
             ':fee': 0,
             ':now': new Date().toISOString(),
+            ':legacyEndReason': SESSION_END_REASON.LEGACY_FREE_PAYMENT_CLOSE,
           },
         })
       );

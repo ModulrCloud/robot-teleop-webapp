@@ -9,6 +9,7 @@ import {
 } from '@aws-sdk/client-dynamodb';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand, DeleteConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 import { buildSignallingPingMessage } from '../shared/agent-protocol';
+import { SESSION_END_REASON } from '../shared/session-end-reasons';
 
 const CONN_TABLE = process.env.CONN_TABLE!;
 const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
@@ -316,13 +317,15 @@ async function cleanupConnectionSessions(connectionId: string): Promise<void> {
         new UpdateItemCommand({
           TableName: SESSION_TABLE_NAME,
           Key: { id: { S: sessionId } },
-          UpdateExpression: 'SET #status = :completed, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now',
-          ExpressionAttributeNames: { '#status': 'status' },
+          UpdateExpression:
+            'SET #status = :completed, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now, #endReason = :endReason',
+          ExpressionAttributeNames: { '#status': 'status', '#endReason': 'endReason' },
           ExpressionAttributeValues: {
             ':completed': { S: 'completed' },
             ':endedAt': { S: now },
             ':duration': { N: String(durationSeconds) },
             ':now': { S: now },
+            ':endReason': { S: SESSION_END_REASON.STALE_CONNECTION_CLEANUP },
           },
         })
       );

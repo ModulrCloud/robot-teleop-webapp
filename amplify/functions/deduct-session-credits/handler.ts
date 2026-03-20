@@ -1,4 +1,5 @@
 import type { Schema } from "../../data/resource";
+import { SESSION_END_REASON } from "../shared/session-end-reasons";
 import { DynamoDBClient, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
@@ -188,11 +189,12 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
               TableName: SESSION_TABLE_NAME,
               Key: { id: sessionId },
               UpdateExpression:
-                "SET #status = :status, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now",
+                "SET #status = :status, #endReason = :endReason, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now",
               ConditionExpression: "#status = :active",
-              ExpressionAttributeNames: { "#status": "status" },
+              ExpressionAttributeNames: { "#status": "status", "#endReason": "endReason" },
               ExpressionAttributeValues: {
                 ":status": "free_cap_exceeded",
+                ":endReason": SESSION_END_REASON.FREE_CAP_EXCEEDED,
                 ":endedAt": nowIso,
                 ":duration": elapsedSeconds,
                 ":now": nowIso,
@@ -337,21 +339,44 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
 
     // Check if user has enough credits for this minute
     if (currentCredits < totalCreditsForMinute) {
-      // Update session status to indicate insufficient funds
-      await docClient.send(
-        new UpdateCommand({
-          TableName: SESSION_TABLE_NAME,
-          Key: { id: sessionId },
-          UpdateExpression: 'SET #status = :status, updatedAt = :now',
-          ExpressionAttributeNames: {
-            '#status': 'status',
-          },
-          ExpressionAttributeValues: {
-            ':status': 'insufficient_funds',
-            ':now': new Date().toISOString(),
-          },
-        })
-      );
+      const insufficientAt = new Date().toISOString();
+      try {
+        await docClient.send(
+          new UpdateCommand({
+            TableName: SESSION_TABLE_NAME,
+            Key: { id: sessionId },
+            UpdateExpression:
+              "SET #status = :status, #endReason = :endReason, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now",
+            ConditionExpression: "#status = :active",
+            ExpressionAttributeNames: {
+              "#status": "status",
+              "#endReason": "endReason",
+            },
+            ExpressionAttributeValues: {
+              ":status": "insufficient_funds",
+              ":endReason": SESSION_END_REASON.INSUFFICIENT_FUNDS,
+              ":endedAt": insufficientAt,
+              ":duration": elapsedSeconds,
+              ":now": insufficientAt,
+              ":active": "active",
+            },
+          })
+        );
+      } catch (err) {
+        if (err instanceof ConditionalCheckFailedException) {
+          console.log("Insufficient funds skip — session already terminal", { sessionId });
+          return {
+            statusCode: 200,
+            body: JSON.stringify({
+              success: true,
+              message: "Session already ended",
+              sessionId,
+              skipped: true,
+            }),
+          };
+        }
+        throw err;
+      }
 
       return {
         statusCode: 402, // Payment Required

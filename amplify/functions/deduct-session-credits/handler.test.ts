@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Context } from "aws-lambda";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
+import { SESSION_END_REASON } from "../shared/session-end-reasons";
 
 const { mockSend } = vi.hoisted(() => ({ mockSend: vi.fn() }));
 
@@ -8,10 +9,30 @@ vi.mock("@aws-sdk/lib-dynamodb", () => ({
   DynamoDBDocumentClient: {
     from: () => ({ send: mockSend }),
   },
-  GetCommand: class GetCommand {},
-  QueryCommand: class QueryCommand {},
-  UpdateCommand: class UpdateCommand {},
-  PutCommand: class PutCommand {},
+  GetCommand: class GetCommand {
+    input: unknown;
+    constructor(input: unknown) {
+      this.input = input;
+    }
+  },
+  QueryCommand: class QueryCommand {
+    input: unknown;
+    constructor(input: unknown) {
+      this.input = input;
+    }
+  },
+  UpdateCommand: class UpdateCommand {
+    input: unknown;
+    constructor(input: unknown) {
+      this.input = input;
+    }
+  },
+  PutCommand: class PutCommand {
+    input: unknown;
+    constructor(input: unknown) {
+      this.input = input;
+    }
+  },
 }));
 
 import { handler } from "./handler";
@@ -265,6 +286,12 @@ describe("deductSessionCreditsLambda handler", () => {
     const body = JSON.parse(res.body);
     expect(body.terminationReason).toBe("free_cap_exceeded");
     expect(mockSend).toHaveBeenCalledTimes(4);
+    const terminalUpdate = mockSend.mock.calls
+      .map((c) => c[0] as { input?: { ExpressionAttributeValues?: Record<string, string> } })
+      .find((cmd) => cmd.input?.ExpressionAttributeValues?.[":endReason"] != null);
+    expect(terminalUpdate?.input?.ExpressionAttributeValues?.[":endReason"]).toBe(
+      SESSION_END_REASON.FREE_CAP_EXCEEDED
+    );
   });
 
   it("returns 200 for free robot under max length cap", async () => {
@@ -355,6 +382,47 @@ describe("deductSessionCreditsLambda handler", () => {
     const res = result as { statusCode: number; body: string };
     expect(res.statusCode).toBe(200);
     expect(mockSend).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns 402 and records endReason when insufficient credits after trial", async () => {
+    const partnerTableId = "partner-uuid-123";
+    const started = new Date(Date.now() - 125_000).toISOString();
+    const session = {
+      ...makeNonOwnerSession(),
+      startedAt: started,
+      hourlyRateCredits: 100,
+      trialSeconds: 120,
+    };
+    mockSend
+      .mockResolvedValueOnce({ Item: session })
+      .mockResolvedValueOnce({
+        Items: [{ robotId: ROBOT_ID, partnerId: partnerTableId, hourlyRateCredits: 100 }],
+      })
+      .mockResolvedValueOnce({
+        Item: { id: partnerTableId, cognitoUsername: OWNER_USERNAME, contactEmail: "owner@example.com" },
+      })
+      .mockResolvedValueOnce({
+        Items: [{ settingKey: "platformMarkupPercent", settingValue: "30" }],
+      })
+      .mockResolvedValueOnce({
+        Items: [{ id: "user-credits-id", userId: "other-user", credits: 0 }],
+      })
+      .mockResolvedValueOnce({});
+
+    const result = await handler(
+      makeEvent({ username: "other-user" }),
+      noOpContext,
+      noOpCallback
+    );
+    const res = result as { statusCode: number; body: string };
+    expect(res.statusCode).toBe(402);
+    const terminalUpdate = mockSend.mock.calls
+      .map((c) => c[0] as { input?: { ExpressionAttributeValues?: Record<string, string> } })
+      .find((cmd) => cmd.input?.ExpressionAttributeValues?.[":endReason"] != null);
+    expect(terminalUpdate?.input?.ExpressionAttributeValues?.[":endReason"]).toBe(
+      SESSION_END_REASON.INSUFFICIENT_FUNDS
+    );
+    expect(terminalUpdate?.input?.ExpressionAttributeValues?.[":status"]).toBe("insufficient_funds");
   });
 
   it("returns 200 skipped when free-cap update races terminal session", async () => {
