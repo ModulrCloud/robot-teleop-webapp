@@ -178,6 +178,8 @@ export const EditRobot = () => {
   /** Paid robots: free trial length in whole minutes; empty = no trial. */
   const [trialSessionMinutes, setTrialSessionMinutes] = useState('');
   const [trialMinutesError, setTrialMinutesError] = useState<string | null>(null);
+  /** Paid: one trial per customer when true (default). */
+  const [trialOnePerCustomer, setTrialOnePerCustomer] = useState(true);
   const [showQrScanner, setShowQrScanner] = useState(false);
 
   // Scroll to top when the page mounts (avoids ending up scrolled down from restoration or layout)
@@ -325,6 +327,7 @@ export const EditRobot = () => {
         );
         setTrialSessionMinutes(secondsToTrialMinutesInput(robotData.trialSeconds ?? undefined));
         setTrialMinutesError(null);
+        setTrialOnePerCustomer(robotData.trialOnePerCustomer !== false);
 
         // Load existing image if available (only for verified robots with custom images)
         if (robotData.imageUrl && extendedData.isVerified) {
@@ -414,6 +417,7 @@ export const EditRobot = () => {
     } else {
       setTrialSessionMinutes('');
       setTrialMinutesError(null);
+      setTrialOnePerCustomer(true);
     }
   };
 
@@ -684,6 +688,7 @@ export const EditRobot = () => {
       hourlyRateCredits: rateParse.credits,
       maxFreeSessionSeconds: maxFreePayload,
       trialSeconds: trialSecondsPayload,
+      ...(rateParse.credits > 0 ? { trialOnePerCustomer } : {}),
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
       ...(isVerified && existingImageKey ? { imageUrl: existingImageKey } : {}),
@@ -1109,6 +1114,18 @@ export const EditRobot = () => {
                     )}
                     <small className="form-help-text">
                       Whole minutes free before per-minute billing (1–{MAX_TRIAL_MINUTES}). Users still need enough credits for at least one paid minute to start. Leave empty for no trial.
+                    </small>
+                    <label className="checkbox-label" style={{ marginTop: '0.75rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={trialOnePerCustomer}
+                        onChange={(e) => setTrialOnePerCustomer(e.target.checked)}
+                        disabled={isLoading || isViewMode}
+                      />
+                      <span>Limit free trial to once per customer (for this robot)</span>
+                    </label>
+                    <small className="form-help-text">
+                      Uncheck to give every session a trial again. Checked: after their first paid minute here, returning customers connect with no trial.
                     </small>
                   </div>
                 )}

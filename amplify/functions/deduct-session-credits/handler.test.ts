@@ -78,6 +78,7 @@ beforeEach(() => {
   process.env.ROBOT_TABLE_NAME = ROBOT_TABLE;
   process.env.PARTNER_TABLE_NAME = PARTNER_TABLE;
   process.env.PLATFORM_SETTINGS_TABLE = PLATFORM_SETTINGS_TABLE;
+  process.env.USER_ROBOT_TRIAL_CONSUMPTION_TABLE_NAME = "UserRobotTrialConsumptionTable";
 });
 
 describe("deductSessionCreditsLambda handler", () => {
@@ -462,6 +463,51 @@ describe("deductSessionCreditsLambda handler", () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.creditsDeducted).toBeGreaterThan(0);
+    // +1 Put to UserRobotTrialConsumption after first paid minute (session had trialSeconds > 0)
+    expect(mockSend).toHaveBeenCalledTimes(9);
+  });
+
+  it("does not write trial consumption when robot has trialOnePerCustomer false", async () => {
+    const partnerTableId = "partner-uuid-123";
+    const started = new Date(Date.now() - 125_000).toISOString();
+    const session = {
+      ...makeNonOwnerSession(),
+      startedAt: started,
+      hourlyRateCredits: 100,
+      trialSeconds: 120,
+    };
+    mockSend
+      .mockResolvedValueOnce({ Item: session })
+      .mockResolvedValueOnce({
+        Items: [
+          {
+            robotId: ROBOT_ID,
+            partnerId: partnerTableId,
+            hourlyRateCredits: 100,
+            trialOnePerCustomer: false,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        Item: { id: partnerTableId, cognitoUsername: OWNER_USERNAME, contactEmail: "owner@example.com" },
+      })
+      .mockResolvedValueOnce({
+        Items: [{ settingKey: "platformMarkupPercent", settingValue: "30" }],
+      })
+      .mockResolvedValueOnce({
+        Items: [{ id: "user-credits-id", userId: "other-user", credits: 500 }],
+      })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({});
+
+    const result = await handler(
+      makeEvent({ username: "other-user" }),
+      noOpContext,
+      noOpCallback
+    );
+    const res = result as { statusCode: number; body: string };
+    expect(res.statusCode).toBe(200);
     expect(mockSend).toHaveBeenCalledTimes(8);
   });
 });

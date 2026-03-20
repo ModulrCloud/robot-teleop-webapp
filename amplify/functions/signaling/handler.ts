@@ -27,6 +27,8 @@ const PARTNER_TABLE_NAME = process.env.PARTNER_TABLE_NAME;
 const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME; // For session lock enforcement
 const USER_CREDITS_TABLE = process.env.USER_CREDITS_TABLE;
 const PLATFORM_SETTINGS_TABLE = process.env.PLATFORM_SETTINGS_TABLE;
+/** DynamoDB table: composite key userId + robotId (UserRobotTrialConsumption). */
+const USER_ROBOT_TRIAL_CONSUMPTION_TABLE_NAME = process.env.USER_ROBOT_TRIAL_CONSUMPTION_TABLE_NAME;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!; // HTTPS management API
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
@@ -1201,6 +1203,29 @@ async function checkUserBalance(
   }
 }
 
+/** When true (default), enforce one trial per user per robot using UserRobotTrialConsumption. */
+function robotTrialOnePerCustomerFromItem(robotItem: Record<string, AttributeValue> | undefined): boolean {
+  if (!robotItem) return true;
+  if (robotItem.trialOnePerCustomer?.BOOL === false) return false;
+  return true;
+}
+
+async function hasUserConsumedRobotTrial(userId: string, robotIdStr: string): Promise<boolean> {
+  if (!USER_ROBOT_TRIAL_CONSUMPTION_TABLE_NAME) return false;
+  try {
+    const res = await docClient.send(
+      new GetCommand({
+        TableName: USER_ROBOT_TRIAL_CONSUMPTION_TABLE_NAME,
+        Key: { userId, robotId: robotIdStr },
+      }),
+    );
+    return Boolean(res.Item);
+  } catch (err) {
+    console.warn('[TRIAL_CONSUMPTION] Lookup failed (fail open)', { userId, robotId: robotIdStr, err });
+    return false;
+  }
+}
+
 /**
  * Creates a new session for billing and tracking.
  * Checks for existing active sessions to prevent duplicates (e.g., from React StrictMode).
@@ -1250,6 +1275,7 @@ async function createSession(
   let snapshotHourlyCredits: number | undefined;
   let snapshotMaxFreeSessionSeconds: number | undefined;
   let snapshotTrialSeconds: number | undefined;
+  let robotItemForTrialPolicy: Record<string, AttributeValue> | undefined;
   if (ROBOT_TABLE_NAME) {
     try {
       const robotQuery = await db.send(new QueryCommand({
@@ -1260,6 +1286,7 @@ async function createSession(
         Limit: 1,
       }));
       const robotItem = robotQuery.Items?.[0];
+      robotItemForTrialPolicy = robotItem;
       if (robotItem) {
         robotName = robotItem.name?.S ?? robotId;
         const hrN = robotItem.hourlyRateCredits?.N;
@@ -1309,6 +1336,24 @@ async function createSession(
   const isRobotOwner =
     normalizedPartner.size > 0 &&
     currentIdentifiers.some((c) => normalizedPartner.has(c.toLowerCase().trim()));
+
+  let effectiveTrialSeconds =
+    snapshotTrialSeconds !== undefined && snapshotTrialSeconds > 0 ? snapshotTrialSeconds : 0;
+  if (
+    !isRobotOwner &&
+    robotTrialOnePerCustomerFromItem(robotItemForTrialPolicy) &&
+    effectiveTrialSeconds > 0
+  ) {
+    const consumed = await hasUserConsumedRobotTrial(userId, robotId);
+    if (consumed) {
+      effectiveTrialSeconds = 0;
+      console.log('[SESSION] User already used one-time trial on this robot — session trial snapshot 0', {
+        userId,
+        robotId,
+      });
+    }
+  }
+
   if (!isRobotOwner) {
     const balanceCheck = await checkUserBalance(userId, robotId);
     if (!balanceCheck.sufficient) {
@@ -1363,9 +1408,7 @@ async function createSession(
       sessionItem.maxFreeSessionSeconds = { N: String(cap) };
     } else {
       // Paid: snapshot trial length (0 = no trial) so mid-session robot edits do not change billing phase.
-      const trial =
-        snapshotTrialSeconds !== undefined && snapshotTrialSeconds > 0 ? snapshotTrialSeconds : 0;
-      sessionItem.trialSeconds = { N: String(trial) };
+      sessionItem.trialSeconds = { N: String(effectiveTrialSeconds) };
     }
 
     await db.send(new PutItemCommand({

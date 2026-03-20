@@ -11,7 +11,7 @@ import {
 const ddbClient = new DynamoDBClient({});
 
 export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event) => {
-  const { robotName, description, model, robotType, hourlyRateCredits, maxFreeSessionSeconds, trialSeconds, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude } = event.arguments;
+  const { robotName, description, model, robotType, hourlyRateCredits, maxFreeSessionSeconds, trialSeconds, trialOnePerCustomer, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude } = event.arguments;
 
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
@@ -97,6 +97,11 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
     if (trial > 0) {
       item.trialSeconds = { N: String(trial) };
     }
+  }
+
+  if (rateCredits > 0) {
+    const once = trialOnePerCustomer !== false;
+    item.trialOnePerCustomer = { BOOL: once };
   }
 
   if (city) item.city = { S: city };
