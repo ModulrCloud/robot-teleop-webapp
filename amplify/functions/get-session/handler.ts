@@ -20,6 +20,7 @@ interface SessionResult {
   status: string | null;
   hourlyRateCredits: number | null;
   maxFreeSessionSeconds: number | null;
+  trialSeconds: number | null;
 }
 
 const buildSessionResult = (session: Record<string, { S?: string; N?: string }> | undefined): SessionResult | null => {
@@ -38,6 +39,7 @@ const buildSessionResult = (session: Record<string, { S?: string; N?: string }> 
     maxFreeSessionSeconds: session.maxFreeSessionSeconds?.N
       ? parseInt(session.maxFreeSessionSeconds.N, 10)
       : null,
+    trialSeconds: session.trialSeconds?.N ? parseInt(session.trialSeconds.N, 10) : null,
   };
 };
 

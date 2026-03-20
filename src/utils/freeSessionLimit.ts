@@ -52,3 +52,31 @@ export function freeRobotCardLabel(maxFreeSeconds?: number | null): string {
   }
   return 'Free';
 }
+
+/** Upper bound for trial length in minutes (align with {@link MAX_FREE_SESSION_MINUTES}). */
+export const MAX_TRIAL_MINUTES = MAX_FREE_SESSION_MINUTES;
+
+export const TRIAL_MINUTES_VALIDATION_ERROR = `Enter whole minutes from 1 to ${MAX_TRIAL_MINUTES}, or leave empty for no trial.`;
+
+/** Parse paid-robot trial length. Empty → no trial (`seconds: null`). */
+export function resolveTrialMinutesForSave(raw: string):
+  | { ok: true; seconds: null }
+  | { ok: true; seconds: number }
+  | { ok: false; message: string } {
+  const t = raw.trim();
+  if (!t) return { ok: true, seconds: null };
+  if (!/^\d+$/.test(t)) {
+    return { ok: false, message: TRIAL_MINUTES_VALIDATION_ERROR };
+  }
+  const m = parseInt(t, 10);
+  if (!Number.isFinite(m) || m < 1) {
+    return { ok: false, message: TRIAL_MINUTES_VALIDATION_ERROR };
+  }
+  const clamped = Math.min(MAX_TRIAL_MINUTES, m);
+  return { ok: true, seconds: clamped * 60 };
+}
+
+export function secondsToTrialMinutesInput(seconds: number | undefined | null): string {
+  if (seconds == null || seconds <= 0) return '';
+  return String(Math.max(1, Math.round(seconds / 60)));
+}

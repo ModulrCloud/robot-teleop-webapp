@@ -5,12 +5,13 @@ import { Schema } from '../../data/resource';
 import {
   assertFiniteHourlyRateCredits,
   assertPositiveIntMaxFreeSessionSeconds,
+  assertTrialSeconds,
 } from '../shared/validate-robot-pricing';
 
 const ddbClient = new DynamoDBClient({});
 
 export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event) => {
-  const { robotName, description, model, robotType, hourlyRateCredits, maxFreeSessionSeconds, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude } = event.arguments;
+  const { robotName, description, model, robotType, hourlyRateCredits, maxFreeSessionSeconds, trialSeconds, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude } = event.arguments;
 
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
@@ -89,6 +90,13 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
   if (rateCredits === 0 && maxFreeSessionSeconds !== undefined && maxFreeSessionSeconds !== null) {
     const cap = assertPositiveIntMaxFreeSessionSeconds(maxFreeSessionSeconds);
     item.maxFreeSessionSeconds = { N: cap.toString() };
+  }
+
+  if (rateCredits > 0 && trialSeconds !== undefined && trialSeconds !== null) {
+    const trial = assertTrialSeconds(trialSeconds);
+    if (trial > 0) {
+      item.trialSeconds = { N: String(trial) };
+    }
   }
 
   if (city) item.city = { S: city };

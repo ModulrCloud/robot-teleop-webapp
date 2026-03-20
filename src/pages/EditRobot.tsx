@@ -19,6 +19,9 @@ import {
   secondsToFreeMinutesInput,
   MAX_FREE_SESSION_MINUTES,
   sanitizeFreeSessionMinutesTyping,
+  resolveTrialMinutesForSave,
+  secondsToTrialMinutesInput,
+  MAX_TRIAL_MINUTES,
 } from '../utils/freeSessionLimit';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
@@ -172,6 +175,9 @@ export const EditRobot = () => {
   /** Minutes cap for free robots; empty = no limit. Only used when hourlyRateCredits === 0. */
   const [freeSessionMaxMinutes, setFreeSessionMaxMinutes] = useState('');
   const [freeSessionCapError, setFreeSessionCapError] = useState<string | null>(null);
+  /** Paid robots: free trial length in whole minutes; empty = no trial. */
+  const [trialSessionMinutes, setTrialSessionMinutes] = useState('');
+  const [trialMinutesError, setTrialMinutesError] = useState<string | null>(null);
   const [showQrScanner, setShowQrScanner] = useState(false);
 
   // Scroll to top when the page mounts (avoids ending up scrolled down from restoration or layout)
@@ -238,6 +244,8 @@ export const EditRobot = () => {
     if (!robotId) return;
     hourlyRateDisplayHydratedRef.current = false;
     setHourlyRateInput('');
+    setTrialSessionMinutes('');
+    setTrialMinutesError(null);
     setIsLoadingRobot(true);
   }, [robotId]);
 
@@ -298,10 +306,6 @@ export const EditRobot = () => {
 
         const loadedHourlyRateCredits = robotData.hourlyRateCredits ?? 100;
 
-        const extendedRobotData = robotData as typeof robotData & {
-          publicKey?: string | null;
-          maxFreeSessionSeconds?: number | null;
-        };
         setRobotListing({
           robotName: name,
           description: robotData.description || "",
@@ -314,11 +318,13 @@ export const EditRobot = () => {
           country: robotData.country || "",
           latitude: robotData.latitude?.toString() || "",
           longitude: robotData.longitude?.toString() || "",
-          publicKey: extendedRobotData.publicKey ?? "",
+          publicKey: robotData.publicKey ?? "",
         });
         setFreeSessionMaxMinutes(
-          secondsToFreeMinutesInput(extendedRobotData.maxFreeSessionSeconds ?? undefined)
+          secondsToFreeMinutesInput(robotData.maxFreeSessionSeconds ?? undefined)
         );
+        setTrialSessionMinutes(secondsToTrialMinutesInput(robotData.trialSeconds ?? undefined));
+        setTrialMinutesError(null);
 
         // Load existing image if available (only for verified robots with custom images)
         if (robotData.imageUrl && extendedData.isVerified) {
@@ -405,6 +411,9 @@ export const EditRobot = () => {
     if (parsed.credits > 0) {
       setFreeSessionMaxMinutes('');
       setFreeSessionCapError(null);
+    } else {
+      setTrialSessionMinutes('');
+      setTrialMinutesError(null);
     }
   };
 
@@ -493,6 +502,7 @@ export const EditRobot = () => {
     setSuccess(undefined);
     setError(null);
     setFreeSessionCapError(null);
+    setTrialMinutesError(null);
     setUploadError(null);
     setUploadProgress(0);
 
@@ -550,8 +560,17 @@ export const EditRobot = () => {
     const resolvedHourlyCredits = rateParse.credits;
 
     let maxFreePayload: number | null;
+    let trialSecondsPayload: number | null;
     if (resolvedHourlyCredits > 0) {
       maxFreePayload = null;
+      const trialRes = resolveTrialMinutesForSave(trialSessionMinutes);
+      if (!trialRes.ok) {
+        setTrialMinutesError(trialRes.message);
+        setIsLoading(false);
+        return;
+      }
+      setTrialMinutesError(null);
+      trialSecondsPayload = trialRes.seconds;
     } else {
       const capRes = resolveFreeSessionCapForSave(freeSessionMaxMinutes);
       if (!capRes.ok) {
@@ -561,6 +580,7 @@ export const EditRobot = () => {
       }
       setFreeSessionCapError(null);
       maxFreePayload = capRes.seconds;
+      trialSecondsPayload = null;
     }
 
     const robotData = {
@@ -570,6 +590,7 @@ export const EditRobot = () => {
       robotType: robotTypeToSend, // New field for default image selection
       hourlyRateCredits: resolvedHourlyCredits,
       maxFreeSessionSeconds: maxFreePayload,
+      trialSeconds: trialSecondsPayload,
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
       ...(isVerified && imageUrl ? { imageUrl } : {}), // Only include imageUrl if verified and has a value
@@ -613,6 +634,7 @@ export const EditRobot = () => {
     setIsLoading(true);
     setError(null);
     setFreeSessionCapError(null);
+    setTrialMinutesError(null);
     const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
       ? robotListing.allowedUserEmails
         .split(/[,\n]/)
@@ -633,8 +655,16 @@ export const EditRobot = () => {
     }
     setHourlyRateFieldError(null);
     let maxFreePayload: number | null;
+    let trialSecondsPayload: number | null;
     if (rateParse.credits > 0) {
       maxFreePayload = null;
+      const trialRes = resolveTrialMinutesForSave(trialSessionMinutes);
+      if (!trialRes.ok) {
+        setTrialMinutesError(trialRes.message);
+        setIsLoading(false);
+        return;
+      }
+      trialSecondsPayload = trialRes.seconds;
     } else {
       const capRes = resolveFreeSessionCapForSave(freeSessionMaxMinutes);
       if (!capRes.ok) {
@@ -644,6 +674,7 @@ export const EditRobot = () => {
       }
       setFreeSessionCapError(null);
       maxFreePayload = capRes.seconds;
+      trialSecondsPayload = null;
     }
     const robotData = {
       robotName: robotListing.robotName,
@@ -652,6 +683,7 @@ export const EditRobot = () => {
       robotType: robotTypeToSend,
       hourlyRateCredits: rateParse.credits,
       maxFreeSessionSeconds: maxFreePayload,
+      trialSeconds: trialSecondsPayload,
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
       ...(isVerified && existingImageKey ? { imageUrl: existingImageKey } : {}),
@@ -864,6 +896,16 @@ export const EditRobot = () => {
                     </span>
                   </div>
                 )}
+                {robotListing.hourlyRateCredits > 0 && (
+                  <div className="view-row">
+                    <span className="view-label">Free trial</span>
+                    <span className="view-value">
+                      {trialSessionMinutes.trim()
+                        ? `First ${trialSessionMinutes.trim()} minutes free, then normal rate`
+                        : 'None'}
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="view-section">
@@ -1034,7 +1076,39 @@ export const EditRobot = () => {
                     )}
                     <small className="form-help-text">
                       Whole minutes per session at $0/hour (1–{MAX_FREE_SESSION_MINUTES}). Leave empty for no limit.
-                      Stored on the robot; live session enforcement will use this in a follow-up.
+                    </small>
+                  </div>
+                )}
+
+                {!isFreeHourlyRate && (
+                  <div className="form-group">
+                    <label htmlFor="trial-session-minutes">
+                      Free trial length <span className="optional">(optional)</span>
+                    </label>
+                    <input
+                      id="trial-session-minutes"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={6}
+                      value={trialSessionMinutes}
+                      onChange={(e) => {
+                        setTrialMinutesError(null);
+                        setTrialSessionMinutes(sanitizeFreeSessionMinutesTyping(e.target.value));
+                      }}
+                      placeholder="No trial"
+                      disabled={isLoading || isViewMode}
+                      className={trialMinutesError ? 'error' : ''}
+                      aria-invalid={trialMinutesError ? true : undefined}
+                      aria-describedby={trialMinutesError ? 'trial-minutes-error' : undefined}
+                    />
+                    {trialMinutesError && (
+                      <div id="trial-minutes-error" className="form-error" style={{ color: '#f44336', marginTop: '0.5rem', fontSize: '0.875rem' }} role="alert">
+                        {trialMinutesError}
+                      </div>
+                    )}
+                    <small className="form-help-text">
+                      Whole minutes free before per-minute billing (1–{MAX_TRIAL_MINUTES}). Users still need enough credits for at least one paid minute to start. Leave empty for no trial.
                     </small>
                   </div>
                 )}

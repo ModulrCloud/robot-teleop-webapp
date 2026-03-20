@@ -1249,6 +1249,7 @@ async function createSession(
   const partnerOwnerIdentifiers: string[] = [];
   let snapshotHourlyCredits: number | undefined;
   let snapshotMaxFreeSessionSeconds: number | undefined;
+  let snapshotTrialSeconds: number | undefined;
   if (ROBOT_TABLE_NAME) {
     try {
       const robotQuery = await db.send(new QueryCommand({
@@ -1270,6 +1271,11 @@ async function createSession(
         if (capN !== undefined && capN !== '') {
           const cap = parseInt(capN, 10);
           if (Number.isFinite(cap) && cap > 0) snapshotMaxFreeSessionSeconds = cap;
+        }
+        const trialN = robotItem.trialSeconds?.N;
+        if (trialN !== undefined && trialN !== '') {
+          const tr = parseInt(trialN, 10);
+          if (Number.isFinite(tr) && tr > 0) snapshotTrialSeconds = tr;
         }
         const partnerTableId = robotItem.partnerId?.S;
         if (partnerTableId && PARTNER_TABLE_NAME) {
@@ -1355,6 +1361,11 @@ async function createSession(
           ? snapshotMaxFreeSessionSeconds
           : 0;
       sessionItem.maxFreeSessionSeconds = { N: String(cap) };
+    } else {
+      // Paid: snapshot trial length (0 = no trial) so mid-session robot edits do not change billing phase.
+      const trial =
+        snapshotTrialSeconds !== undefined && snapshotTrialSeconds > 0 ? snapshotTrialSeconds : 0;
+      sessionItem.trialSeconds = { N: String(trial) };
     }
 
     await db.send(new PutItemCommand({

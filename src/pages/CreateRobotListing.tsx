@@ -11,6 +11,8 @@ import {
   resolveFreeSessionCapForSave,
   MAX_FREE_SESSION_MINUTES,
   sanitizeFreeSessionMinutesTyping,
+  resolveTrialMinutesForSave,
+  MAX_TRIAL_MINUTES,
 } from '../utils/freeSessionLimit';
 import {
   hourlyCurrencyToCredits,
@@ -80,6 +82,8 @@ export const CreateRobotListing = () => {
   const [hourlyRateInput, setHourlyRateInput] = useState<string>('1.00');
   /** When hourly rate is $0; empty = unlimited free session length. */
   const [freeSessionMaxMinutes, setFreeSessionMaxMinutes] = useState('');
+  /** When hourly rate is paid; empty = no trial. */
+  const [trialSessionMinutes, setTrialSessionMinutes] = useState('');
   const { user } = useAuthStatus();
   const [currencyDisplay, setCurrencyDisplay] = useState<string>('USD');
   const [currencyCode, setCurrencyCode] = useState<CurrencyCode>('USD');
@@ -164,6 +168,9 @@ export const CreateRobotListing = () => {
       if (!Number.isNaN(n) && n > 0) {
         setFreeSessionMaxMinutes('');
       }
+      if (!Number.isNaN(n) && n === 0) {
+        setTrialSessionMinutes('');
+      }
       return;
     } else {
       setRobotListing(prev => ({
@@ -188,6 +195,7 @@ export const CreateRobotListing = () => {
     const creditsValue = rateResult.credits;
 
     let maxFreeSeconds: number | undefined;
+    let trialSecondsArg: number | undefined;
     if (creditsValue === 0) {
       const capRes = resolveFreeSessionCapForSave(freeSessionMaxMinutes);
       if (!capRes.ok) {
@@ -196,6 +204,14 @@ export const CreateRobotListing = () => {
         return;
       }
       maxFreeSeconds = capRes.seconds === null ? undefined : capRes.seconds;
+    } else {
+      const trialRes = resolveTrialMinutesForSave(trialSessionMinutes);
+      if (!trialRes.ok) {
+        setHourlyRateError(trialRes.message);
+        setIsLoading(false);
+        return;
+      }
+      trialSecondsArg = trialRes.seconds === null ? undefined : trialRes.seconds;
     }
 
     const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
@@ -212,6 +228,7 @@ export const CreateRobotListing = () => {
       robotType: robotListing.robotType, // New field for default image selection
       hourlyRateCredits: creditsValue,
       ...(maxFreeSeconds != null ? { maxFreeSessionSeconds: maxFreeSeconds } : {}),
+      ...(trialSecondsArg != null ? { trialSeconds: trialSecondsArg } : {}),
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
       city: robotListing.city || undefined,
@@ -264,6 +281,7 @@ export const CreateRobotListing = () => {
       longitude: "",
     });
     setFreeSessionMaxMinutes('');
+    setTrialSessionMinutes('');
     setHourlyRateInput('1.00');
   };
 
@@ -396,30 +414,54 @@ export const CreateRobotListing = () => {
 
             {(() => {
               const parsed = hourlyCurrencyToCredits(hourlyRateInput, currencyCode, exchangeRates);
-              const showFreeCap = parsed.ok && parsed.credits === 0;
-              if (!showFreeCap) return null;
+              if (!parsed.ok) return null;
+              if (parsed.credits === 0) {
+                return (
+                  <div className="form-group">
+                    <label htmlFor="create-free-session-max">
+                      Max free session length <span className="optional">(optional)</span>
+                    </label>
+                    <input
+                      id="create-free-session-max"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={6}
+                      value={freeSessionMaxMinutes}
+                      onChange={(e) => {
+                        setHourlyRateError(null);
+                        setFreeSessionMaxMinutes(sanitizeFreeSessionMinutesTyping(e.target.value));
+                      }}
+                      placeholder="No limit"
+                      disabled={isLoading}
+                    />
+                    <small className="form-help-text">
+                      Whole minutes (1–{MAX_FREE_SESSION_MINUTES}) per session at $0/hour. Leave empty for no limit.
+                    </small>
+                  </div>
+                );
+              }
               return (
                 <div className="form-group">
-                  <label htmlFor="create-free-session-max">
-                    Max free session length <span className="optional">(optional)</span>
+                  <label htmlFor="create-trial-minutes">
+                    Free trial length <span className="optional">(optional)</span>
                   </label>
                   <input
-                    id="create-free-session-max"
+                    id="create-trial-minutes"
                     type="text"
                     inputMode="numeric"
                     autoComplete="off"
                     maxLength={6}
-                    value={freeSessionMaxMinutes}
+                    value={trialSessionMinutes}
                     onChange={(e) => {
                       setHourlyRateError(null);
-                      setFreeSessionMaxMinutes(sanitizeFreeSessionMinutesTyping(e.target.value));
+                      setTrialSessionMinutes(sanitizeFreeSessionMinutesTyping(e.target.value));
                     }}
-                    placeholder="No limit"
+                    placeholder="No trial"
                     disabled={isLoading}
                   />
                   <small className="form-help-text">
-                    Whole minutes (1–{MAX_FREE_SESSION_MINUTES}) per session at $0/hour. Leave empty for no limit.
-                    Stored on the robot; live enforcement comes in a follow-up.
+                    Whole minutes free before billing (1–{MAX_TRIAL_MINUTES}). Users need credits for at least one paid minute to connect. Leave empty for no trial.
                   </small>
                 </div>
               );
