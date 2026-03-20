@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import './CreateRobotListing.css';
 import { generateClient } from 'aws-amplify/api';
@@ -7,7 +7,19 @@ import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useAuthStatus } from "../hooks/useAuthStatus";
-import { getCurrencyInfo, creditsToCurrencySync, currencyToCreditsSync, fetchExchangeRates, type CurrencyCode } from '../utils/credits';
+import { getCurrencyInfo, creditsToCurrencySync, fetchExchangeRates, type CurrencyCode } from '../utils/credits';
+import {
+  hourlyCurrencyToCredits,
+  sanitizeHourlyCurrencyTyping,
+  HOURLY_CURRENCY_FORMAT_ERROR,
+  formatHourlyDisplayAmount,
+} from '../utils/hourlyRateInput';
+import {
+  resolveFreeSessionCapForSave,
+  secondsToFreeMinutesInput,
+  MAX_FREE_SESSION_MINUTES,
+  sanitizeFreeSessionMinutesTyping,
+} from '../utils/freeSessionLimit';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
 import { RobotAvailabilityManager } from '../components/RobotAvailabilityManager';
@@ -153,7 +165,13 @@ export const EditRobot = () => {
   const currencyCodeRef = useRef<CurrencyCode>('USD');
   exchangeRatesRef.current = exchangeRates;
   currencyCodeRef.current = currencyCode;
-  const [hourlyRateCurrency, setHourlyRateCurrency] = useState<number>(1.00);
+  /** Raw hourly amount in partner currency — not rewritten on every keystroke (see hourlyRateDisplayHydratedRef). */
+  const [hourlyRateInput, setHourlyRateInput] = useState('');
+  const [hourlyRateFieldError, setHourlyRateFieldError] = useState<string | null>(null);
+  const hourlyRateDisplayHydratedRef = useRef(false);
+  /** Minutes cap for free robots; empty = no limit. Only used when hourlyRateCredits === 0. */
+  const [freeSessionMaxMinutes, setFreeSessionMaxMinutes] = useState('');
+  const [freeSessionCapError, setFreeSessionCapError] = useState<string | null>(null);
   const [showQrScanner, setShowQrScanner] = useState(false);
 
   // Scroll to top when the page mounts (avoids ending up scrolled down from restoration or layout)
@@ -205,10 +223,6 @@ export const EditRobot = () => {
         const currencyInfo = getCurrencyInfo(preferredCurrency);
         // Show currency code (USD, EUR, etc.) or "?" if currency info is invalid
         setCurrencyDisplay(currencyInfo.symbol === '?' ? '?' : preferredCurrency);
-
-        // Convert current credits value to new currency for display
-        const currencyValue = creditsToCurrencySync(robotListing.hourlyRateCredits, preferredCurrency, exchangeRates);
-        setHourlyRateCurrency(currencyValue);
       } catch (err) {
         logger.error("Error loading currency preference:", err);
         // Fallback to USD on error
@@ -218,15 +232,23 @@ export const EditRobot = () => {
     };
 
     loadCurrency();
-  }, [user?.username, exchangeRates, robotListing.hourlyRateCredits]);
+  }, [user?.username, exchangeRates]);
 
-  // Update displayed currency value when credits change or currency changes
   useEffect(() => {
-    if (currencyCode && exchangeRates && robotListing.hourlyRateCredits) {
-      const currencyValue = creditsToCurrencySync(robotListing.hourlyRateCredits, currencyCode, exchangeRates);
-      setHourlyRateCurrency(currencyValue);
-    }
-  }, [robotListing.hourlyRateCredits, currencyCode, exchangeRates]);
+    if (!robotId) return;
+    hourlyRateDisplayHydratedRef.current = false;
+    setHourlyRateInput('');
+    setIsLoadingRobot(true);
+  }, [robotId]);
+
+  // One-time sync from stored credits → input after robot + FX are ready (avoid .toFixed(2) fighting the user while typing)
+  useEffect(() => {
+    if (isLoadingRobot || !exchangeRates || !currencyCode || !robotId) return;
+    if (hourlyRateDisplayHydratedRef.current) return;
+    const n = creditsToCurrencySync(robotListing.hourlyRateCredits, currencyCode, exchangeRates);
+    setHourlyRateInput(Number.isFinite(n) ? formatHourlyDisplayAmount(n) : '');
+    hourlyRateDisplayHydratedRef.current = true;
+  }, [isLoadingRobot, exchangeRates, currencyCode, robotId, robotListing.hourlyRateCredits]);
 
   // Load robot data
   useEffect(() => {
@@ -276,7 +298,10 @@ export const EditRobot = () => {
 
         const loadedHourlyRateCredits = robotData.hourlyRateCredits ?? 100;
 
-        const extendedRobotData = robotData as typeof robotData & { publicKey?: string | null };
+        const extendedRobotData = robotData as typeof robotData & {
+          publicKey?: string | null;
+          maxFreeSessionSeconds?: number | null;
+        };
         setRobotListing({
           robotName: name,
           description: robotData.description || "",
@@ -291,12 +316,9 @@ export const EditRobot = () => {
           longitude: robotData.longitude?.toString() || "",
           publicKey: extendedRobotData.publicKey ?? "",
         });
-
-        // Immediately update currency display if exchange rates are available
-        if (exchangeRatesRef.current && currencyCodeRef.current) {
-          const currencyValue = creditsToCurrencySync(loadedHourlyRateCredits, currencyCodeRef.current, exchangeRatesRef.current);
-          setHourlyRateCurrency(currencyValue);
-        }
+        setFreeSessionMaxMinutes(
+          secondsToFreeMinutesInput(extendedRobotData.maxFreeSessionSeconds ?? undefined)
+        );
 
         // Load existing image if available (only for verified robots with custom images)
         if (robotData.imageUrl && extendedData.isVerified) {
@@ -366,38 +388,43 @@ export const EditRobot = () => {
     return () => clearInterval(interval);
   }, [robotIdForStatus]);
 
+  const isFreeHourlyRate = useMemo(() => {
+    const parsed = hourlyCurrencyToCredits(hourlyRateInput, currencyCode, exchangeRates);
+    if (parsed.ok) return parsed.credits === 0;
+    return robotListing.hourlyRateCredits === 0;
+  }, [hourlyRateInput, currencyCode, exchangeRates, robotListing.hourlyRateCredits]);
+
+  const handleHourlyRateBlur = () => {
+    const parsed = hourlyCurrencyToCredits(hourlyRateInput, currencyCode, exchangeRates);
+    if (!parsed.ok) {
+      setHourlyRateFieldError(parsed.message);
+      return;
+    }
+    setHourlyRateFieldError(null);
+    setRobotListing(prev => ({ ...prev, hourlyRateCredits: parsed.credits }));
+    if (parsed.credits > 0) {
+      setFreeSessionMaxMinutes('');
+      setFreeSessionCapError(null);
+    }
+  };
+
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = event.target;
     const checked = (event.target as HTMLInputElement).checked;
 
-    // Handle hourly rate input (user enters currency value, we convert to credits)
-    if (type === 'number' && name === 'hourlyRateCredits') {
-      // Remove any non-numeric characters except decimal point
-      const sanitized = value.replace(/[^0-9.]/g, '');
-      // Convert to number, default to 0 if empty or invalid
-      const currencyValue = sanitized === '' || sanitized === '.' ? 0 : parseFloat(sanitized);
+    if (name === 'hourlyRateInput') {
+      setHourlyRateFieldError(null);
+      setHourlyRateInput(sanitizeHourlyCurrencyTyping(value));
+      return;
+    }
 
-      if (!isNaN(currencyValue) && currencyValue >= 0) {
-        // Update displayed currency value
-        setHourlyRateCurrency(currencyValue);
+    setRobotListing(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value,
+    }));
 
-        // Convert currency value back to credits for storage
-        const creditsValue = currencyToCreditsSync(currencyValue, currencyCode, exchangeRates);
-        setRobotListing(prev => ({
-          ...prev,
-          hourlyRateCredits: creditsValue,
-        }));
-      }
-    } else {
-      setRobotListing(prev => ({
-        ...prev,
-        [name]: type === 'checkbox' ? checked : value,
-      }));
-
-      // If robotType changed and no custom image is set, update preview to default
-      if (name === 'robotType' && !imageFile && !existingImageKey) {
-        setImagePreview(getDefaultRobotImage(value));
-      }
+    if (name === 'robotType' && !imageFile && !existingImageKey) {
+      setImagePreview(getDefaultRobotImage(value));
     }
   };
 
@@ -465,6 +492,7 @@ export const EditRobot = () => {
     setIsLoading(true);
     setSuccess(undefined);
     setError(null);
+    setFreeSessionCapError(null);
     setUploadError(null);
     setUploadProgress(0);
 
@@ -512,12 +540,36 @@ export const EditRobot = () => {
       }
     }
 
+    const rateParse = hourlyCurrencyToCredits(hourlyRateInput, currencyCode, exchangeRates);
+    if (!rateParse.ok) {
+      setHourlyRateFieldError(rateParse.message);
+      setIsLoading(false);
+      return;
+    }
+    setHourlyRateFieldError(null);
+    const resolvedHourlyCredits = rateParse.credits;
+
+    let maxFreePayload: number | null;
+    if (resolvedHourlyCredits > 0) {
+      maxFreePayload = null;
+    } else {
+      const capRes = resolveFreeSessionCapForSave(freeSessionMaxMinutes);
+      if (!capRes.ok) {
+        setFreeSessionCapError(capRes.message);
+        setIsLoading(false);
+        return;
+      }
+      setFreeSessionCapError(null);
+      maxFreePayload = capRes.seconds;
+    }
+
     const robotData = {
       robotName: robotListing.robotName,
       description: robotListing.description,
       model: robotTypeToSend, // Keep model for backwards compatibility
       robotType: robotTypeToSend, // New field for default image selection
-      hourlyRateCredits: robotListing.hourlyRateCredits,
+      hourlyRateCredits: resolvedHourlyCredits,
+      maxFreeSessionSeconds: maxFreePayload,
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
       ...(isVerified && imageUrl ? { imageUrl } : {}), // Only include imageUrl if verified and has a value
@@ -560,6 +612,7 @@ export const EditRobot = () => {
     if (robotListing.publicKey.trim() === '') return;
     setIsLoading(true);
     setError(null);
+    setFreeSessionCapError(null);
     const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
       ? robotListing.allowedUserEmails
         .split(/[,\n]/)
@@ -572,12 +625,33 @@ export const EditRobot = () => {
     const robotTypeToSend = ROBOT_TYPES.some(t => t.value === validRobotType)
       ? validRobotType
       : ROBOT_TYPES[0].value;
+    const rateParse = hourlyCurrencyToCredits(hourlyRateInput, currencyCode, exchangeRates);
+    if (!rateParse.ok) {
+      setHourlyRateFieldError(rateParse.message);
+      setIsLoading(false);
+      return;
+    }
+    setHourlyRateFieldError(null);
+    let maxFreePayload: number | null;
+    if (rateParse.credits > 0) {
+      maxFreePayload = null;
+    } else {
+      const capRes = resolveFreeSessionCapForSave(freeSessionMaxMinutes);
+      if (!capRes.ok) {
+        setFreeSessionCapError(capRes.message);
+        setIsLoading(false);
+        return;
+      }
+      setFreeSessionCapError(null);
+      maxFreePayload = capRes.seconds;
+    }
     const robotData = {
       robotName: robotListing.robotName,
       description: robotListing.description,
       model: robotTypeToSend,
       robotType: robotTypeToSend,
-      hourlyRateCredits: robotListing.hourlyRateCredits,
+      hourlyRateCredits: rateParse.credits,
+      maxFreeSessionSeconds: maxFreePayload,
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
       ...(isVerified && existingImageKey ? { imageUrl: existingImageKey } : {}),
@@ -769,6 +843,30 @@ export const EditRobot = () => {
               )}
 
               <div className="view-section">
+                <h3>Pricing</h3>
+                <div className="view-row">
+                  <span className="view-label">Hourly rate</span>
+                  <span className="view-value">
+                    {robotListing.hourlyRateCredits > 0 && exchangeRates
+                      ? `${creditsToCurrencySync(robotListing.hourlyRateCredits, currencyCode, exchangeRates).toFixed(2)} ${currencyDisplay}/hour (before platform markup)`
+                      : robotListing.hourlyRateCredits > 0
+                        ? '—'
+                        : 'Free ($0/hour)'}
+                  </span>
+                </div>
+                {robotListing.hourlyRateCredits === 0 && (
+                  <div className="view-row">
+                    <span className="view-label">Free session cap</span>
+                    <span className="view-value">
+                      {freeSessionMaxMinutes.trim()
+                        ? `Up to ${freeSessionMaxMinutes.trim()} minutes per session`
+                        : 'No limit'}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="view-section">
                 <h3>Access</h3>
                 <div className="view-row">
                   <span className="view-label">Access Control</span>
@@ -883,21 +981,63 @@ export const EditRobot = () => {
                   </label>
                   <input
                     id="hourly-rate"
-                    type="number"
-                    name="hourlyRateCredits"
-                    value={hourlyRateCurrency.toFixed(2)}
+                    type="text"
+                    inputMode="decimal"
+                    name="hourlyRateInput"
+                    autoComplete="off"
+                    value={hourlyRateInput}
                     onChange={handleInputChange}
+                    onBlur={handleHourlyRateBlur}
                     placeholder="1.00"
-                    min="0"
-                    step="0.01"
                     required
                     disabled={isLoading}
+                    className={hourlyRateFieldError ? 'error' : ''}
+                    aria-invalid={hourlyRateFieldError ? true : undefined}
+                    aria-describedby={hourlyRateFieldError ? 'hourly-rate-error' : undefined}
                   />
+                  {hourlyRateFieldError && (
+                    <div id="hourly-rate-error" className="form-error" style={{ color: '#f44336', marginTop: '0.5rem', fontSize: '0.875rem' }} role="alert">
+                      {hourlyRateFieldError}
+                    </div>
+                  )}
                   <small className="form-help-text">
-                    Set the hourly rate in your preferred currency that clients will pay to use this robot.
-                    The platform will add a markup on top of this rate.
+                    {HOURLY_CURRENCY_FORMAT_ERROR} Use 0 for free. Converted to credits when you leave the field or save.
                   </small>
                 </div>
+
+                {isFreeHourlyRate && (
+                  <div className="form-group">
+                    <label htmlFor="free-session-max">
+                      Max free session length <span className="optional">(optional)</span>
+                    </label>
+                    <input
+                      id="free-session-max"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={6}
+                      value={freeSessionMaxMinutes}
+                      onChange={(e) => {
+                        setFreeSessionCapError(null);
+                        setFreeSessionMaxMinutes(sanitizeFreeSessionMinutesTyping(e.target.value));
+                      }}
+                      placeholder="No limit"
+                      disabled={isLoading || isViewMode}
+                      className={freeSessionCapError ? 'error' : ''}
+                      aria-invalid={freeSessionCapError ? true : undefined}
+                      aria-describedby={freeSessionCapError ? 'free-session-cap-error' : undefined}
+                    />
+                    {freeSessionCapError && (
+                      <div id="free-session-cap-error" className="form-error" style={{ color: '#f44336', marginTop: '0.5rem', fontSize: '0.875rem' }} role="alert">
+                        {freeSessionCapError}
+                      </div>
+                    )}
+                    <small className="form-help-text">
+                      Whole minutes per session at $0/hour (1–{MAX_FREE_SESSION_MINUTES}). Leave empty for no limit.
+                      Stored on the robot; live session enforcement will use this in a follow-up.
+                    </small>
+                  </div>
+                )}
               </div>
 
               <div className="form-section">

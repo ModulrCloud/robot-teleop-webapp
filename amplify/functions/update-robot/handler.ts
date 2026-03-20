@@ -1,5 +1,9 @@
 import { DynamoDBClient, UpdateItemCommand, GetItemCommand, QueryCommand } from '@aws-sdk/client-dynamodb';
 import { Schema } from '../../data/resource';
+import {
+  assertFiniteHourlyRateCredits,
+  assertPositiveIntMaxFreeSessionSeconds,
+} from '../shared/validate-robot-pricing';
 
 const ddbClient = new DynamoDBClient({});
 
@@ -30,7 +34,7 @@ export function decodeAndValidateEd25519PublicKey(input: string): Buffer {
 }
 
 export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (event) => {
-  const { robotId, robotName, description, model, robotType, hourlyRateCredits, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude, publicKey } = event.arguments;
+  const { robotId, robotName, description, model, robotType, hourlyRateCredits, maxFreeSessionSeconds, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude, publicKey } = event.arguments;
 
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
@@ -121,9 +125,22 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
   }
 
   if (hourlyRateCredits !== undefined && hourlyRateCredits !== null) {
+    const validatedRate = assertFiniteHourlyRateCredits(hourlyRateCredits);
     updateExpressions.push('#hourlyRateCredits = :hourlyRateCredits');
     expressionAttributeNames['#hourlyRateCredits'] = 'hourlyRateCredits';
-    expressionAttributeValues[':hourlyRateCredits'] = { N: hourlyRateCredits.toString() };
+    expressionAttributeValues[':hourlyRateCredits'] = { N: validatedRate.toString() };
+  }
+
+  if (maxFreeSessionSeconds !== undefined) {
+    if (maxFreeSessionSeconds !== null) {
+      const cap = assertPositiveIntMaxFreeSessionSeconds(maxFreeSessionSeconds);
+      updateExpressions.push('#maxFreeSessionSeconds = :maxFreeSessionSeconds');
+      expressionAttributeNames['#maxFreeSessionSeconds'] = 'maxFreeSessionSeconds';
+      expressionAttributeValues[':maxFreeSessionSeconds'] = { N: cap.toString() };
+    } else {
+      updateExpressions.push('REMOVE #maxFreeSessionSeconds');
+      expressionAttributeNames['#maxFreeSessionSeconds'] = 'maxFreeSessionSeconds';
+    }
   }
 
   // Update imageUrl if provided

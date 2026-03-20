@@ -365,6 +365,8 @@ const schema = a.schema({
     isVerified: a.boolean().default(false), // Only verified robots can upload custom images
     // Pricing: Hourly rate in credits (before platform markup)
     hourlyRateCredits: a.float().default(100), // Default 100 credits/hour (editable by robot owner)
+    // When hourlyRateCredits is 0 (free): optional cap on session length in seconds. Omit/null = no limit (until billing enforces caps).
+    maxFreeSessionSeconds: a.integer(),
     // Location fields
     city: a.string(),
     state: a.string(),
@@ -761,6 +763,7 @@ const schema = a.schema({
       model: a.string(),
       robotType: a.string(), // Robot type for default image: 'drone', 'humanoid', 'robodog', 'robot', 'rover', 'sub'
       hourlyRateCredits: a.float(), // Optional: hourly rate in credits (defaults to 100)
+      maxFreeSessionSeconds: a.integer(), // Optional: when free (0 rate), max session length in seconds
       enableAccessControl: a.boolean(), // Optional: if true, creates ACL with default users
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL
       imageUrl: a.string(),
@@ -784,6 +787,7 @@ const schema = a.schema({
       model: a.string(), // Optional: update model
       robotType: a.string(), // Optional: update robotType for default image
       hourlyRateCredits: a.float(), // Optional: update hourly rate in credits
+      maxFreeSessionSeconds: a.integer(), // Optional: cap free sessions (seconds); null removes cap
       enableAccessControl: a.boolean(), // Optional: update ACL (true = enable/update, false = disable/remove)
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL (only used if enableAccessControl is true)
       imageUrl: a.string(), // Optional: update imageUrl (only for verified robots)

@@ -13,6 +13,7 @@ import "./RobotSelect.css";
 import { getUrl } from 'aws-amplify/storage';
 import { logger } from '../utils/logger';
 import { formatCreditsAsCurrencySync, fetchExchangeRates } from '../utils/credits';
+import { freeRobotCardLabel } from '../utils/freeSessionLimit';
 
 const client = generateClient<Schema>();
 
@@ -54,6 +55,7 @@ interface ListAccessibleRobotItem {
   model?: string;
   imageUrl?: string;
   hourlyRateCredits?: number | null;
+  maxFreeSessionSeconds?: number | null;
   allowedUsers?: string[];
   modulrApproved?: boolean;
 }
@@ -436,7 +438,7 @@ export default function RobotSelect() {
 
                 hourlyRateDisplay = `${formattedRate}/hour`;
               } else if (robot.hourlyRateCredits === 0) {
-                hourlyRateDisplay = "Free";
+                hourlyRateDisplay = freeRobotCardLabel(robot.maxFreeSessionSeconds ?? undefined);
               }
               return {
                 id: (robot.robotId || robot.id) as string,
