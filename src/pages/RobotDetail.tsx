@@ -8,6 +8,7 @@ import { Schema } from '../../amplify/data/resource';
 import { getUrl } from 'aws-amplify/storage';
 import { logger } from '../utils/logger';
 import { formatCreditsAsCurrencySync, fetchExchangeRates } from '../utils/credits';
+import { freeRobotCardLabel } from '../utils/freeSessionLimit';
 import { PurchaseCreditsModal } from '../components/PurchaseCreditsModal';
 import { RobotRating } from '../components/RobotRating';
 import { ReviewsDisplay } from '../components/ReviewsDisplay';
@@ -30,6 +31,7 @@ interface RobotDetailData {
   name?: string;
   description?: string;
   hourlyRateCredits?: number;
+  maxFreeSessionSeconds?: number | null;
   city?: string;
   state?: string;
   country?: string;
@@ -395,14 +397,16 @@ export default function RobotDetail() {
   }
 
   const statusDisplay = getStatusDisplay();
-  // Calculate total hourly rate including platform markup (like Steam - show total price)
-  const baseRateCredits = robot.hourlyRateCredits || 100;
-  const totalRateCredits = baseRateCredits * (1 + platformMarkup / 100);
-  const hourlyRateFormatted = formatCreditsAsCurrencySync(
-    totalRateCredits,
-    userCurrency,
-    exchangeRates || undefined
-  );
+  // Paid: total hourly rate including platform markup. Free (0 credits): do not use || 100 — 0 is valid.
+  const hourlyRateCreditsResolved = robot.hourlyRateCredits ?? 100;
+  const hourlyRateDisplayText =
+    robot.hourlyRateCredits === 0
+      ? freeRobotCardLabel(robot.maxFreeSessionSeconds ?? undefined)
+      : `${formatCreditsAsCurrencySync(
+          hourlyRateCreditsResolved * (1 + platformMarkup / 100),
+          userCurrency,
+          exchangeRates || undefined
+        )}/hour`;
 
   const locationParts = [robot.city, robot.state, robot.country].filter(Boolean);
   const locationDisplay = locationParts.length > 0 ? locationParts.join(', ') : 'Location not specified';
@@ -466,7 +470,7 @@ export default function RobotDetail() {
 
                 <div className="robot-meta-item">
                   <span className="robot-meta-label">Hourly Rate:</span>
-                  <span className="robot-meta-value price">{hourlyRateFormatted}/hour</span>
+                  <span className="robot-meta-value price">{hourlyRateDisplayText}</span>
                 </div>
 
                 <div className="robot-meta-item">
@@ -667,7 +671,7 @@ export default function RobotDetail() {
         onClose={() => setShowSchedulingModal(false)}
         robotId={robot?.robotId || ''}
         robotUuid={robot?.id}
-        hourlyRateCredits={robot?.hourlyRateCredits || 100}
+        hourlyRateCredits={robot?.hourlyRateCredits ?? 100}
         platformMarkup={platformMarkup}
         userCurrency={userCurrency}
         exchangeRates={exchangeRates || undefined}

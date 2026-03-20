@@ -233,4 +233,90 @@ describe("deductSessionCreditsLambda handler", () => {
     expect(body.details).toContain("Unauthorized");
     expect(mockSend).toHaveBeenCalledTimes(1);
   });
+
+  it("returns 402 free_cap_exceeded when free robot session passes max length (snapshot)", async () => {
+    const partnerTableId = "partner-uuid-123";
+    const started = new Date(Date.now() - 125_000).toISOString();
+    const session = {
+      ...makeNonOwnerSession(),
+      startedAt: started,
+      hourlyRateCredits: 0,
+      maxFreeSessionSeconds: 120,
+    };
+    mockSend
+      .mockResolvedValueOnce({ Item: session })
+      .mockResolvedValueOnce({
+        Items: [{ robotId: ROBOT_ID, partnerId: partnerTableId, hourlyRateCredits: 0 }],
+      })
+      .mockResolvedValueOnce({
+        Item: { id: partnerTableId, cognitoUsername: OWNER_USERNAME, contactEmail: "owner@example.com" },
+      })
+      .mockResolvedValueOnce({});
+
+    const result = await handler(
+      makeEvent({ username: "other-user" }),
+      noOpContext,
+      noOpCallback
+    );
+    const res = result as { statusCode: number; body: string };
+    expect(res.statusCode).toBe(402);
+    const body = JSON.parse(res.body);
+    expect(body.terminationReason).toBe("free_cap_exceeded");
+    expect(mockSend).toHaveBeenCalledTimes(4);
+  });
+
+  it("returns 200 for free robot under max length cap", async () => {
+    const partnerTableId = "partner-uuid-123";
+    const started = new Date(Date.now() - 30_000).toISOString();
+    const session = {
+      ...makeNonOwnerSession(),
+      startedAt: started,
+      hourlyRateCredits: 0,
+      maxFreeSessionSeconds: 120,
+    };
+    mockSend
+      .mockResolvedValueOnce({ Item: session })
+      .mockResolvedValueOnce({
+        Items: [{ robotId: ROBOT_ID, partnerId: partnerTableId, hourlyRateCredits: 0 }],
+      })
+      .mockResolvedValueOnce({
+        Item: { id: partnerTableId, cognitoUsername: OWNER_USERNAME, contactEmail: "owner@example.com" },
+      });
+
+    const result = await handler(
+      makeEvent({ username: "other-user" }),
+      noOpContext,
+      noOpCallback
+    );
+    const res = result as { statusCode: number; body: string };
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.message).toContain("free");
+    expect(mockSend).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns 200 for unlimited free robot (no cap on session or robot)", async () => {
+    const partnerTableId = "partner-uuid-123";
+    const session = {
+      ...makeNonOwnerSession(),
+      hourlyRateCredits: 0,
+    };
+    mockSend
+      .mockResolvedValueOnce({ Item: session })
+      .mockResolvedValueOnce({
+        Items: [{ robotId: ROBOT_ID, partnerId: partnerTableId, hourlyRateCredits: 0 }],
+      })
+      .mockResolvedValueOnce({
+        Item: { id: partnerTableId, cognitoUsername: OWNER_USERNAME, contactEmail: "owner@example.com" },
+      });
+
+    const result = await handler(
+      makeEvent({ username: "other-user" }),
+      noOpContext,
+      noOpCallback
+    );
+    const res = result as { statusCode: number; body: string };
+    expect(res.statusCode).toBe(200);
+    expect(mockSend).toHaveBeenCalledTimes(3);
+  });
 });

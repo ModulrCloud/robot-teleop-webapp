@@ -79,6 +79,8 @@ const SessionResult = a.customType({
   endedAt: a.string(),
   durationSeconds: a.integer(),
   status: a.string(),
+  hourlyRateCredits: a.float(),
+  maxFreeSessionSeconds: a.integer(),
 });
 
 const schema = a.schema({
@@ -465,7 +467,7 @@ const schema = a.schema({
     startedAt: a.datetime().required(),   // When session started
     endedAt: a.datetime(),                // When session ended
     durationSeconds: a.integer(),         // Total duration in seconds
-    status: a.string(),                   // 'active', 'completed', 'disconnected', 'insufficient_funds'
+    status: a.string(),                   // 'active', 'completed', 'disconnected', 'insufficient_funds', 'free_cap_exceeded'
     // Cost tracking
     creditsCharged: a.float(),            // Total credits charged to user (includes markup) - final total when session ends
     creditsDeductedSoFar: a.float(),     // Cumulative credits deducted during active session (real-time billing)
@@ -473,6 +475,7 @@ const schema = a.schema({
     partnerEarnings: a.float(),           // Credits earned by partner (after markup)
     platformFee: a.float(),               // Platform markup in credits
     hourlyRateCredits: a.float(),        // Robot's hourly rate at time of session (snapshot)
+    maxFreeSessionSeconds: a.integer(), // Capped free session max length at session start (omit = unlimited free)
   })
     .secondaryIndexes(index => [
       index("userId").name("userIdIndex"),

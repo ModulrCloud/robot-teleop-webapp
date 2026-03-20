@@ -501,8 +501,8 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
           if (sessions && sessions.length > 0) {
             const session = sessions[0];
             setSessionId(session.id || null);
-            // Get hourly rate from session (snapshot at session start)
-            if (session.hourlyRateCredits) {
+            // Snapshot at session start (include 0 for free robots)
+            if (session.hourlyRateCredits != null) {
               setSessionHourlyRate(session.hourlyRateCredits);
             }
             logger.log('Found session ID:', session.id);
@@ -625,32 +625,35 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
               }
             }
           } else if (response.statusCode === 402) {
-            // Insufficient funds
             const body = typeof response.body === 'string'
               ? JSON.parse(response.body)
               : response.body;
 
-            logger.error('Insufficient funds:', body);
+            logger.error('Session billing termination:', body);
 
-            // Refresh credits to show updated balance (should be 0 or very low)
-            await refreshCredits();
-            // Trigger custom event for navbar update
-            window.dispatchEvent(new CustomEvent('creditsUpdated'));
+            const isFreeCap = body.terminationReason === 'free_cap_exceeded';
 
-            // Show toast notification
+            if (!isFreeCap) {
+              await refreshCredits();
+              window.dispatchEvent(new CustomEvent('creditsUpdated'));
+            }
+
             showToast(
-              'Session terminated due to insufficient credits. Please top up your account to continue.',
+              isFreeCap
+                ? 'Your free session time limit for this robot was reached. The session has ended.'
+                : 'Session terminated due to insufficient credits. Please top up your account to continue.',
               'error',
               8000
             );
 
-            // Reset warning flag
             warningShownRef.current = false;
 
             setInsufficientFunds(true);
             stopRobot();
             disconnect();
-            setShowPurchaseModal(true);
+            if (!isFreeCap) {
+              setShowPurchaseModal(true);
+            }
           }
         }
       } catch (err) {

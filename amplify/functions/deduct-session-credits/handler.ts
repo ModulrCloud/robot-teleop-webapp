@@ -144,10 +144,58 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
       };
     }
 
-    const hourlyRateCredits = robot.hourlyRateCredits || 100; // Default 100 credits/hour
+    const sessionHourlyRaw = session.hourlyRateCredits;
+    const hourlyRateCredits =
+      sessionHourlyRaw !== undefined && sessionHourlyRaw !== null && String(sessionHourlyRaw) !== ""
+        ? Number(sessionHourlyRaw)
+        : Number(robot.hourlyRateCredits ?? 100);
 
-    // If robot is free (0 hourly rate), skip credit deduction
+    const nowIso = new Date().toISOString();
+    const startedMs = startedAt ? new Date(String(startedAt)).getTime() : NaN;
+    const elapsedSeconds =
+      Number.isFinite(startedMs) ? Math.floor((Date.now() - startedMs) / 1000) : 0;
+
+    // If robot is free (0 hourly rate), enforce optional capped session length (snapshot on Session, fallback Robot)
     if (hourlyRateCredits === 0) {
+      const capFromSession = session.maxFreeSessionSeconds;
+      const capFromRobot = robot.maxFreeSessionSeconds;
+      const maxCapRaw =
+        capFromSession !== undefined && capFromSession !== null && String(capFromSession) !== ""
+          ? Number(capFromSession)
+          : capFromRobot !== undefined && capFromRobot !== null && String(capFromRobot) !== ""
+            ? Number(capFromRobot)
+            : 0;
+      const maxCapSeconds = Number.isFinite(maxCapRaw) && maxCapRaw > 0 ? Math.floor(maxCapRaw) : 0;
+
+      if (maxCapSeconds > 0 && elapsedSeconds >= maxCapSeconds) {
+        await docClient.send(
+          new UpdateCommand({
+            TableName: SESSION_TABLE_NAME,
+            Key: { id: sessionId },
+            UpdateExpression:
+              "SET #status = :status, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now",
+            ExpressionAttributeNames: { "#status": "status" },
+            ExpressionAttributeValues: {
+              ":status": "free_cap_exceeded",
+              ":endedAt": nowIso,
+              ":duration": elapsedSeconds,
+              ":now": nowIso,
+            },
+          })
+        );
+        return {
+          statusCode: 402,
+          body: JSON.stringify({
+            success: false,
+            terminationReason: "free_cap_exceeded",
+            message: "Free session time limit reached for this robot.",
+            sessionId,
+            maxFreeSessionSeconds: maxCapSeconds,
+            elapsedSeconds,
+          }),
+        };
+      }
+
       console.log("Robot is free (0 hourly rate), skipping credit deduction", { sessionId, robotId });
       return {
         statusCode: 200,
@@ -157,7 +205,7 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
           sessionId,
           creditsDeducted: 0,
           totalDeductedSoFar: creditsDeductedSoFar,
-          remainingCredits: 0, // We don't need to check user credits for free robots
+          remainingCredits: 0,
         }),
       };
     }
