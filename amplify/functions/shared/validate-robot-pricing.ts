@@ -1,6 +1,8 @@
 /**
  * Server-side bounds for robot pricing. GraphQL already types these as numbers;
  * this blocks NaN/Infinity, negatives, and absurd magnitudes (no injection into Dynamo — values are numeric types only).
+ *
+ * Keep `MAX_FREE_SESSION_SECONDS` aligned with `src/utils/freeSessionLimit.ts` → `MAX_FREE_SESSION_SECONDS_CAP`.
  */
 export const MAX_HOURLY_RATE_CREDITS = 1_000_000_000_000;
 

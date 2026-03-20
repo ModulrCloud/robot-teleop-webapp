@@ -15,9 +15,10 @@ import {
   formatHourlyDisplayAmount,
 } from '../utils/hourlyRateInput';
 import {
-  freeMinutesInputToSeconds,
+  resolveFreeSessionCapForSave,
   secondsToFreeMinutesInput,
   MAX_FREE_SESSION_MINUTES,
+  sanitizeFreeSessionMinutesTyping,
 } from '../utils/freeSessionLimit';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
@@ -170,6 +171,7 @@ export const EditRobot = () => {
   const hourlyRateDisplayHydratedRef = useRef(false);
   /** Minutes cap for free robots; empty = no limit. Only used when hourlyRateCredits === 0. */
   const [freeSessionMaxMinutes, setFreeSessionMaxMinutes] = useState('');
+  const [freeSessionCapError, setFreeSessionCapError] = useState<string | null>(null);
   const [showQrScanner, setShowQrScanner] = useState(false);
 
   // Scroll to top when the page mounts (avoids ending up scrolled down from restoration or layout)
@@ -400,7 +402,10 @@ export const EditRobot = () => {
     }
     setHourlyRateFieldError(null);
     setRobotListing(prev => ({ ...prev, hourlyRateCredits: parsed.credits }));
-    if (parsed.credits > 0) setFreeSessionMaxMinutes('');
+    if (parsed.credits > 0) {
+      setFreeSessionMaxMinutes('');
+      setFreeSessionCapError(null);
+    }
   };
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -487,6 +492,7 @@ export const EditRobot = () => {
     setIsLoading(true);
     setSuccess(undefined);
     setError(null);
+    setFreeSessionCapError(null);
     setUploadError(null);
     setUploadProgress(0);
 
@@ -543,10 +549,19 @@ export const EditRobot = () => {
     setHourlyRateFieldError(null);
     const resolvedHourlyCredits = rateParse.credits;
 
-    const maxFreePayload =
-      resolvedHourlyCredits > 0
-        ? null
-        : freeMinutesInputToSeconds(freeSessionMaxMinutes);
+    let maxFreePayload: number | null;
+    if (resolvedHourlyCredits > 0) {
+      maxFreePayload = null;
+    } else {
+      const capRes = resolveFreeSessionCapForSave(freeSessionMaxMinutes);
+      if (!capRes.ok) {
+        setFreeSessionCapError(capRes.message);
+        setIsLoading(false);
+        return;
+      }
+      setFreeSessionCapError(null);
+      maxFreePayload = capRes.seconds;
+    }
 
     const robotData = {
       robotName: robotListing.robotName,
@@ -597,6 +612,7 @@ export const EditRobot = () => {
     if (robotListing.publicKey.trim() === '') return;
     setIsLoading(true);
     setError(null);
+    setFreeSessionCapError(null);
     const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
       ? robotListing.allowedUserEmails
         .split(/[,\n]/)
@@ -616,8 +632,19 @@ export const EditRobot = () => {
       return;
     }
     setHourlyRateFieldError(null);
-    const maxFreePayload =
-      rateParse.credits > 0 ? null : freeMinutesInputToSeconds(freeSessionMaxMinutes);
+    let maxFreePayload: number | null;
+    if (rateParse.credits > 0) {
+      maxFreePayload = null;
+    } else {
+      const capRes = resolveFreeSessionCapForSave(freeSessionMaxMinutes);
+      if (!capRes.ok) {
+        setFreeSessionCapError(capRes.message);
+        setIsLoading(false);
+        return;
+      }
+      setFreeSessionCapError(null);
+      maxFreePayload = capRes.seconds;
+    }
     const robotData = {
       robotName: robotListing.robotName,
       description: robotListing.description,
@@ -985,17 +1012,28 @@ export const EditRobot = () => {
                     </label>
                     <input
                       id="free-session-max"
-                      type="number"
-                      min={1}
-                      max={MAX_FREE_SESSION_MINUTES}
-                      step={1}
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={6}
                       value={freeSessionMaxMinutes}
-                      onChange={(e) => setFreeSessionMaxMinutes(e.target.value)}
+                      onChange={(e) => {
+                        setFreeSessionCapError(null);
+                        setFreeSessionMaxMinutes(sanitizeFreeSessionMinutesTyping(e.target.value));
+                      }}
                       placeholder="No limit"
                       disabled={isLoading || isViewMode}
+                      className={freeSessionCapError ? 'error' : ''}
+                      aria-invalid={freeSessionCapError ? true : undefined}
+                      aria-describedby={freeSessionCapError ? 'free-session-cap-error' : undefined}
                     />
+                    {freeSessionCapError && (
+                      <div id="free-session-cap-error" className="form-error" style={{ color: '#f44336', marginTop: '0.5rem', fontSize: '0.875rem' }} role="alert">
+                        {freeSessionCapError}
+                      </div>
+                    )}
                     <small className="form-help-text">
-                      Minutes per session at $0/hour. Leave empty for no limit (anyone can connect without credits).
+                      Whole minutes per session at $0/hour (1–{MAX_FREE_SESSION_MINUTES}). Leave empty for no limit.
                       Stored on the robot; live session enforcement will use this in a follow-up.
                     </small>
                   </div>

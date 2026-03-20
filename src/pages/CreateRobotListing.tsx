@@ -8,8 +8,9 @@ import { usePageTitle } from "../hooks/usePageTitle";
 import { useAuthStatus } from "../hooks/useAuthStatus";
 import { getCurrencyInfo, creditsToCurrencySync, fetchExchangeRates, type CurrencyCode } from '../utils/credits';
 import {
-  freeMinutesInputToSeconds,
+  resolveFreeSessionCapForSave,
   MAX_FREE_SESSION_MINUTES,
+  sanitizeFreeSessionMinutesTyping,
 } from '../utils/freeSessionLimit';
 import {
   hourlyCurrencyToCredits,
@@ -186,13 +187,15 @@ export const CreateRobotListing = () => {
     }
     const creditsValue = rateResult.credits;
 
-    if (creditsValue === 0 && freeSessionMaxMinutes.trim() !== '') {
-      const capSec = freeMinutesInputToSeconds(freeSessionMaxMinutes);
-      if (capSec === null) {
-        setHourlyRateError('Enter a valid max session length in minutes (1–' + MAX_FREE_SESSION_MINUTES + '), or leave empty for no limit');
+    let maxFreeSeconds: number | undefined;
+    if (creditsValue === 0) {
+      const capRes = resolveFreeSessionCapForSave(freeSessionMaxMinutes);
+      if (!capRes.ok) {
+        setHourlyRateError(capRes.message);
         setIsLoading(false);
         return;
       }
+      maxFreeSeconds = capRes.seconds === null ? undefined : capRes.seconds;
     }
 
     const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
@@ -201,9 +204,6 @@ export const CreateRobotListing = () => {
         .map(email => email.trim())
         .filter(email => email.length > 0 && email.includes('@'))
       : [];
-
-    const maxFreeSeconds =
-      creditsValue === 0 ? freeMinutesInputToSeconds(freeSessionMaxMinutes) : undefined;
 
     const robotData = {
       robotName: robotListing.robotName,
@@ -405,17 +405,20 @@ export const CreateRobotListing = () => {
                   </label>
                   <input
                     id="create-free-session-max"
-                    type="number"
-                    min={1}
-                    max={MAX_FREE_SESSION_MINUTES}
-                    step={1}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    maxLength={6}
                     value={freeSessionMaxMinutes}
-                    onChange={(e) => setFreeSessionMaxMinutes(e.target.value)}
+                    onChange={(e) => {
+                      setHourlyRateError(null);
+                      setFreeSessionMaxMinutes(sanitizeFreeSessionMinutesTyping(e.target.value));
+                    }}
                     placeholder="No limit"
                     disabled={isLoading}
                   />
                   <small className="form-help-text">
-                    Minutes per session at $0/hour. Leave empty for no limit (anyone can connect without credits).
+                    Whole minutes (1–{MAX_FREE_SESSION_MINUTES}) per session at $0/hour. Leave empty for no limit.
                     Stored on the robot; live enforcement comes in a follow-up.
                   </small>
                 </div>
