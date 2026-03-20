@@ -370,6 +370,8 @@ const schema = a.schema({
     hourlyRateCredits: a.float().default(100), // Default 100 credits/hour (editable by robot owner)
     // When hourlyRateCredits is 0 (free): optional cap on session length in seconds. Omit/null = no limit (until billing enforces caps).
     maxFreeSessionSeconds: a.integer(),
+    // When hourlyRateCredits > 0: optional trial length in seconds at session start. Omit/null = no trial (must stay in sync with Lambdas / updateRobotLambda).
+    trialSeconds: a.integer(),
     // Location fields
     city: a.string(),
     state: a.string(),

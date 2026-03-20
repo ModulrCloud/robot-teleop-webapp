@@ -306,11 +306,6 @@ export const EditRobot = () => {
 
         const loadedHourlyRateCredits = robotData.hourlyRateCredits ?? 100;
 
-        const extendedRobotData = robotData as typeof robotData & {
-          publicKey?: string | null;
-          maxFreeSessionSeconds?: number | null;
-          trialSeconds?: number | null;
-        };
         setRobotListing({
           robotName: name,
           description: robotData.description || "",
@@ -323,12 +318,12 @@ export const EditRobot = () => {
           country: robotData.country || "",
           latitude: robotData.latitude?.toString() || "",
           longitude: robotData.longitude?.toString() || "",
-          publicKey: extendedRobotData.publicKey ?? "",
+          publicKey: robotData.publicKey ?? "",
         });
         setFreeSessionMaxMinutes(
-          secondsToFreeMinutesInput(extendedRobotData.maxFreeSessionSeconds ?? undefined)
+          secondsToFreeMinutesInput(robotData.maxFreeSessionSeconds ?? undefined)
         );
-        setTrialSessionMinutes(secondsToTrialMinutesInput(extendedRobotData.trialSeconds ?? undefined));
+        setTrialSessionMinutes(secondsToTrialMinutesInput(robotData.trialSeconds ?? undefined));
         setTrialMinutesError(null);
 
         // Load existing image if available (only for verified robots with custom images)
