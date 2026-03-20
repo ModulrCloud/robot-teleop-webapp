@@ -3,6 +3,7 @@ import { Schema } from '../../data/resource';
 import {
   assertFiniteHourlyRateCredits,
   assertPositiveIntMaxFreeSessionSeconds,
+  assertTrialSeconds,
 } from '../shared/validate-robot-pricing';
 
 const ddbClient = new DynamoDBClient({});
@@ -34,7 +35,7 @@ export function decodeAndValidateEd25519PublicKey(input: string): Buffer {
 }
 
 export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (event) => {
-  const { robotId, robotName, description, model, robotType, hourlyRateCredits, maxFreeSessionSeconds, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude, publicKey } = event.arguments;
+  const { robotId, robotName, description, model, robotType, hourlyRateCredits, maxFreeSessionSeconds, trialSeconds, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude, publicKey } = event.arguments;
 
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
@@ -95,6 +96,37 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
 
   const now = new Date().toISOString();
 
+  const parseStoredHourly = (): number => {
+    const n = robotResult.Item?.hourlyRateCredits?.N;
+    return n !== undefined && n !== "" ? parseFloat(n) : 100;
+  };
+  const parseStoredTrial = (): number => {
+    const n = robotResult.Item?.trialSeconds?.N;
+    if (n === undefined || n === "") return 0;
+    const t = parseInt(n, 10);
+    return Number.isFinite(t) && t > 0 ? t : 0;
+  };
+
+  let nextHourly = parseStoredHourly();
+  if (hourlyRateCredits !== undefined && hourlyRateCredits !== null) {
+    nextHourly = assertFiniteHourlyRateCredits(hourlyRateCredits);
+  }
+  let nextTrial = parseStoredTrial();
+  if (trialSeconds !== undefined) {
+    if (trialSeconds === null) {
+      nextTrial = 0;
+    } else {
+      const t = assertTrialSeconds(trialSeconds);
+      if (nextHourly <= 0 && t > 0) {
+        throw new Error("trialSeconds requires hourlyRateCredits > 0");
+      }
+      nextTrial = t;
+    }
+  }
+  if (nextHourly === 0) {
+    nextTrial = 0;
+  }
+
   const updateExpressions: string[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const expressionAttributeValues: Record<string, any> = {};
@@ -129,6 +161,10 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     updateExpressions.push('#hourlyRateCredits = :hourlyRateCredits');
     expressionAttributeNames['#hourlyRateCredits'] = 'hourlyRateCredits';
     expressionAttributeValues[':hourlyRateCredits'] = { N: validatedRate.toString() };
+    if (validatedRate === 0) {
+      updateExpressions.push('REMOVE #trialSeconds');
+      expressionAttributeNames['#trialSeconds'] = 'trialSeconds';
+    }
   }
 
   if (maxFreeSessionSeconds !== undefined) {
@@ -140,6 +176,23 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     } else {
       updateExpressions.push('REMOVE #maxFreeSessionSeconds');
       expressionAttributeNames['#maxFreeSessionSeconds'] = 'maxFreeSessionSeconds';
+    }
+  }
+
+  if (trialSeconds !== undefined) {
+    if (trialSeconds !== null) {
+      const trial = assertTrialSeconds(trialSeconds);
+      if (trial > 0) {
+        updateExpressions.push("#trialSeconds = :trialSeconds");
+        expressionAttributeNames["#trialSeconds"] = "trialSeconds";
+        expressionAttributeValues[":trialSeconds"] = { N: trial.toString() };
+      } else {
+        updateExpressions.push("REMOVE #trialSeconds");
+        expressionAttributeNames["#trialSeconds"] = "trialSeconds";
+      }
+    } else {
+      updateExpressions.push("REMOVE #trialSeconds");
+      expressionAttributeNames["#trialSeconds"] = "trialSeconds";
     }
   }
 
@@ -257,7 +310,11 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
   }
 
   const setExpressions = updateExpressions.filter(expr => !expr.startsWith('REMOVE '));
-  const removeExpressions = updateExpressions.filter(expr => expr.startsWith('REMOVE ')).map(expr => expr.replace('REMOVE ', ''));
+  const removeExpressions = [
+    ...new Set(
+      updateExpressions.filter(expr => expr.startsWith('REMOVE ')).map(expr => expr.replace('REMOVE ', '')),
+    ),
+  ];
 
   let updateExpression = '';
   if (setExpressions.length > 0) {

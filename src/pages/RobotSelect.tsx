@@ -56,6 +56,7 @@ interface ListAccessibleRobotItem {
   imageUrl?: string;
   hourlyRateCredits?: number | null;
   maxFreeSessionSeconds?: number | null;
+  trialSeconds?: number | null;
   allowedUsers?: string[];
   modulrApproved?: boolean;
 }
@@ -436,7 +437,14 @@ export default function RobotSelect() {
                   exchangeRates || undefined
                 );
 
-                hourlyRateDisplay = `${formattedRate}/hour`;
+                const trialMins =
+                  robot.trialSeconds != null && robot.trialSeconds > 0
+                    ? Math.max(1, Math.round(robot.trialSeconds / 60))
+                    : 0;
+                hourlyRateDisplay =
+                  trialMins > 0
+                    ? `${formattedRate}/hour · ${trialMins} min trial`
+                    : `${formattedRate}/hour`;
               } else if (robot.hourlyRateCredits === 0) {
                 hourlyRateDisplay = freeRobotCardLabel(robot.maxFreeSessionSeconds ?? undefined);
               }

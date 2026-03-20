@@ -28,3 +28,20 @@ export function assertPositiveIntMaxFreeSessionSeconds(value: unknown): number {
   }
   return n;
 }
+
+/** Trial-then-paid: seconds of free time before per-minute billing. Same upper bound as free-session cap. */
+export const MAX_TRIAL_SECONDS = MAX_FREE_SESSION_SECONDS;
+
+/**
+ * Validates trial length for paid robots. Use 0 to disable.
+ * @throws if not a non-negative integer within {@link MAX_TRIAL_SECONDS}
+ */
+export function assertTrialSeconds(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > MAX_TRIAL_SECONDS) {
+    throw new Error(
+      `Invalid trialSeconds: must be an integer from 0 to ${MAX_TRIAL_SECONDS}`,
+    );
+  }
+  return n;
+}

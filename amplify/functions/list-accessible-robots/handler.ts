@@ -162,6 +162,9 @@ export const handler: Schema["listAccessibleRobotsLambda"]["functionHandler"] = 
         maxFreeSessionSeconds: robotItem.maxFreeSessionSeconds?.N
           ? parseInt(robotItem.maxFreeSessionSeconds.N, 10)
           : undefined,
+        trialSeconds: robotItem.trialSeconds?.N
+          ? parseInt(robotItem.trialSeconds.N, 10)
+          : undefined,
         // Location fields
         city: robotItem.city?.S,
         state: robotItem.state?.S,

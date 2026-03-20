@@ -236,6 +236,46 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
       };
     }
 
+    // Paid path: trial-then-paid — snapshot trialSeconds on session (0 = no trial; omit on legacy = no trial)
+    const trialRaw = session.trialSeconds;
+    let trialSecondsSnapshot = 0;
+    if (trialRaw !== undefined && trialRaw !== null && String(trialRaw) !== "") {
+      const t = Number(trialRaw);
+      trialSecondsSnapshot = Number.isFinite(t) && t > 0 ? Math.floor(t) : 0;
+    }
+    if (elapsedSeconds < trialSecondsSnapshot) {
+      const trialCreditsQuery = await docClient.send(
+        new QueryCommand({
+          TableName: USER_CREDITS_TABLE,
+          IndexName: "userIdIndex",
+          KeyConditionExpression: "userId = :userId",
+          ExpressionAttributeValues: {
+            ":userId": userId,
+          },
+          Limit: 1,
+        })
+      );
+      const trialCreditsRecord = trialCreditsQuery.Items?.[0];
+      const trialRemaining = trialCreditsRecord?.credits ?? 0;
+      console.log("Session in trial window — no credits deducted", {
+        sessionId,
+        elapsedSeconds,
+        trialSecondsSnapshot,
+      });
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          success: true,
+          message: "Trial period - no credits deducted",
+          sessionId,
+          creditsDeducted: 0,
+          totalDeductedSoFar: creditsDeductedSoFar,
+          remainingCredits: trialRemaining,
+          trialActive: true,
+        }),
+      };
+    }
+
     // 3. Get platform markup percentage
     let platformMarkupPercent = DEFAULT_PLATFORM_MARKUP_PERCENT;
     try {

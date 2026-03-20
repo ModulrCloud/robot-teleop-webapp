@@ -81,6 +81,7 @@ const SessionResult = a.customType({
   status: a.string(),
   hourlyRateCredits: a.float(),
   maxFreeSessionSeconds: a.integer(),
+  trialSeconds: a.integer(),
 });
 
 const schema = a.schema({
@@ -476,6 +477,7 @@ const schema = a.schema({
     platformFee: a.float(),               // Platform markup in credits
     hourlyRateCredits: a.float(),        // Robot's hourly rate at time of session (snapshot)
     maxFreeSessionSeconds: a.integer(), // Capped free session max length at session start (omit = unlimited free)
+    trialSeconds: a.integer(), // Paid robots: trial length at session start (0 = no trial); omit on legacy rows
   })
     .secondaryIndexes(index => [
       index("userId").name("userIdIndex"),
@@ -767,6 +769,7 @@ const schema = a.schema({
       robotType: a.string(), // Robot type for default image: 'drone', 'humanoid', 'robodog', 'robot', 'rover', 'sub'
       hourlyRateCredits: a.float(), // Optional: hourly rate in credits (defaults to 100)
       maxFreeSessionSeconds: a.integer(), // Optional: when free (0 rate), max session length in seconds
+      trialSeconds: a.integer(), // Optional: when paid (>0 rate), trial length in seconds (0 = none)
       enableAccessControl: a.boolean(), // Optional: if true, creates ACL with default users
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL
       imageUrl: a.string(),
@@ -791,6 +794,7 @@ const schema = a.schema({
       robotType: a.string(), // Optional: update robotType for default image
       hourlyRateCredits: a.float(), // Optional: update hourly rate in credits
       maxFreeSessionSeconds: a.integer(), // Optional: cap free sessions (seconds); null removes cap
+      trialSeconds: a.integer(), // Optional: paid robots only; seconds of free trial (null removes)
       enableAccessControl: a.boolean(), // Optional: update ACL (true = enable/update, false = disable/remove)
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL (only used if enableAccessControl is true)
       imageUrl: a.string(), // Optional: update imageUrl (only for verified robots)

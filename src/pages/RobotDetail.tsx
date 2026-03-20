@@ -32,6 +32,7 @@ interface RobotDetailData {
   description?: string;
   hourlyRateCredits?: number;
   maxFreeSessionSeconds?: number | null;
+  trialSeconds?: number | null;
   city?: string;
   state?: string;
   country?: string;
@@ -472,6 +473,18 @@ export default function RobotDetail() {
                   <span className="robot-meta-label">Hourly Rate:</span>
                   <span className="robot-meta-value price">{hourlyRateDisplayText}</span>
                 </div>
+
+                {robot.hourlyRateCredits != null &&
+                  robot.hourlyRateCredits > 0 &&
+                  robot.trialSeconds != null &&
+                  robot.trialSeconds > 0 && (
+                    <div className="robot-meta-item">
+                      <span className="robot-meta-label">Free trial:</span>
+                      <span className="robot-meta-value">
+                        First {Math.max(1, Math.round(robot.trialSeconds / 60))} minutes free, then billed hourly
+                      </span>
+                    </div>
+                  )}
 
                 <div className="robot-meta-item">
                   <span className="robot-meta-label">Status:</span>
