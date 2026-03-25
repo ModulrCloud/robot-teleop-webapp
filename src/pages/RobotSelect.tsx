@@ -13,6 +13,7 @@ import "./RobotSelect.css";
 import { getUrl } from 'aws-amplify/storage';
 import { logger } from '../utils/logger';
 import { formatCreditsAsCurrencySync, fetchExchangeRates } from '../utils/credits';
+import { freeRobotCardLabel } from '../utils/freeSessionLimit';
 
 const client = generateClient<Schema>();
 
@@ -54,7 +55,10 @@ interface ListAccessibleRobotItem {
   model?: string;
   imageUrl?: string;
   hourlyRateCredits?: number | null;
+  maxFreeSessionSeconds?: number | null;
+  trialSeconds?: number | null;
   allowedUsers?: string[];
+  modulrApproved?: boolean;
 }
 
 export default function RobotSelect() {
@@ -433,9 +437,16 @@ export default function RobotSelect() {
                   exchangeRates || undefined
                 );
 
-                hourlyRateDisplay = `${formattedRate}/hour`;
+                const trialMins =
+                  robot.trialSeconds != null && robot.trialSeconds > 0
+                    ? Math.max(1, Math.round(robot.trialSeconds / 60))
+                    : 0;
+                hourlyRateDisplay =
+                  trialMins > 0
+                    ? `${formattedRate}/hour · ${trialMins} min trial`
+                    : `${formattedRate}/hour`;
               } else if (robot.hourlyRateCredits === 0) {
-                hourlyRateDisplay = "Free";
+                hourlyRateDisplay = freeRobotCardLabel(robot.maxFreeSessionSeconds ?? undefined);
               }
               return {
                 id: (robot.robotId || robot.id) as string,
@@ -448,8 +459,12 @@ export default function RobotSelect() {
                 robotType: robot.robotType || robot.model,
                 disabled: !canAccess,
                 hourlyRate: hourlyRateDisplay,
+                modulrApproved: robot.modulrApproved === true,
               };
             });
+
+          // Sort: Modulr Approved robots first, then the rest
+          robotItems.sort((a, b) => (b.modulrApproved ? 1 : 0) - (a.modulrApproved ? 1 : 0));
 
           logger.log(`✅ Successfully loaded ${robotItems.length} valid robot(s) from database`);
           logger.log('📋 Robot items details:', robotItems.map(r => ({ id: r.id, title: r.title, disabled: r.disabled })));

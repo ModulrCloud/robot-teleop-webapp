@@ -2,11 +2,16 @@ import { DynamoDBClient, PutItemCommand, QueryCommand } from '@aws-sdk/client-dy
 import { v4 as uuidv4 } from "uuid";
 import { randomBytes } from 'crypto';
 import { Schema } from '../../data/resource';
+import {
+  assertFiniteHourlyRateCredits,
+  assertPositiveIntMaxFreeSessionSeconds,
+  assertTrialSeconds,
+} from '../shared/validate-robot-pricing';
 
 const ddbClient = new DynamoDBClient({});
 
 export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event) => {
-  const { robotName, description, model, robotType, hourlyRateCredits, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude } = event.arguments;
+  const { robotName, description, model, robotType, hourlyRateCredits, maxFreeSessionSeconds, trialSeconds, trialOnePerCustomer, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude } = event.arguments;
 
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
@@ -79,8 +84,25 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
     item.imageUrl = { S: imageUrl };
   }
 
-  const rateCredits = hourlyRateCredits ?? 100;
+  const rateCredits = assertFiniteHourlyRateCredits(hourlyRateCredits ?? 100);
   item.hourlyRateCredits = { N: rateCredits.toString() };
+
+  if (rateCredits === 0 && maxFreeSessionSeconds !== undefined && maxFreeSessionSeconds !== null) {
+    const cap = assertPositiveIntMaxFreeSessionSeconds(maxFreeSessionSeconds);
+    item.maxFreeSessionSeconds = { N: cap.toString() };
+  }
+
+  if (rateCredits > 0 && trialSeconds !== undefined && trialSeconds !== null) {
+    const trial = assertTrialSeconds(trialSeconds);
+    if (trial > 0) {
+      item.trialSeconds = { N: String(trial) };
+    }
+  }
+
+  if (rateCredits > 0) {
+    const once = trialOnePerCustomer !== false;
+    item.trialOnePerCustomer = { BOOL: once };
+  }
 
   if (city) item.city = { S: city };
   if (state) item.state = { S: state };
