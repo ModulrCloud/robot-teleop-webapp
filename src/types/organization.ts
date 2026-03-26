@@ -34,6 +34,7 @@ export interface OrgMember {
   orgId: string;
   userId: string;
   userEmail: string | null;
+  displayName: string | null;
   roleId: string;
   roleName?: string;
   status: MemberStatus;

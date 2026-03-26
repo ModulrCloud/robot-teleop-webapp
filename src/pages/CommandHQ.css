@@ -593,6 +593,22 @@
   min-width: 0;
 }
 
+.chq-cell-user-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 0.1rem;
+}
+.chq-cell-user-info .chq-row-primary {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #fff;
+}
+.chq-cell-user-info .chq-row-secondary {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.35);
+}
+
 .chq-dimmed {
   color: rgba(255, 255, 255, 0.3) !important;
 }
@@ -1522,6 +1538,21 @@
   background: rgba(248, 113, 113, 0.1) !important;
 }
 
+.chq-btn-revoke {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+  border-radius: 6px;
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  background: transparent;
+  color: #f87171;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.chq-btn-revoke:hover {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
 /* ─── Customizations Tab ─── */
 
 .chq-custom-subtabs {
@@ -2111,4 +2142,44 @@
   gap: 0.75rem;
   justify-content: flex-end;
   margin-top: 0.5rem;
+}
+
+.chq-modal-row {
+  display: flex;
+  gap: 1rem;
+}
+.chq-modal-row .chq-modal-field {
+  flex: 1;
+}
+
+.chq-operator-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+.chq-operator-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.85);
+  cursor: pointer;
+  padding: 0.25rem 0;
+}
+.chq-operator-check input[type="checkbox"] {
+  accent-color: #ffc107;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+.chq-operator-check span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
