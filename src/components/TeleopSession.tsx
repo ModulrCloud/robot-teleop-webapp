@@ -87,8 +87,8 @@ interface LocationPanelProps {
   showToast: (message: string, type: ToastType, duration?: number) => void;
 }
 
-const NAV_TIMEOUT_MS = 30_000;
-const NAV_ACTIVE_TIMEOUT_MS = 120_000;
+const NAV_TIMEOUT_MS = 120_000;
+const NAV_ACTIVE_TIMEOUT_MS = 300_000;
 const LOC_REGISTER_DELAY_MS = 200;
 
 function LocationPanel({ sendMessage, addListener, disabled, showToast }: LocationPanelProps) {
@@ -99,8 +99,23 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
   const [activeNavigation, setActiveNavigation] = useState<NavigationState | null>(null);
   const activeNavigationRef = useRef<NavigationState | null>(null);
   const navTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navStartTimeRef = useRef<number | null>(null);
+  const [navElapsed, setNavElapsed] = useState(0);
 
   useEffect(() => { activeNavigationRef.current = activeNavigation; }, [activeNavigation]);
+
+  useEffect(() => {
+    if (!activeNavigation) {
+      navStartTimeRef.current = null;
+      setNavElapsed(0);
+      return;
+    }
+    if (!navStartTimeRef.current) navStartTimeRef.current = Date.now();
+    const id = setInterval(() => {
+      if (navStartTimeRef.current) setNavElapsed(Math.floor((Date.now() - navStartTimeRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [activeNavigation]);
 
   const clearNavTimeout = useCallback(() => {
     if (navTimeoutRef.current) { clearTimeout(navTimeoutRef.current); navTimeoutRef.current = null; }
@@ -315,14 +330,20 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
                   </div>
                 </div>
                 {isThisNavigating ? (
-                  <button
-                    className="location-go-btn cancel"
-                    onClick={handleCancel}
-                    title="Cancel navigation"
-                  >
-                    <FontAwesomeIcon icon={faStop} />
-                    <span>Cancel</span>
-                  </button>
+                  <div className="location-nav-active">
+                    <span className="location-nav-status">
+                      {activeNavigation.status === 'pending' ? 'Waiting for robot…' : 'Navigating…'}
+                      <span className="location-nav-elapsed">{navElapsed}s</span>
+                    </span>
+                    <button
+                      className="location-go-btn cancel"
+                      onClick={handleCancel}
+                      title="Cancel navigation"
+                    >
+                      <FontAwesomeIcon icon={faStop} />
+                      <span>Cancel</span>
+                    </button>
+                  </div>
                 ) : (
                   <button
                     className="location-go-btn"
