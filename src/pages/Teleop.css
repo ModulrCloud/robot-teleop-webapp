@@ -346,6 +346,14 @@ html {
   margin-right: 0.25rem;
 }
 
+.viewport-stat svg.stat-icon {
+  width: 1em;
+  height: 1em;
+  overflow: visible;
+  display: inline-block;
+  vertical-align: -0.125em;
+}
+
 .viewport-stat .stat-icon.good {
   color: #4ade80;
 }
@@ -1160,6 +1168,31 @@ html {
 .location-go-btn.cancel:hover {
   background: rgba(220, 53, 69, 0.25);
   border-color: rgba(220, 53, 69, 0.6);
+}
+
+.location-nav-active {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.location-nav-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: #ffc107;
+  white-space: nowrap;
+  animation: location-pulse 1.5s ease-in-out infinite;
+}
+
+.location-nav-elapsed {
+  font-family: 'SF Mono', 'Monaco', monospace;
+  font-size: 0.7rem;
+  color: rgba(255, 193, 7, 0.7);
+  min-width: 2.2em;
+  text-align: right;
 }
 
 @keyframes location-pulse {
