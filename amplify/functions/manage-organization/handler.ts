@@ -8,10 +8,16 @@ import {
   DeleteCommand,
   BatchWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
+import {
+  CognitoIdentityProviderClient,
+  AdminGetUserCommand,
+} from "@aws-sdk/client-cognito-identity-provider";
 import { randomUUID } from "crypto";
 
 const dynamoClient = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(dynamoClient);
+const cognitoClient = new CognitoIdentityProviderClient({});
+const USER_POOL_ID = process.env.USER_POOL_ID!;
 
 const ORG_TABLE = process.env.ORG_TABLE!;
 const ORG_ROLE_TABLE = process.env.ORG_ROLE_TABLE!;
@@ -262,6 +268,19 @@ export const handler: Schema["manageOrganizationLambda"]["functionHandler"] = as
       );
     }
 
+    let resolvedEmail = callerEmail;
+    let ownerDisplayName: string | null = callerEmail?.split("@")[0] || null;
+    try {
+      const cognitoResult = await cognitoClient.send(
+        new AdminGetUserCommand({ UserPoolId: USER_POOL_ID, Username: callerUsername })
+      );
+      const attrs = cognitoResult.UserAttributes ?? [];
+      const cognitoEmail = attrs.find(a => a.Name === "email")?.Value;
+      const cognitoName = attrs.find(a => a.Name === "name")?.Value;
+      if (cognitoEmail && !resolvedEmail) resolvedEmail = cognitoEmail;
+      ownerDisplayName = cognitoName || cognitoEmail?.split("@")[0] || ownerDisplayName;
+    } catch { /* continue with identity-derived values */ }
+
     await docClient.send(
       new PutCommand({
         TableName: ORG_MEMBER_TABLE,
@@ -269,7 +288,8 @@ export const handler: Schema["manageOrganizationLambda"]["functionHandler"] = as
           id: randomUUID(),
           orgId,
           userId: callerUsername,
-          userEmail: callerEmail,
+          userEmail: resolvedEmail,
+          displayName: ownerDisplayName,
           roleId: roleIds["Owner"],
           status: "active",
           joinedAt: now,

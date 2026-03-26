@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import './CreateRobotListing.css';
 import { generateClient } from 'aws-amplify/api';
 import { Schema } from '../../amplify/data/resource';
@@ -22,6 +22,7 @@ import {
 } from '../utils/hourlyRateInput';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
+import { linkRobotToOrg } from '../hooks/useOrganizationData';
 import {
   faRobot,
   faCheckCircle,
@@ -60,6 +61,8 @@ const client = generateClient<Schema>();
 export const CreateRobotListing = () => {
   usePageTitle();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const orgId = searchParams.get('orgId');
   const [isLoading, setIsLoading] = useState(false);
   const [success, setSuccess] = useState<boolean | undefined>();
   const [hourlyRateError, setHourlyRateError] = useState<string | null>(null);
@@ -251,7 +254,10 @@ export const CreateRobotListing = () => {
         try {
           const robotData = JSON.parse(robot.data || '{}');
           const robotUuid = robotData.id;
-          if (robotUuid) {
+          if (robotUuid && orgId) {
+            await linkRobotToOrg(orgId, robotUuid, user?.username);
+            navigate(`/command-hq/${orgId}`);
+          } else if (robotUuid) {
             navigate(`/robot-setup?robotId=${robotUuid}`);
           } else {
             setSuccess(true);

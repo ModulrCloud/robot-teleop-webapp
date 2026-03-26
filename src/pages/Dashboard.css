@@ -146,6 +146,172 @@
   margin-bottom: 2.5rem;
 }
 
+/* ─── Pending Invites ─── */
+
+.pending-invites-section {
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.06), rgba(255, 152, 0, 0.03));
+  border: 1px solid rgba(255, 193, 7, 0.15);
+  border-radius: 16px;
+  padding: 1.25rem 1.5rem;
+}
+.pending-invites-section .section-title {
+  font-size: 1.05rem;
+  margin-bottom: 0.85rem;
+  color: #ffc107;
+  font-weight: 600;
+}
+.pending-invites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.pending-invite-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 0.85rem 1.1rem;
+  transition: border-color 0.15s ease;
+}
+.pending-invite-card:hover {
+  border-color: rgba(255, 193, 7, 0.2);
+}
+.invite-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(255, 193, 7, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffc107;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.invite-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+}
+.invite-info strong {
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.invite-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+.invite-role-badge {
+  background: rgba(255, 193, 7, 0.1);
+  color: #ffc107;
+  padding: 0.1rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.invite-dot {
+  color: rgba(255, 255, 255, 0.2);
+}
+.invite-expires {
+  color: rgba(255, 255, 255, 0.35);
+}
+.invite-actions {
+  flex-shrink: 0;
+}
+.invite-accept-btn {
+  padding: 0.45rem 1.1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #ffc107, #ff9800);
+  color: #000;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.invite-accept-btn:hover:not(:disabled) {
+  box-shadow: 0 2px 12px rgba(255, 193, 7, 0.3);
+  transform: translateY(-1px);
+}
+.invite-accept-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ─── My Teams ─── */
+
+.my-teams-section .section-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.my-teams-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.my-team-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 0.9rem 1.25rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.my-team-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 193, 7, 0.2);
+}
+.team-card-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.15), rgba(255, 152, 0, 0.1));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffc107;
+  font-size: 1.1rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.team-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+.team-card-info strong {
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.team-card-meta {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+.team-card-arrow {
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 0.85rem;
+  transition: all 0.15s ease;
+}
+.my-team-card:hover .team-card-arrow {
+  color: #ffc107;
+  transform: translateX(2px);
+}
+
 .section-title {
   font-size: 1.5rem;
   font-weight: 700;

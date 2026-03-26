@@ -19,14 +19,18 @@ import {
   faSync,
   faPlus,
   faSatelliteDish,
+  faBuilding,
+  faUsers,
+  faEnvelopeOpenText,
 } from '@fortawesome/free-solid-svg-icons';
 import { generateClient } from 'aws-amplify/api';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '../../amplify/data/resource';
 import "./Dashboard.css";
 import { PayoutPreferencesModal, type PayoutType } from "../components/PayoutPreferencesModal";
-import { fetchUserOrganizations, createOrganization } from "../hooks/useOrganizationData";
+import { fetchUserOrganizations, createOrganization, fetchPendingInvitesForUser, acceptInvite } from "../hooks/useOrganizationData";
 import type { Organization } from "../types/organization";
+import type { PendingOrgInvite } from "../hooks/useOrganizationData";
 import { logger } from '../utils/logger';
 import outputs from '../../amplify_outputs.json';
 
@@ -86,6 +90,9 @@ export const Dashboard = () => {
   const [userOrgs, setUserOrgs] = useState<Organization[]>([]);
   const [orgsLoading, setOrgsLoading] = useState(false);
   const [showCreateOrg, setShowCreateOrg] = useState(false);
+
+  const [pendingInvites, setPendingInvites] = useState<PendingOrgInvite[]>([]);
+  const [acceptingInvite, setAcceptingInvite] = useState<string | null>(null);
 
   const [systemStatus, setSystemStatus] = useState<SystemStatus>({
     webrtc: false,
@@ -181,7 +188,7 @@ export const Dashboard = () => {
   }, [user?.username]);
 
   const loadUserOrgs = useCallback(async () => {
-    if (!user?.username || user?.group !== 'ORGANIZATIONS') return;
+    if (!user?.username) return;
     setOrgsLoading(true);
     try {
       const orgs = await fetchUserOrganizations(user.username);
@@ -191,11 +198,33 @@ export const Dashboard = () => {
     } finally {
       setOrgsLoading(false);
     }
-  }, [user?.username, user?.group]);
+  }, [user?.username]);
 
   useEffect(() => {
     loadUserOrgs();
   }, [loadUserOrgs]);
+
+  useEffect(() => {
+    if (!user?.email) return;
+    fetchPendingInvitesForUser(user.email).then(setPendingInvites).catch(() => {});
+  }, [user?.email]);
+
+  const handleAcceptInvite = async (invite: PendingOrgInvite) => {
+    setAcceptingInvite(invite.id);
+    try {
+      const result = await acceptInvite(invite.inviteCode);
+      if (result.success) {
+        setPendingInvites(prev => prev.filter(i => i.id !== invite.id));
+        loadUserOrgs();
+      } else {
+        logger.error('Accept invite failed:', result.error);
+      }
+    } catch (err) {
+      logger.error('Accept invite error:', err);
+    } finally {
+      setAcceptingInvite(null);
+    }
+  };
 
   // Handle Stripe Connect return/refresh redirects
   useEffect(() => {
@@ -574,6 +603,71 @@ export const Dashboard = () => {
           )}
         </div>
       </div>
+
+      {pendingInvites.length > 0 && (
+        <div className="dashboard-section pending-invites-section">
+          <h2 className="section-title">
+            <FontAwesomeIcon icon={faEnvelopeOpenText} /> Team Invitations
+          </h2>
+          <div className="pending-invites-list">
+            {pendingInvites.map(inv => (
+              <div key={inv.id} className="pending-invite-card">
+                <div className="invite-avatar">
+                  <FontAwesomeIcon icon={faBuilding} />
+                </div>
+                <div className="invite-info">
+                  <strong>{inv.orgName}</strong>
+                  <div className="invite-meta">
+                    <span className="invite-role-badge">{inv.roleName}</span>
+                    <span className="invite-dot">·</span>
+                    <span className="invite-expires">
+                      Expires {new Date(inv.expiresAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+                <div className="invite-actions">
+                  <button
+                    className="invite-accept-btn"
+                    onClick={() => handleAcceptInvite(inv)}
+                    disabled={acceptingInvite === inv.id}
+                  >
+                    {acceptingInvite === inv.id ? 'Joining...' : 'Join Team'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {userOrgs.length > 0 && (
+        <div className="dashboard-section my-teams-section">
+          <h2 className="section-title">
+            <FontAwesomeIcon icon={faUsers} /> My Teams
+          </h2>
+          <div className="my-teams-grid">
+            {userOrgs.map(org => (
+              <div
+                key={org.id}
+                className="my-team-card"
+                onClick={() => navigate(`/command-hq/${org.id}`)}
+              >
+                <div className="team-card-avatar">
+                  {org.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="team-card-info">
+                  <strong>{org.name}</strong>
+                  <span className="team-card-meta">
+                    {org.memberCount} member{org.memberCount !== 1 ? 's' : ''}
+                    {org.robotCount > 0 && ` · ${org.robotCount} robot${org.robotCount !== 1 ? 's' : ''}`}
+                  </span>
+                </div>
+                <FontAwesomeIcon icon={faArrowRight} className="team-card-arrow" />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="dashboard-section">
         <h2 className="section-title">Quick Actions</h2>
