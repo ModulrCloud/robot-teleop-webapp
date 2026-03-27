@@ -8,15 +8,12 @@ import {
     QueryCommand,
     UpdateItemCommand,
     ScanCommand,
-    ConditionalCheckFailedException,
-    type AttributeValue,
 } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand as DocQueryCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { createHash, randomUUID, randomBytes, verify as cryptoVerify, createPublicKey } from 'crypto';
 import { ApiGatewayManagementApiClient, PostToConnectionCommand, DeleteConnectionCommand } from '@aws-sdk/client-apigatewaymanagementapi';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { jwtVerify, createRemoteJWKSet } from 'jose';
-import { SESSION_END_REASON } from "../shared/session-end-reasons";
 
 const CONN_TABLE = process.env.CONN_TABLE!;
 const ROBOT_PRESENCE_TABLE = process.env.ROBOT_PRESENCE_TABLE!;
@@ -28,8 +25,6 @@ const PARTNER_TABLE_NAME = process.env.PARTNER_TABLE_NAME;
 const SESSION_TABLE_NAME = process.env.SESSION_TABLE_NAME; // For session lock enforcement
 const USER_CREDITS_TABLE = process.env.USER_CREDITS_TABLE;
 const PLATFORM_SETTINGS_TABLE = process.env.PLATFORM_SETTINGS_TABLE;
-/** DynamoDB table: composite key userId + robotId (UserRobotTrialConsumption). */
-const USER_ROBOT_TRIAL_CONSUMPTION_TABLE_NAME = process.env.USER_ROBOT_TRIAL_CONSUMPTION_TABLE_NAME;
 const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!; // HTTPS management API
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
@@ -1204,29 +1199,6 @@ async function checkUserBalance(
   }
 }
 
-/** When true (default), enforce one trial per user per robot using UserRobotTrialConsumption. */
-function robotTrialOnePerCustomerFromItem(robotItem: Record<string, AttributeValue> | undefined): boolean {
-  if (!robotItem) return true;
-  if (robotItem.trialOnePerCustomer?.BOOL === false) return false;
-  return true;
-}
-
-async function hasUserConsumedRobotTrial(userId: string, robotIdStr: string): Promise<boolean> {
-  if (!USER_ROBOT_TRIAL_CONSUMPTION_TABLE_NAME) return false;
-  try {
-    const res = await docClient.send(
-      new GetCommand({
-        TableName: USER_ROBOT_TRIAL_CONSUMPTION_TABLE_NAME,
-        Key: { userId, robotId: robotIdStr },
-      }),
-    );
-    return Boolean(res.Item);
-  } catch (err) {
-    console.warn('[TRIAL_CONSUMPTION] Lookup failed (fail open)', { userId, robotId: robotIdStr, err });
-    return false;
-  }
-}
-
 /**
  * Creates a new session for billing and tracking.
  * Checks for existing active sessions to prevent duplicates (e.g., from React StrictMode).
@@ -1273,10 +1245,6 @@ async function createSession(
   let robotName = robotId;
   let partnerIdCognito: string | undefined;
   const partnerOwnerIdentifiers: string[] = [];
-  let snapshotHourlyCredits: number | undefined;
-  let snapshotMaxFreeSessionSeconds: number | undefined;
-  let snapshotTrialSeconds: number | undefined;
-  let robotItemForTrialPolicy: Record<string, AttributeValue> | undefined;
   if (ROBOT_TABLE_NAME) {
     try {
       const robotQuery = await db.send(new QueryCommand({
@@ -1287,24 +1255,8 @@ async function createSession(
         Limit: 1,
       }));
       const robotItem = robotQuery.Items?.[0];
-      robotItemForTrialPolicy = robotItem;
       if (robotItem) {
         robotName = robotItem.name?.S ?? robotId;
-        const hrN = robotItem.hourlyRateCredits?.N;
-        if (hrN !== undefined && hrN !== '') {
-          const hr = parseFloat(hrN);
-          if (Number.isFinite(hr)) snapshotHourlyCredits = hr;
-        }
-        const capN = robotItem.maxFreeSessionSeconds?.N;
-        if (capN !== undefined && capN !== '') {
-          const cap = parseInt(capN, 10);
-          if (Number.isFinite(cap) && cap > 0) snapshotMaxFreeSessionSeconds = cap;
-        }
-        const trialN = robotItem.trialSeconds?.N;
-        if (trialN !== undefined && trialN !== '') {
-          const tr = parseInt(trialN, 10);
-          if (Number.isFinite(tr) && tr > 0) snapshotTrialSeconds = tr;
-        }
         const partnerTableId = robotItem.partnerId?.S;
         if (partnerTableId && PARTNER_TABLE_NAME) {
           const partnerResult = await docClient.send(new GetCommand({
@@ -1337,24 +1289,6 @@ async function createSession(
   const isRobotOwner =
     normalizedPartner.size > 0 &&
     currentIdentifiers.some((c) => normalizedPartner.has(c.toLowerCase().trim()));
-
-  let effectiveTrialSeconds =
-    snapshotTrialSeconds !== undefined && snapshotTrialSeconds > 0 ? snapshotTrialSeconds : 0;
-  if (
-    !isRobotOwner &&
-    robotTrialOnePerCustomerFromItem(robotItemForTrialPolicy) &&
-    effectiveTrialSeconds > 0
-  ) {
-    const consumed = await hasUserConsumedRobotTrial(userId, robotId);
-    if (consumed) {
-      effectiveTrialSeconds = 0;
-      console.log('[SESSION] User already used one-time trial on this robot — session trial snapshot 0', {
-        userId,
-        robotId,
-      });
-    }
-  }
-
   if (!isRobotOwner) {
     const balanceCheck = await checkUserBalance(userId, robotId);
     if (!balanceCheck.sufficient) {
@@ -1379,7 +1313,7 @@ async function createSession(
     // End any other active sessions for this user (allows only one session at a time)
     await endUserSessions(userId);
 
-    const sessionItem: Record<string, AttributeValue> = {
+    const sessionItem: Record<string, { S: string }> = {
       id: { S: sessionId },
       owner: { S: userId },
       userId: { S: userId },
@@ -1395,21 +1329,6 @@ async function createSession(
     };
     if (partnerIdCognito) {
       sessionItem.partnerId = { S: partnerIdCognito };
-    }
-
-    const effectiveHourly =
-      snapshotHourlyCredits !== undefined && Number.isFinite(snapshotHourlyCredits) ? snapshotHourlyCredits : 100;
-    sessionItem.hourlyRateCredits = { N: String(effectiveHourly) };
-    // Free robots: always snapshot cap (seconds > 0) or explicit 0 = unlimited at session start — do not rely on omit.
-    if (effectiveHourly === 0) {
-      const cap =
-        snapshotMaxFreeSessionSeconds != null && snapshotMaxFreeSessionSeconds > 0
-          ? snapshotMaxFreeSessionSeconds
-          : 0;
-      sessionItem.maxFreeSessionSeconds = { N: String(cap) };
-    } else {
-      // Paid: snapshot trial length (0 = no trial) so mid-session robot edits do not change billing phase.
-      sessionItem.trialSeconds = { N: String(effectiveTrialSeconds) };
     }
 
     await db.send(new PutItemCommand({
@@ -1429,7 +1348,7 @@ async function createSession(
   }
 }
 
-async function endSession(sessionId: string, endReason: string): Promise<void> {
+async function endSession(sessionId: string): Promise<void> {
   if (!SESSION_TABLE_NAME) return;
 
   const now = new Date().toISOString();
@@ -1458,28 +1377,20 @@ async function endSession(sessionId: string, endReason: string): Promise<void> {
     await db.send(new UpdateItemCommand({
       TableName: SESSION_TABLE_NAME,
       Key: { id: { S: sessionId } },
-      UpdateExpression: 'SET #status = :completed, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now, #endReason = :endReason',
+      UpdateExpression: 'SET #status = :completed, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now',
       ExpressionAttributeNames: {
         '#status': 'status',
-        '#endReason': 'endReason',
       },
       ExpressionAttributeValues: {
         ':completed': { S: 'completed' },
         ':endedAt': { S: now },
         ':duration': { N: String(durationSeconds) },
         ':now': { S: now },
-        ':active': { S: 'active' },
-        ':endReason': { S: endReason },
       },
-      ConditionExpression: '#status = :active',
     }));
 
-    console.log('[SESSION] Ended session:', { sessionId, durationSeconds, endReason });
+    console.log('[SESSION] Ended session:', { sessionId, durationSeconds });
   } catch (err) {
-    if (err instanceof ConditionalCheckFailedException) {
-      console.log('[SESSION] Skip endSession — already terminal:', sessionId);
-      return;
-    }
     console.error('[SESSION] Failed to end session:', {
       sessionId,
       error: err instanceof Error ? err.message : String(err),
@@ -1508,7 +1419,7 @@ async function endUserSessions(userId: string): Promise<void> {
     for (const item of result.Items || []) {
       const sessionId = item.id?.S;
       if (sessionId) {
-        await endSession(sessionId, SESSION_END_REASON.USER_SESSIONS_CLEARED);
+        await endSession(sessionId);
         if (SETTLE_SESSION_PAYMENT_FUNCTION_NAME) {
           try {
             await lambdaClient.send(new InvokeCommand({
@@ -1683,7 +1594,7 @@ async function endConnectionSessions(connectionId: string): Promise<void> {
       const sessionId = item.id?.S;
       if (sessionId) {
         console.log('[SESSION] Ending session on disconnect:', { sessionId, connectionId });
-        await endSession(sessionId, SESSION_END_REASON.WEBSOCKET_DISCONNECT);
+        await endSession(sessionId);
         if (SETTLE_SESSION_PAYMENT_FUNCTION_NAME) {
           try {
             await lambdaClient.send(new InvokeCommand({

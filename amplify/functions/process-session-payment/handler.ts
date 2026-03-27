@@ -1,5 +1,4 @@
 import type { Schema } from "../../data/resource";
-import { SESSION_END_REASON } from "../shared/session-end-reasons";
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand, PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
@@ -91,16 +90,11 @@ export const handler: Schema["processSessionPaymentLambda"]["functionHandler"] =
       throw new Error(`Robot not found: ${robotId}`);
     }
 
-    // Prefer session snapshot (same as deduct-session-credits) so pricing changes after session start do not mis-route legacy free close / billing.
-    const sessionHourlyRaw = session.hourlyRateCredits;
-    const hourlyRateCredits =
-      sessionHourlyRaw !== undefined && sessionHourlyRaw !== null && String(sessionHourlyRaw) !== ""
-        ? Number(sessionHourlyRaw)
-        : Number(robot.hourlyRateCredits ?? 100);
+    const hourlyRateCredits = robot.hourlyRateCredits ?? 100;
 
-    // If session was free at start (0 rate), skip all credit operations
+    // If robot is free (0 hourly rate), skip all credit operations
     if (hourlyRateCredits === 0) {
-      console.log("Session is free (0 hourly rate snapshot), skipping credit deduction and payment processing", {
+      console.log("Robot is free (0 hourly rate), skipping credit deduction and payment processing", {
         sessionId,
         robotId,
         durationSeconds,
@@ -111,11 +105,9 @@ export const handler: Schema["processSessionPaymentLambda"]["functionHandler"] =
         new UpdateCommand({
           TableName: SESSION_TABLE_NAME,
           Key: { id: sessionId },
-          UpdateExpression:
-            'SET #status = :status, creditsCharged = :credits, partnerEarnings = :earnings, platformFee = :fee, updatedAt = :now, #endReason = if_not_exists(#endReason, :legacyEndReason)',
+          UpdateExpression: 'SET #status = :status, creditsCharged = :credits, partnerEarnings = :earnings, platformFee = :fee, updatedAt = :now',
           ExpressionAttributeNames: {
             '#status': 'status',
-            '#endReason': 'endReason',
           },
           ExpressionAttributeValues: {
             ':status': 'completed',
@@ -123,7 +115,6 @@ export const handler: Schema["processSessionPaymentLambda"]["functionHandler"] =
             ':earnings': 0,
             ':fee': 0,
             ':now': new Date().toISOString(),
-            ':legacyEndReason': SESSION_END_REASON.LEGACY_FREE_PAYMENT_CLOSE,
           },
         })
       );
@@ -132,7 +123,7 @@ export const handler: Schema["processSessionPaymentLambda"]["functionHandler"] =
         statusCode: 200,
         body: JSON.stringify({
           success: true,
-          message: "Free session (0 rate snapshot) - no credits charged",
+          message: "Robot is free - no credits charged",
           sessionId,
           creditsCharged: 0,
           partnerEarnings: 0,

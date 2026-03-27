@@ -41,41 +41,14 @@ export const handler: Schema["listPlatformRevenueEntriesLambda"]["functionHandle
     throw new Error("Only admins or Modulr employees can list platform revenue entries");
   }
 
-  const hasFilters = !!(transactionType || startDate || endDate);
-  const maxLimit = Math.min(limit ?? 100, 500);
-  let items: Record<string, unknown>[] = [];
-  let scanLastKey: Record<string, unknown> | undefined;
-
-  if (hasFilters) {
-    // When filtering by type or date, scan the full table so entries (e.g. certification_fee)
-    // are not missed — DynamoDB Scan returns items in arbitrary order, so a single limited
-    // scan can omit rows that match the filter.
-    let lastKey: Record<string, unknown> | undefined;
-    do {
-      const scanResult = await docClient.send(
-        new ScanCommand({
-          TableName: PLATFORM_REVENUE_ENTRY_TABLE,
-          Limit: 1000,
-          ExclusiveStartKey: lastKey,
-        })
-      );
-      items = items.concat((scanResult.Items ?? []) as Record<string, unknown>[]);
-      lastKey = (scanResult.LastEvaluatedKey ?? undefined) as Record<string, unknown> | undefined;
-    } while (lastKey);
-  } else {
-    const startKey = nextToken
-      ? (JSON.parse(Buffer.from(nextToken, "base64").toString()) as Record<string, unknown>)
-      : undefined;
-    const scanResult = await docClient.send(
-      new ScanCommand({
-        TableName: PLATFORM_REVENUE_ENTRY_TABLE,
-        Limit: maxLimit,
-        ExclusiveStartKey: startKey,
-      })
-    );
-    items = (scanResult.Items ?? []) as Record<string, unknown>[];
-    scanLastKey = (scanResult.LastEvaluatedKey ?? undefined) as Record<string, unknown> | undefined;
-  }
+  const scanResult = await docClient.send(
+    new ScanCommand({
+      TableName: PLATFORM_REVENUE_ENTRY_TABLE,
+      Limit: Math.min(limit ?? 100, 500),
+      ExclusiveStartKey: nextToken ? JSON.parse(Buffer.from(nextToken, "base64").toString()) : undefined,
+    })
+  );
+  let items = (scanResult.Items ?? []) as Record<string, unknown>[];
 
   if (transactionType) {
     items = items.filter((i) => i.transactionType === transactionType);
@@ -88,17 +61,7 @@ export const handler: Schema["listPlatformRevenueEntriesLambda"]["functionHandle
   }
   items.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 
-  let offset = 0;
-  if (hasFilters && nextToken) {
-    try {
-      const decoded = JSON.parse(Buffer.from(nextToken, "base64").toString()) as { offset?: number };
-      offset = Math.max(0, Number(decoded?.offset) || 0);
-    } catch {
-      // ignore invalid token
-    }
-  }
-  const slice = items.slice(offset, offset + maxLimit);
-  const entries = slice.map((e) => ({
+  const entries = items.slice(0, limit ?? 100).map((e) => ({
     id: e.id,
     createdAt: e.createdAt,
     transactionType: e.transactionType,
@@ -107,14 +70,9 @@ export const handler: Schema["listPlatformRevenueEntriesLambda"]["functionHandle
     description: e.description,
   }));
 
-  const hasMore = offset + slice.length < items.length;
-  const nextTokenOut = hasFilters
-    ? hasMore
-      ? Buffer.from(JSON.stringify({ offset: offset + maxLimit })).toString("base64")
-      : null
-    : scanLastKey
-      ? Buffer.from(JSON.stringify(scanLastKey)).toString("base64")
-      : null;
+  const nextTokenOut = scanResult.LastEvaluatedKey
+    ? Buffer.from(JSON.stringify(scanResult.LastEvaluatedKey)).toString("base64")
+    : null;
 
   return JSON.stringify({
     entries,
