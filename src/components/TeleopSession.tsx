@@ -35,6 +35,7 @@ import {
   faSync,
   faSpinner,
   faPlay,
+  faHome,
 } from '@fortawesome/free-solid-svg-icons';
 import { InputBindingsModal } from '../components/InputBindingsModal';
 import { useCustomCommandBindings } from '../hooks/useCustomCommandBindings';
@@ -47,6 +48,7 @@ import {
   buildNavigationStartMessage,
   buildNavigationCancelMessage,
   buildLocationCreateMessage,
+  buildLocationNameOnlyMessage,
   type NavigationResponsePayload,
   type AgentErrorPayload,
 } from '../utils/dataChannelMessageFormat';
@@ -268,7 +270,32 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
     if (cancelledProduct) showToast(`Cancelled navigation to ${cancelledProduct}`, 'info', 2000);
   };
 
+  const handleGoHome = () => {
+    clearNavTimeout();
+    const locMsg = buildLocationNameOnlyMessage('home');
+    sendMessage(locMsg);
+    logger.log('[LOC] Sent name-only location: home');
+
+    setActiveNavigation({ correlationId: '', productId: '__home__', productName: 'Home', status: 'pending' });
+
+    setTimeout(() => {
+      const navMsg = buildNavigationStartMessage('home');
+      const corrId = navMsg.id as string;
+      setActiveNavigation(prev => prev ? { ...prev, correlationId: corrId } : null);
+      sendMessage(navMsg);
+      logger.log('[NAV] Sent agent.navigation.start: home');
+
+      navTimeoutRef.current = setTimeout(() => {
+        if (activeNavigationRef.current?.correlationId === corrId) {
+          setActiveNavigation(null);
+          showToast('Navigation timed out — no response from robot', 'warning', 4000);
+        }
+      }, NAV_TIMEOUT_MS);
+    }, LOC_REGISTER_DELAY_MS);
+  };
+
   const isNavigating = activeNavigation !== null;
+  const isHomeNavigating = isNavigating && activeNavigation.productId === '__home__';
 
   return (
     <div className="location-panel">
@@ -284,6 +311,31 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
         >
           <FontAwesomeIcon icon={faSync} spin={loading} />
         </button>
+      </div>
+
+      <div className="location-home-row">
+        {isHomeNavigating ? (
+          <div className="location-home-navigating">
+            <span className="location-nav-status">
+              {activeNavigation.status === 'pending' ? 'Waiting for robot…' : 'Navigating home…'}
+              <span className="location-nav-elapsed">{navElapsed}s</span>
+            </span>
+            <button className="location-go-btn cancel" onClick={handleCancel} title="Cancel navigation">
+              <FontAwesomeIcon icon={faStop} />
+              <span>Cancel</span>
+            </button>
+          </div>
+        ) : (
+          <button
+            className="location-home-btn"
+            onClick={handleGoHome}
+            disabled={disabled || isNavigating}
+            title={disabled ? 'Connect to robot first' : isNavigating ? 'Navigation in progress' : 'Send robot home'}
+          >
+            <FontAwesomeIcon icon={faHome} />
+            <span>Home</span>
+          </button>
+        )}
       </div>
 
       <div className="location-search-row">
