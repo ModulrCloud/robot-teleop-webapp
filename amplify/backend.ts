@@ -13,7 +13,6 @@ import { deleteRobotLambda } from './functions/delete-robot/resource';
 import { manageRobotACL } from './functions/manage-robot-acl/resource';
 import { listAccessibleRobots } from './functions/list-accessible-robots/resource';
 import { getRobotStatus } from './functions/get-robot-status/resource';
-import { checkUserRobotTrialConsumed } from './functions/check-user-robot-trial-consumed/resource';
 import { createStripeCheckout } from './functions/create-stripe-checkout/resource';
 import { createStripeConnectOnboardingLink } from './functions/create-stripe-connect-onboarding-link/resource';
 import { stripeConnectOnboardingReturn } from './functions/stripe-connect-onboarding-return/resource';
@@ -89,7 +88,6 @@ const backend = defineBackend({
   manageRobotACL,
   listAccessibleRobots,
   getRobotStatus,
-  checkUserRobotTrialConsumed,
   createStripeCheckout,
   createStripeConnectOnboardingLink,
   stripeConnectOnboardingReturn,
@@ -182,7 +180,6 @@ const deleteRobotLambdaFunction = backend.deleteRobotLambda.resources.lambda;
 const manageRobotACLFunction = backend.manageRobotACL.resources.lambda;
 const listAccessibleRobotsFunction = backend.listAccessibleRobots.resources.lambda;
 const getRobotStatusFunction = backend.getRobotStatus.resources.lambda;
-const checkUserRobotTrialConsumedFunction = backend.checkUserRobotTrialConsumed.resources.lambda;
 const createStripeCheckoutFunction = backend.createStripeCheckout.resources.lambda;
 const addCreditsFunction = backend.addCredits.resources.lambda;
 const verifyStripePaymentFunction = backend.verifyStripePayment.resources.lambda;
@@ -323,7 +320,6 @@ tables.Partner.grantReadData(signalingFunction); // Read-only for partnerId (Cog
 tables.Session.grantReadWriteData(signalingFunction); // Read/write for session management
 tables.UserCredits.grantReadData(signalingFunction); // Read-only for balance checks
 tables.PlatformSettings.grantReadData(signalingFunction); // Read-only for platform markup
-tables.UserRobotTrialConsumption.grantReadData(signalingFunction); // One-trial-per-customer lookup at session create
 // Grant permission to query GSIs
 signalingFunction.addToRolePolicy(new PolicyStatement({
   actions: ["dynamodb:Query"],
@@ -338,10 +334,6 @@ signalingFunction.addToRolePolicy(new PolicyStatement({
 signalingCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Session.tableName);
 signalingCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
 signalingCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
-signalingCdkFunction.addEnvironment(
-  'USER_ROBOT_TRIAL_CONSUMPTION_TABLE_NAME',
-  tables.UserRobotTrialConsumption.tableName,
-);
 
 // Grant DynamoDB permissions to revoke token function
 revokedTokensTable.grantWriteData(revokeTokenLambdaFunction);
@@ -399,13 +391,6 @@ getRobotStatusCdkFunction.addEnvironment('ROBOT_PRESENCE_TABLE', robotPresenceTa
 
 // Grant DynamoDB permissions to get robot status function
 robotPresenceTable.grantReadData(getRobotStatusFunction);
-
-const checkUserRobotTrialConsumedCdkFunction = checkUserRobotTrialConsumedFunction as CdkFunction;
-checkUserRobotTrialConsumedCdkFunction.addEnvironment(
-  'USER_ROBOT_TRIAL_CONSUMPTION_TABLE_NAME',
-  tables.UserRobotTrialConsumption.tableName,
-);
-tables.UserRobotTrialConsumption.grantReadData(checkUserRobotTrialConsumedFunction);
 
 // Manage robot operator Lambda environment variables
 const manageRobotOperatorCdkFunction = manageRobotOperatorFunction as CdkFunction;
@@ -673,17 +658,12 @@ deductSessionCreditsCdkFunction.addEnvironment('SESSION_TABLE_NAME', tables.Sess
 deductSessionCreditsCdkFunction.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);
 deductSessionCreditsCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
 deductSessionCreditsCdkFunction.addEnvironment('PARTNER_TABLE_NAME', tables.Partner.tableName);
-deductSessionCreditsCdkFunction.addEnvironment(
-  'USER_ROBOT_TRIAL_CONSUMPTION_TABLE_NAME',
-  tables.UserRobotTrialConsumption.tableName,
-);
 tables.UserCredits.grantReadWriteData(deductSessionCreditsFunction);
 tables.CreditTransaction.grantWriteData(deductSessionCreditsFunction);
 tables.Session.grantReadWriteData(deductSessionCreditsFunction);
 tables.Robot.grantReadData(deductSessionCreditsFunction);
 tables.Partner.grantReadData(deductSessionCreditsFunction);
 tables.PlatformSettings.grantReadData(deductSessionCreditsFunction);
-tables.UserRobotTrialConsumption.grantWriteData(deductSessionCreditsFunction);
 // Grant permission to query indexes
 deductSessionCreditsFunction.addToRolePolicy(new PolicyStatement({
   actions: ["dynamodb:Query"],

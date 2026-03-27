@@ -10,8 +10,6 @@ const client = generateClient<Schema>();
 interface UserCreditsData {
   credits: number;
   currency: CurrencyCode;
-  /** Exchange rates (USD base) for formatting credits as currency in other components */
-  exchangeRates: Record<string, number> | undefined;
   formattedBalance: string;
   loading: boolean;
   error: string | null;
@@ -147,7 +145,6 @@ export function useUserCredits(): UserCreditsData {
   return {
     credits,
     currency,
-    exchangeRates,
     formattedBalance,
     loading,
     error,

@@ -211,16 +211,13 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
         return;
       }
 
-      // Convert Auki Y-up to ROS Z-up: nav_x = auki_x, nav_y = -auki_z, nav_z = auki_y
-      const rosPose = { x: pose.x, y: -(pose.z ?? 0), z: pose.y };
-
       setProducts(prev => prev.map(p =>
-        p.productId === product.productId ? { ...p, coordinates: rosPose } : p
+        p.productId === product.productId ? { ...p, coordinates: pose } : p
       ));
 
-      const locMsg = buildLocationCreateMessage(product.productName, rosPose, { sku: product.productId });
+      const locMsg = buildLocationCreateMessage(product.productName, pose, { sku: product.productId });
       sendMessage(locMsg);
-      logger.log('[LOC] Pushed fresh pose for', product.productName, rosPose);
+      logger.log('[LOC] Pushed fresh pose for', product.productName, pose);
 
       await new Promise(resolve => setTimeout(resolve, LOC_REGISTER_DELAY_MS));
 
@@ -358,10 +355,7 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
   const { credits, refreshCredits } = useUserCredits();
   const { toast, showToast } = useToast();
   const [sessionId, setSessionId] = useState<string | null>(null);
-  /** Set when billing ends the session: insufficient credits vs free time cap (distinct UI). */
-  const [billingTermination, setBillingTermination] = useState<
-    null | 'insufficient_funds' | 'free_cap_exceeded'
-  >(null);
+  const [insufficientFunds, setInsufficientFunds] = useState(false);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [showInputBindingsModal, setShowInputBindingsModal] = useState(false);
   const [clientBindings, setClientBindings] = useState<{
@@ -507,8 +501,8 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
           if (sessions && sessions.length > 0) {
             const session = sessions[0];
             setSessionId(session.id || null);
-            // Snapshot at session start (include 0 for free robots)
-            if (session.hourlyRateCredits != null) {
+            // Get hourly rate from session (snapshot at session start)
+            if (session.hourlyRateCredits) {
               setSessionHourlyRate(session.hourlyRateCredits);
             }
             logger.log('Found session ID:', session.id);
@@ -570,7 +564,7 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
 
   // Per-minute credit deduction timer (skipped for owner test – backend also returns 0)
   useEffect(() => {
-    if (!status.connected || !sessionId || billingTermination !== null || isOwnerTest) return;
+    if (!status.connected || !sessionId || insufficientFunds || isOwnerTest) return;
 
     const deductionInterval = setInterval(async () => {
       if (!sessionId || !status.connected) return;
@@ -631,35 +625,32 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
               }
             }
           } else if (response.statusCode === 402) {
+            // Insufficient funds
             const body = typeof response.body === 'string'
               ? JSON.parse(response.body)
               : response.body;
 
-            logger.error('Session billing termination:', body);
+            logger.error('Insufficient funds:', body);
 
-            const isFreeCap = body.terminationReason === 'free_cap_exceeded';
+            // Refresh credits to show updated balance (should be 0 or very low)
+            await refreshCredits();
+            // Trigger custom event for navbar update
+            window.dispatchEvent(new CustomEvent('creditsUpdated'));
 
-            if (!isFreeCap) {
-              await refreshCredits();
-              window.dispatchEvent(new CustomEvent('creditsUpdated'));
-            }
-
+            // Show toast notification
             showToast(
-              isFreeCap
-                ? 'Your free session time limit for this robot was reached. The session has ended.'
-                : 'Session terminated due to insufficient credits. Please top up your account to continue.',
+              'Session terminated due to insufficient credits. Please top up your account to continue.',
               'error',
               8000
             );
 
+            // Reset warning flag
             warningShownRef.current = false;
 
-            setBillingTermination(isFreeCap ? 'free_cap_exceeded' : 'insufficient_funds');
+            setInsufficientFunds(true);
             stopRobot();
             disconnect();
-            if (!isFreeCap) {
-              setShowPurchaseModal(true);
-            }
+            setShowPurchaseModal(true);
           }
         }
       } catch (err) {
@@ -668,7 +659,7 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
     }, 60000); // Every 60 seconds (1 minute)
 
     return () => clearInterval(deductionInterval);
-  }, [status.connected, sessionId, billingTermination, isOwnerTest, refreshCredits, stopRobot, disconnect]);
+  }, [status.connected, sessionId, insufficientFunds, isOwnerTest, refreshCredits, stopRobot, disconnect]);
 
   useEffect(() => {
     const checkGamepad = () => {
@@ -915,41 +906,7 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
     );
   }
 
-  if (billingTermination === 'free_cap_exceeded') {
-    return (
-      <div className="teleop-container">
-        <div className="robot-busy-modal">
-          <div className="busy-content">
-            <FontAwesomeIcon icon={faExclamationTriangle} className="busy-icon" style={{ color: '#ff9800' }} />
-            <h2>Free session time ended</h2>
-            <p className="busy-message">
-              You have used the maximum free time allowed for this robot. Start a new session later or choose another robot.
-            </p>
-            <div className="busy-actions">
-              <button className="back-btn" onClick={handleBackOrEndSession}>
-                Return to Robots
-              </button>
-            </div>
-          </div>
-        </div>
-        {toast.visible && (
-          <div className={`toast-notification ${toast.type}`}>
-            <FontAwesomeIcon
-              icon={
-                toast.type === 'error' ? faExclamationTriangle :
-                  toast.type === 'success' ? faCheckCircle :
-                    toast.type === 'warning' ? faCircleExclamation :
-                      faCheckCircle
-              }
-            />
-            <span>{toast.message}</span>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (billingTermination === 'insufficient_funds') {
+  if (insufficientFunds) {
     return (
       <div className="teleop-container">
         <div className="robot-busy-modal">
@@ -986,7 +943,7 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
             // If user has enough credits now, allow them to continue
             // Otherwise they'll need to start a new session
             if (credits > 0) {
-              setBillingTermination(null);
+              setInsufficientFunds(false);
             }
           }}
         />
@@ -1480,7 +1437,7 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
           // If user has enough credits now, allow them to continue
           // Otherwise they'll need to start a new session
           if (credits > 0) {
-            setBillingTermination(null);
+            setInsufficientFunds(false);
           }
         }}
       />
