@@ -44,6 +44,10 @@ npx ampx sandbox secret set GOOGLE_CLIENT_SECRET
 npx ampx sandbox secret set STRIPE_SECRET_KEY
 npx ampx sandbox secret set FRONTEND_URL
 # Enter: http://localhost:5173
+
+# Cloudflare TURN (for WebRTC relay across firewalls/NAT)
+npx ampx sandbox secret set TURN_TOKEN_ID
+npx ampx sandbox secret set TURN_API_TOKEN
 ```
 
 Verify secrets are set:

@@ -508,11 +508,12 @@ export function useWebRTC(options: WebRTCOptions) {
           logger.log('[WEBRTC] Received connection ID:', msg.connectionId);
           myIdRef.current = msg.connectionId;
           
-          // Now start WebRTC connection
-          logger.log('[WEBRTC] Creating RTCPeerConnection for robot:', robotId);
-          const pc = new RTCPeerConnection({
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-          });
+          const iceServers: RTCIceServer[] = Array.isArray(msg.iceServers) && msg.iceServers.length > 0
+            ? msg.iceServers
+            : [{ urls: 'stun:stun.l.google.com:19302' }];
+
+          logger.log('[WEBRTC] Creating RTCPeerConnection for robot:', robotId, 'iceServers:', iceServers.length);
+          const pc = new RTCPeerConnection({ iceServers });
           pcRef.current = pc;
 
           // Set timeout for WebRTC connection establishment (15 seconds)
