@@ -178,22 +178,22 @@ export const CommandHQ = () => {
         setMembers(detail.members);
         setInvites(detail.invites);
       }
-
-      setRobots(getMockRobotsForOrg(orgId));
-      setSessions(getMockSessionsForOrg(orgId));
-      setLogs(getMockLogsForOrg(orgId));
-      setCommands(getMockRosCommandsForOrg(orgId));
-      setControllerConfigs(getMockControllerConfigsForOrg(orgId));
-      setLocationMappings(getMockLocationMappingsForOrg(orgId));
-      setKeyboardMappings(getMockKeyboardMappingsForOrg(orgId));
-      setDenyList(getMockDenyListForOrg(orgId));
-      setNotifRules(getMockNotificationRulesForOrg(orgId));
-      setNotifications(getMockNotificationsForOrg(orgId));
     } catch (err) {
       logger.error('CommandHQ: failed to load org data', err);
-    } finally {
-      setLoading(false);
     }
+
+    setRobots(getMockRobotsForOrg());
+    setSessions(getMockSessionsForOrg());
+    setLogs(getMockLogsForOrg());
+    setCommands(getMockRosCommandsForOrg());
+    setControllerConfigs(getMockControllerConfigsForOrg());
+    setLocationMappings(getMockLocationMappingsForOrg());
+    setKeyboardMappings(getMockKeyboardMappingsForOrg());
+    setDenyList(getMockDenyListForOrg());
+    setNotifRules(getMockNotificationRulesForOrg());
+    setNotifications(getMockNotificationsForOrg());
+
+    setLoading(false);
   }, [orgId]);
 
   useEffect(() => {

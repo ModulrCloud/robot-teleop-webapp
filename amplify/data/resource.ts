@@ -9,6 +9,7 @@ import { deleteRobotLambda } from "../functions/delete-robot/resource";
 import { manageRobotACL } from "../functions/manage-robot-acl/resource";
 import { listAccessibleRobots } from "../functions/list-accessible-robots/resource";
 import { getRobotStatus } from "../functions/get-robot-status/resource";
+import { checkUserRobotTrialConsumed } from "../functions/check-user-robot-trial-consumed/resource";
 import { createStripeCheckout } from "../functions/create-stripe-checkout/resource";
 import { createStripeConnectOnboardingLink } from "../functions/create-stripe-connect-onboarding-link/resource";
 import { stripeConnectOnboardingReturn } from "../functions/stripe-connect-onboarding-return/resource";
@@ -69,6 +70,10 @@ const RobotStatus = a.customType({
   status: a.string(),
 });
 
+const UserRobotTrialConsumedResult = a.customType({
+  consumed: a.boolean().required(),
+});
+
 const SessionResult = a.customType({
   id: a.string(),
   userId: a.string(),
@@ -79,6 +84,10 @@ const SessionResult = a.customType({
   endedAt: a.string(),
   durationSeconds: a.integer(),
   status: a.string(),
+  endReason: a.string(),
+  hourlyRateCredits: a.float(),
+  maxFreeSessionSeconds: a.integer(),
+  trialSeconds: a.integer(),
 });
 
 const schema = a.schema({
@@ -365,6 +374,12 @@ const schema = a.schema({
     isVerified: a.boolean().default(false), // Only verified robots can upload custom images
     // Pricing: Hourly rate in credits (before platform markup)
     hourlyRateCredits: a.float().default(100), // Default 100 credits/hour (editable by robot owner)
+    // When hourlyRateCredits is 0 (free): optional cap on session length in seconds. Omit/null = no limit (until billing enforces caps).
+    maxFreeSessionSeconds: a.integer(),
+    // When hourlyRateCredits > 0: optional trial length in seconds at session start. Omit/null = no trial (must stay in sync with Lambdas / updateRobotLambda).
+    trialSeconds: a.integer(),
+    // Paid + trial: when true (default), each customer gets one trial per robot (recorded on first paid minute). When false, trial applies every session.
+    trialOnePerCustomer: a.boolean().default(true),
     // Location fields
     city: a.string(),
     state: a.string(),
@@ -388,6 +403,16 @@ const schema = a.schema({
       allow.owner().to(["update", "delete"]),
       allow.authenticated().to(["read"]),
     ]),
+
+  /** Trial already used for this user on this robot (when Robot.trialOnePerCustomer). Lambda-only writes; no client GraphQL access. */
+  UserRobotTrialConsumption: a
+    .model({
+      userId: a.string().required(),
+      robotId: a.string().required(),
+      consumedAt: a.datetime().required(),
+    })
+    .identifier(["userId", "robotId"])
+    .authorization((allow) => [allow.groups(["ADMINS"]).to(["read", "delete"])]),
 
   // Modulr Approved certification request – partner requests certification, pays, then admin approves/rejects
   CertificationRequest: a.model({
@@ -463,7 +488,9 @@ const schema = a.schema({
     startedAt: a.datetime().required(),   // When session started
     endedAt: a.datetime(),                // When session ended
     durationSeconds: a.integer(),         // Total duration in seconds
-    status: a.string(),                   // 'active', 'completed', 'disconnected', 'insufficient_funds'
+    status: a.string(),                   // 'active', 'completed', 'disconnected', 'insufficient_funds', 'free_cap_exceeded'
+    /** Terminal cause: user_sessions_cleared | websocket_disconnect | stale_connection_cleanup | free_cap_exceeded | insufficient_funds | legacy_free_payment_close */
+    endReason: a.string(),
     // Cost tracking
     creditsCharged: a.float(),            // Total credits charged to user (includes markup) - final total when session ends
     creditsDeductedSoFar: a.float(),     // Cumulative credits deducted during active session (real-time billing)
@@ -471,6 +498,8 @@ const schema = a.schema({
     partnerEarnings: a.float(),           // Credits earned by partner (after markup)
     platformFee: a.float(),               // Platform markup in credits
     hourlyRateCredits: a.float(),        // Robot's hourly rate at time of session (snapshot)
+    maxFreeSessionSeconds: a.integer(), // Capped free session max length at session start (omit = unlimited free)
+    trialSeconds: a.integer(), // Paid robots: trial length at session start (0 = no trial); omit on legacy rows
   })
     .secondaryIndexes(index => [
       index("userId").name("userIdIndex"),
@@ -761,6 +790,9 @@ const schema = a.schema({
       model: a.string(),
       robotType: a.string(), // Robot type for default image: 'drone', 'humanoid', 'robodog', 'robot', 'rover', 'sub'
       hourlyRateCredits: a.float(), // Optional: hourly rate in credits (defaults to 100)
+      maxFreeSessionSeconds: a.integer(), // Optional: when free (0 rate), max session length in seconds
+      trialSeconds: a.integer(), // Optional: when paid (>0 rate), trial length in seconds (0 = none)
+      trialOnePerCustomer: a.boolean(), // Optional: default true when paid; false = trial every session
       enableAccessControl: a.boolean(), // Optional: if true, creates ACL with default users
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL
       imageUrl: a.string(),
@@ -784,6 +816,9 @@ const schema = a.schema({
       model: a.string(), // Optional: update model
       robotType: a.string(), // Optional: update robotType for default image
       hourlyRateCredits: a.float(), // Optional: update hourly rate in credits
+      maxFreeSessionSeconds: a.integer(), // Optional: cap free sessions (seconds); null removes cap
+      trialSeconds: a.integer(), // Optional: paid robots only; seconds of free trial (null removes)
+      trialOnePerCustomer: a.boolean(), // Optional: one trial per customer per robot (false = trial every session)
       enableAccessControl: a.boolean(), // Optional: update ACL (true = enable/update, false = disable/remove)
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL (only used if enableAccessControl is true)
       imageUrl: a.string(), // Optional: update imageUrl (only for verified robots)
@@ -873,6 +908,15 @@ const schema = a.schema({
     .returns(RobotStatus)
     .authorization(allow => [allow.authenticated()]) // Auth handled in Lambda (checks ACL)
     .handler(a.handler.function(getRobotStatus)),
+
+  checkUserRobotTrialConsumedLambda: a
+    .query()
+    .arguments({
+      robotId: a.string().required(),
+    })
+    .returns(UserRobotTrialConsumedResult)
+    .authorization(allow => [allow.authenticated()])
+    .handler(a.handler.function(checkUserRobotTrialConsumed)),
 
   createStripeCheckoutLambda: a
     .mutation()

@@ -123,6 +123,18 @@
   box-sizing: border-box;
 }
 
+.robot-detail-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.25rem;
+}
+
+.robot-detail-name-row .robot-detail-name {
+  margin: 0;
+}
+
 .robot-detail-name {
   font-size: 2.5rem;
   font-weight: 700;

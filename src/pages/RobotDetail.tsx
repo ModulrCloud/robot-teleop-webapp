@@ -8,6 +8,7 @@ import { Schema } from '../../amplify/data/resource';
 import { getUrl } from 'aws-amplify/storage';
 import { logger } from '../utils/logger';
 import { formatCreditsAsCurrencySync, fetchExchangeRates } from '../utils/credits';
+import { freeRobotCardLabel } from '../utils/freeSessionLimit';
 import { PurchaseCreditsModal } from '../components/PurchaseCreditsModal';
 import { RobotRating } from '../components/RobotRating';
 import { ReviewsDisplay } from '../components/ReviewsDisplay';
@@ -17,6 +18,7 @@ import { InputBindingsModal } from '../components/InputBindingsModal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { faArrowLeft, faMapMarkerAlt, faUser, faCircle, faStar, faCalendarAlt, faKeyboard, faCog, faTools, faLock } from '@fortawesome/free-solid-svg-icons';
+import { ModulrApprovedBadge } from '../components/ModulrApprovedBadge';
 import { isFeatureEnabled } from '../utils/featureFlags';
 import "./RobotDetail.css";
 
@@ -29,6 +31,10 @@ interface RobotDetailData {
   name?: string;
   description?: string;
   hourlyRateCredits?: number;
+  maxFreeSessionSeconds?: number | null;
+  trialSeconds?: number | null;
+  /** When false, trial repeats every session; when true/undefined, one trial per customer. */
+  trialOnePerCustomer?: boolean | null;
   city?: string;
   state?: string;
   country?: string;
@@ -36,6 +42,7 @@ interface RobotDetailData {
   robotType?: string;
   model?: string;
   averageRating?: number;
+  modulrApproved?: boolean;
 }
 
 const getRobotImage = (model: string, imageUrl?: string): string => {
@@ -83,6 +90,8 @@ export default function RobotDetail() {
   const [showInputBindingsModal, setShowInputBindingsModal] = useState(false);
   const [showPricingDetails, setShowPricingDetails] = useState(false);
   const servicesSubtotalCredits = 0;
+  /** True when this user already used one-time trial on this robot (one-per-customer robots only). */
+  const [viewerTrialConsumed, setViewerTrialConsumed] = useState<boolean | null>(null);
 
   // Load platform settings and user currency
   useEffect(() => {
@@ -208,6 +217,48 @@ export default function RobotDetail() {
 
     loadRobot();
   }, [robotId]);
+
+  // One-trial-per-customer: accurate copy for returning users (does not apply to anonymous or partner owner view)
+  useEffect(() => {
+    setViewerTrialConsumed(null);
+    if (!robot?.robotId || !user?.username) {
+      return;
+    }
+    if (isPartnerOwner) {
+      return;
+    }
+    if (robot.trialOnePerCustomer === false) {
+      return;
+    }
+    if (robot.trialSeconds == null || robot.trialSeconds <= 0 || !robot.hourlyRateCredits || robot.hourlyRateCredits <= 0) {
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await client.queries.checkUserRobotTrialConsumedLambda({
+          robotId: robot.robotId!,
+        });
+        if (cancelled) return;
+        setViewerTrialConsumed(res.data?.consumed === true);
+      } catch (err) {
+        logger.warn("checkUserRobotTrialConsumedLambda failed:", err);
+        if (!cancelled) setViewerTrialConsumed(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    robot?.robotId,
+    robot?.trialSeconds,
+    robot?.trialOnePerCustomer,
+    robot?.hourlyRateCredits,
+    user?.username,
+    isPartnerOwner,
+  ]);
 
   // Load robot status
   useEffect(() => {
@@ -393,14 +444,16 @@ export default function RobotDetail() {
   }
 
   const statusDisplay = getStatusDisplay();
-  // Calculate total hourly rate including platform markup (like Steam - show total price)
-  const baseRateCredits = robot.hourlyRateCredits ?? 100;
-  const totalRateCredits = baseRateCredits * (1 + platformMarkup / 100);
-  const hourlyRateFormatted = formatCreditsAsCurrencySync(
-    totalRateCredits,
-    userCurrency,
-    exchangeRates || undefined
-  );
+  // Paid: total hourly rate including platform markup. Free (0 credits): show label, not default 100.
+  const hourlyRateCreditsResolved = robot.hourlyRateCredits ?? 100;
+  const hourlyRateDisplayText =
+    robot.hourlyRateCredits === 0
+      ? freeRobotCardLabel(robot.maxFreeSessionSeconds ?? undefined)
+      : `${formatCreditsAsCurrencySync(
+          hourlyRateCreditsResolved * (1 + platformMarkup / 100),
+          userCurrency,
+          exchangeRates || undefined
+        )}/hour`;
 
   const locationParts = [robot.city, robot.state, robot.country].filter(Boolean);
   const locationDisplay = locationParts.length > 0 ? locationParts.join(', ') : 'Location not specified';
@@ -446,7 +499,10 @@ export default function RobotDetail() {
           </div>
 
           <div className="robot-info-section">
-            <h1 className="robot-detail-name">{robot.name || 'Unnamed Robot'}</h1>
+            <div className="robot-detail-name-row">
+              <h1 className="robot-detail-name">{robot.name || 'Unnamed Robot'}</h1>
+              {robot.modulrApproved && <ModulrApprovedBadge size="medium" />}
+            </div>
 
             {robot.description && (
               <p className="robot-detail-description">{robot.description}</p>
@@ -461,8 +517,32 @@ export default function RobotDetail() {
 
                 <div className="robot-meta-item">
                   <span className="robot-meta-label">Hourly Rate:</span>
-                  <span className="robot-meta-value price">{hourlyRateFormatted}/hour</span>
+                  <span className="robot-meta-value price">{hourlyRateDisplayText}</span>
                 </div>
+
+                {robot.hourlyRateCredits != null &&
+                  robot.hourlyRateCredits > 0 &&
+                  robot.trialSeconds != null &&
+                  robot.trialSeconds > 0 && (
+                    <div className="robot-meta-item">
+                      <span className="robot-meta-label">Free trial:</span>
+                      <span className="robot-meta-value">
+                        {user &&
+                        !isPartnerOwner &&
+                        robot.trialOnePerCustomer !== false &&
+                        viewerTrialConsumed === true ? (
+                          <>
+                            For your account, new sessions are billed from the start (you&apos;ve already used the
+                            free trial on this robot).
+                          </>
+                        ) : (
+                          <>
+                            First {Math.max(1, Math.round(robot.trialSeconds / 60))} minutes free, then billed
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  )}
 
                 <div className="robot-meta-item">
                   <span className="robot-meta-label">Status:</span>

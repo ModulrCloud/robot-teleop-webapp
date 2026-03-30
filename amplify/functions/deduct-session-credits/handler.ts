@@ -1,5 +1,6 @@
 import type { Schema } from "../../data/resource";
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { SESSION_END_REASON } from "../shared/session-end-reasons";
+import { DynamoDBClient, ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand, GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { randomUUID } from 'crypto';
 
@@ -15,6 +16,12 @@ const PLATFORM_SETTINGS_TABLE = process.env.PLATFORM_SETTINGS_TABLE!;
 
 // Default platform markup (30%) if not set
 const DEFAULT_PLATFORM_MARKUP_PERCENT = 30;
+
+function robotTrialOnePerCustomerFromRecord(robot: Record<string, unknown>): boolean {
+  const v = robot.trialOnePerCustomer;
+  if (v === false) return false;
+  return true;
+}
 
 export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = async (event) => {
   console.log("Deduct Session Credits request:", JSON.stringify(event, null, 2));
@@ -144,10 +151,85 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
       };
     }
 
-    const hourlyRateCredits = robot.hourlyRateCredits ?? 100;
+    const sessionHourlyRaw = session.hourlyRateCredits;
+    const hourlyRateCredits =
+      sessionHourlyRaw !== undefined && sessionHourlyRaw !== null && String(sessionHourlyRaw) !== ""
+        ? Number(sessionHourlyRaw)
+        : Number(robot.hourlyRateCredits ?? 100);
 
-    // If robot is free (0 hourly rate), skip credit deduction
+    const nowIso = new Date().toISOString();
+    const startedMs = startedAt ? new Date(String(startedAt)).getTime() : NaN;
+    const elapsedSeconds =
+      Number.isFinite(startedMs) ? Math.floor((Date.now() - startedMs) / 1000) : 0;
+
+    // If robot is free (0 hourly rate), enforce optional capped session length.
+    // Session snapshot: if maxFreeSessionSeconds is set (including 0 = unlimited), do not fall back to live robot.
     if (hourlyRateCredits === 0) {
+      const capFromSession = session.maxFreeSessionSeconds;
+      const sessionCapDefined =
+        capFromSession !== undefined && capFromSession !== null && String(capFromSession) !== "";
+
+      let maxCapSeconds = 0;
+      if (sessionCapDefined) {
+        const n = Number(capFromSession);
+        maxCapSeconds = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+      } else {
+        const capFromRobot = robot.maxFreeSessionSeconds;
+        const maxCapRaw =
+          capFromRobot !== undefined && capFromRobot !== null && String(capFromRobot) !== ""
+            ? Number(capFromRobot)
+            : 0;
+        maxCapSeconds = Number.isFinite(maxCapRaw) && maxCapRaw > 0 ? Math.floor(maxCapRaw) : 0;
+      }
+
+      if (maxCapSeconds > 0 && elapsedSeconds >= maxCapSeconds) {
+        try {
+          await docClient.send(
+            new UpdateCommand({
+              TableName: SESSION_TABLE_NAME,
+              Key: { id: sessionId },
+              UpdateExpression:
+                "SET #status = :status, #endReason = :endReason, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now",
+              ConditionExpression: "#status = :active",
+              ExpressionAttributeNames: { "#status": "status", "#endReason": "endReason" },
+              ExpressionAttributeValues: {
+                ":status": "free_cap_exceeded",
+                ":endReason": SESSION_END_REASON.FREE_CAP_EXCEEDED,
+                ":endedAt": nowIso,
+                ":duration": elapsedSeconds,
+                ":now": nowIso,
+                ":active": "active",
+              },
+            })
+          );
+        } catch (err) {
+          if (err instanceof ConditionalCheckFailedException) {
+            console.log("Free cap skip — session already terminal", { sessionId });
+            return {
+              statusCode: 200,
+              body: JSON.stringify({
+                success: true,
+                message: "Session already ended",
+                sessionId,
+                skipped: true,
+              }),
+            };
+          }
+          throw err;
+        }
+        return {
+          statusCode: 402,
+          body: JSON.stringify({
+            success: false,
+            terminationReason: "free_cap_exceeded",
+            message: "Free session time limit reached for this robot.",
+            sessionId,
+            maxFreeSessionSeconds: maxCapSeconds,
+            elapsedSeconds,
+          }),
+        };
+      }
+
       console.log("Robot is free (0 hourly rate), skipping credit deduction", { sessionId, robotId });
       return {
         statusCode: 200,
@@ -157,7 +239,47 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
           sessionId,
           creditsDeducted: 0,
           totalDeductedSoFar: creditsDeductedSoFar,
-          remainingCredits: 0, // We don't need to check user credits for free robots
+          remainingCredits: 0,
+        }),
+      };
+    }
+
+    // Paid path: trial-then-paid — snapshot trialSeconds on session (0 = no trial; omit on legacy = no trial)
+    const trialRaw = session.trialSeconds;
+    let trialSecondsSnapshot = 0;
+    if (trialRaw !== undefined && trialRaw !== null && String(trialRaw) !== "") {
+      const t = Number(trialRaw);
+      trialSecondsSnapshot = Number.isFinite(t) && t > 0 ? Math.floor(t) : 0;
+    }
+    if (elapsedSeconds < trialSecondsSnapshot) {
+      const trialCreditsQuery = await docClient.send(
+        new QueryCommand({
+          TableName: USER_CREDITS_TABLE,
+          IndexName: "userIdIndex",
+          KeyConditionExpression: "userId = :userId",
+          ExpressionAttributeValues: {
+            ":userId": userId,
+          },
+          Limit: 1,
+        })
+      );
+      const trialCreditsRecord = trialCreditsQuery.Items?.[0];
+      const trialRemaining = trialCreditsRecord?.credits ?? 0;
+      console.log("Session in trial window — no credits deducted", {
+        sessionId,
+        elapsedSeconds,
+        trialSecondsSnapshot,
+      });
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          success: true,
+          message: "Trial period - no credits deducted",
+          sessionId,
+          creditsDeducted: 0,
+          totalDeductedSoFar: creditsDeductedSoFar,
+          remainingCredits: trialRemaining,
+          trialActive: true,
         }),
       };
     }
@@ -217,21 +339,44 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
 
     // Check if user has enough credits for this minute
     if (currentCredits < totalCreditsForMinute) {
-      // Update session status to indicate insufficient funds
-      await docClient.send(
-        new UpdateCommand({
-          TableName: SESSION_TABLE_NAME,
-          Key: { id: sessionId },
-          UpdateExpression: 'SET #status = :status, updatedAt = :now',
-          ExpressionAttributeNames: {
-            '#status': 'status',
-          },
-          ExpressionAttributeValues: {
-            ':status': 'insufficient_funds',
-            ':now': new Date().toISOString(),
-          },
-        })
-      );
+      const insufficientAt = new Date().toISOString();
+      try {
+        await docClient.send(
+          new UpdateCommand({
+            TableName: SESSION_TABLE_NAME,
+            Key: { id: sessionId },
+            UpdateExpression:
+              "SET #status = :status, #endReason = :endReason, endedAt = :endedAt, durationSeconds = :duration, updatedAt = :now",
+            ConditionExpression: "#status = :active",
+            ExpressionAttributeNames: {
+              "#status": "status",
+              "#endReason": "endReason",
+            },
+            ExpressionAttributeValues: {
+              ":status": "insufficient_funds",
+              ":endReason": SESSION_END_REASON.INSUFFICIENT_FUNDS,
+              ":endedAt": insufficientAt,
+              ":duration": elapsedSeconds,
+              ":now": insufficientAt,
+              ":active": "active",
+            },
+          })
+        );
+      } catch (err) {
+        if (err instanceof ConditionalCheckFailedException) {
+          console.log("Insufficient funds skip — session already terminal", { sessionId });
+          return {
+            statusCode: 200,
+            body: JSON.stringify({
+              success: true,
+              message: "Session already ended",
+              sessionId,
+              skipped: true,
+            }),
+          };
+        }
+        throw err;
+      }
 
       return {
         statusCode: 402, // Payment Required
@@ -295,6 +440,37 @@ export const handler: Schema["deductSessionCreditsLambda"]["functionHandler"] = 
         },
       })
     );
+
+    const trialConsumptionTable = process.env.USER_ROBOT_TRIAL_CONSUMPTION_TABLE_NAME;
+    if (
+      trialConsumptionTable &&
+      robotTrialOnePerCustomerFromRecord(robot as Record<string, unknown>) &&
+      trialSecondsSnapshot > 0
+    ) {
+      const consumedAt = new Date().toISOString();
+      try {
+        await docClient.send(
+          new PutCommand({
+            TableName: trialConsumptionTable,
+            Item: {
+              userId,
+              robotId,
+              consumedAt,
+              createdAt: consumedAt,
+              updatedAt: consumedAt,
+              __typename: 'UserRobotTrialConsumption',
+            },
+          })
+        );
+      } catch (trialErr) {
+        console.warn("Record trial consumption failed (non-fatal)", {
+          sessionId,
+          userId,
+          robotId,
+          error: trialErr instanceof Error ? trialErr.message : String(trialErr),
+        });
+      }
+    }
 
     console.log("Successfully deducted credits for session:", {
       sessionId,

@@ -1,4 +1,5 @@
 import { useState, forwardRef, useImperativeHandle } from 'react'
+import { ModulrApprovedBadge } from './ModulrApprovedBadge'
 import './CardGridItem.css'
 
 export interface CardGridItemProps {
@@ -10,7 +11,8 @@ export interface CardGridItemProps {
   uuid?: string | undefined; // Optional UUID for identifying deletable items
   disabled?: boolean; // If true, robot is not accessible (grayed out, not clickable)
   hourlyRate?: string; // Formatted hourly rate (e.g., "$10.00/hour")
-  onClick?: (item: Omit<CardGridItemProps, 'onClick' | 'disabled' | 'location' | 'hourlyRate'>) => void;
+  modulrApproved?: boolean; // If true, show Modulr Approved certification badge
+  onClick?: (item: Omit<CardGridItemProps, 'onClick' | 'disabled' | 'location' | 'hourlyRate' | 'modulrApproved'>) => void;
 }
 
 export interface CardGridItemHandle {
@@ -18,7 +20,7 @@ export interface CardGridItemHandle {
   isSelected: boolean;
 }
 
-const CardGridItem = forwardRef<CardGridItemHandle, CardGridItemProps>(function CardGridItem({id, title, description, location, imageUrl, uuid, disabled, hourlyRate, onClick}, ref) {
+const CardGridItem = forwardRef<CardGridItemHandle, CardGridItemProps>(function CardGridItem({id, title, description, location, imageUrl, uuid, disabled, hourlyRate, modulrApproved, onClick}, ref) {
   const [isSelected, setIsSelected] = useState(false)
 
   useImperativeHandle(ref, () => ({
@@ -45,13 +47,20 @@ const CardGridItem = forwardRef<CardGridItemHandle, CardGridItemProps>(function 
       aria-disabled={disabled}
       title={disabled ? 'You do not have access to this robot' : undefined}
     >
+      {modulrApproved && (
+        <div className="card-grid-badge-wrap">
+          <ModulrApprovedBadge size="small" />
+        </div>
+      )}
       {imageUrl && (
         <div className="card-grid-image">
           <img src={imageUrl} alt={title} />
         </div>
       )}
       <div className="card-grid-content">
-        <h3>{title}</h3>
+        <div className="card-grid-title-row">
+          <h3>{title}</h3>
+        </div>
         {description && <p className="card-grid-description">{description}</p>}
         {hourlyRate && <p className="card-grid-price">{hourlyRate}</p>}
         {location && <p className="card-grid-location">{location}</p>}
