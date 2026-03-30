@@ -63,16 +63,6 @@ export function buildLocationCreateMessage(
   );
 }
 
-export function buildLocationNameOnlyMessage(
-  name: string,
-): Record<string, unknown> {
-  return buildDataChannelEnvelope(
-    'agent.location.create',
-    { name },
-    LOCATION_PROTOCOL_VERSION,
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Navigation messages (v0.4)
 // ---------------------------------------------------------------------------

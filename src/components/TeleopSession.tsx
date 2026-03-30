@@ -48,7 +48,6 @@ import {
   buildNavigationStartMessage,
   buildNavigationCancelMessage,
   buildLocationCreateMessage,
-  buildLocationNameOnlyMessage,
   type NavigationResponsePayload,
   type AgentErrorPayload,
 } from '../utils/dataChannelMessageFormat';
@@ -272,26 +271,18 @@ function LocationPanel({ sendMessage, addListener, disabled, showToast }: Locati
 
   const handleGoHome = () => {
     clearNavTimeout();
-    const locMsg = buildLocationNameOnlyMessage('home');
-    sendMessage(locMsg);
-    logger.log('[LOC] Sent name-only location: home');
+    const navMsg = buildNavigationStartMessage('home');
+    const corrId = navMsg.id as string;
+    setActiveNavigation({ correlationId: corrId, productId: '__home__', productName: 'Home', status: 'pending' });
+    sendMessage(navMsg);
+    logger.log('[NAV] Sent agent.navigation.start: home');
 
-    setActiveNavigation({ correlationId: '', productId: '__home__', productName: 'Home', status: 'pending' });
-
-    setTimeout(() => {
-      const navMsg = buildNavigationStartMessage('home');
-      const corrId = navMsg.id as string;
-      setActiveNavigation(prev => prev ? { ...prev, correlationId: corrId } : null);
-      sendMessage(navMsg);
-      logger.log('[NAV] Sent agent.navigation.start: home');
-
-      navTimeoutRef.current = setTimeout(() => {
-        if (activeNavigationRef.current?.correlationId === corrId) {
-          setActiveNavigation(null);
-          showToast('Navigation timed out — no response from robot', 'warning', 4000);
-        }
-      }, NAV_TIMEOUT_MS);
-    }, LOC_REGISTER_DELAY_MS);
+    navTimeoutRef.current = setTimeout(() => {
+      if (activeNavigationRef.current?.correlationId === corrId) {
+        setActiveNavigation(null);
+        showToast('Navigation timed out — no response from robot', 'warning', 4000);
+      }
+    }, NAV_TIMEOUT_MS);
   };
 
   const isNavigating = activeNavigation !== null;
