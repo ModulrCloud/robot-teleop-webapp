@@ -93,10 +93,14 @@ import {
   getMockLocationMappingsForOrg,
   getMockKeyboardMappingsForOrg,
 } from "../mocks/organization";
-import { fetchOrgDetail, fetchUserOrganizations, inviteMember, createOrganization } from "../hooks/useOrganizationData";
+import { fetchOrgDetail, fetchUserOrganizations, inviteMember, createOrganization, fetchOrgRobots, revokeInvite } from "../hooks/useOrganizationData";
 import { logger } from "../utils/logger";
 import type { SimulationNodeDatum, SimulationLinkDatum } from "d3-force";
 import "./CommandHQ.css";
+
+function getMemberName(m: OrgMember): string {
+  return m.displayName || m.userEmail?.split("@")[0] || m.userEmail || m.userId;
+}
 
 /** Node shape used by d3-force in BubbleView (id required for forceLink; x, y set by simulation). */
 interface CommandHQSimNode extends SimulationNodeDatum {
@@ -170,19 +174,48 @@ export const CommandHQ = () => {
   const loadOrgData = useCallback(async (showLoader = true) => {
     if (!orgId) return;
     if (showLoader) setLoading(true);
+    let loadedMembers: OrgMember[] = [];
     try {
       const detail = await fetchOrgDetail(orgId);
       if (detail) {
         setOrg(detail.org);
         setRoles(detail.roles);
-        setMembers(detail.members);
+        loadedMembers = detail.members.map(m => {
+          if (m.userId === user?.username && !m.displayName && !m.userEmail && user?.email) {
+            return { ...m, userEmail: user.email, displayName: user.email.split("@")[0] };
+          }
+          return m;
+        });
+        setMembers(loadedMembers);
         setInvites(detail.invites);
       }
     } catch (err) {
       logger.error('CommandHQ: failed to load org data', err);
     }
 
-    setRobots(getMockRobotsForOrg());
+    const liveRobots = await fetchOrgRobots(orgId);
+    if (liveRobots.length > 0 && loadedMembers.length > 0) {
+      const memberIds = new Set(loadedMembers.map(m => m.userId));
+      const ownerMember = loadedMembers.find(m => m.roleName === 'Owner');
+
+      const filtered = liveRobots
+        .filter(r => {
+          if (r.assignedOperators.length === 0) return true;
+          return r.assignedOperators.some(op => memberIds.has(op));
+        })
+        .map(r => {
+          if (r.assignedOperators.length === 0 && ownerMember) {
+            return { ...r, assignedOperators: [ownerMember.userId] };
+          }
+          return r;
+        });
+
+      setRobots(filtered.length > 0 ? filtered : getMockRobotsForOrg());
+    } else if (liveRobots.length > 0) {
+      setRobots(liveRobots);
+    } else {
+      setRobots(getMockRobotsForOrg());
+    }
     setSessions(getMockSessionsForOrg());
     setLogs(getMockLogsForOrg());
     setCommands(getMockRosCommandsForOrg());
@@ -194,7 +227,7 @@ export const CommandHQ = () => {
     setNotifications(getMockNotificationsForOrg());
 
     setLoading(false);
-  }, [orgId]);
+  }, [orgId, user?.username, user?.email]);
 
   useEffect(() => {
     loadOrgData();
@@ -206,6 +239,7 @@ export const CommandHQ = () => {
     if (!currentRole) return false;
     return currentRole.permissions.includes("*") || currentRole.permissions.includes(perm);
   };
+
 
   if (loading) {
     return (
@@ -327,7 +361,13 @@ export const CommandHQ = () => {
             />
           )}
           {activeTab === "robots" && (
-            <RobotsTab robots={robots} members={members} canManage={hasPermission("robots:manage")} />
+            <RobotsTab
+              robots={robots}
+              members={members}
+              canManage={hasPermission("robots:manage")}
+              orgId={orgId!}
+              onRefresh={() => loadOrgData(false)}
+            />
           )}
           {activeTab === "sessions" && <SessionsTab sessions={sessions} logs={logs} />}
           {activeTab === "customizations" && (
@@ -397,9 +437,9 @@ function OverviewTab({
           </div>
           {members.map((m) => (
             <div key={m.id} className="chq-row">
-              <div className="chq-avatar-sm">{(m.userEmail || m.userId).charAt(0).toUpperCase()}</div>
+              <div className="chq-avatar-sm">{getMemberName(m).charAt(0).toUpperCase()}</div>
               <div className="chq-row-text">
-                <span className="chq-row-primary" title={m.userEmail || m.userId}>{m.userEmail || m.userId}</span>
+                <span className="chq-row-primary" title={m.userEmail || m.userId}>{getMemberName(m)}</span>
                 <span className="chq-row-secondary">{m.roleName}</span>
               </div>
               <FontAwesomeIcon icon={faCircle} className={`chq-dot chq-dot--${m.status}`} />
@@ -501,8 +541,11 @@ function MembersTab({
                   <tr className={`chq-tr ${isOpen ? "chq-tr--open" : ""}`} onClick={() => toggleExpand(m.id)}>
                     <td>
                       <div className="chq-cell-user">
-                        <div className="chq-avatar-sm">{(m.userEmail || m.userId).charAt(0).toUpperCase()}</div>
-                        <span title={m.userEmail || m.userId}>{m.userEmail || m.userId}</span>
+                        <div className="chq-avatar-sm">{getMemberName(m).charAt(0).toUpperCase()}</div>
+                        <div className="chq-cell-user-info">
+                          <span className="chq-row-primary" title={m.userEmail || m.userId}>{getMemberName(m)}</span>
+                          {m.userEmail && <span className="chq-row-secondary">{m.userEmail}</span>}
+                        </div>
                       </div>
                     </td>
                     <td><span className={`chq-role-badge chq-priority-${role?.priority ?? 3}`}>{m.roleName}</span></td>
@@ -564,7 +607,7 @@ function MembersTab({
         </table>
       </div>
 
-      {invites.length > 0 && (
+      {invites.filter(i => i.status === "pending").length > 0 && (
         <>
           <h3 className="chq-section-label">Pending Invites</h3>
           <div className="chq-panel">
@@ -573,21 +616,30 @@ function MembersTab({
                 <tr>
                   <th>Email</th>
                   <th>Role</th>
-                  <th>Status</th>
                   <th>Expires</th>
+                  {canManage && <th>Actions</th>}
                 </tr>
               </thead>
               <tbody>
-                {invites.map((inv) => (
+                {invites.filter(i => i.status === "pending").map((inv) => (
                   <tr key={inv.id} className="chq-tr">
                     <td>{inv.email}</td>
                     <td><span className="chq-role-badge">{inv.roleName || roles.find((r) => r.id === inv.roleId)?.name}</span></td>
-                    <td>
-                      <span className={`chq-status chq-status--${inv.status}`}>
-                        <FontAwesomeIcon icon={faCircle} /> {inv.status}
-                      </span>
-                    </td>
                     <td className="chq-dimmed">{new Date(inv.expiresAt).toLocaleDateString()}</td>
+                    {canManage && (
+                      <td>
+                        <button
+                          className="chq-btn-revoke"
+                          onClick={async () => {
+                            if (!confirm('Revoke this invite?')) return;
+                            const result = await revokeInvite(org.id, inv.id);
+                            if (result.success) onRefresh();
+                          }}
+                        >
+                          Revoke
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -687,14 +739,22 @@ function RobotsTab({
   robots,
   members,
   canManage,
+  orgId,
 }: {
   robots: OrgRobot[];
   members: OrgMember[];
   canManage: boolean;
+  orgId: string;
+  onRefresh: () => void;
 }) {
   const [layout, setLayout] = useState<RobotsLayout>("diagram");
+  const nav = useNavigate();
   const onlineCount = robots.filter((r) => r.connectionStatus === "online").length;
   const errorCount = robots.filter((r) => r.connectionStatus === "error").length;
+
+  const handleAddRobot = () => {
+    nav(`/create-robot-listing?orgId=${orgId}`);
+  };
 
   if (robots.length === 0) {
     return (
@@ -703,6 +763,11 @@ function RobotsTab({
           <div className="chq-placeholder-icon"><FontAwesomeIcon icon={faRobot} /></div>
           <h3>No robots yet</h3>
           <p className="chq-muted">Add your first robot to start managing your fleet.</p>
+          {canManage && (
+            <button className="chq-btn chq-btn-primary" style={{ marginTop: '1rem' }} onClick={handleAddRobot}>
+              <FontAwesomeIcon icon={faPlus} /> Add Robot
+            </button>
+          )}
         </div>
       </section>
     );
@@ -719,7 +784,7 @@ function RobotsTab({
           </p>
         </div>
         {canManage && (
-          <button className="chq-btn chq-btn-primary">
+          <button className="chq-btn chq-btn-primary" onClick={handleAddRobot}>
             <FontAwesomeIcon icon={faPlus} /> Add Robot
           </button>
         )}
@@ -826,9 +891,9 @@ function DiagramView({ robots, members }: { robots: OrgRobot[]; members: OrgMemb
             const hasRobot = robots.some((r) => r.assignedOperators.includes(m.userId));
             return (
               <div key={m.id} className={`chq-diagram-node ${!hasRobot ? "chq-diagram-node--dim" : ""}`} data-member={m.userId}>
-                <div className="chq-avatar-sm">{(m.userEmail || m.userId).charAt(0).toUpperCase()}</div>
+                <div className="chq-avatar-sm">{getMemberName(m).charAt(0).toUpperCase()}</div>
                 <div className="chq-row-text">
-                  <span className="chq-row-primary">{m.userEmail || m.userId}</span>
+                  <span className="chq-row-primary">{getMemberName(m)}</span>
                   <span className="chq-row-secondary">{m.roleName}</span>
                 </div>
                 <FontAwesomeIcon icon={faCircle} className={`chq-dot chq-dot--${m.status}`} />
@@ -891,7 +956,7 @@ function BubbleView({ robots, members }: { robots: OrgRobot[]; members: OrgMembe
           id: `m-${m.userId}`,
           type: "member",
           r,
-          label: (m.userEmail || m.userId).split("@")[0],
+          label: getMemberName(m),
           sub: m.roleName || "",
           color: roleColors[role] || roleColors[3],
           glow: "rgba(255,255,255,0.06)",
@@ -1021,7 +1086,7 @@ function BubbleView({ robots, members }: { robots: OrgRobot[]; members: OrgMembe
 
 function ListView({ robots, members }: { robots: OrgRobot[]; members: OrgMember[] }) {
   const getOperatorNames = (ops: string[]) =>
-    ops.map((id) => members.find((m) => m.userId === id)?.userEmail?.split("@")[0] || id).join(", ");
+    ops.map((id) => { const m = members.find((mem) => mem.userId === id); return m ? getMemberName(m) : id; }).join(", ");
 
   return (
     <div className="chq-panel">
@@ -1926,7 +1991,10 @@ function NotificationsTab({
   const enabledRules = rules.filter((r) => r.isEnabled).length;
 
   const getRoleName = (id: string) => roles.find((r) => r.id === id)?.name || id;
-  const getMemberEmail = (id: string) => members.find((m) => m.userId === id)?.userEmail || id;
+  const getMemberEmail = (id: string) => {
+    const m = members.find((mem) => mem.userId === id);
+    return m ? getMemberName(m) : id;
+  };
 
   const channelIcon = (ch: string) => {
     if (ch === "email") return faEnvelope;

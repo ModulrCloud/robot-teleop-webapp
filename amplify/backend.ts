@@ -1293,12 +1293,14 @@ manageOrganizationCdkFunction.addEnvironment('ORG_MEMBER_TABLE', tables.OrgMembe
 manageOrganizationCdkFunction.addEnvironment('USER_CREDITS_TABLE', tables.UserCredits.tableName);
 manageOrganizationCdkFunction.addEnvironment('CREDIT_TRANSACTIONS_TABLE', tables.CreditTransaction.tableName);
 manageOrganizationCdkFunction.addEnvironment('PLATFORM_SETTINGS_TABLE', tables.PlatformSettings.tableName);
+manageOrganizationCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
 tables.Organization.grantReadWriteData(manageOrganizationFunction);
 tables.OrgRole.grantReadWriteData(manageOrganizationFunction);
 tables.OrgMember.grantReadWriteData(manageOrganizationFunction);
 tables.UserCredits.grantReadWriteData(manageOrganizationFunction);
 tables.CreditTransaction.grantWriteData(manageOrganizationFunction);
 tables.PlatformSettings.grantReadData(manageOrganizationFunction);
+userPool.grant(manageOrganizationFunction, 'cognito-idp:AdminGetUser');
 manageOrganizationFunction.addToRolePolicy(new PolicyStatement({
   actions: ['dynamodb:Query'],
   resources: [
@@ -1343,10 +1345,18 @@ manageOrgMemberCdkFunction.addEnvironment('ORG_TABLE', tables.Organization.table
 manageOrgMemberCdkFunction.addEnvironment('ORG_ROLE_TABLE', tables.OrgRole.tableName);
 manageOrgMemberCdkFunction.addEnvironment('ORG_MEMBER_TABLE', tables.OrgMember.tableName);
 manageOrgMemberCdkFunction.addEnvironment('ORG_INVITE_TABLE', tables.OrgInvite.tableName);
+manageOrgMemberCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+manageOrgMemberCdkFunction.addEnvironment('PARTNER_TABLE', tables.Partner.tableName);
+manageOrgMemberCdkFunction.addEnvironment('ROBOT_TABLE', tables.Robot.tableName);
+manageOrgMemberCdkFunction.addEnvironment('ORG_ROBOT_TABLE', tables.OrgRobot.tableName);
 tables.Organization.grantReadData(manageOrgMemberFunction);
 tables.OrgRole.grantReadData(manageOrgMemberFunction);
 tables.OrgMember.grantReadWriteData(manageOrgMemberFunction);
 tables.OrgInvite.grantReadWriteData(manageOrgMemberFunction);
+tables.Partner.grantReadData(manageOrgMemberFunction);
+tables.Robot.grantReadData(manageOrgMemberFunction);
+tables.OrgRobot.grantReadWriteData(manageOrgMemberFunction);
+userPool.grant(manageOrgMemberFunction, 'cognito-idp:ListUsers', 'cognito-idp:AdminListGroupsForUser', 'cognito-idp:AdminGetUser');
 manageOrgMemberFunction.addToRolePolicy(new PolicyStatement({
   actions: ['dynamodb:Query'],
   resources: [
@@ -1355,6 +1365,9 @@ manageOrgMemberFunction.addToRolePolicy(new PolicyStatement({
     `${tables.OrgInvite.tableArn}/index/orgIdIndex`,
     `${tables.OrgInvite.tableArn}/index/emailIndex`,
     `${tables.OrgInvite.tableArn}/index/inviteCodeIndex`,
+    `${tables.Partner.tableArn}/index/cognitoUsernameIndex`,
+    `${tables.OrgRobot.tableArn}/index/orgIdIndex`,
+    `${tables.OrgRobot.tableArn}/index/platformRobotIdIndex`,
   ],
 }));
 

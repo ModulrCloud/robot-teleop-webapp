@@ -346,6 +346,14 @@ html {
   margin-right: 0.25rem;
 }
 
+.viewport-stat svg.stat-icon {
+  width: 1em;
+  height: 1em;
+  overflow: visible;
+  display: inline-block;
+  vertical-align: -0.125em;
+}
+
 .viewport-stat .stat-icon.good {
   color: #4ade80;
 }
@@ -993,6 +1001,50 @@ html {
   cursor: not-allowed;
 }
 
+.location-home-row {
+  padding: 0.4rem 0;
+  display: flex;
+  align-items: center;
+}
+
+.location-home-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: rgba(76, 175, 80, 0.1);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  border-radius: 8px;
+  color: #66bb6a;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.location-home-btn:hover:not(:disabled) {
+  background: rgba(76, 175, 80, 0.2);
+  border-color: rgba(76, 175, 80, 0.5);
+  color: #81c784;
+}
+
+.location-home-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.location-home-navigating {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  background: rgba(76, 175, 80, 0.08);
+  border: 1px solid rgba(76, 175, 80, 0.25);
+  border-radius: 8px;
+}
+
 .location-search-row {
   padding: 0;
 }
@@ -1160,6 +1212,31 @@ html {
 .location-go-btn.cancel:hover {
   background: rgba(220, 53, 69, 0.25);
   border-color: rgba(220, 53, 69, 0.6);
+}
+
+.location-nav-active {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.location-nav-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: #ffc107;
+  white-space: nowrap;
+  animation: location-pulse 1.5s ease-in-out infinite;
+}
+
+.location-nav-elapsed {
+  font-family: 'SF Mono', 'Monaco', monospace;
+  font-size: 0.7rem;
+  color: rgba(255, 193, 7, 0.7);
+  min-width: 2.2em;
+  text-align: right;
 }
 
 @keyframes location-pulse {

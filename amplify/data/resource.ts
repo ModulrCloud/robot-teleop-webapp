@@ -651,6 +651,7 @@ const schema = a.schema({
     members: a.hasMany('OrgMember', 'orgId'),
     roles: a.hasMany('OrgRole', 'orgId'),
     invites: a.hasMany('OrgInvite', 'orgId'),
+    robots: a.hasMany('OrgRobot', 'orgId'),
     createdAt: a.datetime().required(),
     updatedAt: a.datetime(),
   })
@@ -691,6 +692,7 @@ const schema = a.schema({
     org: a.belongsTo('Organization', 'orgId'),
     userId: a.string().required(),
     userEmail: a.string(),
+    displayName: a.string(),
     roleId: a.id().required(),
     role: a.belongsTo('OrgRole', 'roleId'),
     status: a.string().default('active'),
@@ -713,6 +715,8 @@ const schema = a.schema({
     email: a.string().required(),
     roleId: a.id().required(),
     invitedBy: a.string().required(),
+    inviteeUsername: a.string(),
+    inviteeDisplayName: a.string(),
     status: a.string().default('pending'),
     inviteCode: a.string().required(),
     expiresAt: a.datetime().required(),
@@ -727,6 +731,26 @@ const schema = a.schema({
       allow.authenticated().to(['read']),
       allow.owner(),
       allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
+    ]),
+
+  OrgRobot: a.model({
+    id: a.id(),
+    orgId: a.id().required(),
+    org: a.belongsTo('Organization', 'orgId'),
+    platformRobotId: a.id().required(),
+    addedBy: a.string(),
+    assignedOperators: a.string().array(),
+    createdAt: a.datetime().required(),
+    updatedAt: a.datetime(),
+  })
+    .secondaryIndexes(index => [
+      index("orgId").name("orgIdIndex"),
+      index("platformRobotId").name("platformRobotIdIndex"),
+    ])
+    .authorization(allow => [
+      allow.authenticated().to(['read']),
+      allow.owner(),
+      allow.groups(['ADMINS', 'ORGANIZATIONS']).to(['create', 'read', 'update', 'delete']),
     ]),
 
   manageOrganizationLambda: a
@@ -752,6 +776,7 @@ const schema = a.schema({
       roleId: a.string(),
       targetUserId: a.string(),
       inviteCode: a.string(),
+      inviteId: a.string(),
     })
     .returns(a.json())
     .authorization(allow => [allow.authenticated()])
@@ -804,7 +829,7 @@ const schema = a.schema({
       longitude: a.float(),
     })
     .returns(a.string())
-    .authorization(allow => [allow.group('PARTNERS'), allow.group('ADMINS')])
+    .authorization(allow => [allow.group('PARTNERS'), allow.group('ADMINS'), allow.group('ORGANIZATIONS')])
     .handler(a.handler.function(setRobotLambda)),
 
   updateRobotLambda: a
