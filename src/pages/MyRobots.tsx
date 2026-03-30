@@ -15,9 +15,11 @@ import {
   faClock,
   faDollarSign
 } from '@fortawesome/free-solid-svg-icons';
+import { ModulrApprovedBadge } from '../components/ModulrApprovedBadge';
 import outputs from '../../amplify_outputs.json';
 import './MyRobots.css';
 import { logger } from '../utils/logger';
+import { freeRobotCardLabel } from '../utils/freeSessionLimit';
 
 const client = generateClient<Schema>();
 
@@ -32,6 +34,9 @@ interface Robot {
   city?: string;
   state?: string;
   country?: string;
+  modulrApproved?: boolean;
+  hourlyRateCredits?: number;
+  maxFreeSessionSeconds?: number | null;
 }
 
 interface RobotStatus {
@@ -178,8 +183,13 @@ export default function MyRobots() {
             city: robot.city || undefined,
             state: robot.state || undefined,
             country: robot.country || undefined,
+            modulrApproved: robot.modulrApproved === true,
+            hourlyRateCredits: robot.hourlyRateCredits ?? undefined,
+            maxFreeSessionSeconds: robot.maxFreeSessionSeconds ?? undefined,
           }));
 
+        // Sort: Modulr Approved robots first
+        robotsList.sort((a, b) => (b.modulrApproved ? 1 : 0) - (a.modulrApproved ? 1 : 0));
         setRobots(robotsList);
 
         // Load statuses and revenues for all robots
@@ -429,6 +439,17 @@ export default function MyRobots() {
                 <span className="detail-value">{selectedRobot.description || 'No description'}</span>
               </div>
 
+              <div className="detail-row">
+                <span className="detail-label">Pricing:</span>
+                <span className="detail-value">
+                  {selectedRobot.hourlyRateCredits !== undefined && selectedRobot.hourlyRateCredits !== null && selectedRobot.hourlyRateCredits > 0
+                    ? `${selectedRobot.hourlyRateCredits} credits/hour (before markup)`
+                    : selectedRobot.hourlyRateCredits === 0
+                      ? freeRobotCardLabel(selectedRobot.maxFreeSessionSeconds)
+                      : '—'}
+                </span>
+              </div>
+
               {selectedRobot.city || selectedRobot.state || selectedRobot.country ? (
                 <div className="detail-row">
                   <span className="detail-label">Location:</span>
@@ -570,6 +591,7 @@ export default function MyRobots() {
                   <div className="robot-card-title">
                     <FontAwesomeIcon icon={faRobot} />
                     <h3>{robot.name}</h3>
+                    {robot.modulrApproved && <ModulrApprovedBadge size="small" />}
                   </div>
                   <div className={`robot-status-badge ${status.isOnline ? 'online' : status.status === 'pending' ? 'pending' : 'offline'}`}>
                     <FontAwesomeIcon 
@@ -583,6 +605,16 @@ export default function MyRobots() {
                   </div>
                 </div>
                 <p className="robot-card-description">{robot.description || 'No description'}</p>
+                {robot.hourlyRateCredits === 0 && (
+                  <p className="robot-card-pricing" style={{ marginTop: '0.35rem', fontSize: '0.85rem', color: 'var(--text-muted, #888)' }}>
+                    {freeRobotCardLabel(robot.maxFreeSessionSeconds)}
+                  </p>
+                )}
+                {robot.hourlyRateCredits !== undefined && robot.hourlyRateCredits !== null && robot.hourlyRateCredits > 0 && (
+                  <p className="robot-card-pricing" style={{ marginTop: '0.35rem', fontSize: '0.85rem', color: 'var(--text-muted, #888)' }}>
+                    {robot.hourlyRateCredits} credits/hour
+                  </p>
+                )}
                 {robotRevenues[robot.robotId] !== undefined && (
                   <div className="robot-card-revenue" style={{
                     marginTop: '0.5rem',

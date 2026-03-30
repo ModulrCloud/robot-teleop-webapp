@@ -224,8 +224,8 @@ export function getMockInvitesForOrg(orgId: string): OrgInvite[] {
   return MOCK_INVITES.filter((i) => i.orgId === orgId);
 }
 
-export function getMockRobotsForOrg(orgId: string): OrgRobot[] {
-  return MOCK_ROBOTS.filter((r) => r.orgId === orgId);
+export function getMockRobotsForOrg(): OrgRobot[] {
+  return MOCK_ROBOTS;
 }
 
 export const MOCK_SESSIONS: OrgSession[] = [
@@ -802,28 +802,28 @@ export const MOCK_NOTIFICATIONS: OrgNotification[] = [
   },
 ];
 
-export function getMockRosCommandsForOrg(orgId: string): RosCommand[] {
-  return MOCK_ROS_COMMANDS.filter((c) => c.orgId === orgId);
+export function getMockRosCommandsForOrg(): RosCommand[] {
+  return MOCK_ROS_COMMANDS;
 }
 
-export function getMockDenyListForOrg(orgId: string): DenyListEntry[] {
-  return MOCK_DENY_LIST.filter((d) => d.orgId === orgId);
+export function getMockDenyListForOrg(): DenyListEntry[] {
+  return MOCK_DENY_LIST;
 }
 
-export function getMockNotificationRulesForOrg(orgId: string): NotificationRule[] {
-  return MOCK_NOTIFICATION_RULES.filter((r) => r.orgId === orgId);
+export function getMockNotificationRulesForOrg(): NotificationRule[] {
+  return MOCK_NOTIFICATION_RULES;
 }
 
-export function getMockNotificationsForOrg(orgId: string): OrgNotification[] {
-  return MOCK_NOTIFICATIONS.filter((n) => n.orgId === orgId);
+export function getMockNotificationsForOrg(): OrgNotification[] {
+  return MOCK_NOTIFICATIONS;
 }
 
-export function getMockSessionsForOrg(orgId: string): OrgSession[] {
-  return MOCK_SESSIONS.filter((s) => s.orgId === orgId);
+export function getMockSessionsForOrg(): OrgSession[] {
+  return MOCK_SESSIONS;
 }
 
-export function getMockLogsForOrg(orgId: string): OrgLog[] {
-  return MOCK_LOGS.filter((l) => l.orgId === orgId);
+export function getMockLogsForOrg(): OrgLog[] {
+  return MOCK_LOGS;
 }
 
 export const MOCK_CONTROLLER_CONFIGS: ControllerConfig[] = [
@@ -1139,14 +1139,14 @@ export const MOCK_KEYBOARD_MAPPINGS: KeyboardMapping[] = [
   },
 ];
 
-export function getMockControllerConfigsForOrg(orgId: string): ControllerConfig[] {
-  return MOCK_CONTROLLER_CONFIGS.filter((c) => c.orgId === orgId);
+export function getMockControllerConfigsForOrg(): ControllerConfig[] {
+  return MOCK_CONTROLLER_CONFIGS;
 }
 
-export function getMockLocationMappingsForOrg(orgId: string): LocationMapping[] {
-  return MOCK_LOCATION_MAPPINGS.filter((l) => l.orgId === orgId);
+export function getMockLocationMappingsForOrg(): LocationMapping[] {
+  return MOCK_LOCATION_MAPPINGS;
 }
 
-export function getMockKeyboardMappingsForOrg(orgId: string): KeyboardMapping[] {
-  return MOCK_KEYBOARD_MAPPINGS.filter((k) => k.orgId === orgId);
+export function getMockKeyboardMappingsForOrg(): KeyboardMapping[] {
+  return MOCK_KEYBOARD_MAPPINGS;
 }

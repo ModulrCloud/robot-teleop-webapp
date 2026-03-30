@@ -6,7 +6,20 @@ import { Schema } from '../../amplify/data/resource';
 import { LoadingWheel } from '../components/LoadingWheel';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useAuthStatus } from "../hooks/useAuthStatus";
-import { getCurrencyInfo, creditsToCurrencySync, currencyToCreditsSync, fetchExchangeRates, type CurrencyCode } from '../utils/credits';
+import { getCurrencyInfo, creditsToCurrencySync, fetchExchangeRates, type CurrencyCode } from '../utils/credits';
+import {
+  resolveFreeSessionCapForSave,
+  MAX_FREE_SESSION_MINUTES,
+  sanitizeFreeSessionMinutesTyping,
+  resolveTrialMinutesForSave,
+  MAX_TRIAL_MINUTES,
+} from '../utils/freeSessionLimit';
+import {
+  hourlyCurrencyToCredits,
+  sanitizeHourlyCurrencyTyping,
+  HOURLY_CURRENCY_FORMAT_ERROR,
+  formatHourlyDisplayAmount,
+} from '../utils/hourlyRateInput';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { logger } from '../utils/logger';
 import {
@@ -67,6 +80,12 @@ export const CreateRobotListing = () => {
 
   // Raw input value as string to allow free typing
   const [hourlyRateInput, setHourlyRateInput] = useState<string>('1.00');
+  /** When hourly rate is $0; empty = unlimited free session length. */
+  const [freeSessionMaxMinutes, setFreeSessionMaxMinutes] = useState('');
+  /** When hourly rate is paid; empty = no trial. */
+  const [trialSessionMinutes, setTrialSessionMinutes] = useState('');
+  /** Paid robots: when true, each customer gets one trial per robot (default). */
+  const [trialOnePerCustomer, setTrialOnePerCustomer] = useState(true);
   const { user } = useAuthStatus();
   const [currencyDisplay, setCurrencyDisplay] = useState<string>('USD');
   const [currencyCode, setCurrencyCode] = useState<CurrencyCode>('USD');
@@ -90,7 +109,7 @@ export const CreateRobotListing = () => {
         setCurrencyCode('USD');
         // Convert default credits to USD for display
         const usdValue = creditsToCurrencySync(robotListing.hourlyRateCredits, 'USD', exchangeRates);
-        setHourlyRateInput(usdValue.toFixed(2));
+        setHourlyRateInput(formatHourlyDisplayAmount(usdValue));
         return;
       }
 
@@ -122,7 +141,7 @@ export const CreateRobotListing = () => {
 
         // Convert current credits value to new currency for display
         const currencyValue = creditsToCurrencySync(robotListing.hourlyRateCredits, preferredCurrency, exchangeRates);
-        setHourlyRateInput(currencyValue.toFixed(2));
+        setHourlyRateInput(formatHourlyDisplayAmount(currencyValue));
       } catch (err) {
         logger.error("Error loading currency preference:", err);
         // Fallback to USD on error
@@ -143,12 +162,19 @@ export const CreateRobotListing = () => {
     const { name, value, type } = event.target;
     const checked = (event.target as HTMLInputElement).checked;
 
-    // Handle hourly rate input - just let user type freely, no validation while typing
-    if (type === 'number' && name === 'hourlyRateCredits') {
-      // Clear any previous error
+    if (name === 'hourlyRateInput') {
       setHourlyRateError(null);
-      // Allow free typing - store as string
-      setHourlyRateInput(value);
+      const s = sanitizeHourlyCurrencyTyping(value);
+      setHourlyRateInput(s);
+      const n = parseFloat(s);
+      if (!Number.isNaN(n) && n > 0) {
+        setFreeSessionMaxMinutes('');
+      }
+      if (!Number.isNaN(n) && n === 0) {
+        setTrialSessionMinutes('');
+        setTrialOnePerCustomer(true);
+      }
+      return;
     } else {
       setRobotListing(prev => ({
         ...prev,
@@ -163,20 +189,32 @@ export const CreateRobotListing = () => {
     setSuccess(undefined);
     setHourlyRateError(null);
 
-    // Validate hourly rate before proceeding
-    const hourlyRateValue = parseFloat(hourlyRateInput);
-    if (isNaN(hourlyRateValue) || hourlyRateValue < 0) {
-      setHourlyRateError('Enter a valid number');
+    const rateResult = hourlyCurrencyToCredits(hourlyRateInput, currencyCode, exchangeRates);
+    if (!rateResult.ok) {
+      setHourlyRateError(rateResult.message);
       setIsLoading(false);
       return;
     }
+    const creditsValue = rateResult.credits;
 
-    // Convert currency value to credits for storage
-    const creditsValue = currencyToCreditsSync(hourlyRateValue, currencyCode, exchangeRates);
-    if (isNaN(creditsValue) || creditsValue < 0) {
-      setHourlyRateError('Enter a valid number');
-      setIsLoading(false);
-      return;
+    let maxFreeSeconds: number | undefined;
+    let trialSecondsArg: number | undefined;
+    if (creditsValue === 0) {
+      const capRes = resolveFreeSessionCapForSave(freeSessionMaxMinutes);
+      if (!capRes.ok) {
+        setHourlyRateError(capRes.message);
+        setIsLoading(false);
+        return;
+      }
+      maxFreeSeconds = capRes.seconds === null ? undefined : capRes.seconds;
+    } else {
+      const trialRes = resolveTrialMinutesForSave(trialSessionMinutes);
+      if (!trialRes.ok) {
+        setHourlyRateError(trialRes.message);
+        setIsLoading(false);
+        return;
+      }
+      trialSecondsArg = trialRes.seconds === null ? undefined : trialRes.seconds;
     }
 
     const emailList = robotListing.enableAccessControl && robotListing.allowedUserEmails
@@ -192,6 +230,9 @@ export const CreateRobotListing = () => {
       model: robotListing.robotType, // Use robotType as model for backwards compatibility
       robotType: robotListing.robotType, // New field for default image selection
       hourlyRateCredits: creditsValue,
+      ...(maxFreeSeconds != null ? { maxFreeSessionSeconds: maxFreeSeconds } : {}),
+      ...(trialSecondsArg != null ? { trialSeconds: trialSecondsArg } : {}),
+      ...(creditsValue > 0 ? { trialOnePerCustomer } : {}),
       enableAccessControl: robotListing.enableAccessControl,
       additionalAllowedUsers: emailList,
       city: robotListing.city || undefined,
@@ -243,6 +284,10 @@ export const CreateRobotListing = () => {
       latitude: "",
       longitude: "",
     });
+    setFreeSessionMaxMinutes('');
+    setTrialSessionMinutes('');
+    setTrialOnePerCustomer(true);
+    setHourlyRateInput('1.00');
   };
 
   return (
@@ -350,27 +395,94 @@ export const CreateRobotListing = () => {
               </label>
               <input
                 id="hourly-rate"
-                type="number"
-                name="hourlyRateCredits"
+                type="text"
+                inputMode="decimal"
+                name="hourlyRateInput"
+                autoComplete="off"
                 value={hourlyRateInput}
                 onChange={handleInputChange}
                 placeholder="1.00"
-                min="0"
-                step="0.01"
                 required
                 disabled={isLoading}
                 className={hourlyRateError ? 'error' : ''}
+                aria-invalid={hourlyRateError ? true : undefined}
               />
               {hourlyRateError && (
-                <div className="form-error" style={{ color: '#f44336', marginTop: '0.5rem', fontSize: '0.875rem' }}>
+                <div className="form-error" style={{ color: '#f44336', marginTop: '0.5rem', fontSize: '0.875rem' }} role="alert">
                   {hourlyRateError}
                 </div>
               )}
               <small className="form-help-text">
-                Set the hourly rate in your preferred currency that clients will pay to use this robot.
-                The platform will add a markup on top of this rate.
+                {HOURLY_CURRENCY_FORMAT_ERROR} The platform adds a markup on top of this rate.
               </small>
             </div>
+
+            {(() => {
+              const parsed = hourlyCurrencyToCredits(hourlyRateInput, currencyCode, exchangeRates);
+              if (!parsed.ok) return null;
+              if (parsed.credits === 0) {
+                return (
+                  <div className="form-group">
+                    <label htmlFor="create-free-session-max">
+                      Max free session length <span className="optional">(optional)</span>
+                    </label>
+                    <input
+                      id="create-free-session-max"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={6}
+                      value={freeSessionMaxMinutes}
+                      onChange={(e) => {
+                        setHourlyRateError(null);
+                        setFreeSessionMaxMinutes(sanitizeFreeSessionMinutesTyping(e.target.value));
+                      }}
+                      placeholder="No limit"
+                      disabled={isLoading}
+                    />
+                    <small className="form-help-text">
+                      Whole minutes (1–{MAX_FREE_SESSION_MINUTES}) per session at $0/hour. Leave empty for no limit.
+                    </small>
+                  </div>
+                );
+              }
+              return (
+                <div className="form-group">
+                  <label htmlFor="create-trial-minutes">
+                    Free trial length <span className="optional">(optional)</span>
+                  </label>
+                  <input
+                    id="create-trial-minutes"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    maxLength={6}
+                    value={trialSessionMinutes}
+                    onChange={(e) => {
+                      setHourlyRateError(null);
+                      setTrialSessionMinutes(sanitizeFreeSessionMinutesTyping(e.target.value));
+                    }}
+                    placeholder="No trial"
+                    disabled={isLoading}
+                  />
+                  <small className="form-help-text">
+                    Whole minutes free before billing (1–{MAX_TRIAL_MINUTES}). Users need credits for at least one paid minute to connect. Leave empty for no trial.
+                  </small>
+                  <label className="checkbox-label" style={{ marginTop: '0.75rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={trialOnePerCustomer}
+                      onChange={(e) => setTrialOnePerCustomer(e.target.checked)}
+                      disabled={isLoading}
+                    />
+                    <span>Limit free trial to once per customer (for this robot)</span>
+                  </label>
+                  <small className="form-help-text">
+                    When unchecked, every session gets the trial period again. When checked, after a customer&apos;s first paid minute on this robot, later sessions have no trial.
+                  </small>
+                </div>
+              );
+            })()}
 
           </div>
 
