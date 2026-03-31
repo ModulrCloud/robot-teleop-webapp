@@ -490,9 +490,15 @@ describe('normalizeNewProtocol (Stage 2)', () => {
       expect(out.version).toBe('0.0');
       expect(out.payload).toEqual({ supportedVersions: ['0.0', '0.1'] });
     });
-    it('returns platform messages as-is for modulr-v0 (welcome, session-locked)', () => {
-      const welcome = { type: 'welcome', connectionId: 'C-1' };
-      expect(formatOutboundForConnection(welcome, 'modulr-v0', '0.0')).toEqual(welcome);
+    it('wraps welcome in signalling.welcome envelope for modulr-v0', () => {
+      const welcome = { type: 'welcome', connectionId: 'C-1', iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+      const out = formatOutboundForConnection(welcome, 'modulr-v0', '0.0');
+      expect(out.type).toBe('signalling.welcome');
+      expect(out.version).toBe('0.0');
+      expect((out.payload as Record<string, unknown>).connectionId).toBe('C-1');
+      expect((out.payload as Record<string, unknown>).iceServers).toEqual([{ urls: 'stun:stun.l.google.com:19302' }]);
+    });
+    it('returns remaining platform messages as-is for modulr-v0 (session-locked)', () => {
       const locked = { type: 'session-locked', robotId: 'r-1', lockedBy: 'user@x.com' };
       expect(formatOutboundForConnection(locked, 'modulr-v0', '0.0')).toEqual(locked);
     });

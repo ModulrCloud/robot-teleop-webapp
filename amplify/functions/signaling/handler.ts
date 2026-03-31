@@ -34,6 +34,9 @@ const WS_MGMT_ENDPOINT = process.env.WS_MGMT_ENDPOINT!; // HTTPS management API
 const USER_POOL_ID = process.env.USER_POOL_ID!;
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1';
 
+const TURN_TOKEN_ID = process.env.TURN_TOKEN_ID;
+const TURN_API_TOKEN = process.env.TURN_API_TOKEN;
+
 // PKI-pending connections that never complete auth are closed after this (ms). Env override: PKI_PENDING_TIMEOUT_MS.
 const PKI_PENDING_TIMEOUT_MS = Number(process.env.PKI_PENDING_TIMEOUT_MS) || 120_000; // 2 minutes
 
@@ -51,6 +54,40 @@ const SETTLE_SESSION_PAYMENT_FUNCTION_NAME = process.env.SETTLE_SESSION_PAYMENT_
 // Cognito JWKS URL - public keys for verifying JWT signatures
 const JWKS_URL = `https://cognito-idp.${AWS_REGION}.amazonaws.com/${USER_POOL_ID}/.well-known/jwks.json`;
 const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
+
+// ---------------------------------
+// TURN / ICE helpers
+// ---------------------------------
+
+interface IceServer { urls: string | string[]; username?: string; credential?: string }
+
+const GOOGLE_STUN: IceServer = { urls: 'stun:stun.l.google.com:19302' };
+const FALLBACK_ICE: IceServer[] = [GOOGLE_STUN];
+
+/** Fetch ephemeral TURN creds from Cloudflare. Falls back to Google STUN on any failure. */
+async function fetchTurnCredentials(): Promise<IceServer[]> {
+  if (!TURN_TOKEN_ID || !TURN_API_TOKEN) return FALLBACK_ICE;
+  try {
+    const res = await fetch(
+      `https://rtc.live.cloudflare.com/v1/turn/keys/${TURN_TOKEN_ID}/credentials/generate-ice-servers`,
+      {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${TURN_API_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ttl: 86400 }),
+      },
+    );
+    if (!res.ok) {
+      console.warn('[TURN] Cloudflare API error:', res.status, await res.text());
+      return FALLBACK_ICE;
+    }
+    const { iceServers } = await res.json() as { iceServers?: IceServer[] };
+    if (!iceServers?.length) return FALLBACK_ICE;
+    return [...iceServers, GOOGLE_STUN];
+  } catch (err) {
+    console.warn('[TURN] Failed to fetch credentials:', err);
+    return FALLBACK_ICE;
+  }
+}
 
 // ---------------------------------
 // Types
@@ -210,7 +247,7 @@ type InternalOutboundMessage =
   | { type: 'error'; error: string; message: string; robotId?: string; currentCredits?: number; requiredCredits?: number }
   | { type: 'session-locked'; robotId: string; lockedBy: string }
   | { type: 'session-created'; sessionId: string; robotProtocol?: ConnectionProtocol }
-  | { type: 'welcome'; connectionId: string }
+  | { type: 'welcome'; connectionId: string; iceServers?: IceServer[] }
   | { type: 'monitor-confirmed'; robotId: string; message: string }
   | { type: 'admin-takeover'; robotId: string; by: string }
   | { type: 'signalling.capabilities'; supportedVersions: readonly string[] }
@@ -287,9 +324,13 @@ export function formatOutboundForConnection(
     const m = msg as { agentId?: string; correlationId?: string };
     if (m.correlationId) envelope.correlationId = m.correlationId;
     envelope.payload = { agentId: m.agentId ?? '' };
+  } else if (envelopeType === 'welcome') {
+    envelope.type = 'signalling.welcome';
+    const m = msg as { connectionId?: string; iceServers?: IceServer[] };
+    envelope.payload = { connectionId: m.connectionId ?? '' };
+    if (m.iceServers?.length) (envelope.payload as Record<string, unknown>).iceServers = m.iceServers;
   } else {
-    // Platform messages (welcome, session-locked, session-created, monitor-confirmed, admin-takeover)
-    // Keep in legacy top-level format per plan; new-protocol clients receive same shape
+    // Remaining platform messages (session-locked, session-created, monitor-confirmed, admin-takeover)
     return msg as Record<string, unknown>;
   }
   return envelope;
@@ -1748,7 +1789,8 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
                 );
                 console.log('[CONNECTION_SUCCESS]', { connectionId, mode: 'dev-no-token' });
                 try {
-                    await postFormatted(connectionId, { type: 'welcome', connectionId });
+                    const iceServers = await fetchTurnCredentials();
+                    await postFormatted(connectionId, { type: 'welcome', connectionId, iceServers });
                 } catch (e) {
                     console.warn('Failed to send welcome message:', e);
                 }
@@ -1772,7 +1814,8 @@ async function onConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyRe
             );
             console.log('[CONNECTION_SUCCESS]', { connectionId, kind: 'client_pki_pending' });
             try {
-                await postFormatted(connectionId, { type: 'welcome', connectionId });
+                const iceServers = await fetchTurnCredentials();
+                await postFormatted(connectionId, { type: 'welcome', connectionId, iceServers });
             } catch (e) {
                 console.warn('Failed to send welcome message:', e);
             }
@@ -3015,13 +3058,15 @@ export async function handler(
     return errorResponse(401, 'Complete PKI authentication first');
   }
 
-  // Handle 'ready' message - send back connection ID
+  // Handle 'ready' message - send back connection ID + ephemeral TURN credentials
   if (raw?.type === 'ready') {
     console.log('[READY_MESSAGE]', { connectionId });
     try {
+      const iceServers = await fetchTurnCredentials();
       await postFormatted(connectionId, {
         type: 'welcome',
         connectionId: connectionId,
+        iceServers,
       });
       return { statusCode: 200, body: 'ok' };
     } catch (e) {
