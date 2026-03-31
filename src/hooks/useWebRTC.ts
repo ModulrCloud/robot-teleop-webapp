@@ -498,18 +498,20 @@ export function useWebRTC(options: WebRTCOptions) {
           return;
         }
 
-        // Handle welcome message with our connection ID
-        if (msg.type === 'welcome' && msg.connectionId) {
+        // Handle welcome message (signalling.welcome envelope + legacy fallback)
+        const isWelcome = msg.type === 'signalling.welcome' || msg.type === 'welcome';
+        const welcomePayload = msg.type === 'signalling.welcome' ? msg.payload : msg;
+        if (isWelcome && welcomePayload?.connectionId) {
           if (welcomeTimeoutRef.current) {
             clearTimeout(welcomeTimeoutRef.current);
             welcomeTimeoutRef.current = null;
           }
           
-          logger.log('[WEBRTC] Received connection ID:', msg.connectionId);
-          myIdRef.current = msg.connectionId;
+          logger.log('[WEBRTC] Received connection ID:', welcomePayload.connectionId);
+          myIdRef.current = welcomePayload.connectionId;
           
-          const iceServers: RTCIceServer[] = Array.isArray(msg.iceServers) && msg.iceServers.length > 0
-            ? msg.iceServers
+          const iceServers: RTCIceServer[] = Array.isArray(welcomePayload.iceServers) && welcomePayload.iceServers.length > 0
+            ? welcomePayload.iceServers
             : [{ urls: 'stun:stun.l.google.com:19302' }];
 
           logger.log('[WEBRTC] Creating RTCPeerConnection for robot:', robotId, 'iceServers:', iceServers.length);

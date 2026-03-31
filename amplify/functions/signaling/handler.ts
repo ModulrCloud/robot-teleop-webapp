@@ -324,9 +324,13 @@ export function formatOutboundForConnection(
     const m = msg as { agentId?: string; correlationId?: string };
     if (m.correlationId) envelope.correlationId = m.correlationId;
     envelope.payload = { agentId: m.agentId ?? '' };
+  } else if (envelopeType === 'welcome') {
+    envelope.type = 'signalling.welcome';
+    const m = msg as { connectionId?: string; iceServers?: IceServer[] };
+    envelope.payload = { connectionId: m.connectionId ?? '' };
+    if (m.iceServers?.length) (envelope.payload as Record<string, unknown>).iceServers = m.iceServers;
   } else {
-    // Platform messages (welcome, session-locked, session-created, monitor-confirmed, admin-takeover)
-    // Keep in legacy top-level format per plan; new-protocol clients receive same shape
+    // Remaining platform messages (session-locked, session-created, monitor-confirmed, admin-takeover)
     return msg as Record<string, unknown>;
   }
   return envelope;

@@ -96,8 +96,9 @@ async function fetchIceServersFromSignaling(wsUrl: string): Promise<RTCIceServer
     ws.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data);
-        if (msg.type === "welcome" && Array.isArray(msg.iceServers) && msg.iceServers.length > 0) {
-          finish(msg.iceServers);
+        const p = msg.type === "signalling.welcome" ? msg.payload : msg.type === "welcome" ? msg : null;
+        if (p && Array.isArray(p.iceServers) && p.iceServers.length > 0) {
+          finish(p.iceServers);
         }
       } catch { /* */ }
     };
