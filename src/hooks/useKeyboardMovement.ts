@@ -17,6 +17,21 @@ export interface UseKeyboardMovementOptions {
   escWorksInAllModes?: boolean;
 }
 
+// Ramp-up config: speed increases from MIN to MAX over RAMP_MS while key is held
+const FORWARD_MIN = 0.1;
+const FORWARD_MAX = 0.5;
+const TURN_MIN = 0.2;
+const TURN_MAX = 1.0;
+const RAMP_MS = 800;
+const TICK_MS = 50;
+
+const WASD = ['KeyW', 'KeyA', 'KeyS', 'KeyD'];
+
+function ramp(holdMs: number, min: number, max: number): number {
+  const t = Math.min(holdMs / RAMP_MS, 1);
+  return min + (max - min) * t;
+}
+
 export function useKeyboardMovement({
   enabled = true,
   onInput,
@@ -26,7 +41,9 @@ export function useKeyboardMovement({
   escWorksInAllModes = true,
 }: UseKeyboardMovementOptions) {
   const pressedKeysRef = useRef<Set<string>>(new Set());
+  const keyTimestamps = useRef<Map<string, number>>(new Map());
   const lastInputRef = useRef<KeyboardMovementInput>({ forward: 0, turn: 0 });
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [pressedKeys, setPressedKeys] = useState<string[]>([]);
 
   const isEditableTarget = useCallback((target: EventTarget | null) => {
@@ -50,36 +67,52 @@ export function useKeyboardMovement({
 
   const calculateMovement = useCallback((): KeyboardMovementInput => {
     const keys = pressedKeysRef.current;
+    const now = Date.now();
     let forward = 0;
     let turn = 0;
 
-    if (keys.has('KeyW')) forward += 0.5;
-    if (keys.has('KeyS')) forward -= 0.5;
+    const held = (key: string) => now - (keyTimestamps.current.get(key) ?? now);
 
-    if (keys.has('KeyA')) turn -= 1.0;
-    if (keys.has('KeyD')) turn += 1.0;
+    if (keys.has('KeyW')) forward += ramp(held('KeyW'), FORWARD_MIN, FORWARD_MAX);
+    if (keys.has('KeyS')) forward -= ramp(held('KeyS'), FORWARD_MIN, FORWARD_MAX);
+    if (keys.has('KeyA')) turn -= ramp(held('KeyA'), TURN_MIN, TURN_MAX);
+    if (keys.has('KeyD')) turn += ramp(held('KeyD'), TURN_MIN, TURN_MAX);
 
     return { forward, turn };
   }, []);
 
-  const updateMovement = useCallback(() => {
+  const emitMovement = useCallback(() => {
     const movement = calculateMovement();
-    
-    if (
-      movement.forward !== lastInputRef.current.forward ||
-      movement.turn !== lastInputRef.current.turn
-    ) {
-      lastInputRef.current = movement;
-      
-      if (movement.forward === 0 && movement.turn === 0) {
-        if (onStop) {
-          onStop();
-        }
-      } else {
-        onInput(movement);
-      }
+    lastInputRef.current = movement;
+    if (movement.forward === 0 && movement.turn === 0) {
+      onStop?.();
+    } else {
+      onInput(movement);
     }
   }, [calculateMovement, onInput, onStop]);
+
+  const startTick = useCallback(() => {
+    if (tickRef.current) return;
+    tickRef.current = setInterval(emitMovement, TICK_MS);
+  }, [emitMovement]);
+
+  const stopTick = useCallback(() => {
+    if (tickRef.current) {
+      clearInterval(tickRef.current);
+      tickRef.current = null;
+    }
+  }, []);
+
+  const clearAll = useCallback(() => {
+    pressedKeysRef.current.clear();
+    keyTimestamps.current.clear();
+    setPressedKeys([]);
+    stopTick();
+    if (lastInputRef.current.forward !== 0 || lastInputRef.current.turn !== 0) {
+      lastInputRef.current = { forward: 0, turn: 0 };
+      onStop?.();
+    }
+  }, [stopTick, onStop]);
 
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
     if (event.code === 'Escape') {
@@ -101,25 +134,21 @@ export function useKeyboardMovement({
       return;
     }
 
-    if (controlMode !== 'keyboard') {
-      return;
-    }
+    if (controlMode !== 'keyboard' || !enabled) return;
 
-    if (!enabled) {
-      return;
-    }
+    if (WASD.includes(event.code)) {
+      if (isEditableTarget(event.target)) return;
+      event.preventDefault();
 
-    if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) {
-      if (isEditableTarget(event.target)) {
-        return;
+      if (!pressedKeysRef.current.has(event.code)) {
+        pressedKeysRef.current.add(event.code);
+        keyTimestamps.current.set(event.code, Date.now());
+        updatePressedKeysState();
       }
-      event.preventDefault(); // Prevent default browser behavior
-      
-      pressedKeysRef.current.add(event.code);
-      updatePressedKeysState();
-      updateMovement();
+      emitMovement();
+      startTick();
     }
-  }, [enabled, controlMode, onEndSession, updateMovement, escWorksInAllModes, updatePressedKeysState, isEditableTarget]);
+  }, [enabled, controlMode, onEndSession, emitMovement, startTick, escWorksInAllModes, updatePressedKeysState, isEditableTarget]);
 
   const handleKeyUp = useCallback((event: KeyboardEvent) => {
     if (event.code === 'Escape') {
@@ -131,21 +160,22 @@ export function useKeyboardMovement({
       return;
     }
 
-    // Always process WASD keyup: remove key and update movement so we send stop when the key
-    // is released, even if focus moved to an input/textarea or control mode changed. This
-    // prevents the robot from "sticking" when keyup was previously skipped (e.g. release
-    // while focus was in an editable).
-    if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) {
+    // Always process WASD keyup to prevent the robot from "sticking" when
+    // focus moved to an input/textarea or control mode changed mid-press.
+    if (WASD.includes(event.code)) {
       pressedKeysRef.current.delete(event.code);
+      keyTimestamps.current.delete(event.code);
       updatePressedKeysState();
-      updateMovement();
-      // Only preventDefault when we "own" the key (keyboard mode, not in an input) so we
-      // don't steal keyup from someone typing in a text field.
+
+      const hasMovementKeys = WASD.some(k => pressedKeysRef.current.has(k));
+      if (!hasMovementKeys) stopTick();
+      emitMovement();
+
       if (enabled && controlMode === 'keyboard' && !isEditableTarget(event.target)) {
         event.preventDefault();
       }
     }
-  }, [enabled, controlMode, updateMovement, escWorksInAllModes, updatePressedKeysState, isEditableTarget]);
+  }, [enabled, controlMode, emitMovement, stopTick, escWorksInAllModes, updatePressedKeysState, isEditableTarget]);
 
   useEffect(() => {
     const shouldListenForEsc = escWorksInAllModes || controlMode === 'keyboard';
@@ -155,36 +185,12 @@ export function useKeyboardMovement({
       window.addEventListener('keydown', handleKeyDown);
       window.addEventListener('keyup', handleKeyUp);
     } else {
-      pressedKeysRef.current.clear();
-      setPressedKeys([]);
-      if (lastInputRef.current.forward !== 0 || lastInputRef.current.turn !== 0) {
-        lastInputRef.current = { forward: 0, turn: 0 };
-        if (onStop) {
-          onStop();
-        }
-      }
+      clearAll();
       return;
     }
 
-    const handleBlur = () => {
-      pressedKeysRef.current.clear();
-      setPressedKeys([]);
-      lastInputRef.current = { forward: 0, turn: 0 };
-      if (onStop) {
-        onStop();
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        pressedKeysRef.current.clear();
-        setPressedKeys([]);
-        lastInputRef.current = { forward: 0, turn: 0 };
-        if (onStop) {
-          onStop();
-        }
-      }
-    };
+    const handleBlur = () => clearAll();
+    const handleVisibilityChange = () => { if (document.hidden) clearAll(); };
 
     window.addEventListener('blur', handleBlur);
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -194,14 +200,9 @@ export function useKeyboardMovement({
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      
-      pressedKeysRef.current.clear();
-      lastInputRef.current = { forward: 0, turn: 0 };
-      if (onStop) {
-        onStop();
-      }
+      clearAll();
     };
-  }, [enabled, controlMode, handleKeyDown, handleKeyUp, onStop, escWorksInAllModes]);
+  }, [enabled, controlMode, handleKeyDown, handleKeyUp, clearAll, escWorksInAllModes]);
 
   return {
     isActive: pressedKeys.length > 0,
