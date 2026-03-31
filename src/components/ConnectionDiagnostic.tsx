@@ -22,11 +22,9 @@ const client = generateClient<Schema>();
 const WSS_TIMEOUT_MS = 8000;
 const WEBRTC_TIMEOUT_MS = 15000;
 const STUN_GATHERING_TIMEOUT_MS = 5000;
-const STUN_HOST = "stun.l.google.com";
-const STUN_PORT = 19302;
-const DEFAULT_STUN = { urls: `stun:${STUN_HOST}:${STUN_PORT}` };
+const DEFAULT_STUN: RTCIceServer = { urls: "stun:stun.l.google.com:19302" };
 
-/** Wait for ICE gathering to complete (or timeout) so SDP includes candidates. Timeout avoids hanging when STUN is blocked. */
+/** Wait for ICE gathering to complete (or timeout). */
 function waitForIceGathering(pc: RTCPeerConnection, timeoutMs = STUN_GATHERING_TIMEOUT_MS): Promise<void> {
   return new Promise((resolve) => {
     if (pc.iceGatheringState === "complete") {
@@ -69,10 +67,44 @@ function getWsUrl(): string {
   return (import.meta as unknown as { env?: { VITE_WS_URL?: string } }).env?.VITE_WS_URL ?? "";
 }
 
-function getTurnUrl(): string {
-  const env = import.meta as unknown as { env?: { VITE_TURN_URL?: string } };
-  const custom = outputs?.custom?.signaling as { turnUrl?: string } | undefined;
-  return custom?.turnUrl ?? env?.env?.VITE_TURN_URL ?? "";
+/** Fetch ephemeral ICE servers (STUN+TURN) from the signaling welcome message. */
+async function fetchIceServersFromSignaling(wsUrl: string): Promise<RTCIceServer[]> {
+  if (!wsUrl) return [DEFAULT_STUN];
+
+  let url = wsUrl;
+  try {
+    const session = await fetchAuthSession();
+    const token = session.tokens?.idToken?.toString();
+    if (token) url = `${wsUrl}?token=${encodeURIComponent(token)}`;
+  } catch { /* continue without token */ }
+
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (servers: RTCIceServer[]) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { ws?.close(); } catch { /* */ }
+      resolve(servers);
+    };
+
+    const timer = setTimeout(() => finish([DEFAULT_STUN]), WSS_TIMEOUT_MS);
+    let ws: WebSocket;
+    try { ws = new WebSocket(url); } catch { resolve([DEFAULT_STUN]); return; }
+
+    ws.onopen = () => ws.send(JSON.stringify({ type: "ready" }));
+    ws.onmessage = (ev) => {
+      try {
+        const msg = JSON.parse(ev.data);
+        const p = msg.type === "signalling.welcome" ? msg.payload : msg.type === "welcome" ? msg : null;
+        if (p && Array.isArray(p.iceServers) && p.iceServers.length > 0) {
+          finish(p.iceServers);
+        }
+      } catch { /* */ }
+    };
+    ws.onerror = () => finish([DEFAULT_STUN]);
+    ws.onclose = () => finish([DEFAULT_STUN]);
+  });
 }
 
 export function ConnectionDiagnostic() {
@@ -184,8 +216,8 @@ export function ConnectionDiagnostic() {
         status: "ok",
         durationMs: Date.now() - start,
         message: hasSrflxOrRelay
-          ? `Reachable (UDP ${STUN_PORT})`
-          : `No srflx — port ${STUN_PORT} may be blocked or server unreachable`,
+          ? "Reachable (UDP 19302)"
+          : "No srflx — port 19302 may be blocked or server unreachable",
       };
     } catch (err) {
       try {
@@ -196,27 +228,22 @@ export function ConnectionDiagnostic() {
       logger.error("Connection diagnostic STUN check failed:", err);
       return {
         status: "fail",
-        message: `Port ${STUN_PORT} unreachable (firewall, UDP block, or server down)`,
+        message: "Port 19302 unreachable (firewall, UDP block, or server down)",
         durationMs: Date.now() - start,
       };
     }
   }, []);
 
-  const runTurnCheck = useCallback(async (): Promise<{ status: CheckStatus; message?: string; durationMs?: number }> => {
-    const turnUrl = getTurnUrl();
+  const runTurnCheck = useCallback(async (signalingIceServers: RTCIceServer[]): Promise<{ status: CheckStatus; message?: string; durationMs?: number }> => {
     const start = Date.now();
-    if (!turnUrl) {
-      return { status: "ok", message: "Not configured", durationMs: 0 };
+    const hasTurnServer = signalingIceServers.some((s) => {
+      const urls = Array.isArray(s.urls) ? s.urls : [s.urls];
+      return urls.some((u) => u.startsWith("turn:") || u.startsWith("turns:"));
+    });
+    if (!hasTurnServer) {
+      return { status: "ok", message: "Not configured (no TURN URLs from signaling server)", durationMs: Date.now() - start };
     }
-    const env = import.meta as unknown as { env?: { VITE_TURN_USERNAME?: string; VITE_TURN_CREDENTIAL?: string } };
-    const custom = outputs?.custom?.signaling as { turnUsername?: string; turnCredential?: string } | undefined;
-    const username = custom?.turnUsername ?? env?.env?.VITE_TURN_USERNAME ?? undefined;
-    const credential = custom?.turnCredential ?? env?.env?.VITE_TURN_CREDENTIAL ?? undefined;
-    const iceServers: RTCIceServer[] =
-      username != null && credential != null
-        ? [{ urls: turnUrl, username, credential }]
-        : [{ urls: turnUrl }];
-    const pc = new RTCPeerConnection({ iceServers });
+    const pc = new RTCPeerConnection({ iceServers: signalingIceServers });
     try {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -233,7 +260,7 @@ export function ConnectionDiagnostic() {
       return {
         status: "ok",
         durationMs: Date.now() - start,
-        message: hasRelay ? "Reachable (relay)" : "No relay (TURN may be blocked or misconfigured)",
+        message: hasRelay ? "Reachable (relay)" : "No relay candidates (TURN may be blocked or credentials expired)",
       };
     } catch (err) {
       try {
@@ -372,7 +399,10 @@ export function ConnectionDiagnostic() {
       if (completed === 6) setRunning(false);
     };
 
-    // Run all six in parallel; update results as each completes (streaming)
+    // Fetch ephemeral ICE servers from signaling (needed for TURN check)
+    const iceServersPromise = fetchIceServersFromSignaling(wsUrl);
+
+    // Run all six checks; update results as each completes (streaming)
     runApiCheck()
       .then((apiResult) => setResults((prev) => ({ ...prev, api: apiResult })))
       .catch((err) => {
@@ -405,7 +435,8 @@ export function ConnectionDiagnostic() {
       })
       .finally(onSettle);
 
-    runTurnCheck()
+    iceServersPromise
+      .then((iceServers) => runTurnCheck(iceServers))
       .then((turnResult) => setResults((prev) => ({ ...prev, turn: turnResult })))
       .catch((err) => {
         logger.error("Connection diagnostic TURN check failed:", err);
@@ -429,7 +460,7 @@ export function ConnectionDiagnostic() {
       `API: ${results.api.status === "ok" ? "OK" : results.api.status === "fail" ? "FAIL" : results.api.status}${results.api.durationMs != null ? ` (${results.api.durationMs}ms)` : ""}${results.api.message ? ` - ${results.api.message}` : ""}`,
       `Backend (API + DB): ${results.backend.status === "ok" ? "OK" : results.backend.status === "fail" ? "FAIL" : results.backend.status}${results.backend.durationMs != null ? ` (${results.backend.durationMs}ms)` : ""}${results.backend.message ? ` - ${results.backend.message}` : ""}`,
       `WebSocket (WSS): ${results.wss.status === "ok" ? "OK" : results.wss.status === "fail" ? "FAIL" : results.wss.status}${results.wss.durationMs != null ? ` (${results.wss.durationMs}ms)` : ""}${results.wss.message ? ` - ${results.wss.message}` : ""}`,
-      `STUN (Google, UDP ${STUN_PORT}): ${results.stun.status === "ok" ? "OK" : results.stun.status === "fail" ? "FAIL" : results.stun.status}${results.stun.durationMs != null ? ` (${results.stun.durationMs}ms)` : ""}${results.stun.message ? ` - ${results.stun.message}` : ""}`,
+      `STUN (Google, UDP 19302): ${results.stun.status === "ok" ? "OK" : results.stun.status === "fail" ? "FAIL" : results.stun.status}${results.stun.durationMs != null ? ` (${results.stun.durationMs}ms)` : ""}${results.stun.message ? ` - ${results.stun.message}` : ""}`,
       `TURN: ${results.turn.status === "ok" ? "OK" : results.turn.status === "fail" ? "FAIL" : results.turn.status}${results.turn.durationMs != null ? ` (${results.turn.durationMs}ms)` : ""}${results.turn.message ? ` - ${results.turn.message}` : ""}`,
       `WebRTC: ${results.webrtc.status === "ok" ? "OK" : results.webrtc.status === "fail" ? "FAIL" : results.webrtc.status}${results.webrtc.pathType ? ` (${results.webrtc.pathType})` : ""}${results.webrtc.durationMs != null ? ` (${results.webrtc.durationMs}ms)` : ""}${results.webrtc.message ? ` - ${results.webrtc.message}` : ""}`,
     ];
@@ -510,7 +541,7 @@ export function ConnectionDiagnostic() {
       return "WebSocket (signaling) is blocked or failing on this network. Try another network (e.g. mobile hotspot) or a different browser. Share the report with support if the issue continues.";
     }
     if (results.stun.status === "fail") {
-      return `STUN (Google, UDP port ${STUN_PORT}) may be blocked or the server unreachable. WebRTC often needs STUN. Try another network or contact support; we may need TURN/relay.`;
+      return "STUN (Google, UDP port 19302) may be blocked or unreachable. If TURN (relay) passed, sessions should still work via relay. Otherwise, try another network or contact support.";
     }
     if (results.turn.status === "fail") {
       return "TURN (relay) server is unreachable or misconfigured. Sessions may fail when direct/STUN connection isn't possible. Check TURN URL/credentials or contact support.";
@@ -595,14 +626,14 @@ export function ConnectionDiagnostic() {
           help="Can this device open a WebSocket to our signaling server?"
         />
         <ResultRow
-          label={`STUN (Google, UDP port ${STUN_PORT})`}
+          label="STUN (Google, UDP port 19302)"
           result={results.stun}
-          help={`Can this device reach Google's STUN server on UDP port ${STUN_PORT}? (stun.l.google.com)`}
+          help="Can this device reach Google's STUN server on UDP port 19302? (stun.l.google.com)"
         />
         <ResultRow
           label="TURN (relay)"
           result={results.turn}
-          help="Can this device reach the TURN relay server? (Optional; set VITE_TURN_URL or custom.signaling.turnUrl to test.)"
+          help="Can this device reach the TURN relay server? Uses ephemeral credentials from signaling."
         />
         <ResultRow
           label="WebRTC"
