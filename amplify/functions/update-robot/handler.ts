@@ -1,4 +1,5 @@
 import { DynamoDBClient, UpdateItemCommand, GetItemCommand, QueryCommand } from '@aws-sdk/client-dynamodb';
+import { CognitoIdentityProviderClient, AdminGetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { Schema } from '../../data/resource';
 import {
   assertFiniteHourlyRateCredits,
@@ -7,6 +8,7 @@ import {
 } from '../shared/validate-robot-pricing';
 
 const ddbClient = new DynamoDBClient({});
+const cognitoClient = new CognitoIdentityProviderClient({});
 
 /** Ed25519 public key is 32 bytes. Accept base64, base64url, or hex. Returns decoded 32-byte buffer or throws. */
 export function decodeAndValidateEd25519PublicKey(input: string): Buffer {
@@ -35,7 +37,7 @@ export function decodeAndValidateEd25519PublicKey(input: string): Buffer {
 }
 
 export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (event) => {
-  const { robotId, robotName, description, model, robotType, hourlyRateCredits, maxFreeSessionSeconds, trialSeconds, trialOnePerCustomer, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude, publicKey } = event.arguments;
+  const { robotId, robotName, description, model, robotType, hourlyRateCredits, maxFreeSessionSeconds, trialSeconds, trialOnePerCustomer, enableAccessControl, additionalAllowedUsers, imageUrl, city, state, country, latitude, longitude, publicKey, isVerified: isVerifiedArg, requestImageVerification, imageVerificationRejectedReason } = event.arguments;
 
   const identity = event.identity;
   if (!identity || !("username" in identity)) {
@@ -46,6 +48,7 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
 
   const robotTableName = process.env.ROBOT_TABLE_NAME!;
   const partnerTableName = process.env.PARTNER_TABLE_NAME!;
+  const userPoolId = process.env.USER_POOL_ID!;
 
   if (!robotTableName || !partnerTableName) {
     throw new Error("ROBOT_TABLE_NAME or PARTNER_TABLE_NAME environment variable not set");
@@ -67,9 +70,26 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     throw new Error("Robot has no partnerId - data corruption detected");
   }
 
-  const isAdminUser = hasGroups && identity.groups
+  const isInAdminGroup = hasGroups && identity.groups
     ? identity.groups.some((g: string) => g.toUpperCase() === 'ADMINS' || g.toUpperCase() === 'ADMIN')
     : false;
+  const identityExt = identity as unknown as { email?: string; claims?: { email?: string } };
+  let callerEmail = identityExt.email || identityExt.claims?.email || '';
+  if (!callerEmail && userPoolId) {
+    try {
+      const userResp = await cognitoClient.send(
+        new AdminGetUserCommand({
+          UserPoolId: userPoolId,
+          Username: identity.username,
+        })
+      );
+      callerEmail = userResp.UserAttributes?.find((a) => a.Name === 'email')?.Value || '';
+    } catch {
+      // Ignore and fall back to group-based admin detection.
+    }
+  }
+  const isModulrEmployee = typeof callerEmail === 'string' && callerEmail.toLowerCase().trim().endsWith('@modulr.cloud');
+  const isAdminUser = isInAdminGroup || isModulrEmployee;
 
   if (!isAdminUser) {
     const partnerQuery = await ddbClient.send(
@@ -204,16 +224,64 @@ export const handler: Schema["updateRobotLambda"]["functionHandler"] = async (ev
     expressionAttributeValues[':trialOnePerCustomer'] = { BOOL: trialOnePerCustomer === true };
   }
 
-  // Update imageUrl if provided
-  // If imageUrl is null, undefined, or empty string, remove it (use default robot image)
+  // Admin-only: allow setting isVerified directly; also clears the verification request when approving
+  if (isVerifiedArg !== undefined && isVerifiedArg !== null) {
+    if (!isAdminUser) {
+      throw new Error("Only admins can change isVerified status");
+    }
+    updateExpressions.push('#isVerified = :isVerified');
+    expressionAttributeNames['#isVerified'] = 'isVerified';
+    expressionAttributeValues[':isVerified'] = { BOOL: isVerifiedArg === true };
+    if (isVerifiedArg === true) {
+      updateExpressions.push('#imgVerReq = :imgVerReqFalse');
+      expressionAttributeNames['#imgVerReq'] = 'imageVerificationRequested';
+      expressionAttributeValues[':imgVerReqFalse'] = { BOOL: false };
+      updateExpressions.push('REMOVE #imgVerRejReason');
+      expressionAttributeNames['#imgVerRejReason'] = 'imageVerificationRejectedReason';
+    }
+  }
+
+  // Partner requests image verification, or admin rejects (clears the request with optional reason)
+  // Skip if isVerifiedArg is true (approve already clears the request above)
+  if (requestImageVerification !== undefined && requestImageVerification !== null && !(isVerifiedArg === true)) {
+    if (requestImageVerification === true) {
+      if (robotResult.Item.isVerified?.BOOL === true) {
+        throw new Error("Robot is already verified for image uploads");
+      }
+      updateExpressions.push('#imgVerReq = :imgVerReqTrue');
+      expressionAttributeNames['#imgVerReq'] = 'imageVerificationRequested';
+      expressionAttributeValues[':imgVerReqTrue'] = { BOOL: true };
+      updateExpressions.push('#imgVerReqAt = :imgVerReqAt');
+      expressionAttributeNames['#imgVerReqAt'] = 'imageVerificationRequestedAt';
+      expressionAttributeValues[':imgVerReqAt'] = { S: now };
+      updateExpressions.push('REMOVE #imgVerRejReason');
+      expressionAttributeNames['#imgVerRejReason'] = 'imageVerificationRejectedReason';
+    } else {
+      if (!isAdminUser) {
+        throw new Error("Only admins can reject image verification requests");
+      }
+      updateExpressions.push('#imgVerReq = :imgVerReqFalse2');
+      expressionAttributeNames['#imgVerReq'] = 'imageVerificationRequested';
+      expressionAttributeValues[':imgVerReqFalse2'] = { BOOL: false };
+      if (imageVerificationRejectedReason && typeof imageVerificationRejectedReason === 'string' && imageVerificationRejectedReason.trim() !== '') {
+        updateExpressions.push('#imgVerRejReason = :imgVerRejReason');
+        expressionAttributeNames['#imgVerRejReason'] = 'imageVerificationRejectedReason';
+        expressionAttributeValues[':imgVerRejReason'] = { S: imageVerificationRejectedReason.trim() };
+      }
+    }
+  }
+
+  // Server-side enforcement: only allow imageUrl changes for verified robots (or admins)
+  const robotIsVerified = robotResult.Item.isVerified?.BOOL === true;
   if (imageUrl !== undefined) {
     if (imageUrl !== null && typeof imageUrl === 'string' && imageUrl.trim() !== '') {
-      // Valid imageUrl - set it
+      if (!robotIsVerified && !isAdminUser) {
+        throw new Error("Only verified robots can have custom images. Request verification first.");
+      }
       updateExpressions.push('#imageUrl = :imageUrl');
       expressionAttributeNames['#imageUrl'] = 'imageUrl';
       expressionAttributeValues[':imageUrl'] = { S: imageUrl.trim() };
     } else {
-      // null, undefined, or empty string - remove imageUrl attribute (will use default based on model)
       updateExpressions.push('REMOVE #imageUrl');
       expressionAttributeNames['#imageUrl'] = 'imageUrl';
     }
