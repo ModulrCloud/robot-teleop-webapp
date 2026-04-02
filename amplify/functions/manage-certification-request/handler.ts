@@ -94,10 +94,11 @@ export const handler: Schema["manageCertificationRequestLambda"]["functionHandle
         new UpdateCommand({
           TableName: ROBOT_TABLE_NAME,
           Key: { id: robotUuid },
-          UpdateExpression: "SET modulrApproved = :approved, modulrApprovedAt = :now",
+          UpdateExpression: "SET modulrApproved = :approved, modulrApprovedAt = :now, isVerified = :verified",
           ExpressionAttributeValues: {
             ":approved": true,
             ":now": now,
+            ":verified": true,
           },
         })
       );

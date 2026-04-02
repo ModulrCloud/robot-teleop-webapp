@@ -150,6 +150,9 @@ export const EditRobot = () => {
     publicKey: "",
   });
   const [isVerified, setIsVerified] = useState(false);
+  const [imageVerificationRequested, setImageVerificationRequested] = useState(false);
+  const [imageVerificationRejectedReason, setImageVerificationRejectedReason] = useState<string | null>(null);
+  const [isRequestingVerification, setIsRequestingVerification] = useState(false);
 
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -296,8 +299,15 @@ export const EditRobot = () => {
         setModulrApprovedAt(robotData.modulrApprovedAt ?? null);
 
         // Type-safe access to extended robot fields
-        const extendedData = robotData as typeof robotData & { isVerified?: boolean; robotType?: string };
-        setIsVerified(extendedData.isVerified || false); // Store verification status
+        const extendedData = robotData as typeof robotData & {
+          isVerified?: boolean;
+          robotType?: string;
+          imageVerificationRequested?: boolean;
+          imageVerificationRejectedReason?: string | null;
+        };
+        setIsVerified(extendedData.isVerified || false);
+        setImageVerificationRequested(extendedData.imageVerificationRequested || false);
+        setImageVerificationRejectedReason(extendedData.imageVerificationRejectedReason ?? null);
 
         // Get robotType, falling back to model for backwards compatibility
         const robotTypeValue = extendedData.robotType || robotData.model || ROBOT_TYPES[0].value;
@@ -472,8 +482,30 @@ export const EditRobot = () => {
     setExistingImageKey(null);
     setUploadError(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
-    // Show default image based on current robotType
     setImagePreview(getDefaultRobotImage(robotListing.robotType));
+  };
+
+  const handleRequestImageVerification = async () => {
+    if (!robotId || isViewMode || isVerified || imageVerificationRequested) return;
+    setIsRequestingVerification(true);
+    try {
+      const result = await client.mutations.updateRobotLambda({
+        robotId,
+        requestImageVerification: true,
+      });
+      if (result.errors) {
+        showToast(result.errors[0]?.message || 'Failed to request verification', 'error');
+      } else {
+        setImageVerificationRequested(true);
+        setImageVerificationRejectedReason(null);
+        showToast('Image verification requested. Our team will review shortly.', 'success');
+      }
+    } catch (err) {
+      logger.error('Error requesting image verification:', err);
+      showToast(err instanceof Error ? err.message : 'Failed to request verification', 'error');
+    } finally {
+      setIsRequestingVerification(false);
+    }
   };
 
   const uploadImage = async (): Promise<string | null> => {
@@ -1186,33 +1218,100 @@ export const EditRobot = () => {
                         </div>
                       )}
                     </>
-                  ) : (
+                  ) : imageVerificationRequested ? (
                     <div style={{
-                      background: 'rgba(255, 183, 0, 0.1)',
-                      border: '1px solid rgba(255, 183, 0, 0.3)',
+                      background: 'rgba(23, 162, 184, 0.1)',
+                      border: '1px solid rgba(23, 162, 184, 0.3)',
                       borderRadius: '8px',
                       padding: '1rem',
                       display: 'flex',
                       alignItems: 'flex-start',
                       gap: '0.75rem'
                     }}>
-                      <FontAwesomeIcon icon={faLock} style={{ color: '#ffc107', marginTop: '0.125rem' }} />
+                      <FontAwesomeIcon icon={faInfoCircle} style={{ color: '#17a2b8', marginTop: '0.125rem' }} />
                       <div>
                         <p style={{
                           color: 'rgba(255, 255, 255, 0.9)',
                           margin: 0,
                           fontWeight: 500
                         }}>
-                          Custom images available after verification
+                          Verification pending
                         </p>
                         <p style={{
                           color: 'rgba(255, 255, 255, 0.6)',
                           margin: '0.5rem 0 0 0',
                           fontSize: '0.85rem'
                         }}>
-                          Your robot is using the default image based on its type. Once our team verifies your robot,
-                          you'll be able to upload custom photos.
+                          Your image upload verification request is being reviewed by our team.
+                          You'll be able to upload custom photos once approved.
                         </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{
+                      background: imageVerificationRejectedReason ? 'rgba(220, 38, 38, 0.1)' : 'rgba(255, 183, 0, 0.1)',
+                      border: `1px solid ${imageVerificationRejectedReason ? 'rgba(220, 38, 38, 0.3)' : 'rgba(255, 183, 0, 0.3)'}`,
+                      borderRadius: '8px',
+                      padding: '1rem',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '0.75rem'
+                    }}>
+                      <FontAwesomeIcon icon={faLock} style={{ color: imageVerificationRejectedReason ? '#dc2626' : '#ffc107', marginTop: '0.125rem' }} />
+                      <div style={{ flex: 1 }}>
+                        <p style={{
+                          color: 'rgba(255, 255, 255, 0.9)',
+                          margin: 0,
+                          fontWeight: 500
+                        }}>
+                          {imageVerificationRejectedReason
+                            ? 'Image verification was not approved'
+                            : 'Custom images available after verification'}
+                        </p>
+                        {imageVerificationRejectedReason && (
+                          <p style={{
+                            color: 'rgba(255, 255, 255, 0.7)',
+                            margin: '0.5rem 0 0 0',
+                            fontSize: '0.85rem',
+                            fontStyle: 'italic'
+                          }}>
+                            Reason: {imageVerificationRejectedReason}
+                          </p>
+                        )}
+                        <p style={{
+                          color: 'rgba(255, 255, 255, 0.6)',
+                          margin: '0.5rem 0 0 0',
+                          fontSize: '0.85rem'
+                        }}>
+                          {imageVerificationRejectedReason
+                            ? 'You can request verification again after addressing the issue above.'
+                            : 'Your robot is using the default image based on its type. Request verification to unlock custom image uploads.'}
+                        </p>
+                        {!isViewMode && (
+                          <button
+                            type="button"
+                            onClick={handleRequestImageVerification}
+                            disabled={isRequestingVerification || isLoading}
+                            style={{
+                              marginTop: '0.75rem',
+                              padding: '0.5rem 1rem',
+                              background: 'linear-gradient(135deg, #ffb700, #ff8c00)',
+                              color: '#000',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontWeight: 600,
+                              fontSize: '0.85rem',
+                              cursor: isRequestingVerification ? 'wait' : 'pointer',
+                              opacity: isRequestingVerification ? 0.7 : 1,
+                            }}
+                          >
+                            {isRequestingVerification
+                              ? 'Requesting...'
+                              : imageVerificationRejectedReason
+                                ? 'Request verification again'
+                                : 'Request image verification'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}

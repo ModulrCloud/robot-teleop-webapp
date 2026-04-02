@@ -445,6 +445,8 @@ tables.Robot.grantReadWriteData(updateRobotLambdaFunction);
 userInvalidationTable.grantReadData(updateRobotLambdaFunction); // Read-only for checking session invalidation
 const updateRobotCdkFunction = updateRobotLambdaFunction as CdkFunction;
 updateRobotCdkFunction.addEnvironment('USER_INVALIDATION_TABLE', userInvalidationTable.tableName);
+updateRobotCdkFunction.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+userPool.grant(updateRobotLambdaFunction, 'cognito-idp:AdminGetUser');
 
 // Regenerate enrollment token Lambda (authenticated: partner or admin regenerates token for their robot)
 backend.regenerateEnrollmentToken.addEnvironment('ROBOT_TABLE_NAME', tables.Robot.tableName);

@@ -80,9 +80,9 @@ export const handler: Schema["setRobotLambda"]["functionHandler"] = async (event
 
   const item = putItemInput.Item as Record<string, unknown>;
 
-  if (imageUrl) {
-    item.imageUrl = { S: imageUrl };
-  }
+  // imageUrl is ignored at creation: new robots start unverified (isVerified: false)
+  // and custom images require verification. Use updateRobotLambda after verification.
+  void imageUrl;
 
   const rateCredits = assertFiniteHourlyRateCredits(hourlyRateCredits ?? 100);
   item.hourlyRateCredits = { N: rateCredits.toString() };
