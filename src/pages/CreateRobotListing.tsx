@@ -29,7 +29,8 @@ import {
   faExclamationCircle,
   faInfoCircle,
   faCalendarAlt,
-  faArrowLeft
+  faArrowLeft,
+  faLock
 } from '@fortawesome/free-solid-svg-icons';
 
 // Robot types with their default images
@@ -41,6 +42,11 @@ const ROBOT_TYPES = [
   { value: "robodog", label: "Robot Dog", image: "/default/robodog.png" },
   { value: "robot", label: "Robot Arm", image: "/default/humanoid.png" },
 ];
+
+const getDefaultRobotImage = (robotType: string): string => {
+  const type = ROBOT_TYPES.find(t => t.value === robotType.toLowerCase());
+  return type?.image || "/default/humanoid.png";
+};
 
 type RobotListing = {
   robotName: string;
@@ -490,6 +496,48 @@ export const CreateRobotListing = () => {
               );
             })()}
 
+          </div>
+
+          <div className="form-section">
+            <h3>Robot Image</h3>
+
+            <div className="form-group">
+              <div className="preview-container" style={{ marginBottom: '1rem' }}>
+                <img
+                  src={getDefaultRobotImage(robotListing.robotType)}
+                  alt="Robot preview"
+                />
+              </div>
+
+              <div style={{
+                background: 'rgba(255, 183, 0, 0.1)',
+                border: '1px solid rgba(255, 183, 0, 0.3)',
+                borderRadius: '8px',
+                padding: '1rem',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '0.75rem'
+              }}>
+                <FontAwesomeIcon icon={faLock} style={{ color: '#ffc107', marginTop: '0.125rem' }} />
+                <div>
+                  <p style={{
+                    color: 'rgba(255, 255, 255, 0.9)',
+                    margin: 0,
+                    fontWeight: 500
+                  }}>
+                    Custom images available after verification
+                  </p>
+                  <p style={{
+                    color: 'rgba(255, 255, 255, 0.6)',
+                    margin: '0.5rem 0 0 0',
+                    fontSize: '0.85rem'
+                  }}>
+                    Your robot will use the default image based on its type. Once your robot is created and verified
+                    by our team, you'll be able to upload custom photos from the Edit Robot page.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="form-section">

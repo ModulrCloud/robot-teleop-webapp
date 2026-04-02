@@ -17,6 +17,7 @@ import {
   faFileContract,
   faBullhorn,
   faClipboardCheck,
+  faImage,
 } from "@fortawesome/free-solid-svg-icons";
 
 type AdminTab = "dashboard" | "users" | "approvals";
@@ -34,6 +35,7 @@ const UserManagement = lazy(() => import("./admin/components/UserManagement").th
 const TermsOfServiceAdmin = lazy(() => import("./admin/components/TermsOfServiceAdmin").then(module => ({ default: module.TermsOfServiceAdmin })));
 const WhatsNewAdmin = lazy(() => import("./admin/components/WhatsNewAdmin").then(module => ({ default: module.WhatsNewAdmin })));
 const CertificationRequests = lazy(() => import("./admin/components/CertificationRequests").then(module => ({ default: module.CertificationRequests })));
+const ImageVerificationRequests = lazy(() => import("./admin/components/ImageVerificationRequests").then(module => ({ default: module.ImageVerificationRequests })));
 
 export const Admin = () => {
   usePageTitle();
@@ -299,14 +301,19 @@ export const Admin = () => {
         }>
           <CertificationRequests />
         </Suspense>
-        <div className="admin-section" style={{ marginTop: "2rem" }}>
-          <div className="section-header">
-            <h2>Image audit</h2>
+        <Suspense fallback={
+          <div className="admin-section" style={{ marginTop: "2rem" }}>
+            <div className="section-header">
+              <FontAwesomeIcon icon={faImage} className="section-icon" />
+              <h2>Image verification requests</h2>
+            </div>
+            <div className="section-content">
+              <p className="loading-state">Loading image verification requests...</p>
+            </div>
           </div>
-          <div className="section-content">
-            <p className="section-description">Placeholder for future image audit workflow.</p>
-          </div>
-        </div>
+        }>
+          <ImageVerificationRequests />
+        </Suspense>
         </>
         )}
 

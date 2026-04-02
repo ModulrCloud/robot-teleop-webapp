@@ -372,6 +372,9 @@ const schema = a.schema({
     allowedUsers: a.string().array(), // Optional: if null/empty, robot is open access. If set, only listed users can access.
     imageUrl: a.string(),
     isVerified: a.boolean().default(false), // Only verified robots can upload custom images
+    imageVerificationRequested: a.boolean().default(false), // Partner has requested image upload verification
+    imageVerificationRequestedAt: a.datetime(), // When the partner requested verification
+    imageVerificationRejectedReason: a.string(), // Reason if admin rejected the verification request
     // Pricing: Hourly rate in credits (before platform markup)
     hourlyRateCredits: a.float().default(100), // Default 100 credits/hour (editable by robot owner)
     // When hourlyRateCredits is 0 (free): optional cap on session length in seconds. Omit/null = no limit (until billing enforces caps).
@@ -846,7 +849,10 @@ const schema = a.schema({
       trialOnePerCustomer: a.boolean(), // Optional: one trial per customer per robot (false = trial every session)
       enableAccessControl: a.boolean(), // Optional: update ACL (true = enable/update, false = disable/remove)
       additionalAllowedUsers: a.string().array(), // Optional: additional email addresses to add to ACL (only used if enableAccessControl is true)
-      imageUrl: a.string(), // Optional: update imageUrl (only for verified robots)
+      imageUrl: a.string(), // Optional: update imageUrl (only for verified robots; server enforces isVerified check)
+      isVerified: a.boolean(), // Optional (admin-only): set robot verification status for custom image uploads
+      requestImageVerification: a.boolean(), // Optional: partner requests image upload verification (true) or admin clears request (false)
+      imageVerificationRejectedReason: a.string(), // Optional (admin-only): rejection reason when clearing verification request
       // Location fields (optional)
       city: a.string(),
       state: a.string(),

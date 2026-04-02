@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { generateClient } from 'aws-amplify/api';
+import { getUrl } from 'aws-amplify/storage';
 import { Schema } from '../../amplify/data/resource';
 import { usePageTitle } from "../hooks/usePageTitle";
 import { useAuthStatus } from "../hooks/useAuthStatus";
@@ -335,9 +336,46 @@ export default function MyRobots() {
     return new Date(timestamp).toLocaleString();
   };
 
-  const getRobotImage = (robotType?: string, imageUrl?: string): string => {
+  const [resolvedImageUrls, setResolvedImageUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    const resolveS3Images = async () => {
+      const toResolve = robots.filter(
+        (r) => r.imageUrl && !r.imageUrl.startsWith('http') && !r.imageUrl.startsWith('/')
+      );
+      if (toResolve.length === 0) return;
+
+      const entries = await Promise.all(
+        toResolve.map(async (r) => {
+          try {
+            const result = await getUrl({ path: r.imageUrl!, options: { bucket: 'robotImages' } });
+            return [r.id, result.url.toString()] as const;
+          } catch {
+            return null;
+          }
+        })
+      );
+      if (cancelled) return;
+      const newUrls: Record<string, string> = {};
+      for (const entry of entries) {
+        if (entry) newUrls[entry[0]] = entry[1];
+      }
+      if (Object.keys(newUrls).length > 0) {
+        setResolvedImageUrls(newUrls);
+      }
+    };
+
+    resolveS3Images();
+    return () => { cancelled = true; };
+  }, [robots]);
+
+  const getRobotImage = (robotId: string, robotType?: string, imageUrl?: string): string => {
     if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('/'))) {
       return imageUrl;
+    }
+    if (resolvedImageUrls[robotId]) {
+      return resolvedImageUrls[robotId];
     }
     
     const typeImages: Record<string, string> = {
@@ -585,7 +623,7 @@ export default function MyRobots() {
                 onClick={() => handleRobotClick(robot)}
               >
                 <div className="robot-card-image">
-                  <img src={getRobotImage(robot.robotType, robot.imageUrl)} alt={robot.name} />
+                  <img src={getRobotImage(robot.id, robot.robotType, robot.imageUrl)} alt={robot.name} />
                 </div>
                 <div className="robot-card-header">
                   <div className="robot-card-title">
