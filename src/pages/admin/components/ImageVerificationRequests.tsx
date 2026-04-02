@@ -74,10 +74,13 @@ export const ImageVerificationRequests = () => {
         partnerIds.map(async (pid) => {
           try {
             const p = await client.models.Partner.get({ id: pid });
-            if (p.data?.companyName) {
-              partnerMap[pid] = p.data.companyName;
-            } else if (p.data?.cognitoUsername) {
-              partnerMap[pid] = p.data.cognitoUsername;
+            if (p.data) {
+              const label =
+                p.data.displayName?.trim() ||
+                p.data.name?.trim() ||
+                p.data.cognitoUsername ||
+                pid;
+              partnerMap[pid] = label;
             }
           } catch {
             // ignore
