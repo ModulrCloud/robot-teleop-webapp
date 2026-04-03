@@ -41,7 +41,7 @@
   color: #888;
 } */
 
-/* From here is CSS from the Modulr site */
+/* From here is CSS from the Ctrl + R site */
 html {
   -webkit-text-size-adjust: 100%;
   -ms-text-size-adjust: 100%;
@@ -2093,10 +2093,10 @@ textarea.w-input, textarea.w-select {
   --text-color--text-secondary\<deleted\|variable-0a60224d-1a94-b160-ae24-af3c6d95a994\>: var(--base-color-neutral--neutral-darker\<deleted\|variable-dda6ad91-259a-0202-f70f-965feb273058\>);
   --background-color--background-success\<deleted\|variable-879e2a57-3170-38fd-0ae7-d0e890873ab2\>: var(--base-color-system--success-green\<deleted\|variable-8fc09a81-a1c7-3c5b-2cf2-835ad5d96212\>);
   --text-color--text-success\<deleted\|variable-17518f72-fb93-45b5-ad9e-fdd3f2b1833a\>: var(--base-color-system--success-green-dark\<deleted\|variable-70ae3530-1c64-4d15-f2af-205678316683\>);
-  --quantico: Quantico, sans-serif;
+  --quantico: Geist, sans-serif;
   --yellow: #ffb700;
   --border-color--border-primary\<deleted\|variable-d4c54ba4-ee41-67ce-58a5-5216ca039f83\>: var(--base-color-neutral--neutral-lightest\<deleted\|variable-eede0174-1898-a99e-0c79-395339ec1911\>);
-  --text: Inter, sans-serif;
+  --text: Geist, sans-serif;
   --light-gray: #9da2aa;
   --background-color--background-alternate\<deleted\|variable-41ecbc38-077c-494f-9138-9468b7354b23\>: var(--base-color-neutral--white);
   --background-color--background-secondary\<deleted\|variable-2dd539ce-5be2-4493-8245-a883e87dab6d\>: var(--base-color-brand--blue\<deleted\|variable-de000a4d-0fee-1f9e-af85-624658122d10\>);
@@ -2144,7 +2144,7 @@ textarea.w-input, textarea.w-select {
 
 body {
   color: #fff;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif;
+  font-family: Geist, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif;
   font-size: 1rem;
   line-height: 1.5;
 }

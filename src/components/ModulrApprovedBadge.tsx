@@ -11,8 +11,8 @@ interface ModulrApprovedBadgeProps {
 }
 
 /**
- * Badge shown when a robot is Modulr Approved (certified).
- * Uses the badge image when available; falls back to "Modulr Approved" text pill if the image fails to load.
+ * Badge shown when a robot is Ctrlr Approved (certified).
+ * Uses the badge image when available; falls back to "Ctrlr Approved" text pill if the image fails to load.
  */
 export function ModulrApprovedBadge({
   size = "small",
@@ -28,19 +28,19 @@ export function ModulrApprovedBadge({
     <span
       className={`modulr-approved-badge modulr-approved-badge--${size} ${showImage ? "modulr-approved-badge--image-only" : ""} ${className}`.trim()}
       role="img"
-      aria-label="Modulr Approved"
+      aria-label="Ctrlr Approved"
     >
       {badgeUrl && !imageError && (
         <img
           src={badgeUrl}
-          alt="Modulr Approved"
+          alt="Ctrlr Approved"
           className="modulr-approved-badge__img"
           onLoad={() => setImageLoaded(true)}
           onError={() => setImageError(true)}
         />
       )}
       {showText && (
-        <span className="modulr-approved-badge__text">Modulr Approved</span>
+        <span className="modulr-approved-badge__text">Ctrlr Approved</span>
       )}
     </span>
   );

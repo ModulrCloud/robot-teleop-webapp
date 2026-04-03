@@ -171,7 +171,7 @@ export const handler: Schema["listAccessibleRobotsLambda"]["functionHandler"] = 
         country: robotItem.country?.S,
         latitude: robotItem.latitude?.N ? parseFloat(robotItem.latitude.N) : undefined,
         longitude: robotItem.longitude?.N ? parseFloat(robotItem.longitude.N) : undefined,
-        // Modulr Approved certification
+        // Ctrlr Approved certification
         modulrApproved: robotItem.modulrApproved?.BOOL ?? false,
         modulrApprovedAt: robotItem.modulrApprovedAt?.S ?? undefined,
       };

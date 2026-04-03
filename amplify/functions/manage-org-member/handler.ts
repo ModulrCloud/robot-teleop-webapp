@@ -244,7 +244,7 @@ export const handler: Schema["manageOrgMemberLambda"]["functionHandler"] = async
 
     const cognitoUser = await lookupUserByEmail(email);
     if (!cognitoUser) {
-      throw new Error("No account found for this email. The user must sign up on Modulr first.");
+      throw new Error("No account found for this email. The user must sign up on Ctrl + R first.");
     }
 
     const existingMember = members.find((m) => m.userEmail === email || m.userId === email || m.userId === cognitoUser.username);

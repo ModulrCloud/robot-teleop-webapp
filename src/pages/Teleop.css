@@ -3,7 +3,7 @@ body {
   padding: 0;
   overflow-x: hidden;
   background: #08090a;
-  /* Modulr black */
+  /* Ctrlr black */
   min-height: 100vh;
 }
 
@@ -312,7 +312,7 @@ html {
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.5) 70%, transparent 100%);
   z-index: 20;
   pointer-events: none;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
   border-radius: 16px 16px 0 0;
 }
 
@@ -367,7 +367,7 @@ html {
 }
 
 .viewport-stat .stat-value {
-  font-family: 'Quantico', 'Inter', sans-serif;
+  font-family: 'Geist', sans-serif;
   font-size: 1rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.9);

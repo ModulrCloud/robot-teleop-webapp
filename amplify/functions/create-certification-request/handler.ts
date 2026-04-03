@@ -51,7 +51,7 @@ export const handler: Schema["createCertificationRequestLambda"]["functionHandle
   if (robot.modulrApproved === true) {
     return JSON.stringify({
       success: false,
-      error: "Robot is already Modulr Approved",
+        error: "Robot is already Ctrl + R Approved",
     });
   }
 

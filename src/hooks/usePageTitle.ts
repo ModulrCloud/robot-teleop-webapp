@@ -5,7 +5,7 @@ export function usePageTitle() {
   const location = useLocation();
 
   useEffect(() => {
-    const baseTitle = " | Modulr"; // default title
+    const baseTitle = " | Ctrl + R";
     let title = "Unknown";
 
     switch (location.pathname) {

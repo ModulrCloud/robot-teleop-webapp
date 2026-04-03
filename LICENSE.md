@@ -1,7 +1,7 @@
-# Business Source License 1.1 – Modulr Edition
+# Business Source License 1.1 – Ctrl + R Edition
 
 **Licensor:** Undline Software LLC  
-**Licensed Work:** Modulr Software
+**Licensed Work:** Ctrl + R Software
 
 Copyright (c) 2026 Undline Software LLC
 
@@ -24,7 +24,7 @@ The source code may be inspected, modified, compiled, and redistributed provided
 
 The following uses are explicitly permitted:
 
-- Operating nodes or validators within the Modulr network
+- Operating nodes or validators within the Ctrl + R network
 - Building applications or services that interact with the network
 - Installing the Licensed Work on hardware, robots, or devices
 - Running the Licensed Work as part of internal infrastructure
@@ -56,7 +56,7 @@ Organizations wishing to commercially distribute, white-label, or integrate the 
 
 Approved commercial uses may require attribution such as:
 
-> "Powered by Modulr"
+> "Powered by Ctrl + R"
 
 or similar branding within the product or service.
 

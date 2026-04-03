@@ -291,7 +291,7 @@ export const ModulrCertificationSection = ({
       } else {
         const msg: string =
           rawError === "Robot is already Modulr Approved"
-            ? "This robot is already Modulr Approved."
+            ? "This robot is already Ctrlr Approved."
             : rawError === "A certification request is already open for this robot"
               ? "A certification request is already open. Complete payment below."
               : typeof rawError === "string" ? rawError : "Request failed. Please try again.";
@@ -336,7 +336,7 @@ export const ModulrCertificationSection = ({
       );
 
       if (data?.success) {
-        onSuccess?.("Payment complete. Your request is pending Modulr review.");
+        onSuccess?.("Payment complete. Your request is pending Ctrl + R review.");
         window.dispatchEvent(new CustomEvent("creditsUpdated"));
         await loadRequests();
       } else {
@@ -363,7 +363,7 @@ export const ModulrCertificationSection = ({
   if (isLoading && requests.length === 0 && !modulrApproved) {
     return (
       <div className="form-section modulr-certification-section">
-        <h3>Modulr certification</h3>
+        <h3>Ctrlr certification</h3>
         <div className="modulr-cert-loading">
           <FontAwesomeIcon icon={faSpinner} spin />
           <span>Loading certification status…</span>
@@ -374,7 +374,7 @@ export const ModulrCertificationSection = ({
 
   return (
     <div className="form-section modulr-certification-section">
-      <h3>Modulr certification</h3>
+      <h3>Ctrlr certification</h3>
 
       {sectionError && (
         <div className="modulr-cert-error">
@@ -387,7 +387,7 @@ export const ModulrCertificationSection = ({
         <div className="modulr-cert-state modulr-cert-approved">
           <FontAwesomeIcon icon={faCheckCircle} />
           <div>
-            <strong>Modulr Approved</strong>
+            <strong>Ctrlr Approved</strong>
             {modulrApprovedAt && (
               <p className="modulr-cert-date">
                 Certified on {formatCertifiedDate(modulrApprovedAt)}
@@ -400,7 +400,7 @@ export const ModulrCertificationSection = ({
       {!modulrApproved && showNoRequestState && (
         <div className="modulr-cert-state modulr-cert-state-stack">
           <p>
-            Request Modulr certification for this robot. Fee:{" "}
+            Request Ctrlr certification for this robot. Fee:{" "}
             <strong>{loadingFee ? "…" : feeFormatted}</strong>.
           </p>
           {!isViewMode && !hasEnoughCredits && !loadingCredits && (
@@ -441,7 +441,7 @@ export const ModulrCertificationSection = ({
               <strong>
                 {formatCreditsAsCurrencySync(currentRequest?.amountCredits ?? 0, (userCurrency ?? "USD") as CurrencyCode, exchangeRates)}
               </strong>{" "}
-              to submit for Modulr review.
+              to submit for Ctrl + R review.
             </p>
             {!isViewMode && (
               <button
@@ -470,7 +470,7 @@ export const ModulrCertificationSection = ({
       {!modulrApproved && isPaidOrPending && (
         <div className="modulr-cert-state modulr-cert-pending-review">
           <FontAwesomeIcon icon={faInfoCircle} />
-          <p><strong>Certification requested – pending Modulr review.</strong></p>
+          <p><strong>Certification requested – pending Ctrl + R review.</strong></p>
           <p>You will be notified once the review is complete.</p>
         </div>
       )}

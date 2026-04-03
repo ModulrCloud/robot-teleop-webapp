@@ -1068,7 +1068,7 @@ adminAuditTable.grantWriteData(processPayoutFunction);
 userPool.grant(processPayoutFunction, 'cognito-idp:AdminGetUser');
 
 // ============================================
-// Modulr Approved certification Lambdas
+// Ctrlr Approved certification Lambdas
 // ============================================
 
 const createCertificationRequestFunction = backend.createCertificationRequest.resources.lambda;

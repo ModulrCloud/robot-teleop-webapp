@@ -37,7 +37,7 @@
 }
 
 .navbar-logo img {
-  height: 36px;
+  height: 52px;
   width: auto;
 }
 
@@ -129,7 +129,7 @@
 }
 
 .credits-amount {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Geist', sans-serif;
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -613,6 +613,6 @@
 
 @media (max-width: 480px) {
   .navbar-logo img {
-    height: 28px;
+    height: 40px;
   }
 }

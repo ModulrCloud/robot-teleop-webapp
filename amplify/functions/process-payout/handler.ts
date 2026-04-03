@@ -55,7 +55,7 @@ export const handler: Schema["processPayoutLambda"]["functionHandler"] = async (
     if (!isAdmin && !isModulrEmployee) {
       return {
         statusCode: 403,
-        body: JSON.stringify({ error: "Unauthorized: only ADMINS or Modulr employees can process payouts" }),
+        body: JSON.stringify({ error: "Unauthorized: only ADMINS or Ctrl + R employees can process payouts" }),
       };
     }
   } catch (error) {

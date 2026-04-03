@@ -177,8 +177,8 @@ export const MOCK_ROBOTS: OrgRobot[] = [
 export const MOCK_ORGANIZATIONS: Organization[] = [
   {
     id: 'org-001',
-    name: 'Modulr Robotics',
-    slug: 'modulr-robotics',
+    name: 'Ctrl + R Robotics',
+    slug: 'ctrlr-robotics',
     description: 'Building the future of robot teleoperation',
     logoUrl: null,
     ownerId: 'user-abc123',

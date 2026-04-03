@@ -128,8 +128,8 @@ export default function SignIn() {
     <div className="signin-wrapper">
       <div className="signin-container">
         <div className="signin-header">
-          <img src="/logo-large.png" alt="Modulr" className="signin-logo" />
-          <h1>Welcome to Modulr</h1>
+          <img src="/logo-large.png" alt="Ctrl + R" className="signin-logo" />
+          <h1>Welcome to Ctrl + R</h1>
           <p className="signin-tagline">Robot Operation, at Scale</p>
           <p className="signin-subtitle">
             The platform for remote robot teleoperation, fleet management, and AI-powered services.

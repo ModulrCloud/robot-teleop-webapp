@@ -1,5 +1,5 @@
 /**
- * New-protocol (Modulr Interface Spec) WebSocket test
+ * New-protocol (Ctrlr Interface Spec) WebSocket test
  *
  * Run with mock server in new-protocol mode:
  *   Terminal 1: MOCK_LEGACY=false npx tsx scripts/mock-signaling-server.ts
@@ -25,7 +25,7 @@ function envelope(type: string, payload: Record<string, unknown> = {}): Envelope
 }
 
 async function main() {
-  console.log('🧪 New-protocol (Modulr Interface Spec) test');
+  console.log('🧪 New-protocol (Ctrlr Interface Spec) test');
   console.log('==========================================\n');
   console.log(`   URL: ${WS_URL}`);
   console.log(`   Robot: ${ROBOT_ID}\n`);

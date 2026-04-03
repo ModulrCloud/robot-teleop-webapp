@@ -209,7 +209,7 @@
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Geist', sans-serif;
   white-space: nowrap;
   text-decoration: none;
   display: inline-block;
@@ -268,7 +268,7 @@
   color: var(--yellow, #ffb700);
   font-size: 2rem;
   font-weight: 700;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Geist', sans-serif;
 }
 
 .tier-credits {
@@ -293,7 +293,7 @@
   color: #fff;
   font-size: 1.5rem;
   font-weight: 700;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Geist', sans-serif;
 }
 
 .credits-label {
@@ -349,7 +349,7 @@
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Geist', sans-serif;
 }
 
 .tier-button:hover:not(:disabled) {

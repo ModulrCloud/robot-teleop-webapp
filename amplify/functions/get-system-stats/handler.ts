@@ -53,7 +53,7 @@ export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async 
   const adminGroups = "groups" in identity ? identity.groups : [];
   const isInAdminGroup = adminGroups?.includes("ADMINS") || adminGroups?.includes("ADMIN");
   
-  // Check if user is a Modulr employee (@modulr.cloud domain)
+    // Check if user is a Ctrlr employee (@modulr.cloud domain)
   const isModulrEmployee = userEmail && 
     typeof userEmail === 'string' && 
     userEmail.toLowerCase().trim().endsWith('@modulr.cloud');
@@ -69,7 +69,7 @@ export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async 
     isModulrEmployee,
   });
   
-  // SECURITY: Only admins (ADMINS group) or Modulr employees can view system stats
+    // SECURITY: Only admins (ADMINS group) or Ctrlr employees can view system stats
   if (!isInAdminGroup && !isModulrEmployee) {
     console.error("Access denied:", {
       username: identity.username,
@@ -77,7 +77,7 @@ export const handler: Schema["getSystemStatsLambda"]["functionHandler"] = async 
       isInAdminGroup,
       isModulrEmployee,
     });
-    throw new Error("Unauthorized: only ADMINS or Modulr employees (@modulr.cloud) can view system stats");
+    throw new Error("Unauthorized: only ADMINS or Ctrl + R employees (@modulr.cloud) can view system stats");
   }
 
   try {

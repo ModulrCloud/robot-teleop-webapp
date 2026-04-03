@@ -31,9 +31,9 @@ export const handler: Schema["assignAdminLambda"]["functionHandler"] = async (ev
     typeof userEmail === 'string' && 
     userEmail.toLowerCase().trim().endsWith('@modulr.cloud');
 
-  // SECURITY: Only existing admins (ADMINS group) or Modulr employees can assign admin status
+  // SECURITY: Only existing admins (ADMINS group) or Ctrlr employees can assign admin status
   if (!isInAdminGroup && !isModulrEmployee) {
-    throw new Error("Unauthorized: only ADMINS or Modulr employees (@modulr.cloud) can assign admin status");
+    throw new Error("Unauthorized: only ADMINS or Ctrl + R employees (@modulr.cloud) can assign admin status");
   }
 
   if (!targetUserId) {

@@ -1026,7 +1026,7 @@ export const UserManagement = () => {
                   ) : (
                     <div className="info-message">
                       <FontAwesomeIcon icon={faInfoCircle} />
-                      <p>Modulr employees (@modulr.cloud) cannot be removed from the platform.</p>
+                      <p>Ctrl + R employees (@modulr.cloud) cannot be removed from the platform.</p>
                     </div>
                   )}
                 </div>

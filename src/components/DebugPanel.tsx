@@ -163,7 +163,7 @@ export function DebugPanel() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `modulr-debug-${new Date().toISOString().split('T')[0]}.log`;
+    a.download = `ctrlr-debug-${new Date().toISOString().split('T')[0]}.log`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -193,7 +193,7 @@ export function DebugPanel() {
     <button
       className="debug-toggle-button"
       onClick={() => setIsOpen((v) => !v)}
-      title="Toggle Modulr Debug Panel (Ctrl+Shift+D)"
+      title="Toggle Debug Panel (Ctrl+Shift+D)"
     >
       <FontAwesomeIcon icon={faBug} />
       {logs.filter((l) => l.level === 'error').length > 0 && (

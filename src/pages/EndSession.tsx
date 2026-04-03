@@ -115,7 +115,7 @@ export default function EndSession() {
         </div>
       </div>
 
-      <p className="thank-you">Thank you for using Modulr.Robotics!</p>
+      <p className="thank-you">Thank you for using Ctrl + R!</p>
 
       {(sessionId && (robotId ?? robotIdFromSession)) && (
         <div className="endsession-experience">

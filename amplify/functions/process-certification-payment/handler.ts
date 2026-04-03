@@ -119,7 +119,7 @@ export const handler: Schema["processCertificationPaymentLambda"]["functionHandl
               userId: username,
               amount: -feeCredits,
               transactionType: "certification_fee",
-              description: `Modulr certification fee for request ${certificationRequestId}`,
+              description: `Ctrlr certification fee for request ${certificationRequestId}`,
               createdAt: now,
             },
           },

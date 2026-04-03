@@ -241,7 +241,7 @@ export const CertificationRequests = () => {
       const raw = typeof resultWithErrors.data === "string" ? resultWithErrors.data : resultWithErrors.data != null ? JSON.stringify(resultWithErrors.data) : undefined;
       const data = parseManageResponse(raw);
       if (data?.success) {
-        showToast("Request approved. Robot is now Modulr Approved.", "success");
+        showToast("Request approved. Robot is now Ctrlr Approved.", "success");
         loadRequests(null);
       } else {
         showToast(typeof data?.error === "string" ? data.error : "Approve failed", "error");

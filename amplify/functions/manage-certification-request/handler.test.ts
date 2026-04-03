@@ -110,7 +110,7 @@ describe("manageCertificationRequestLambda handler", () => {
     expect(mockSend).toHaveBeenCalledTimes(1);
   });
 
-  it("approve: updates request to approved and robot to modulrApproved", async () => {
+  it("approve: updates request to approved and robot to Ctrlr Approved", async () => {
     mockSend
       .mockResolvedValueOnce({
         Item: {

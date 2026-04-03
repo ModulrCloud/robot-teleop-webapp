@@ -18,7 +18,7 @@ export const Social = () => {
       <div className="social-header">
         <div className="social-title-section">
           <FontAwesomeIcon icon={faUsers} className="social-icon" />
-          <h1>Modulr.Social</h1>
+          <h1>Ctrl + R Social</h1>
         </div>
         <p className="social-description">
           Connect with the robotics community. Share ideas, discover projects, and stay updated with the latest in robotics development.

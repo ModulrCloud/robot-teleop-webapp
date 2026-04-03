@@ -556,7 +556,7 @@ export const CreateRobotListing = () => {
               </label>
               <p className="form-help-text">
                 {robotListing.enableAccessControl
-                  ? "Access will be restricted to you, chris@modulr.cloud, mike@modulr.cloud, and any users you add below. You can manage the access list after creating the robot."
+                  ? "Access will be restricted to you and any users you add below. You can manage the access list after creating the robot."
                   : "Robot will be accessible to all authenticated users. You can enable access control later if needed."}
               </p>
             </div>
@@ -577,7 +577,7 @@ export const CreateRobotListing = () => {
                 />
                 <p className="form-help-text">
                   Enter email addresses of users who should have access to this robot.
-                  You (the owner), chris@modulr.cloud, and mike@modulr.cloud are automatically included.
+                  You (the owner) and Ctrl + R team members are automatically included.
                 </p>
               </div>
             )}

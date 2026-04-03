@@ -4,7 +4,7 @@
  */
 
 /**
- * Checks if a user is a Modulr employee based on their email domain
+ * Checks if a user is a Ctrlr employee based on their email domain
  * @param email - User's email address
  * @returns true if email ends with @modulr.cloud, false otherwise
  */

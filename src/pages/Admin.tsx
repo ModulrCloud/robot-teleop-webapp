@@ -51,7 +51,7 @@ export const Admin = () => {
       
       if (!isAdmin) {
       logger.log("Unauthorized admin access attempt:", user.email);
-        setError("Access denied. Admin page is only available to Modulr employees.");
+        setError("Access denied. Admin page is only available to Ctrl + R employees.");
         setTimeout(() => {
           navigate("/");
         }, 3000);

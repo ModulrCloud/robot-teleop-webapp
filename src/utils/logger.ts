@@ -21,7 +21,7 @@ class AppLogger {
   private constructor() {
     this.consoleEnabled =
       new URLSearchParams(window.location.search).has('console') ||
-      localStorage.getItem('modulr-console') === 'true';
+      localStorage.getItem('ctrlr-console') === 'true';
   }
 
   static getInstance(): AppLogger {
@@ -78,7 +78,7 @@ class AppLogger {
 
   setConsoleOutput(enabled: boolean): void {
     this.consoleEnabled = enabled;
-    localStorage.setItem('modulr-console', String(enabled));
+    localStorage.setItem('ctrlr-console', String(enabled));
   }
 
   isConsoleEnabled = (): boolean => this.consoleEnabled;

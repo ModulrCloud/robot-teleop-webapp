@@ -11,7 +11,7 @@ export interface CardGridItemProps {
   uuid?: string | undefined; // Optional UUID for identifying deletable items
   disabled?: boolean; // If true, robot is not accessible (grayed out, not clickable)
   hourlyRate?: string; // Formatted hourly rate (e.g., "$10.00/hour")
-  modulrApproved?: boolean; // If true, show Modulr Approved certification badge
+  modulrApproved?: boolean; // If true, show Ctrlr Approved certification badge
   onClick?: (item: Omit<CardGridItemProps, 'onClick' | 'disabled' | 'location' | 'hourlyRate' | 'modulrApproved'>) => void;
 }
 

@@ -35,7 +35,7 @@ export const handler: Schema["listPartnerPayoutsLambda"]["functionHandler"] = as
   let isModulrEmployee = false;
 
   try {
-    // Check if requester is admin or Modulr employee
+    // Check if requester is admin or Ctrlr employee
     const userResponse = await cognito.send(
       new AdminGetUserCommand({
         UserPoolId: USER_POOL_ID,
@@ -55,7 +55,7 @@ export const handler: Schema["listPartnerPayoutsLambda"]["functionHandler"] = as
     };
   }
 
-  // Only admins or Modulr employees can view all payouts
+    // Only admins or Ctrlr employees can view all payouts
   // Partners can only view their own payouts
   if (!isAdmin && !isModulrEmployee) {
     // If not admin, they can only query their own payouts

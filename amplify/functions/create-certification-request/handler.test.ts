@@ -74,7 +74,7 @@ describe("createCertificationRequestLambda handler", () => {
     expect(mockSend).toHaveBeenCalledTimes(1);
   });
 
-  it("returns error when robot is already Modulr Approved", async () => {
+  it("returns error when robot is already Ctrlr Approved", async () => {
     mockSend.mockResolvedValueOnce({
       Items: [
         {

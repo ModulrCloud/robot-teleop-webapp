@@ -423,7 +423,7 @@
   color: #fff;
 }
 
-/* Revenue over time chart (Modulr theme) */
+/* Revenue over time chart (Ctrlr theme) */
 .admin-revenue-chart {
   margin: 1.5rem 0;
   padding: 1rem;
@@ -446,7 +446,7 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
-/* DatePicker in revenue timeline: white calendar icon, Modulr-themed pop-up */
+/* DatePicker in revenue timeline: white calendar icon, Ctrlr-themed pop-up */
 .admin-revenue-filters .admin-revenue-date-picker .calendar-icon {
   color: #fff;
 }
@@ -711,7 +711,7 @@
   resize: vertical;
 }
 
-/* Reject certification modal – textarea matches Modulr dark theme */
+/* Reject certification modal – textarea matches Ctrlr dark theme */
 .admin-reject-textarea {
   display: block;
   width: 100%;
@@ -1296,7 +1296,7 @@
   cursor: not-allowed;
 }
 
-/* Spinner buttons - Modulr yellow theme */
+/* Spinner buttons - Ctrlr yellow theme */
 .spinner-buttons {
   display: flex;
   flex-direction: column;
