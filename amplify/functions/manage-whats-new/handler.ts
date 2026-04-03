@@ -73,7 +73,7 @@ export const handler: Schema["manageWhatsNewLambda"]["functionHandler"] = async 
     typeof userEmail === "string" && userEmail.toLowerCase().trim().endsWith("@modulr.cloud");
 
   if (!isInAdminGroup && !isModulrEmployee) {
-    throw new Error("Unauthorized: only ADMINS or Modulr employees (@modulr.cloud) can manage What's New");
+    throw new Error("Unauthorized: only ADMINS or Ctrl + R employees (@modulr.cloud) can manage What's New");
   }
 
   const now = new Date().toISOString();

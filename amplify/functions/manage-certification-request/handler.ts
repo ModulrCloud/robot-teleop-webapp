@@ -47,7 +47,7 @@ export const handler: Schema["manageCertificationRequestLambda"]["functionHandle
     }
   }
   if (!isAdmin && !isModulrEmployee) {
-    throw new Error("Only admins or Modulr employees can approve or reject certification requests");
+    throw new Error("Only admins or Ctrl + R employees can approve or reject certification requests");
   }
 
   const getRequest = await docClient.send(

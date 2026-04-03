@@ -48,9 +48,9 @@ export const handler: Schema["getActiveRobotsLambda"]["functionHandler"] = async
     typeof userEmail === 'string' && 
     userEmail.toLowerCase().trim().endsWith('@modulr.cloud');
   
-  // SECURITY: Only admins or Modulr employees can view active robots
+  // SECURITY: Only admins or Ctrlr employees can view active robots
   if (!isInAdminGroup && !isModulrEmployee) {
-    throw new Error("Unauthorized: only ADMINS or Modulr employees (@modulr.cloud) can view active robots");
+    throw new Error("Unauthorized: only ADMINS or Ctrl + R employees (@modulr.cloud) can view active robots");
   }
 
   try {

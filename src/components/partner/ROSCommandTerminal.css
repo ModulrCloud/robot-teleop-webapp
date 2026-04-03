@@ -9,7 +9,7 @@
   font-family: 'Courier New', monospace;
 }
 
-/* Modulr-themed scrollbars */
+/* Ctrlr-themed scrollbars */
 .ros-command-terminal ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -195,7 +195,7 @@
   flex: 1;
   background: transparent;
   border: none;
-  color: #ffc107; /* Modulr yellow */
+  color: #ffc107; /* brand yellow */
   font-family: 'Courier New', monospace;
   font-size: 0.9rem;
   line-height: 1.6;
@@ -204,7 +204,7 @@
   outline: none;
   padding: 0;
   width: 100%;
-  caret-color: #ffc107; /* Modulr yellow cursor */
+  caret-color: #ffc107; /* brand yellow cursor */
 }
 
 .terminal-input.has-content ~ .textarea-cursor-blink {
@@ -216,7 +216,7 @@
 }
 
 .terminal-input.valid {
-  color: #ffc107; /* Modulr yellow */
+  color: #ffc107; /* brand yellow */
 }
 
 .terminal-input.error {
@@ -299,7 +299,7 @@
 
 .preview-content pre {
   margin: 0;
-  color: #ffc107; /* Modulr yellow */
+  color: #ffc107; /* brand yellow */
   font-family: 'Courier New', monospace;
   font-size: 0.85rem;
   line-height: 1.6;

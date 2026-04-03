@@ -40,7 +40,7 @@ export const PlatformSettings = () => {
   const [savingWarningSetting, setSavingWarningSetting] = useState(false);
   const [warningSettingId, setWarningSettingId] = useState<string | null>(null);
 
-  // Modulr certification fee (credits) – default 1000 to reduce spam
+  // Ctrlr certification fee (credits) – default 1000 to reduce spam
   const [modulrCertificationFeeCredits, setModulrCertificationFeeCredits] = useState<number>(1000);
   const [loadingCertificationFee, setLoadingCertificationFee] = useState(false);
   const [savingCertificationFee, setSavingCertificationFee] = useState(false);
@@ -235,7 +235,7 @@ export const PlatformSettings = () => {
         setModulrCertificationFeeCredits(1000);
       }
     } catch (err) {
-      logger.error("Error loading Modulr certification fee setting:", err);
+      logger.error("Error loading Ctrlr certification fee setting:", err);
     } finally {
       setLoadingCertificationFee(false);
     }
@@ -259,9 +259,9 @@ export const PlatformSettings = () => {
           updatedAt: now,
         });
         if (errors) {
-          setError("Failed to update Modulr certification fee");
+          setError("Failed to update Ctrlr certification fee");
         } else {
-          setSuccess("Modulr certification fee updated.");
+          setSuccess("Ctrlr certification fee updated.");
           setTimeout(() => setSuccess(null), 3000);
           loadModulrCertificationFee();
         }
@@ -269,20 +269,20 @@ export const PlatformSettings = () => {
         const { errors } = await client.models.PlatformSettings.create({
           settingKey: 'modulrCertificationFeeCredits',
           settingValue: value.toString(),
-          description: 'Fee in credits for partners to request Modulr Approved certification (default 1000 to reduce spam)',
+          description: 'Fee in credits for partners to request Ctrlr Approved certification (default 1000 to reduce spam)',
           updatedBy: user.username || user.email || 'admin',
           updatedAt: now,
         });
         if (errors) {
-          setError("Failed to create Modulr certification fee setting");
+          setError("Failed to create Ctrlr certification fee setting");
         } else {
-          setSuccess("Modulr certification fee saved.");
+          setSuccess("Ctrlr certification fee saved.");
           setTimeout(() => setSuccess(null), 3000);
           loadModulrCertificationFee();
         }
       }
     } catch (err) {
-      logger.error("Error saving Modulr certification fee:", err);
+      logger.error("Error saving Ctrlr certification fee:", err);
       setError("An error occurred while saving the certification fee");
     } finally {
       setSavingCertificationFee(false);
@@ -392,7 +392,7 @@ export const PlatformSettings = () => {
     
     if (!user?.email || !hasAdminAccess(user.email, user?.group ? [user.group] : undefined)) {
       logger.error("🔴 [FRONTEND] Unauthorized - no admin access");
-      setError("Unauthorized: Admin access required. Only @modulr.cloud email addresses can manage credit tiers.");
+      setError("Unauthorized: Admin access required. Only Ctrl + R employees can manage credit tiers.");
       setTimeout(() => setError(null), 5000);
       return;
     }
@@ -817,13 +817,13 @@ export const PlatformSettings = () => {
           </div>
         </div>
 
-        {/* Modulr certification fee (credits) */}
+        {/* Ctrlr certification fee (credits) */}
         <div className="platform-setting-card">
           <div className="setting-header-row">
             <div>
-              <h3>Modulr Certification Fee (credits)</h3>
+              <h3>Ctrlr Certification Fee (credits)</h3>
               <p className="setting-description">
-                Fee partners pay to request Modulr Approved certification. Default 1000 to reduce spam; can be increased.
+                Fee partners pay to request Ctrlr Approved certification. Default 1000 to reduce spam; can be increased.
               </p>
             </div>
           </div>

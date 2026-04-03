@@ -73,7 +73,7 @@
   font-size: 2.5rem;
   font-weight: 700;
   color: #ffc107;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Geist', sans-serif;
   margin-bottom: 0.25rem;
 }
 
@@ -95,7 +95,7 @@
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Geist', sans-serif;
 }
 
 .purchase-button:hover {
@@ -321,7 +321,7 @@
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Geist', sans-serif;
 }
 
 .save-button:hover:not(:disabled) {
@@ -420,7 +420,7 @@
 .transaction-amount {
   font-size: 1.1rem;
   font-weight: 700;
-  font-family: 'Inter', sans-serif;
+  font-family: 'Geist', sans-serif;
   text-align: right;
   min-width: 120px;
 }

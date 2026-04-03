@@ -57,7 +57,7 @@
 }
 
 .robot-icon.highlighted {
-  color: #ffb700 !important; /* Modulr yellow when highlighted */
+  color: #ffb700 !important; /* brand yellow when highlighted */
   background: transparent !important;
 }
 

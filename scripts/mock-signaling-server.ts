@@ -18,7 +18,7 @@ const PORT = parseInt(process.argv[2] || '8765', 10);
 
 /**
  * Protocol mode: when true, use legacy message format (type: "register", "offer", etc.).
- * When false, use new Modulr Interface Spec protocol (type: "signalling.register", etc.).
+ * When false, use new Ctrlr Interface Spec protocol (type: "signalling.register", etc.).
  */
 const LEGACY = process.env.MOCK_LEGACY !== 'false'; // default true; set MOCK_LEGACY=false for new protocol
 
@@ -34,7 +34,7 @@ const server = createServer();
 const wss = new WebSocketServer({ server, path: '/' });
 
 console.log(`🚀 Mock Signaling Server starting on ws://localhost:${PORT}`);
-console.log(`   Protocol mode: ${LEGACY ? 'LEGACY' : 'NEW (Modulr Interface Spec)'}`);
+console.log(`   Protocol mode: ${LEGACY ? 'LEGACY' : 'NEW (Ctrlr Interface Spec)'}`);
 console.log('=====================================\n');
 
 wss.on('connection', (ws, req) => {

@@ -176,7 +176,7 @@
   transition: color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-/* When key is set: Modulr yellow so it stands out and reads as "active" */
+/* When key is set: Ctrlr yellow so it stands out and reads as "active" */
 .form-group .pki-public-key-input.pki-public-key-filled {
   color: #ffb700;
   border-color: rgba(255, 183, 0, 0.4);
@@ -580,7 +580,7 @@
   transform: none;
 }
 
-/* Modulr certification section (Edit Robot) */
+/* Ctrlr certification section (Edit Robot) */
 .modulr-certification-section {
   margin-top: 0.5rem;
 }
@@ -1020,7 +1020,7 @@
   letter-spacing: 0.05em;
 }
 
-/* Toast Notification – matches Teleop / default Modulr yellow */
+/* Toast Notification – matches Teleop / default Ctrlr yellow */
 .toast-notification {
   position: fixed;
   bottom: 2rem;

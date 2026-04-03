@@ -86,9 +86,9 @@ const TRANSACTION_TYPE_LABELS: Record<string, string> = {
   certification_fee: "Certification fee",
 };
 
-/** Chart colors in order: Modulr yellow first, then palette for additional revenue types. */
+/** Chart colors in order: brand yellow first, then palette for additional revenue types. */
 const REVENUE_CHART_PALETTE = [
-  "#ffc107", // Modulr yellow (Session markup)
+  "#ffc107", // brand yellow (Session markup)
   "#A8A8B3",
   "#1A8A7A",
   "#E8850C",

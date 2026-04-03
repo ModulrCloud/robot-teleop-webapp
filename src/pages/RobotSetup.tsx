@@ -203,7 +203,7 @@ export default function RobotSetup() {
           </div>
           <div className="header-content">
             <h1>Robot Setup Instructions</h1>
-            <p>Configure your robot to connect to the Modulr platform</p>
+            <p>Configure your robot to connect to the Ctrl + R platform</p>
           </div>
         </div>
 
@@ -223,7 +223,7 @@ export default function RobotSetup() {
             <div className="setup-section">
               <h2>Before you begin</h2>
               <p className="section-description">
-                Install the <strong>Modulr robot agent</strong> on your robot so it can connect to the platform. Clone and build the agent, then follow the steps below.
+                Install the <strong>Ctrl + R robot agent</strong> on your robot so it can connect to the platform. Clone and build the agent, then follow the steps below.
               </p>
               <p>
                 <a
@@ -232,7 +232,7 @@ export default function RobotSetup() {
                   rel="noopener noreferrer"
                   className="setup-link"
                 >
-                  Get the Modulr agent (GitHub)
+                  Get the Ctrl + R agent (GitHub)
                 </a>
                 {' '}
                 — follow the README for prerequisites (Rust, GStreamer, ROS) and build instructions.
@@ -284,7 +284,7 @@ export default function RobotSetup() {
             <div className="setup-section">
               <h2>Step 2: Run initial setup on your robot</h2>
               <p className="section-description">
-                On your robot (in the Modulr agent project directory), run the command below. It saves your Robot ID, signaling URL, and a one-time enrollment token into the agent config file (default: <code>~/.config/modulr_agent/config.json</code>). The agent will generate an Ed25519 keypair and register its public key automatically. To use a specific file (e.g. <code>./local_config.json</code>), add <code>--config-override ./local_config.json</code> before <code>--video-source</code>.
+                On your robot (in the Ctrl + R agent project directory), run the command below. It saves your Robot ID, signaling URL, and a one-time enrollment token into the agent config file (default: <code>~/.config/ctrlr_agent/config.json</code>). The agent will generate an Ed25519 keypair and register its public key automatically. To use a specific file (e.g. <code>./local_config.json</code>), add <code>--config-override ./local_config.json</code> before <code>--video-source</code>.
               </p>
 
               {robotPublicKey ? (
@@ -362,7 +362,7 @@ export default function RobotSetup() {
                   <div className="step-number">1</div>
                   <div className="step-content">
                     <h3>Run the command above on your robot</h3>
-                    <p>In the directory where you cloned and built the <a href="https://github.com/ModulrCloud/modulr-agent" target="_blank" rel="noopener noreferrer" className="setup-link">Modulr agent</a>, run the initial-setup command from Step 2. It will save your Robot ID and signaling URL into the config file.</p>
+                    <p>In the directory where you cloned and built the <a href="https://github.com/ModulrCloud/modulr-agent" target="_blank" rel="noopener noreferrer" className="setup-link">Ctrl + R agent</a>, run the initial-setup command from Step 2. It will save your Robot ID and signaling URL into the config file.</p>
                   </div>
                 </div>
 
@@ -378,7 +378,7 @@ export default function RobotSetup() {
                   <div className="step-number">3</div>
                   <div className="step-content">
                     <h3>Start the Agent</h3>
-                    <p>Run the agent on your robot. Use the same config path you used for initial-setup (e.g. default <code>~/.config/modulr_agent/config.json</code> or <code>./local_config.json</code> if you used <code>--config-override</code>).</p>
+                    <p>Run the agent on your robot. Use the same config path you used for initial-setup (e.g. default <code>~/.config/ctrlr_agent/config.json</code> or <code>./local_config.json</code> if you used <code>--config-override</code>).</p>
                     <div className="codeblock-wrapper" style={{ marginTop: '0.75rem' }}>
                       <div className="codeblock-header">
                         <span className="codeblock-lang">Terminal</span>
@@ -421,7 +421,7 @@ export default function RobotSetup() {
                   <div className="step-number">4</div>
                   <div className="step-content">
                     <h3>Verify Connection</h3>
-                    <p>Once connected and registered, your robot will appear as "online" in the Modulr platform. You can verify the connection by:</p>
+                    <p>Once connected and registered, your robot will appear as "online" in the Ctrl + R platform. You can verify the connection by:</p>
                     <ul>
                       <li>Checking the robot status in your dashboard</li>
                       <li>Attempting to start a teleoperation session</li>

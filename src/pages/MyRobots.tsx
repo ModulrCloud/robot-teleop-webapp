@@ -189,7 +189,7 @@ export default function MyRobots() {
             maxFreeSessionSeconds: robot.maxFreeSessionSeconds ?? undefined,
           }));
 
-        // Sort: Modulr Approved robots first
+        // Sort: Ctrlr Approved robots first
         robotsList.sort((a, b) => (b.modulrApproved ? 1 : 0) - (a.modulrApproved ? 1 : 0));
         setRobots(robotsList);
 

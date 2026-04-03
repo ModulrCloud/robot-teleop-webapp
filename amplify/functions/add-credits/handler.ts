@@ -58,7 +58,7 @@ export const handler: Schema["addCreditsLambda"]["functionHandler"] = async (eve
   const adminGroups = "groups" in identity ? identity.groups : [];
   const isInAdminGroup = adminGroups?.includes("ADMINS") || adminGroups?.includes("ADMIN");
   
-  // Check if user is a Modulr employee (@modulr.cloud domain)
+    // Check if user is a Ctrlr employee (@modulr.cloud domain)
   const isModulrEmployee = userEmail && 
     typeof userEmail === 'string' && 
     userEmail.toLowerCase().trim().endsWith('@modulr.cloud');

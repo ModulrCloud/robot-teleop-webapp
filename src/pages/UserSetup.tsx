@@ -163,7 +163,7 @@ export function UserSetup(_props: PrivateRouteProps) {
       <div className="setup-container">
         <div className="setup-header">
           <h1>Complete Your Profile</h1>
-          <p className="setup-subtitle">Choose how you want to use Modulr</p>
+          <p className="setup-subtitle">Choose how you want to use Ctrl + R</p>
           <div className="setup-steps">
             <div className="step active">
               <span className="step-number">1</span>
@@ -212,7 +212,7 @@ export function UserSetup(_props: PrivateRouteProps) {
                   type="text"
                   value={partnerDetails.name}
                   onChange={handlePartnerInputChange}
-                  placeholder={userGroup === 'organization' ? 'e.g., Modulr Robotics' : 'e.g., RoboTech Solutions'}
+                  placeholder={userGroup === 'organization' ? 'e.g., Ctrl + R Robotics' : 'e.g., RoboTech Solutions'}
                   disabled={settingGroup}
                   required
                   className="form-input"

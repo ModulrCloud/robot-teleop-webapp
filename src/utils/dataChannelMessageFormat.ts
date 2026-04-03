@@ -1,5 +1,5 @@
 /**
- * Data-channel message format for teleop: envelope (modulr-v0 / interface-spec) vs legacy flat.
+ * Data-channel message format for teleop: envelope (ctrlr-v0 / interface-spec) vs legacy flat.
  * Used by useWebRTC to send movement and future custom commands over the WebRTC data channel.
  */
 

@@ -38,7 +38,7 @@ export const handler: Schema["listUsersLambda"]["functionHandler"] = async (even
   const isModulrEmployee = userEmail.toLowerCase().trim().endsWith('@modulr.cloud');
 
   if (!isInAdminGroup && !isModulrEmployee) {
-    throw new Error("Unauthorized: only ADMINS or Modulr employees (@modulr.cloud) can list users");
+    throw new Error("Unauthorized: only ADMINS or Ctrl + R employees (@modulr.cloud) can list users");
   }
 
   const { limit = 50, paginationToken, search } = event.arguments || {};

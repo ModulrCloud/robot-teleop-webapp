@@ -463,7 +463,7 @@ export default function RobotSelect() {
               };
             });
 
-          // Sort: Modulr Approved robots first, then the rest
+          // Sort: Ctrlr Approved robots first, then the rest
           robotItems.sort((a, b) => (b.modulrApproved ? 1 : 0) - (a.modulrApproved ? 1 : 0));
 
           logger.log(`✅ Successfully loaded ${robotItems.length} valid robot(s) from database`);

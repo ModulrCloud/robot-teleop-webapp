@@ -41,7 +41,7 @@
   flex: 1;
   min-height: 0;
   padding: 0 1.5rem;
-  /* Modulr-themed scrollbar */
+  /* Ctrlr-themed scrollbar */
   scrollbar-color: #ffc107 rgba(255, 255, 255, 0.08);
   scrollbar-width: thin;
 }
@@ -92,7 +92,7 @@
 }
 
 .terms-modal-link {
-  color: #ffc107; /* Modulr yellow */
+  color: #ffc107; /* brand yellow */
   text-decoration: none;
 }
 

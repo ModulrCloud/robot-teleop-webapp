@@ -100,7 +100,7 @@ type Target = 'robot' | 'client';
 // MESSAGE FORMAT DOCUMENTATION
 // ---------------------------------
 // 
-// IMPORTANT: Outbound message format was changed to match Modulr agent expectations.
+// IMPORTANT: Outbound message format was changed to match Ctrlr agent expectations.
 // 
 // Expected format (what we now send):
 //   { type, to, from, sdp?, candidate? }
@@ -110,7 +110,7 @@ type Target = 'robot' | 'client';
 // 
 // This change ensures compatibility with:
 // 1. Browser code (useWebRTC.ts) which expects msg.sdp and msg.candidate at top level
-// 2. Modulr agent which expects { type, from, to, sdp, candidate } format
+// 2. Ctrlr agent which expects { type, from, to, sdp, candidate } format
 // 
 // HISTORY:
 // - Original format (Mike's implementation): { type, from, to, sdp, candidate } at top level
@@ -149,7 +149,7 @@ type InboundMessage = Partial<{
 type RawMessage = Record<string, unknown>;
 
 // ---------------------------------
-// Protocol detection (dual-protocol: legacy vs Modulr Interface Spec)
+// Protocol detection (dual-protocol: legacy vs Ctrlr Interface Spec)
 // ---------------------------------
 
 /** Supported protocol versions for the new (domain.message) format. */
@@ -659,7 +659,7 @@ function extractClientConnectionId(
 }
 
 /**
- * Maps new protocol (Modulr Interface Spec) messages to internal InboundMessage format.
+ * Maps new protocol (Ctrlr Interface Spec) messages to internal InboundMessage format.
  * Used for signalling.register, signalling.offer, signalling.answer, signalling.ice_candidate,
  * and signalling.ping/signalling.pong (pass-through for keepalive/liveness).
  * Returns null for unknown new-protocol types.
@@ -2682,7 +2682,7 @@ async function handleSignal(
   // MESSAGE FORMAT CHANGE - MATCHING AGENT EXPECTATIONS
   // ============================================
   // 
-  // CHANGED: Modified outbound message format to match Modulr agent's expected format.
+  // CHANGED: Modified outbound message format to match Ctrlr agent's expected format.
   // 
   // Previous format (what we were sending):
   //   { type, robotId, from, payload: { sdp, candidate } }
@@ -2692,7 +2692,7 @@ async function handleSignal(
   // 
   // This change was made because:
   // 1. Browser expects msg.sdp and msg.candidate at top level (useWebRTC.ts lines 213-217)
-  // 2. Modulr agent expects { type, from, to, sdp, candidate } format
+  // 2. Ctrlr agent expects { type, from, to, sdp, candidate } format
   // 
   // TO REVERT: Change this section back to:
   //   const outbound = {
@@ -3163,7 +3163,7 @@ export async function handler(
     return successResponse({ type: 'pong-acknowledged' });
   }
 
-  // Handle signalling.capabilities (Modulr interface spec) - return supported versions
+  // Handle signalling.capabilities (Ctrlr interface spec) - return supported versions
   if (type === 'signalling.capabilities') {
     try {
       await postFormatted(connectionId, {

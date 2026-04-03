@@ -2218,7 +2218,7 @@ function CreateTeamModal({ onClose, onCreated }: { onClose: () => void; onCreate
               type="text"
               value={name}
               onChange={(e) => handleNameChange(e.target.value)}
-              placeholder="e.g. Modulr Robotics"
+              placeholder="e.g. Ctrl + R Robotics"
               required
               autoFocus
             />
@@ -2232,7 +2232,7 @@ function CreateTeamModal({ onClose, onCreated }: { onClose: () => void; onCreate
                 type="text"
                 value={slug}
                 onChange={(e) => { setSlugTouched(true); setSlug(autoSlug(e.target.value)); }}
-                placeholder="modulr-robotics"
+                placeholder="ctrlr-robotics"
                 required
                 pattern="[a-z0-9][a-z0-9-]{1,48}[a-z0-9]"
                 title="3-50 chars, lowercase alphanumeric and hyphens"

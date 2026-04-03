@@ -37,7 +37,7 @@ export const handler: Schema["deleteRobotLambda"]["functionHandler"] = async (ev
     (g) => g.toUpperCase() === 'ADMINS' || g.toUpperCase() === 'ADMIN'
   );
   
-  // Also check email domain for Modulr employees
+    // Also check email domain for Ctrlr employees
   let userEmail: string | undefined;
   let isModulrEmployee = false;
   if (USER_POOL_ID && identity.username) {

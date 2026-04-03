@@ -38,7 +38,7 @@ export const handler: Schema["listPlatformRevenueEntriesLambda"]["functionHandle
     }
   }
   if (!isAdmin && !isModulrEmployee) {
-    throw new Error("Only admins or Modulr employees can list platform revenue entries");
+    throw new Error("Only admins or Ctrl + R employees can list platform revenue entries");
   }
 
   const hasFilters = !!(transactionType || startDate || endDate);

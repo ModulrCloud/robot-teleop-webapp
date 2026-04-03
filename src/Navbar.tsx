@@ -76,11 +76,11 @@ export default function Navbar() {
     <nav className="app-navbar">
       <div className="navbar-container">
         <Link to="/" className={`navbar-logo ${isActive('/') ? 'active' : ''}`}>
-          <img src="/logo-large.png" alt="Modulr" />
+          <img src="/logo-large.png" alt="Ctrl + R" />
         </Link>
 
         <a
-          href="https://modulr.cloud"
+          href="https://ctrlr.cloud"
           target="_blank"
           rel="noopener noreferrer"
           className="navbar-external-link"
@@ -336,7 +336,7 @@ export default function Navbar() {
       {isLoggedIn && showMobileMenu && (
         <div className="mobile-menu">
           <a
-            href="https://modulr.cloud"
+            href="https://ctrlr.cloud"
             target="_blank"
             rel="noopener noreferrer"
             className="mobile-nav-link external"

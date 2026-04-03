@@ -180,7 +180,7 @@ const schema = a.schema({
       allow.owner(),
     ]),
 
-  // Master credits table - only Modulr (admins/Lambdas) can modify
+  // Master credits table - only Ctrlr (admins/Lambdas) can modify
   UserCredits: a.model({
     id: a.id(),
     userId: a.string().required(), // Cognito username - unique identifier
@@ -274,7 +274,7 @@ const schema = a.schema({
     .authorization((allow) => [
       // Everyone can read tiers (for purchase UI - filtering by isActive happens in app code)
       allow.authenticated().to(['read']),
-      // Only ADMINS can create/update (Modulr control for sales/offers)
+      // Only ADMINS can create/update (Ctrlr control for sales/offers)
       allow.groups(['ADMINS']).to(['create', 'read', 'update', 'delete']),
     ]),
 
@@ -392,7 +392,7 @@ const schema = a.schema({
     publicKey: a.string(), // Optional: Ed25519 public key (base64 or hex) for PKI auth; 32-byte key
     enrollmentToken: a.string(), // One-time token used by robot to self-register its public key; cleared after use
     enrollmentTokenExpiry: a.float(), // Unix ms timestamp when enrollment token expires (7-day TTL); float to avoid 32-bit Int overflow
-    // Modulr Approved certification (paid review by Modulr)
+    // Ctrlr Approved certification (paid review by Ctrlr)
     modulrApproved: a.boolean().default(false),
     modulrApprovedAt: a.datetime(), // When certification was granted (for display and future expiry)
     ratings: a.hasMany('RobotRating', 'robotUuid'), // Relationship to ratings
@@ -417,7 +417,7 @@ const schema = a.schema({
     .identifier(["userId", "robotId"])
     .authorization((allow) => [allow.groups(["ADMINS"]).to(["read", "delete"])]),
 
-  // Modulr Approved certification request – partner requests certification, pays, then admin approves/rejects
+  // Ctrlr Approved certification request – partner requests certification, pays, then admin approves/rejects
   CertificationRequest: a.model({
     id: a.id(),
     robotId: a.string().required(), // Robot's robotId string (robot-XXXXXXXX)
@@ -1278,7 +1278,7 @@ const schema = a.schema({
     .authorization(allow => [allow.authenticated()]) // Any authenticated user can list (for navbar)
     .handler(a.handler.function(listWhatsNew)),
 
-  // Modulr Approved certification
+  // Ctrlr Approved certification
   createCertificationRequestLambda: a
     .mutation()
     .arguments({
@@ -1331,7 +1331,7 @@ const schema = a.schema({
       nextToken: a.string(),
     })
     .returns(a.json())
-    .authorization(allow => [allow.authenticated()]) // Auth in Lambda: ADMINS / Modulr only
+    .authorization(allow => [allow.authenticated()]) // Auth in Lambda: ADMINS / Ctrlr only
     .handler(a.handler.function(listPlatformRevenueEntries)),
 });
 

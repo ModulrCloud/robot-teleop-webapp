@@ -70,9 +70,9 @@ export const handler: Schema["manageCreditTierLambda"]["functionHandler"] = asyn
     typeof userEmail === 'string' && 
     userEmail.toLowerCase().trim().endsWith('@modulr.cloud');
   
-  // SECURITY: Only admins or Modulr employees can manage credit tiers
+    // SECURITY: Only admins or Ctrlr employees can manage credit tiers
   if (!isInAdminGroup && !isModulrEmployee) {
-    throw new Error("Unauthorized: only ADMINS or Modulr employees (@modulr.cloud) can manage credit tiers");
+    throw new Error("Unauthorized: only ADMINS or Ctrl + R employees (@modulr.cloud) can manage credit tiers");
   }
 
   try {
