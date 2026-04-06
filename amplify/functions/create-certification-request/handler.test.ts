@@ -90,7 +90,7 @@ describe("createCertificationRequestLambda handler", () => {
     const body = JSON.parse(result as string);
 
     expect(body.success).toBe(false);
-    expect(body.error).toBe("Robot is already Modulr Approved");
+    expect(body.error).toBe("Robot is already Ctrlr Approved");
     expect(mockSend).toHaveBeenCalledTimes(1);
   });
 
