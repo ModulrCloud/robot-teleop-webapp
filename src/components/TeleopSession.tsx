@@ -48,8 +48,10 @@ import {
   buildNavigationStartMessage,
   buildNavigationCancelMessage,
   buildLocationCreateMessage,
+  buildConfigUpdateMessage,
   type NavigationResponsePayload,
   type AgentErrorPayload,
+  type ConfigUpdateResponsePayload,
 } from '../utils/dataChannelMessageFormat';
 import { fetchProducts, fetchProductPoses, type CactusProduct } from '../utils/cactusApi';
 
@@ -416,7 +418,7 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
   const [sessionTime, setSessionTime] = useState(0);
   const [isJoystickActive, setIsJoystickActive] = useState(false);
   const [currentSpeed, setCurrentSpeed] = useState({ forward: 0, turn: 0 });
-  const [controlMode, setControlMode] = useState<'joystick' | 'gamepad' | 'keyboard' | 'location'>('joystick');
+  const [controlMode, setControlMode] = useState<'joystick' | 'gamepad' | 'keyboard' | 'location' | 'config'>('joystick');
   const [gamepadDetected, setGamepadDetected] = useState(false);
   const sendIntervalMs = 100; // 10 Hz
   const { credits, refreshCredits } = useUserCredits();
@@ -439,6 +441,7 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
   const [sessionHourlyRate, setSessionHourlyRate] = useState<number | null>(null);
   const [platformMarkup, setPlatformMarkup] = useState<number>(30);
   const warningShownRef = useRef<boolean>(false);
+
 
   // Joystick/gamepad sensitivity (0 = most forgiving, 100 = raw input)
   const [steeringSensitivity, setSteeringSensitivity] = useState<number>(() => {
@@ -484,6 +487,31 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
       );
     },
   });
+
+  // Listen for config update responses from the agent
+  useEffect(() => {
+    return addDataChannelListener((msg) => {
+      const type = msg.type as string;
+
+      if (type === 'agent.config.response') {
+        const payload = msg.payload as ConfigUpdateResponsePayload | undefined;
+        if (!payload) return;
+        if (payload.applied) {
+          showToast(`Config updated: ${payload.key}`, 'success', 3000);
+        } else {
+          showToast(`Config update failed for ${payload.key}`, 'error', 5000);
+        }
+      }
+
+      if (type === 'agent.error') {
+        const payload = msg.payload as AgentErrorPayload | undefined;
+        if (!payload) return;
+        if (payload.code === 'UNKNOWN_CONFIG_KEY' || payload.code === 'INVALID_CONFIG_VALUE') {
+          showToast(`Config error: ${payload.message}`, 'error', 5000);
+        }
+      }
+    });
+  }, [addDataChannelListener, showToast]);
 
   // Stop robot immediately when switching to a different robot
   const prevRobotIdRef = useRef<string>(robotId);
@@ -1143,16 +1171,14 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
           {(status.error || (!status.connected && !status.connecting)) && (
             <div className="teleop-error-alert">
               <div className="error-content">
-                <strong>Connection Error:</strong> {status.error || 'Unable to connect to robot'}
-                <div className="error-details">Check that WebSocket server is running at: {wsUrl}</div>
+                <strong>Connection lost.</strong> Please refresh your page to reconnect.
               </div>
               <button
-                onClick={connect}
+                onClick={() => window.location.reload()}
                 className="retry-btn"
-                disabled={status.connecting}
               >
                 <FontAwesomeIcon icon={faRotate} />
-                {status.connecting ? 'Connecting...' : 'Retry Connection'}
+                Refresh Page
               </button>
             </div>
           )}
@@ -1298,6 +1324,14 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
               >
                 <FontAwesomeIcon icon={faMapMarkerAlt} />
                 <span>Location</span>
+              </button>
+              <button
+                className={`mode-btn ${controlMode === 'config' ? 'active' : ''}`}
+                onClick={() => setControlMode('config')}
+                title="Robot Configuration"
+              >
+                <FontAwesomeIcon icon={faCog} />
+                <span>Config</span>
               </button>
             </div>
             <div className="mode-settings-row">
@@ -1455,6 +1489,74 @@ export function TeleopSession({ robotId, embedded = false, deferConnect = false,
                 disabled={!status.connected}
                 showToast={showToast}
               />
+            ) : controlMode === 'config' ? (
+              <div className="config-panel">
+                <h3>Robot Configuration</h3>
+                <div className="config-field">
+                  <label>Image Format</label>
+                  <select
+                    defaultValue=""
+                    disabled={!status.connected}
+                    onChange={(e) => {
+
+                      const msg = buildConfigUpdateMessage('image_format', e.target.value);
+                      sendDataChannelMessage(msg);
+                    }}
+                  >
+                    <option value="" disabled>Select...</option>
+                    <option value="Jpeg">JPEG</option>
+                    <option value="Raw">Raw</option>
+                  </select>
+                </div>
+                <div className="config-field">
+                  <label>Resolution</label>
+                  <select
+                    defaultValue=""
+                    disabled={!status.connected}
+                    onChange={(e) => {
+                      sendDataChannelMessage(buildConfigUpdateMessage('resolution', e.target.value));
+                    }}
+                  >
+                    <option value="" disabled>Select...</option>
+                    <option value="1920x1080">1920 x 1080</option>
+                    <option value="1280x720">1280 x 720</option>
+                    <option value="640x480">640 x 480</option>
+                  </select>
+                </div>
+                <div className="config-field">
+                  <label>Video Source</label>
+                  <select
+                    defaultValue=""
+                    disabled={!status.connected}
+                    onChange={(e) => {
+
+                      const msg = buildConfigUpdateMessage('video_source', e.target.value);
+                      sendDataChannelMessage(msg);
+                    }}
+                  >
+                    <option value="" disabled>Select...</option>
+                    <option value="Ros">ROS</option>
+                    <option value="Zenoh">Zenoh</option>
+                  </select>
+                </div>
+                <div className="config-field">
+                  <label>Recording</label>
+                  <select
+                    defaultValue=""
+                    disabled={!status.connected}
+                    onChange={(e) => {
+
+                      const msg = buildConfigUpdateMessage('recording.enabled', e.target.value === 'true');
+                      sendDataChannelMessage(msg);
+                    }}
+                  >
+                    <option value="" disabled>Select...</option>
+                    <option value="true">Enabled</option>
+                    <option value="false">Disabled</option>
+                  </select>
+                </div>
+                <p className="config-note">Changes require a robot restart to take effect.</p>
+              </div>
             ) : (
               <div className="gamepad-wrapper">
                 {gamepadDetected ? (

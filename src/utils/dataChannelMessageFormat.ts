@@ -6,6 +6,7 @@
 export const DATA_CHANNEL_PROTOCOL_VERSION = '0.0';
 export const LOCATION_PROTOCOL_VERSION = '0.1';
 export const NAVIGATION_PROTOCOL_VERSION = '0.4';
+export const CONFIG_PROTOCOL_VERSION = '0.5';
 
 export type RobotDataChannelProtocol = 'legacy' | 'modulr-v0';
 
@@ -95,4 +96,29 @@ export interface AgentErrorPayload {
   code: string;
   message: string;
   details?: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
+// Config update messages (v0.5)
+// ---------------------------------------------------------------------------
+
+export function buildConfigUpdateMessage(
+  key: string,
+  value: unknown,
+): Record<string, unknown> {
+  const id = crypto.randomUUID();
+  return {
+    type: 'agent.config.update',
+    version: CONFIG_PROTOCOL_VERSION,
+    id,
+    correlationId: id,
+    timestamp: new Date().toISOString(),
+    payload: { key, value },
+  };
+}
+
+export interface ConfigUpdateResponsePayload {
+  key: string;
+  applied: boolean;
+  restartRequired: boolean;
 }

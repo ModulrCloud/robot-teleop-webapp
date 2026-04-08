@@ -1735,3 +1735,60 @@ html {
     justify-content: center;
   }
 }
+
+/* Config panel */
+.config-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.5rem 0.25rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.config-panel h3 {
+  color: #ffc107;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.config-field label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.config-field select {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #fff;
+  padding: 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.config-field select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.config-field select:hover:not(:disabled) {
+  border-color: rgba(255, 193, 7, 0.4);
+}
+
+.config-note {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0.5rem 0 0;
+}

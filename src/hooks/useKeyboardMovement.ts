@@ -12,7 +12,7 @@ export interface UseKeyboardMovementOptions {
   onStop?: () => void;
   onEndSession?: () => void;
   /** Control mode - only active when mode is 'keyboard' */
-  controlMode?: 'joystick' | 'gamepad' | 'keyboard' | 'location';
+  controlMode?: 'joystick' | 'gamepad' | 'keyboard' | 'location' | 'config';
   /** Whether ESC should work in all modes (default: true) */
   escWorksInAllModes?: boolean;
 }
