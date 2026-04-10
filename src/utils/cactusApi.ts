@@ -1,4 +1,4 @@
-const CACTUS_BASE_URL = 'https://cactus-public-api-dev.lookingglassprotocol.com';
+const CACTUS_BASE_URL = 'https://cactus-public-api.lookingglassprotocol.com';
 export const DEFAULT_DOMAIN_ID = '8093f9bf-c374-4162-ab74-ab61949627f1';
 
 export interface CactusProduct {
